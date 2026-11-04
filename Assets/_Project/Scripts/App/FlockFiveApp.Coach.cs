@@ -950,9 +950,37 @@ namespace FlockFive
                 ClearGiftHint(ref _coachGiftUntil, ref _coachResumeFade, ref _deadEndNudged);
                 return nearBranch >= 0;
             }
-            if (HitBranch(world) == _cueBranch) return false;
+            if (HitBranch(world) == _cueBranch && CoachTapOnTarget(world)) return false;
             CoachNudge();
             return true;
+        }
+
+        // b120 (412-wide Android): the shared branch pick is generous (a 2.6-3.45 world-unit reach plus a collider
+        // circle), and on a narrow phone that reaches into the empty sky, so a sky tap once advanced a lesson step.
+        // A guided step only advances when the press is on the target itself: within reach of one of its seats.
+        bool CoachTapOnTarget(Vector2 world)
+        {
+            if (_garden.Branches == null || (uint)_cueBranch >= (uint)_garden.Branches.Length) return false;
+            var v = _garden.Branches[_cueBranch];
+            if (v == null) return false;
+            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
+            float span = cam != null ? cam.orthographicSize * 2f : 0f;
+            float worldPerPx = span > 0.01f && PhoneArea.H > 1f ? span / PhoneArea.H : 0f;
+            return CoachTargetReachOk(v.NearestPadSqr(world), worldPerPx, DeviceFit.Ui());
+        }
+
+        // Pure: a press counts as on the guided target when it is within one seat's reach: 56 px at UI scale
+        // (comfortably above a 44 pt target), never tighter than the 1.05 world-unit bird pick, never looser than 2.
+        public const float CoachTargetReachPx = 56f;
+        public static float CoachTargetReach(float worldPerPx, float s)
+        {
+            float r = worldPerPx > 0f ? CoachTargetReachPx * Mathf.Max(0.5f, s) * worldPerPx : 2f;
+            return Mathf.Clamp(r, 1.05f, 2f);
+        }
+        public static bool CoachTargetReachOk(float padSqr, float worldPerPx, float s)
+        {
+            float r = CoachTargetReach(worldPerPx, s);
+            return padSqr <= r * r;
         }
 
         // The gift tap was honoured: no hint window, no resume fade, and no stuck-nudge re-arm for this spell.
