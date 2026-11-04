@@ -43,6 +43,31 @@ namespace FlockFive
             return Rect.MinMaxRect(center.x + x0 * sx, center.y + y0 * sy, center.x + x1 * sx, center.y + y1 * sy);
         }
 
+        // b120 R7 (Readability): the tap box of a limb is its bird row plus its wood. Birds stand ON the
+        // wood (feet at the seats, body up to ~1 world unit above the limb centre), so the old seat/feet
+        // distance gave a tap on a bird's upper half to the limb above. RowRect spans the painted wood
+        // up to the top of the perched birds (BirdRowTopLocal when no bird is drawn).
+        public const float BirdRowTopLocal = 1.02f; // seat (~0.34) + RestLift 0.41 + half a perched bird
+        public static Rect RowRect(Rect wood, float birdTop)
+            => Rect.MinMaxRect(wood.xMin, wood.yMin, wood.xMax, Mathf.Max(wood.yMax, birdTop));
+
+        // Index of the row box (index-aligned with rows) holding p, or -1. Where a bird band overlaps the
+        // wood of the limb above, the birds win: they are drawn over that wood and are what the player taps.
+        public static int PickRow(Vector2 p, IList<Rect> woods, IList<Rect> rows)
+        {
+            int best = -1; bool bestBird = false; float bestD = float.MaxValue;
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var r = rows[i];
+                if (p.x < r.xMin - WoodTol || p.x > r.xMax + WoodTol || p.y < r.yMin - WoodTol || p.y > r.yMax + WoodTol) continue;
+                bool bird = p.y > woods[i].yMax;
+                float d = RectDist(woods[i], p);
+                if (best < 0 || (bird && !bestBird) || (bird == bestBird && d < bestD))
+                { best = i; bestBird = bird; bestD = d; }
+            }
+            return best;
+        }
+
         public static float RectDist(Rect r, Vector2 p)
         {
             float dx = Mathf.Max(Mathf.Max(r.xMin - p.x, 0f), p.x - r.xMax);

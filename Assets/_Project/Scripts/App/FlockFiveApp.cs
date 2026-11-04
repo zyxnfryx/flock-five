@@ -6271,7 +6271,8 @@ namespace FlockFive
         {
             if (_garden.Branches == null) return -1;
             bool sending = _sel >= 0;
-            int idx = -1;
+            int idx = HitBranchRow(world);
+            if (idx >= 0) return idx;
             if (!sending)
             {
                 float bestBird = 1.05f * 1.05f;
@@ -6314,6 +6315,35 @@ namespace FlockFive
                 if (d < best) { best = d; idx = v.Index; }
             }
             return idx;
+        }
+
+        // b120 R7: a tap inside a limb's bird row + wood box picks that limb, before the radius fallbacks.
+        readonly List<Rect> _rowWoods = new List<Rect>(16), _rowBoxes = new List<Rect>(16);
+        readonly List<int> _rowIdx = new List<int>(16);
+        int HitBranchRow(Vector2 world)
+        {
+            _rowWoods.Clear(); _rowBoxes.Clear(); _rowIdx.Clear();
+            for (int i = 0; i < _garden.Branches.Length; i++)
+            {
+                var v = _garden.Branches[i];
+                if (v == null || !v.gameObject.activeInHierarchy) continue;
+                if ((uint)v.Index >= (uint)_board.Branches.Count) continue;
+                var st = _board.Branches[v.Index];
+                if (st == null || st.Broken || st.AdLocked || !OstrichTurn.Tappable(_board, v.Index)) continue;
+                var t = v.transform;
+                var ls = t.lossyScale;
+                var wood = BranchHit.WoodRect(t.position, v.FromRight, v.IsGift, Mathf.Abs(ls.x), Mathf.Abs(ls.y));
+                float top = t.position.y + BranchHit.BirdRowTopLocal * Mathf.Abs(ls.y);
+                for (int s = 0; s < BranchState.Cap; s++)
+                {
+                    var b = v.Birds[s];
+                    if (b == null || !b.enabled || b.sprite == null || b.transform.parent != v.transform) continue;
+                    top = Mathf.Max(top, Mathf.Min(b.bounds.max.y, t.position.y + 1.15f * Mathf.Abs(ls.y)));
+                }
+                _rowWoods.Add(wood); _rowBoxes.Add(BranchHit.RowRect(wood, top)); _rowIdx.Add(v.Index);
+            }
+            int k = BranchHit.PickRow(world, _rowWoods, _rowBoxes);
+            return k >= 0 ? _rowIdx[k] : -1;
         }
 
         // Resume delivers the pointer that was down when the app left. Eat it
