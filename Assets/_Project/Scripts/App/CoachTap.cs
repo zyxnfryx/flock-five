@@ -67,6 +67,10 @@ namespace FlockFive
         BadgerBreakFree = 42,
         // b110: first lightning fire on a gift branch. Informational: any tap continues.
         Fire = 43,
+        // b120: first-time rule tips. Caption only, game time stopped, any tap continues.
+        RuleKit = 44,
+        RuleFeeder = 45,
+        RuleSleep = 46,
     }
 
     // b123 (Brandon): every step names ONE explicit press-to-continue, distinct from toggle taps.
@@ -117,6 +121,9 @@ namespace FlockFive
                 case CoachStep.Bee:
                 case CoachStep.Fire:
                 case CoachStep.Leaf:
+                case CoachStep.RuleKit:
+                case CoachStep.RuleFeeder:
+                case CoachStep.RuleSleep:
                 case CoachStep.AlbumHoney:
                 case CoachStep.AdoptGreet:
                 case CoachStep.VipWelcome:
@@ -270,6 +277,9 @@ namespace FlockFive
                 case CoachStep.Bee: return CaptionLayout.BeePestLine;
                 case CoachStep.Fire: return CaptionLayout.FireLine;
                 case CoachStep.Leaf: return CaptionLayout.LeafLine;
+                case CoachStep.RuleKit: return RuleTips.KitLine;
+                case CoachStep.RuleFeeder: return RuleTips.FeederLine;
+                case CoachStep.RuleSleep: return RuleTips.SleepLine;
                 case CoachStep.HiveGarden: return CaptionLayout.HiveGardenLine;
                 case CoachStep.HiveHome: return "Tap the hive to see your bee collection.";
                 case CoachStep.PokerIntro: return "You earned coins! Tap poker to bet them.";

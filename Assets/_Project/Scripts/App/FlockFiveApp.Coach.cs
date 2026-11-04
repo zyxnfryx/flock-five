@@ -853,6 +853,8 @@ namespace FlockFive
                 // Garden hive callout stays up. CoachRelease was wiping it every frame
                 // once the level-1 coach had finished.
                 if (_hiveLevelLive) return;
+                if (RuleTipAdvance())
+                    return;
                 if (PestStageFree() && PestIntroAdvance())
                     return;
                 CoachRelease();
@@ -6221,6 +6223,11 @@ namespace FlockFive
                 ApplyPestCue();
             }
             else _pestHeld = 0f;
+            if (_ruleTip != RuleTip.None)
+            {
+                RuleTipPausedTick();
+                return;
+            }
             if (Ads.IsShowing) return;
             if (!Pressed(out var screen)) return;
             if (_pestCue != 0)
@@ -7151,6 +7158,7 @@ namespace FlockFive
             if (CoachAteThisFrame()) return true;
             if (NoteLeafTap(screen)) return true;
             if (_pestCue != 0 && PestIntroTap(screen)) return true;
+            if (_ruleTip != RuleTip.None && RuleTipTap(screen)) return true;
             return false;
         }
 
