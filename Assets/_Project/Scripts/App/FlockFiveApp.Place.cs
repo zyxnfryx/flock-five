@@ -39,7 +39,8 @@ namespace FlockFive
             float min = CaptionFloorY(s);
             float y = belowY + 8f * s;
             if (y < min) y = min;
-            float maxY = PhoneArea.H - h - 8f;
+            // b120 R8: lift by the bottom safe inset (home-indicator band), not just 8 px.
+            float maxY = PhoneArea.H - CaptionLayout.BottomInset(PhoneArea.W, PhoneArea.H, PhoneArea.Safe) - h - 8f;
             if (y > maxY) y = maxY > min ? maxY : min;
             if (y < min) y = min;
             if (w < 8f) w = 8f;

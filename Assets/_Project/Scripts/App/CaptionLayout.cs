@@ -16,6 +16,17 @@ namespace FlockFive
 
     public static class CaptionLayout
     {
+        // b120 R8 (Readability): captions stay out of the home-indicator band. The bottom inset is the
+        // reported safe-area inset (bottom-up safe.yMin), but never less than the home-indicator band
+        // (34 pt; a share of the height so it also holds where the platform reports 0, e.g. WebGL/iPad
+        // windows). Phone portrait ~34/874 of the height, tablet ~34/1180.
+        public static float HomeBandFloor(float screenW, float screenH)
+        {
+            float win = DeviceFit.TestWindow ?? DeviceFit.WindowAspect(screenW, screenH);
+            return screenH * Mathf.Lerp(34f / 874f, 34f / 1180f, DeviceFit.Wide(win));
+        }
+        public static float BottomInset(float screenW, float screenH, Rect safe)
+            => Mathf.Max(Mathf.Max(0f, safe.yMin), HomeBandFloor(screenW, screenH));
         static GUIStyle _scratch;
         static GUIContent _content;
 
