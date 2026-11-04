@@ -11,6 +11,14 @@ namespace FlockFive.Editor
         {
             int fail = 0, n = 0;
             void Check(bool ok, string what) { n++; if (!ok) { fail++; Debug.LogError("[glove-anchor] FAIL " + what); } }
+            // Guard: an unset / zero target never shows the glove; a nudge far off the target is dropped.
+            Check(!FlockFiveApp.GloveTargetSet(Vector2.zero, 402, 874), "zero target accepted");
+            Check(!FlockFiveApp.GloveTargetSet(new Vector2(float.NaN, 5), 402, 874), "NaN target accepted");
+            Check(!FlockFiveApp.GloveTargetSet(new Vector2(-4, 300), 402, 874), "off-glass target accepted");
+            Check(FlockFiveApp.GloveTargetSet(new Vector2(100, 345), 402, 874), "real target rejected");
+            float dh = FlockFiveApp.GloveDh(1f);
+            Check(!FlockFiveApp.GloveAimNearTarget(new Vector2(66, 130), new Vector2(100, 345), dh), "210px drift accepted");
+            Check(FlockFiveApp.GloveAimNearTarget(new Vector2(100, 360), new Vector2(100, 345), dh), "small banner nudge rejected");
             foreach (var sz in new[] { new Vector2(402, 874), new Vector2(820, 1180), new Vector2(412, 915) })
             {
                 float k = sz.x / 402f;

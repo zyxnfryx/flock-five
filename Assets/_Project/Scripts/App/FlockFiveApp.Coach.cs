@@ -1135,6 +1135,19 @@ namespace FlockFive
         // left, level with the target, never from below. If the sideways hand would sit on the
         // banner, the target is nudged lower on the same horizontal path (x never changes), by just
         // enough to clear the banner, dip up or down.
+        bool _gloveUnsetLogged, _gloveDriftLogged;
+        public const float GloveAimMaxDriftHands = 1.0f;
+        // A target at (0,0), NaN or off the glass is not resolved yet.
+        public static bool GloveTargetSet(Vector2 t, float w, float h)
+            => !float.IsNaN(t.x) && !float.IsNaN(t.y) && t.sqrMagnitude >= 1f
+               && t.x >= 0f && t.y >= 0f && t.x <= w && t.y <= h;
+        public static bool GloveAimNearTarget(Vector2 aim, Vector2 target, float dh)
+        {
+            if (float.IsNaN(aim.x) || float.IsNaN(aim.y)) return false;
+            float lim = GloveAimMaxDriftHands * dh;
+            return (aim - target).sqrMagnitude <= lim * lim;
+        }
+
         public static bool GardenFromRight(float aimX, float screenW) => aimX < screenW * 0.5f;
 
         public static Vector2 GardenSidewaysAim(Vector2 aim, Rect plate, float s, float screenW, out float deg)
@@ -1201,6 +1214,20 @@ namespace FlockFive
                 known = TutorCaptionPlate(out plate);
             // b98: always the sideways approach (right to left, hand pointing left), never from below.
             if (known) aim = GardenSidewaysAim(aimGui, plate, s, PhoneArea.W, out _);
+            // b120 item 1: the step-3 glove sat ~210px above its target (top-left) and only bobbed. An unset/zero
+            // target, or a banner nudge that drags the aim off the branch, never shows the glove: an unset target
+            // hides it, and a nudge further than GloveAimMaxDriftHands is dropped so the fingertip stays on the bird.
+            if (!GloveTargetSet(aimGui, PhoneArea.W, PhoneArea.H))
+            {
+                if (!_gloveUnsetLogged) { _gloveUnsetLogged = true; Debug.LogWarning("[coach] glove target unset " + aimGui + "; glove hidden"); }
+                _gloveVis = false;
+                return false;
+            }
+            if (!GloveAimNearTarget(aim, aimGui, GloveDh(s)))
+            {
+                if (!_gloveDriftLogged) { _gloveDriftLogged = true; Debug.LogWarning("[coach] glove aim " + aim + " drifted from target " + aimGui + "; pinned to target"); }
+                aim = aimGui;
+            }
             // Left-half target: in from the right, hand pointing left. A target at the right edge (Level 1
             // step 2, branch 5) has no room on its right for the hand, so it is met from the left, pointing
             // right (the mirrored default side approach), still level with the target. Never from below.
