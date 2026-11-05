@@ -3,9 +3,9 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // b120: a held flock showed flight pose and intermittent sparkles, no lasting outline.
-    // The glow disc (local scale 2.05) sat inside the flap sheet. The hold is now a gold
-    // annulus outside the current pose, steady while the group stays lifted.
+    // b120: the hold ring is a gold annulus. A band around the whole wing-tip box
+    // measured ~270×180 on 820 and crossed the play edge on 402/412. The band now
+    // follows the bird footprint and the outer stroke is clamped inside the board.
     static class SelectHighlightTests
     {
         // Opaque half-extents (alpha > 32) of the imported ruby sheet, 220 PPU, local units.
@@ -26,25 +26,37 @@ namespace FlockFive.Editor
             Check(!BirdIdle.SelectRingShown(0f) && !BirdIdle.SelectRingShown(BirdIdle.SelectRingOff), "ring stays after drop");
             Check(BirdIdle.SelectRingShown(1f), "ring hidden while held");
 
-            Check(BirdIdle.SelectRingHole > 0.5f && BirdIdle.SelectRingHole < 0.85f, "band is a disc or a hairline");
+            Check(BirdIdle.SelectRingFoot > 0.75f && BirdIdle.SelectRingFoot < 0.95f, "footprint is the whole mesh box or a speck");
+            Check(BirdIdle.SelectRingHole > 0.8f && BirdIdle.SelectRingHole < 0.93f, "band is a fat donut or a hairline");
             Check(BirdIdle.SelectRingEdge > BirdIdle.SelectRingHole && BirdIdle.SelectRingEdge < 1f, "ring edge leaves the sprite");
-            Check(BirdIdle.SelectRingDarkMul > 1f && BirdIdle.SelectRingDarkMul < 1.4f, "dark stroke is not outside the gold");
-            Check(BirdIdle.SelectRingPad >= 0.2f, "pad does not clear the flap sheet");
+            Check(BirdIdle.SelectRingDarkMul > 1f && BirdIdle.SelectRingDarkMul < 1.2f, "dark stroke balloons past the bird");
+            Check(BirdIdle.SelectRingPad > 0f && BirdIdle.SelectRingPad < 0.16f, "pad rebuilds the off-bird halo");
 
             for (int i = 0; i < HalfX.Length; i++)
             {
                 BirdIdle.SelectRingExtents(HalfX[i], HalfY[i], out float hx, out float hy);
-                Check(BirdIdle.SelectRingInner(hx) < HalfX[i], "hole wider than pose " + i + " x");
-                Check(BirdIdle.SelectRingInner(hy) < HalfY[i], "hole taller than pose " + i + " y");
-                Check(BirdIdle.SelectRingClear(hx) < HalfX[i], "feather opens beside pose " + i);
-                Check(BirdIdle.SelectRingClear(hy) < HalfY[i], "feather opens above pose " + i);
-                Check(hx >= HalfX[i] + BirdIdle.SelectRingPad && hy >= HalfY[i] + BirdIdle.SelectRingPad, "ring inside pose " + i);
-                Check(hx * BirdIdle.SelectRingDarkMul > hx && hy * BirdIdle.SelectRingDarkMul > hy, "dark stroke inside gold " + i);
+                Check(hx < HalfX[i] && hy < HalfY[i], "ring larger than the pose " + i);
+                Check(hx > HalfX[i] * BirdIdle.SelectRingFoot && hy > HalfY[i] * BirdIdle.SelectRingFoot, "ring lost the footprint " + i);
+                Check(hx * BirdIdle.SelectRingDarkMul < HalfX[i] && hy * BirdIdle.SelectRingDarkMul < HalfY[i], "dark stroke past the pose " + i);
+                Check(BirdIdle.SelectRingInner(hx) < HalfX[i] && BirdIdle.SelectRingInner(hy) < HalfY[i], "hole wider than pose " + i);
+                Check(BirdIdle.SelectRingClear(hx) < HalfX[i] && BirdIdle.SelectRingClear(hy) < HalfY[i], "feather opens beside pose " + i);
             }
 
-            // The old disc was 2.05 local units across. Wings-across is wider than that on both sides.
-            BirdIdle.SelectRingExtents(HalfX[1], HalfY[1], out float wideX, out _);
-            Check(wideX > 2.05f && HalfX[1] > 2.05f * 0.5f, "wings-across still swallows a 2.05 disc");
+            // Tip bird whose stroke crosses the left play edge slides back on, same size.
+            float inset = BirdIdle.SelectRingBoardInset;
+            float wantX = -1f + inset + 0.8f;
+            BirdIdle.SelectRingClamp(-0.4f, 0.2f, 0.8f, 0.3f, -1f, 2f, -2f, 2f, out float cx, out float cy, out float chx, out float chy);
+            Check(Mathf.Abs(cx - wantX) < 0.001f && Mathf.Abs(cy - 0.2f) < 0.001f, "clamp left the ring off the board");
+            Check(Mathf.Abs(chx - 0.8f) < 0.001f && Mathf.Abs(chy - 0.3f) < 0.001f, "clamp shrunk a ring that fits");
+            Check(cx - chx >= -1f - 0.001f && cx + chx <= 2f + 0.001f, "clamped ring still crosses the board");
+
+            BirdIdle.SelectRingClamp(0f, 0.25f, 0.4f, 0.3f, -2f, 2f, -2f, 2f, out cx, out cy, out chx, out chy);
+            Check(cx == 0f && Mathf.Abs(cy - 0.25f) < 0.001f && chx == 0.4f && chy == 0.3f, "clamp moved a ring that was already on the board");
+
+            float room = 1f - inset;
+            BirdIdle.SelectRingClamp(0.5f, 0f, 3f, 0.2f, -1f, 1f, -2f, 2f, out cx, out cy, out chx, out chy);
+            Check(Mathf.Abs(chx - room) < 0.001f && chx < 3f, "clamp did not shrink a ring wider than the board");
+            Check(cx - chx >= -1f - 0.001f && cx + chx <= 1f + 0.001f, "shrunk ring still crosses the board");
 
             Debug.Log("[select-highlight] " + (fail == 0 ? "PASS " + n + "/" + n : "FAIL " + fail + "/" + n));
         }

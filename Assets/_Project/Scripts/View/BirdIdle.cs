@@ -1099,21 +1099,17 @@ namespace FlockFive
             return map.Lo != null;
         }
 
-        // Lasting selection ring. The previous marker was a filled glow disc at local
-        // scale 2.05 (about 2 local units across). Every flap sheet is larger than that
-        // (wings-across opaque half-width is ~2.5 local units at the imported 220 PPU),
-        // so the disc sat under the body. Orbiting sparkles were the only thing that
-        // peeked out, and only when their path left the silhouette.
-        //
-        // This annulus is sized from the current pose bounds every frame. The bird
-        // (and its far wing, which shares those bounds) covers the hole. The gold band
-        // and a darker stroke outside it stay visible for the whole hold. Alpha breathes
-        // but never drops through the floor, so the ring does not flicker off.
-        public const float SelectRingPad = 0.26f;
-        public const float SelectRingHole = 0.68f;
+        // Lasting selection ring, one annulus per lifted bird. The pose mesh box is the
+        // wing-tip rectangle; a band around that whole box measured ~270×180 on 820 and
+        // crossed the play edge on 402/412. Foot is the share of that box that matches
+        // the bird. The dark stroke is then clamped inside the play camera.
+        public const float SelectRingFoot = 0.88f;
+        public const float SelectRingPad = 0.06f;
+        public const float SelectRingHole = 0.86f;
         public const float SelectRingEdge = 0.94f;
-        public const float SelectRingFeather = 0.04f;
-        public const float SelectRingDarkMul = 1.14f;
+        public const float SelectRingFeather = 0.03f;
+        public const float SelectRingDarkMul = 1.05f;
+        public const float SelectRingBoardInset = 0.06f;
         public const float SelectRingAlphaFloor = 0.90f;
         public const float SelectRingOff = 0.01f;
         // Matches the branch wood tint in BranchView.Highlight so the limb and the flock read as one pick.
@@ -1126,10 +1122,50 @@ namespace FlockFive
         public static bool SelectRingShown(float selectA) => selectA > SelectRingOff;
 
         // Outer half-extents of the gold band, in the bird's local space.
+        // Foot pulls the band in from the wing-tip box; pad is a slim margin past that.
         public static void SelectRingExtents(float bodyHalfX, float bodyHalfY, out float hx, out float hy)
         {
-            hx = Mathf.Max(0.05f, bodyHalfX) + SelectRingPad;
-            hy = Mathf.Max(0.05f, bodyHalfY) + SelectRingPad;
+            hx = Mathf.Max(0.18f, bodyHalfX) * SelectRingFoot + SelectRingPad;
+            hy = Mathf.Max(0.18f, bodyHalfY) * SelectRingFoot + SelectRingPad;
+        }
+
+        // Keep the outer stroke inside the play rect. Shift first; shrink only when
+        // the stroke is wider than the board. hx/hy are half-extents in the same space as the board.
+        public static void SelectRingClamp(
+            float cx, float cy, float hx, float hy,
+            float boardMinX, float boardMaxX, float boardMinY, float boardMaxY,
+            out float ox, out float oy, out float ohx, out float ohy)
+        {
+            float inset = SelectRingBoardInset;
+            float minX = boardMinX + inset;
+            float maxX = boardMaxX - inset;
+            float minY = boardMinY + inset;
+            float maxY = boardMaxY - inset;
+            if (maxX < minX)
+            {
+                float mid = (boardMinX + boardMaxX) * 0.5f;
+                minX = maxX = mid;
+            }
+            if (maxY < minY)
+            {
+                float mid = (boardMinY + boardMaxY) * 0.5f;
+                minY = maxY = mid;
+            }
+            float roomX = (maxX - minX) * 0.5f;
+            float roomY = (maxY - minY) * 0.5f;
+            ohx = hx > 0f ? hx : 0f;
+            ohy = hy > 0f ? hy : 0f;
+            float fit = 1f;
+            if (ohx > roomX && ohx > 1e-4f) fit = Mathf.Min(fit, roomX / ohx);
+            if (ohy > roomY && ohy > 1e-4f) fit = Mathf.Min(fit, roomY / ohy);
+            ohx *= fit;
+            ohy *= fit;
+            float loX = minX + ohx;
+            float hiX = maxX - ohx;
+            float loY = minY + ohy;
+            float hiY = maxY - ohy;
+            ox = loX <= hiX ? Mathf.Clamp(cx, loX, hiX) : (minX + maxX) * 0.5f;
+            oy = loY <= hiY ? Mathf.Clamp(cy, loY, hiY) : (minY + maxY) * 0.5f;
         }
 
         // Inner half-extent of the gold band (mid-feather). Must sit inside the pose so the bird covers the hole.
@@ -1165,6 +1201,7 @@ namespace FlockFive
             // is punched, so its own bounds would leave the back wing outside the ring.
             SelectSpan(pose, _sr.flipX, out float cx, out float cy, out float bodyHx, out float bodyHy);
             SelectRingExtents(bodyHx, bodyHy, out float hx, out float hy);
+            ClampSelectRing(ref cx, ref cy, ref hx, ref hy);
             float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 3.2f + _phase);
             float a = SelectRingAlpha(_selectA, pulse) * _sr.color.a;
             int order = _sr.sortingOrder;
@@ -1175,6 +1212,42 @@ namespace FlockFive
                 new Color(SelectRingDark.r, SelectRingDark.g, SelectRingDark.b, a), layer, order - 4);
             ShowSelectBand(_selGold, ring, pos, hx, hy,
                 new Color(SelectRingGold.r, SelectRingGold.g, SelectRingGold.b, a), layer, order - 3);
+        }
+
+        void ClampSelectRing(ref float cx, ref float cy, ref float hx, ref float hy)
+        {
+            float sx = Mathf.Abs(transform.lossyScale.x);
+            float sy = Mathf.Abs(transform.lossyScale.y);
+            if (sx < 1e-4f) sx = 1f;
+            if (sy < 1e-4f) sy = 1f;
+            var world = transform.TransformPoint(new Vector3(cx, cy, 0f));
+            PlayBoard(out float minX, out float maxX, out float minY, out float maxY);
+            SelectRingClamp(world.x, world.y, hx * SelectRingDarkMul * sx, hy * SelectRingDarkMul * sy,
+                minX, maxX, minY, maxY, out float ox, out float oy, out float owx, out float owy);
+            float backX = SelectRingDarkMul * sx;
+            float backY = SelectRingDarkMul * sy;
+            if (backX < 1e-4f) backX = 1f;
+            if (backY < 1e-4f) backY = 1f;
+            hx = owx / backX;
+            hy = owy / backY;
+            var local = transform.InverseTransformPoint(new Vector3(ox, oy, world.z));
+            cx = local.x;
+            cy = local.y;
+        }
+
+        static void PlayBoard(out float minX, out float maxX, out float minY, out float maxY)
+        {
+            var cam = Camera.main;
+            float halfH = cam != null && cam.orthographic ? cam.orthographicSize : WorldBuilder.CamOrtho;
+            float aspect = cam != null && cam.orthographic ? cam.aspect : DeviceFit.PhoneAspect;
+            if (aspect < 0.05f) aspect = DeviceFit.PhoneAspect;
+            float halfW = halfH * aspect;
+            float cx = cam != null ? cam.transform.position.x : 0f;
+            float cy = cam != null ? cam.transform.position.y : WorldBuilder.CamRestY;
+            minX = cx - halfW;
+            maxX = cx + halfW;
+            minY = cy - halfH;
+            maxY = cy + halfH;
         }
 
         void SelectSpan(Sprite pose, bool flipX, out float cx, out float cy, out float hx, out float hy)
