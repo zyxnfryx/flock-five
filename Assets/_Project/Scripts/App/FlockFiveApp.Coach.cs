@@ -1799,6 +1799,17 @@ namespace FlockFive
         // Middle of the right edge, fully inside the safe rect (the clamp in GloveLockPose keeps the whole hand on screen).
         public static Vector2 GloveMiddleRightEntry(Rect safe) => new Vector2(safe.xMax, safe.center.y);
 
+        // Move a locked glove onto the target's live area spot. The start moves by the
+        // same offset, so start → path → settled end keep their shape and the end is the target.
+        public static void GloveReanchor(ref Vector2 lockAim, ref Vector2 tip, Vector2 live)
+        {
+            if (float.IsNaN(live.x) || float.IsNaN(live.y)) return;
+            var d = live - lockAim;
+            if (d.sqrMagnitude < 0.0001f) return;
+            lockAim = live;
+            tip += d;
+        }
+
         // Pure: the angled glove's start exactly as GloveLockPose seats it (entry point or override,
         // clamped inside the safe pad, then lifted below the target line). Testable without a live app.
         public static Vector2 AngledLockStart(Vector2 rest, Vector2 aimGui, Vector2 away, float s, Rect safe,
@@ -1959,8 +1970,17 @@ namespace FlockFive
                 return false;
             }
             _gloveClaimFrame = Time.frameCount;
-            bool same = GloveSameStep(aimGui, s, fromLeft, approachDeg);
             bool ready = GloveStepReady(aimGui);
+            // Garden lessons: the locked tip tracks the live target every frame.
+            // Start and aim move together, so the entry travel keeps its length
+            // and the settled end stays on the bird (820 column and the phones).
+            if (_coach && ready && _gloveLockOn && !_glovePosing)
+            {
+                var before = _gloveLockAim;
+                GloveReanchor(ref _gloveLockAim, ref _gloveTip, aimGui);
+                _gloveStepAim += _gloveLockAim - before;
+            }
+            bool same = GloveSameStep(aimGui, s, fromLeft, approachDeg);
             if (_gloveAct == TutorGloveAct.FadeOutOnTap)
             {
                 // Caption may sit on a resolved next aim. The drawn hand stays put.
@@ -4569,11 +4589,11 @@ namespace FlockFive
             bool haveBox = RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 0f, out var drawn);
             if (haveBox && alpha > 0.05f) { _gloveBody = drawn; _gloveBodyFrame = Time.frameCount; GloveBodyAlpha = alpha; }
             var prev = GUI.matrix;
-            var fro = Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
-            var scale = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(sx, squash, 1f));
-            var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, ang), Vector3.one);
-            var to = Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, Vector3.one);
-            var m = to * rot * scale * fro * prev;
+            // Pivot is in the phone area. The GUI matrix carries the iPad pillar shift
+            // (PhoneArea.OffX, ~78px at 820x1180). That shift has to stay outside the
+            // finger rotation: inside it, a sideways hand swings OffX up into the tip
+            // and the glove settles about a row off the bird. Phones have OffX 0.
+            var m = GlovePoseMatrix(prev, pivot, ang, sx, squash);
             // b89 (Brandon): the caption reads on top of the glove. When the hand still
             // reaches this frame's caption plate, it is cut at the plate edge, so it
             // slides out from under the banner instead of lying across it.
@@ -4644,6 +4664,18 @@ namespace FlockFive
             GL.End();
             GL.PopMatrix();
             return true;
+        }
+
+        // Finger rotation around `pivot` (area pixels), then the active GUI matrix
+        // (pillar shift, HUD shake). The tip vertex is `pivot`, so it lands on
+        // gui * pivot at every angle, including a mirrored scale.
+        public static Matrix4x4 GlovePoseMatrix(Matrix4x4 gui, Vector2 pivot, float angDeg, float scaleX, float scaleY)
+        {
+            var fro = Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
+            var scale = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scaleX, scaleY, 1f));
+            var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, angDeg), Vector3.one);
+            var to = Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, Vector3.one);
+            return gui * (to * rot * scale * fro);
         }
 
         public const float GloveScreenMargin = 6f;
