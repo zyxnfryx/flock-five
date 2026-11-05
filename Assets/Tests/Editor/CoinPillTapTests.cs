@@ -100,6 +100,23 @@ namespace FlockFive.Editor
             Check(!FlockFiveApp.PigPokeHits(pad820, new Vector2(railPt.x, railPt.y + 200f), 78), "820 far pointer hits");
             Check(FlockFiveApp.PigPokeHits(pad820, railPt, 0), "phone rail pointer misses");
             Check(!FlockFiveApp.PigPokeHits(pad820, new Vector2(railPt.x + 78f, railPt.y), 0), "phone treats a screen shift as a hit");
+
+            // Tip plate sits under the coin row and stops before the pig. Same rule at every width.
+            foreach (var win in windows)
+            {
+                float gw = win.x;
+                if (win.x / win.y > 9f / 16f + 0.03f)
+                    gw = Mathf.Min(win.x, Mathf.Round(win.y * 9f / 16f));
+                float ui = Mathf.Max(win.y / 720f, 1f);
+                float rail = FlockFiveApp.SplashRailSize(gw);
+                float icon = FlockFiveApp.CoinBalanceIcon(gw, ui);
+                float railGap = Mathf.Max(24f, rail * 0.30f);
+                var livePig = new Rect(gw - 20f - rail, win.y * 0.335f - rail - railGap, rail, rail);
+                var plate = FlockFiveApp.PigExplainPlate(livePig, icon, 160f, 18f, ui);
+                float counterBottom = livePig.center.y + icon * 0.5f;
+                Check(plate.y >= counterBottom - 0.5f, win.x + " tip overlaps the $ row");
+                Check(plate.xMax <= livePig.x - 10f, win.x + " tip runs into the pig");
+            }
             Debug.Log("[coin-pill-tap] " + (fail == 0 ? "PASS " + n + "/" + n : "FAIL " + fail + "/" + n));
         }
     }

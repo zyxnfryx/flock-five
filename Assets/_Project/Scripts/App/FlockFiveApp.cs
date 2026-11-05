@@ -10278,15 +10278,29 @@ namespace FlockFive
             _pigExplainUntil = AdPause.Unscaled + 3.2f;
         }
 
+        // Dark plate under the $ row, ending at the coin icon so it never crosses the amount or the pig.
+        public static Rect PigExplainPlate(Rect pig, float icon, float textW, float textH, float s)
+        {
+            float padX = 8f * s;
+            float padY = 4f * s;
+            float w = textW + padX * 2f;
+            float h = textH + padY * 2f;
+            float right = pig.x - 12f; // icon's right edge
+            float x = right - w;
+            if (x < 8f) x = 8f;
+            float y = pig.center.y + icon * 0.5f + 6f * s;
+            return new Rect(x, y, w, h);
+        }
+
         void DrawPigExplain(Rect pig, float s)
         {
             if (_pigExplainUntil < 0f) return;
             float left = _pigExplainUntil - AdPause.Unscaled;
             if (left <= 0f) { _pigExplainUntil = -1f; return; }
             float icon = CoinBalanceIcon(s);
-            float right = pig.x - 12f - icon - 8f;
-            float width = right - 8f;
-            if (width < 36f) return;
+            if (icon < 2f) return;
+            float maxW = pig.x - 12f - 8f - 16f * s;
+            if (maxW < 36f) return;
             if (_pigExplainStyle == null)
             {
                 _pigExplainStyle = new GUIStyle(GUI.skin.label)
@@ -10301,14 +10315,20 @@ namespace FlockFive
             st.fontSize = Mathf.Max(13, Mathf.RoundToInt(15f * Mathf.Min(s, 1.35f)));
             var content = RimContent(PigExplainLine);
             int guard = 0;
-            while (st.fontSize > 11 && guard < 12 && st.CalcSize(content).x > width)
+            while (st.fontSize > 11 && guard < 12 && st.CalcSize(content).x > maxW)
             {
                 st.fontSize -= 1;
                 guard++;
             }
-            float h = st.fontSize + 6f;
-            var r = new Rect(8f, pig.center.y - h * 0.5f, width, h);
+            var plate = PigExplainPlate(pig, icon, st.CalcSize(content).x, st.fontSize + 2f, s);
             float a = left < 0.4f ? Mathf.Clamp01(left / 0.4f) : 1f;
+            var prev = GUI.color;
+            GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.92f * a);
+            GUI.DrawTexture(plate, Texture2D.whiteTexture);
+            GUI.color = prev;
+            float insetX = 8f * s;
+            float insetY = 4f * s;
+            var r = new Rect(plate.x + insetX, plate.y + insetY, plate.width - insetX * 2f, plate.height - insetY * 2f);
             StampOutlined(r, PigExplainLine, st, new Color(1f, 0.96f, 0.84f, a), 0, Mathf.Max(1, st.fontSize / 12));
         }
 
