@@ -1766,8 +1766,12 @@ namespace FlockFive
                 float below = _cueAimGui.y + 28f * s;
                 if (start.y < below) start.y = Mathf.Min(y1, below);
                 // b120: an entry override (poker Back: middle right) used to seat the hand a whole screen
-                // away, so it travelled across the phone. Every angled start is now held snug to its target.
-                _gloveTip = AngledStartSnug(start, aimGui, s, safe);
+                // away, so it travelled across the phone. Only that override is held snug — garden
+                // sideways entries keep their GloveEntryPoint start so the hand is visible traveling
+                // in (L1 steps 1–2 looked like "no glove" when every angled start was snugged).
+                _gloveTip = _gloveEntryOverrideOn
+                    ? AngledStartSnug(start, aimGui, s, safe)
+                    : start;
             }
             else
                 _gloveTip = GloveNearStart(rest, aimGui, s, ang, _gloveMirror);
