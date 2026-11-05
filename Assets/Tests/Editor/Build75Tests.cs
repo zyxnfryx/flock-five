@@ -135,6 +135,9 @@ namespace FlockFive.Editor
                 case CoachStep.Bee:
                 case CoachStep.Fire:
                 case CoachStep.Leaf:
+                case CoachStep.RuleKit:
+                case CoachStep.RuleFeeder:
+                case CoachStep.RuleSleep:
                 case CoachStep.AlbumHoney:
                 case CoachStep.AdoptGreet:
                 case CoachStep.VipWelcome:
