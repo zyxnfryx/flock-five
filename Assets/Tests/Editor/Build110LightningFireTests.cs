@@ -257,6 +257,14 @@ namespace FlockFive.Editor
                 && coach.IndexOf("IsGardenBottomLine(text) || CaptionLayout.IsFireLine(text)") >= 0
                 && coach.IndexOf("CaptionLayout.FireLine,") < 0,
                 "timer + bottom seat");
+            // PlayClock drops hitch frames and the paused tick never reads it. The plate
+            // starts BeePlateSeconds on GateNow when BeginPestCue shows it.
+            Check("lightning-starts-bee-seconds",
+                coach.IndexOf("_firePlateUntil = GateNow + BeePlateSeconds") >= 0
+                && coach.IndexOf("bool FirePlateTimedOut()") >= 0
+                && coach.IndexOf("if (FirePlateTimedOut()) DismissPestIntro();") >= 0
+                && coach.IndexOf("if (FirePlateTimedOut())") >= 0,
+                "GateNow deadline");
             string branch = Read("Assets/_Project/Scripts/View/BranchView.cs");
             Check("burn-timeline-lengthened",
                 Mathf.Abs(BranchView.ScorchSeconds - 1.5f) < 0.0001f && BranchView.ScorchSeconds >= 0.58f * 2f

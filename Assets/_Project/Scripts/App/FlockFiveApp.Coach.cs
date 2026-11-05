@@ -208,6 +208,11 @@ namespace FlockFive
         bool _hiveLevelCue;
         bool _hiveLevelLive;
         float _pestCueUntil;
+        // Lightning plate deadline. GateNow is wall time minus ads. PlayClock drops
+        // frames over 0.5s and stands still while the garden is paused, and the
+        // paused tick never reads _pestCueUntil, so the L3 plate never left.
+        // -1 while the lightning plate is not showing.
+        float _firePlateUntil = -1f;
         float _pestNext;
         int _pestSlot = -1;
         bool _hivePopping;
@@ -377,6 +382,7 @@ namespace FlockFive
             _adHand = false;
             _pestCue = 0;
             _pestCueUntil = 0f;
+            _firePlateUntil = -1f;
             _pestNext = 0f;
             _pestSlot = -1;
             if (!_coach) CoachRelease();
@@ -570,6 +576,7 @@ namespace FlockFive
             CoachHideRipples();
             _pestCue = 0;
             _pestCueUntil = 0f;
+            _firePlateUntil = -1f;
             _pestSlot = -1;
         }
 
@@ -795,6 +802,8 @@ namespace FlockFive
         // is in flight — CoachMoved still has to recognize the move that just landed.
         void CoachAdvance()
         {
+            // Before any early return. A paused garden uses TickPausedTutorial instead.
+            if (FirePlateTimedOut()) DismissPestIntro();
             NoteSeasonTutor();
             TickCoachReset(false, false);
             if (_gloveWiggle > 0f)
@@ -6257,6 +6266,11 @@ namespace FlockFive
         // Glove, caption, and the completing tap stay alive while the garden is frozen.
         void TickPausedTutorial()
         {
+            if (FirePlateTimedOut())
+            {
+                DismissPestIntro();
+                return;
+            }
             if (_pestCue == PestCueSparrow)
             {
                 if (!PestCueAlive())
@@ -7437,6 +7451,7 @@ namespace FlockFive
             if (_pestCue == 0) return;
             _pestCue = 0;
             _pestCueUntil = 0f;
+            _firePlateUntil = -1f;
             _pestSlot = -1;
             _cueHand = false;
             _cueForce = false;
@@ -7472,7 +7487,7 @@ namespace FlockFive
             }
             if (_pestCue != 0)
             {
-                if (!PestCueAlive() || PlayClock.Now >= _pestCueUntil)
+                if (!PestCueAlive() || PlayClock.Now >= _pestCueUntil || FirePlateTimedOut())
                 {
                     DismissPestIntro();
                     return false;
@@ -7565,10 +7580,15 @@ namespace FlockFive
         {
             _pestHeld = 0f;
             _pestCue = kind;
-            // Sparrow and ostrich wait on their subject. Lightning shares the bee plate timer.
+            // Sparrow and ostrich wait on their subject. Bee keeps PlayClock.
+            // Lightning starts BeePlateSeconds on GateNow here, when the plate is shown.
             _pestCueUntil = (kind == PestCueSparrow || kind == PestCueOstrich)
                 ? float.PositiveInfinity
                 : PlayClock.Now + (kind == PestCueBee || kind == PestCueFire ? BeePlateSeconds : PestCueSeconds);
+            if (kind == PestCueFire)
+                _firePlateUntil = GateNow + BeePlateSeconds;
+            else
+                _firePlateUntil = -1f;
             // The bee lesson does not freeze the garden. The sparrow still does.
             // The ostrich lesson stays live and the shared veil gates the tap.
             if (kind == PestCueSparrow) HoldTutorPause(true);
@@ -7591,6 +7611,10 @@ namespace FlockFive
                 _pestSlot = _board.Ostrich.BlockSlot;
             ApplyPestCue();
         }
+
+        // True once the lightning plate has been up for BeePlateSeconds of GateNow.
+        bool FirePlateTimedOut() =>
+            _pestCue == PestCueFire && _firePlateUntil >= 0f && GateNow >= _firePlateUntil;
 
         void ApplyPestCue()
         {
