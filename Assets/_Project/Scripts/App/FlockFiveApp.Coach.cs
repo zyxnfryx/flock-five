@@ -1526,6 +1526,18 @@ namespace FlockFive
             _glovePestKind = 0;
         }
 
+        // Local pose (tip pixel at pivot) then the caller's GUI matrix outside it.
+        // GuiBase is a horizontal pillar shift on iPad. Multiplying it inside the
+        // rotation turns that shift into a vertical miss. Phones pass identity.
+        public static Matrix4x4 GloveDrawMatrix(Vector2 pivot, float angDeg, float sx, float sy, Matrix4x4 guiBase)
+        {
+            var fro = Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
+            var scale = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(sx, sy, 1f));
+            var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, angDeg), Vector3.one);
+            var to = Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, Vector3.one);
+            return guiBase * to * rot * scale * fro;
+        }
+
         // Index tip (the draw pivot) glued to the locked Claim word. Also pulls the
         // arc start onto that point so a later CoachGloveAt lerp cannot walk it
         // back to the perch.
@@ -4668,11 +4680,10 @@ namespace FlockFive
             bool haveBox = RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 0f, out var drawn);
             if (haveBox && alpha > 0.05f) { _gloveBody = drawn; _gloveBodyFrame = Time.frameCount; GloveBodyAlpha = alpha; }
             var prev = GUI.matrix;
-            var fro = Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
-            var scale = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(sx, squash, 1f));
-            var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, ang), Vector3.one);
-            var to = Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, Vector3.one);
-            var m = to * rot * scale * fro * prev;
+            // Pivot rotation first, then the matrix already in use (GuiBase). The old
+            // order rotated the iPad pillar shift (OffX, 0), so the fingertip landed
+            // above Claim on 820 while phones (OffX 0) stayed on the word.
+            var m = GloveDrawMatrix(pivot, ang, sx, squash, prev);
             // b89 (Brandon): the caption reads on top of the glove. When the hand still
             // reaches this frame's caption plate, it is cut at the plate edge, so it
             // slides out from under the banner instead of lying across it.

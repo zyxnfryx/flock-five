@@ -122,6 +122,21 @@ namespace FlockFive.Editor
             var face = new Rect(40f, 80f, 200f, 140f);
             var word = FlockFiveApp.DailyClaimWordCenter(face);
             var wordBox = new Rect(face.x, face.y + face.height * 0.22f, face.width, face.height * 0.56f);
+            // 820 pillar: OffX is horizontal. The fingertip must stay on the GUI aim
+            // after that shift, at every approach angle. Phones are OffX 0.
+            var aim = new Vector2(331f, 844f);
+            foreach (float ang in new[] { -120f, -90f, -40f, 0f, 70f, 140f, 180f })
+            {
+                foreach (float off in new[] { 0f, 78f })
+                {
+                    var gui = Matrix4x4.Translate(new Vector3(off, 0f, 0f));
+                    var m = FlockFiveApp.GloveDrawMatrix(aim, ang, -1.07f, 0.88f, gui);
+                    Vector2 tip = m.MultiplyPoint3x4(aim);
+                    Vector2 want = aim + new Vector2(off, 0f);
+                    Check("glove tip keeps pillar shift outside the rotation ang " + ang + " off " + off,
+                        (tip - want).magnitude < 0.5f, tip.ToString() + " want " + want);
+                }
+            }
             Check("claim glove aims at the Claim word",
                 (word - wordBox.center).magnitude < 0.01f
                 && face.Contains(word)
