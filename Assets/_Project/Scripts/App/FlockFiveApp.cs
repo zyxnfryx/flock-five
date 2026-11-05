@@ -3610,6 +3610,9 @@ namespace FlockFive
             AudioGuard.Tick();
             if (_shot82e) MuteShotAudio();
             MaybeSmokeLaunch();
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            MaybeDevLevelSkip();
+#endif
             PollHomeAtt();
             TickSettingsMotion();
             ClearFivesOffPoker();

@@ -208,10 +208,10 @@ namespace FlockFive
         bool _hiveLevelCue;
         bool _hiveLevelLive;
         float _pestCueUntil;
-        // Lightning plate deadline. GateNow is wall time minus ads. PlayClock drops
-        // frames over 0.5s and stands still while the garden is paused, and the
-        // paused tick never reads _pestCueUntil, so the L3 plate never left.
-        // -1 while the lightning plate is not showing.
+        // Bee and lightning plate deadline. GateNow is wall time minus ads.
+        // PlayClock drops frames over 0.5s and stands still while the garden is
+        // paused, and the paused tick never reads _pestCueUntil, so those plates
+        // stayed up. -1 while neither plate is showing. A new BeginPestCue restarts it.
         float _firePlateUntil = -1f;
         float _pestNext;
         int _pestSlot = -1;
@@ -7580,12 +7580,14 @@ namespace FlockFive
         {
             _pestHeld = 0f;
             _pestCue = kind;
-            // Sparrow and ostrich wait on their subject. Bee keeps PlayClock.
-            // Lightning starts BeePlateSeconds on GateNow here, when the plate is shown.
+            // Sparrow and ostrich wait on their subject. Bee and lightning start
+            // BeePlateSeconds on GateNow here, when the plate is shown. PlayClock
+            // still records that span for the unpaused tick, but it drops hitch
+            // frames and the paused tick never reads it.
             _pestCueUntil = (kind == PestCueSparrow || kind == PestCueOstrich)
                 ? float.PositiveInfinity
                 : PlayClock.Now + (kind == PestCueBee || kind == PestCueFire ? BeePlateSeconds : PestCueSeconds);
-            if (kind == PestCueFire)
+            if (kind == PestCueBee || kind == PestCueFire)
                 _firePlateUntil = GateNow + BeePlateSeconds;
             else
                 _firePlateUntil = -1f;
@@ -7612,9 +7614,14 @@ namespace FlockFive
             ApplyPestCue();
         }
 
-        // True once the lightning plate has been up for BeePlateSeconds of GateNow.
+        // True once the bee or lightning plate has been up for BeePlateSeconds of GateNow.
+        // A rule tip shares the caption and the pause. Dismissing under it would clear
+        // that line and unfreeze the garden. The 8s still elapses; the plate leaves
+        // on the first tick after the tip closes.
         bool FirePlateTimedOut() =>
-            _pestCue == PestCueFire && _firePlateUntil >= 0f && GateNow >= _firePlateUntil;
+            _ruleTip == RuleTip.None
+            && (_pestCue == PestCueBee || _pestCue == PestCueFire)
+            && _firePlateUntil >= 0f && GateNow >= _firePlateUntil;
 
         void ApplyPestCue()
         {
