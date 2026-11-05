@@ -248,6 +248,15 @@ namespace FlockFive.Editor
             Check("lesson-on-pest-cue-path",
                 coach.IndexOf("PestCueFire") >= 0 && coach.IndexOf("CoachFireKey") >= 0
                 && coach.IndexOf("CoachStep.Fire") >= 0 && coach.IndexOf("FireDue()") >= 0, "coach");
+            // L3 plate: same bottom garden seat and 8s dismiss as the bee plate. Not in
+            // GardenBottomLines, so that shared seat height is unchanged.
+            Check("lightning-shares-bee-plate",
+                coach.IndexOf("_pestCueUntil = (kind == PestCueSparrow || kind == PestCueOstrich)") >= 0
+                && coach.IndexOf("kind == PestCueBee || kind == PestCueFire ? BeePlateSeconds") >= 0
+                && coach.IndexOf("PestCueOstrich || kind == PestCueFire") < 0
+                && coach.IndexOf("IsGardenBottomLine(text) || CaptionLayout.IsFireLine(text)") >= 0
+                && coach.IndexOf("CaptionLayout.FireLine,") < 0,
+                "timer + bottom seat");
             string branch = Read("Assets/_Project/Scripts/View/BranchView.cs");
             Check("burn-timeline-lengthened",
                 Mathf.Abs(BranchView.ScorchSeconds - 1.5f) < 0.0001f && BranchView.ScorchSeconds >= 0.58f * 2f

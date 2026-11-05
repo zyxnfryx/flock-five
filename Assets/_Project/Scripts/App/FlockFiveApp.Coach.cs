@@ -76,7 +76,8 @@ namespace FlockFive
         const int PestCueHawk = 2;
         const int PestCueBee = 3;
         const int PestCueOstrich = 4;
-        // b110 (Brandon): the first lightning fire. Informational like the bee line: any tap dismisses it.
+        // b110 (Brandon): the first lightning fire. Informational like the bee line: any tap dismisses it,
+        // and it leaves on the bee plate's timer.
         const int PestCueFire = 5;
         const string CoachFireKey = "flockfive.coach.fire";
         const string FireIntroLine = CaptionLayout.FireLine;
@@ -3806,7 +3807,9 @@ namespace FlockFive
             bool bottomSeat = false;
             // Rule tips (nap, feeder, crowns) used the top seat and covered the first
             // bird rows. They ride the same bottom safe band as the other garden banners.
-            if ((spot == "coach.line" && IsGardenBottomLine(text)) || spot == "coach.rule" || RuleTips.IsLine(text))
+            // Lightning used that top band (about y192 on the 820 column). Same seat,
+            // without joining GardenBottomLines, so the shared seat height stays put.
+            if ((spot == "coach.line" && (IsGardenBottomLine(text) || CaptionLayout.IsFireLine(text))) || spot == "coach.rule" || RuleTips.IsLine(text))
             {
                 band.y = GardenFixedSeatY(w, screenH, safe, s, band.height);
                 bottomSeat = true;
@@ -7562,9 +7565,10 @@ namespace FlockFive
         {
             _pestHeld = 0f;
             _pestCue = kind;
-            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueOstrich || kind == PestCueFire)
+            // Sparrow and ostrich wait on their subject. Lightning shares the bee plate timer.
+            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueOstrich)
                 ? float.PositiveInfinity
-                : PlayClock.Now + (kind == PestCueBee ? BeePlateSeconds : PestCueSeconds);
+                : PlayClock.Now + (kind == PestCueBee || kind == PestCueFire ? BeePlateSeconds : PestCueSeconds);
             // The bee lesson does not freeze the garden. The sparrow still does.
             // The ostrich lesson stays live and the shared veil gates the tap.
             if (kind == PestCueSparrow) HoldTutorPause(true);
