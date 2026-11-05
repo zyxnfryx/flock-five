@@ -950,37 +950,43 @@ namespace FlockFive
                 ClearGiftHint(ref _coachGiftUntil, ref _coachResumeFade, ref _deadEndNudged);
                 return nearBranch >= 0;
             }
-            if (HitBranch(world) == _cueBranch && CoachTapOnTarget(world)) return false;
+            if (CoachTargetPress(world)) return false;
             CoachNudge();
             return true;
         }
 
-        // b120 (412-wide Android): the shared branch pick is generous (a 2.6-3.45 world-unit reach plus a collider
-        // circle), and on a narrow phone that reaches into the empty sky, so a sky tap once advanced a lesson step.
-        // A guided step only advances when the press is on the target itself: within reach of one of its seats.
+        // Gameplay HitBranch stays as it is (the bird radius and the pad still pick a limb in free play).
+        // A guided step advances only when that pick is the cued limb AND the press is on its painted
+        // wood or on a bird perched on that wood. The old seat radius (56 px, at least 1.05 world units)
+        // reached past the tip and up into the limb above; the BoxCollider2D is that same tall pad and
+        // is not the coach target.
+        bool CoachTargetPress(Vector2 world)
+        {
+            return HitBranch(world) == _cueBranch && CoachTapOnTarget(world);
+        }
+
         bool CoachTapOnTarget(Vector2 world)
         {
             if (_garden.Branches == null || (uint)_cueBranch >= (uint)_garden.Branches.Length) return false;
             var v = _garden.Branches[_cueBranch];
             if (v == null) return false;
-            var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
-            float span = cam != null ? cam.orthographicSize * 2f : 0f;
-            float worldPerPx = span > 0.01f && PhoneArea.H > 1f ? span / PhoneArea.H : 0f;
-            return CoachTargetReachOk(v.NearestPadSqr(world), worldPerPx, DeviceFit.Ui());
-        }
-
-        // Pure: a press counts as on the guided target when it is within one seat's reach: 56 px at UI scale
-        // (comfortably above a 44 pt target), never tighter than the 1.05 world-unit bird pick, never looser than 2.
-        public const float CoachTargetReachPx = 56f;
-        public static float CoachTargetReach(float worldPerPx, float s)
-        {
-            float r = worldPerPx > 0f ? CoachTargetReachPx * Mathf.Max(0.5f, s) * worldPerPx : 2f;
-            return Mathf.Clamp(r, 1.05f, 2f);
-        }
-        public static bool CoachTargetReachOk(float padSqr, float worldPerPx, float s)
-        {
-            float r = CoachTargetReach(worldPerPx, s);
-            return padSqr <= r * r;
+            var t = v.transform;
+            var ls = t.lossyScale;
+            float sx = Mathf.Abs(ls.x);
+            float sy = Mathf.Abs(ls.y);
+            var wood = BranchHit.WoodRect((Vector2)t.position, v.FromRight, v.IsGift, sx, sy);
+            if (BranchHit.RectDist(wood, world) <= BranchHit.WoodTol) return true;
+            if (v.Birds == null) return false;
+            float scale = sx > 0.01f ? sx : 1f;
+            for (int s = 0; s < v.Birds.Length; s++)
+            {
+                var bird = v.Birds[s];
+                if (bird == null || !bird.enabled) continue;
+                if (bird.transform.parent != t) continue;
+                if (BranchHit.CoachBird(world, bird.transform.position, v.FromRight, wood, scale))
+                    return true;
+            }
+            return false;
         }
 
         // The gift tap was honoured: no hint window, no resume fade, and no stuck-nudge re-arm for this spell.
@@ -1649,7 +1655,7 @@ namespace FlockFive
                 return other >= 0 && NearGift(other, world);
             }
             if (_cueBranch < 0) return false;
-            return HitBranch(world) == _cueBranch;
+            return CoachTargetPress(world);
         }
 
         // Kind is the pest the hand was pointing at. Dismiss clears _pestCue in

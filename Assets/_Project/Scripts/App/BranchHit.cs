@@ -25,6 +25,12 @@ namespace FlockFive
         public const float GloveTol = 0.45f;
         public const float GlovePad = 1.25f;  // ~ one row pitch (1.12 .. 1.5)
 
+        // Opaque body of a perched bird (bird_*.png, 1024 @ 220 PPU, drawn at BranchView.BirdScale).
+        // Pivot is the sprite centre. Left-limb facing (beak +X). Right limbs mirror X.
+        // CoachTargetTapTests re-measures bird_ruby.png so an art change fails loudly.
+        public const float BirdBodyX0 = -0.5937f, BirdBodyX1 = 0.7025f;
+        public const float BirdBodyY0 = -0.8400f, BirdBodyY1 = 0.5785f;
+
         public struct Cand
         {
             public int Index;
@@ -48,6 +54,20 @@ namespace FlockFive
             float dx = Mathf.Max(Mathf.Max(r.xMin - p.x, 0f), p.x - r.xMax);
             float dy = Mathf.Max(Mathf.Max(r.yMin - p.y, 0f), p.y - r.yMax);
             return Mathf.Sqrt(dx * dx + dy * dy);
+        }
+
+        // A coached press on one perched bird. The body is the opaque sprite, then clipped to the
+        // painted wood's x-span (plus WoodTol) so a beak cannot claim the air past the tip.
+        // scale is the branch root's lossy scale; the body constants already include BirdScale.
+        public static bool CoachBird(Vector2 p, Vector2 center, bool faceLeft, Rect wood, float scale)
+        {
+            if (scale < 0.01f) scale = 1f;
+            float x0 = BirdBodyX0 * scale, x1 = BirdBodyX1 * scale;
+            float y0 = BirdBodyY0 * scale, y1 = BirdBodyY1 * scale;
+            if (faceLeft) { float t = -x1; x1 = -x0; x0 = t; }
+            if (p.x < center.x + x0 || p.x > center.x + x1) return false;
+            if (p.y < center.y + y0 || p.y > center.y + y1) return false;
+            return p.x >= wood.xMin - WoodTol && p.x <= wood.xMax + WoodTol;
         }
 
         public static float NearestPadSqr(Cand c, Vector2 p)
