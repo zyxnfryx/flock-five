@@ -1357,30 +1357,12 @@ namespace FlockFive
                 {
                     DailyClaimGlove(handS, out dailyAim, out float perchLift, out bool fromLeft);
                     CoachGloveAt(dailyAim, dt, handS, perchLift, fromLeft, float.NaN, DailyClaimTapRect(handS));
-                    // Once the fingertip has reached Claim, leave it there. The shared
-                    // tap cycle would lift back to the perch (left of the button).
-                    if (_gloveAct == TutorGloveAct.Live && _gloveLockOn
-                        && string.Equals(_gloveStepLine, DailyClaimLine))
-                    {
-                        float pressAt = TapHover + TapPress;
-                        if (_glovePhase >= pressAt)
-                        {
-                            _glovePhase = pressAt;
-                            _gloveShown = _gloveLockAim;
-                            _gloveDip = 1f;
-                            _gloveHoldDip = 1f;
-                        }
-                    }
-                    // The claim press fades the hand in place. Pin the fingertip on the
-                    // Claim aim for that whole fade, including the frames before the
-                    // spin is armed, so it cannot freeze mid-travel off the button.
-                    if (_gloveAct == TutorGloveAct.FadeOutOnTap && _gloveLockOn
-                        && string.Equals(_gloveStepLine, DailyClaimLine))
-                    {
-                        _gloveShown = _gloveLockAim;
-                        _gloveDip = 1f;
-                        _gloveHoldDip = 1f;
-                    }
+                    // DrawGloveAt's pivot is the index-tip pixel. The shared cycle parks
+                    // that pivot on the wind-up perch, a hand-length left of Claim, and
+                    // only brushes the word at the bottom of the poke. Hold the tip on
+                    // the word for the whole settle and through the Claim tap.
+                    if (_gloveLockOn && string.Equals(_gloveStepLine, DailyClaimLine))
+                        PinClaimGloveTip();
                 }
                 else
                 {
@@ -1542,6 +1524,19 @@ namespace FlockFive
             _gloveTapHit = null;
             _gloveTapRect = default;
             _glovePestKind = 0;
+        }
+
+        // Index tip (the draw pivot) glued to the locked Claim word. Also pulls the
+        // arc start onto that point so a later CoachGloveAt lerp cannot walk it
+        // back to the perch.
+        void PinClaimGloveTip()
+        {
+            _gloveTip = _gloveLockAim;
+            _gloveShown = _gloveLockAim;
+            _gloveDip = 1f;
+            _gloveHoldDip = 1f;
+            _glovePhase = TapHover + TapPress;
+            _gloveVis = true;
         }
 
         // The gift tap fades the hand on the rail medal. The card is open on this

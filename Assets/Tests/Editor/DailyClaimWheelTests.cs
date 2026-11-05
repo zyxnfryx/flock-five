@@ -130,6 +130,8 @@ namespace FlockFive.Editor
             Check("claim glove drops the rail fade and stays through the tap",
                 coach.Contains("void DropRailFadeForClaim(")
                 && coach.Contains("if (enteredClaim)")
+                && coach.Contains("void PinClaimGloveTip()")
+                && coach.Contains("_gloveShown = _gloveLockAim")
                 && daily.Contains("bool HoldGloveOnClaimTap(")
                 && daily.Contains("if (_dailyGloveThroughTap) return 0;")
                 && daily.Contains("FinishClaimGloveTap();"),
