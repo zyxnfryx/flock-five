@@ -194,6 +194,8 @@ namespace FlockFive
         // the gift in. A save that already cleared level 1 leaves this false.
         bool _dailyRailLocked;
         bool _dailyGloveOnClaim;
+        // Set once the Claim approach reaches the word. Before that, the glove travels.
+        bool _claimGloveArrived;
         bool _leafIntro;
         float _leafSeen;
         // Screen rect of the leafy branches, so the caption can sit off them.
@@ -1338,13 +1340,19 @@ namespace FlockFive
             {
                 float handS = DeviceFit.Ui();
                 bool onClaim = _dailyOpen;
+                // First frame the card is up. The gift tap just faded the hand on the
+                // rail; Claim is the target now, so that fade must not finish there.
+                bool enteredClaim = onClaim && !_dailyGloveOnClaim;
                 if (onClaim != _dailyGloveOnClaim)
                 {
                     _dailyGloveOnClaim = onClaim;
                     _glovePhase = 0f;
                     _gloveDip = 0f;
                     _tapSent = false;
+                    _claimGloveArrived = false;
                 }
+                if (enteredClaim)
+                    DropRailFadeForClaim();
                 Vector2 dailyAim;
                 LessonLine(onClaim ? DailyClaimLine : DailyIntroLine);
                 _gloveInward = !onClaim;
@@ -1352,6 +1360,11 @@ namespace FlockFive
                 {
                     DailyClaimGlove(handS, out dailyAim, out float perchLift, out bool fromLeft);
                     CoachGloveAt(dailyAim, dt, handS, perchLift, fromLeft, float.NaN, DailyClaimTapRect(handS));
+                    // The approach arc ends on the word. Only then hold the tip there
+                    // through the poke cycle and the Claim tap. Pinning earlier pulls
+                    // the arc start onto the word, so every still is the landed pose.
+                    if (_claimGloveArrived && _gloveLockOn && string.Equals(_gloveStepLine, DailyClaimLine))
+                        PinClaimGloveTip();
                 }
                 else
                 {
@@ -1508,11 +1521,99 @@ namespace FlockFive
             _gloveStepApproach = float.NaN;
             _gloveLockAim = Vector2.zero;
             _gloveStepAim = Vector2.zero;
+            _claimGloveArrived = false;
             _gloveTapFrame = -1;
             _gloveTapRectOn = false;
             _gloveTapHit = null;
             _gloveTapRect = default;
             _glovePestKind = 0;
+        }
+
+        // Local pose (tip pixel at pivot) then the caller's GUI matrix outside it.
+        // GuiBase is a horizontal pillar shift on iPad. Multiplying it inside the
+        // rotation turns that shift into a vertical miss. Phones pass identity.
+        public static Matrix4x4 GloveDrawMatrix(Vector2 pivot, float angDeg, float sx, float sy, Matrix4x4 guiBase)
+        {
+            var fro = Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
+            var scale = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(sx, sy, 1f));
+            var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, angDeg), Vector3.one);
+            var to = Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, Vector3.one);
+            return guiBase * to * rot * scale * fro;
+        }
+
+        // Landed Claim pose. The draw pivot is the index tip, in GUI space (the
+        // same space as DailyClaimWordCenter). GuiBase is applied later, outside
+        // the rotation. This does not move _gloveTip: that point is the arc start,
+        // and copying the word onto it collapses the travel into a still.
+        void PinClaimGloveTip()
+        {
+            _gloveShown = _gloveLockAim;
+            _gloveDip = 1f;
+            _gloveHoldDip = 1f;
+            _glovePhase = TapHover + TapPress;
+            _gloveVis = true;
+        }
+
+        // How far the Claim approach starts from the word, in hand-heights.
+        // The shared near-start can sit almost on the button, so stills match.
+        public const float ClaimGloveMinHands = 1.15f;
+
+        // Perch pushed out along its approach until it is ClaimGloveMinHands away,
+        // then kept inside the safe rect. A perch already that far is unchanged.
+        public static Vector2 ClaimGloveStart(Vector2 perch, Vector2 aim, float dh, Rect safe)
+        {
+            float want = ClaimGloveMinHands * Mathf.Max(8f, dh);
+            var d = perch - aim;
+            float len = d.magnitude;
+            Vector2 p = len < 0.001f
+                ? aim + new Vector2(-want, -want * 0.28f)
+                : (len >= want ? perch : aim + d * (want / len));
+            float pad = Mathf.Max(8f, dh) * 0.42f;
+            float x0 = safe.xMin + pad, x1 = safe.xMax - pad;
+            float y0 = safe.yMin + pad, y1 = safe.yMax - pad;
+            if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
+            if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
+            p.x = Mathf.Clamp(p.x, x0, x1);
+            p.y = Mathf.Clamp(p.y, y0, y1);
+            return p;
+        }
+
+        // Claim travel in GUI space. t = 0 is the start pose, t = 1 is exactly the
+        // word. The bow sits above the higher end (y down) so a mid frame is off
+        // the straight chord. archPx is the control height, not the mid-frame height.
+        public static Vector2 ClaimGloveArc(Vector2 start, Vector2 aim, float t, float archPx)
+        {
+            t = Mathf.Clamp01(t);
+            float high = Mathf.Min(start.y, aim.y);
+            float bow = archPx > 1f ? archPx : 28f;
+            var ctrl = new Vector2((start.x + aim.x) * 0.5f, high - bow);
+            float u = 1f - t;
+            return start * (u * u) + ctrl * (2f * u * t) + aim * (t * t);
+        }
+
+        // True once the shared poke has reached full reach. The hold starts then.
+        public static bool ClaimGloveTravelDone(float phase)
+        {
+            return phase >= TapHover + TapPress - 0.0001f;
+        }
+
+        // The gift tap fades the hand on the rail medal. The card is open on this
+        // frame and Claim is the target, so that fade (or a still-live rail pose)
+        // must not finish off the button. Hidden lets CoachGloveAt start the Claim
+        // arc this frame. Only the frame the card opens calls this.
+        void DropRailFadeForClaim()
+        {
+            if (_gloveFadeDismissed) return;
+            if (_gloveAct != TutorGloveAct.FadeOutOnTap
+                && _gloveAct != TutorGloveAct.Live
+                && _gloveAct != TutorGloveAct.Reappear)
+                return;
+            _gloveAct = TutorGloveAct.Hidden;
+            _gloveAlpha = 0f;
+            _gloveHoldPose = false;
+            _gloveReady = false;
+            _gloveVis = false;
+            _gloveHidStep = -1;
         }
 
         // Freeze the drawn pose and drop alpha. A second tap does not restart it.
@@ -1683,6 +1784,13 @@ namespace FlockFive
                     _gloveVis = false;
                     _gloveHoldPose = false;
                     _gloveReady = false;
+                    // Claim tap: the hand stayed on the button for this fade. The spin
+                    // starts now, and the lesson ends. Do not arm a return on the rail.
+                    if (_dailyGloveThroughTap)
+                    {
+                        FinishClaimGloveTap();
+                        return;
+                    }
                     _gloveHidStep = CoachPress.ReturnStep(_gloveFadeStep, LiveCoachStep(), _gloveFadeDismissed);
                     _gloveHidAt = AdPause.Unscaled;
                     return;
@@ -1794,7 +1902,11 @@ namespace FlockFive
             CommitApproachFace(ref facePerch, aimGui, faceDh, faceDw, PhoneArea.W, PhoneArea.H, _gloveMirror,
                 out float faceAng, out bool faceMirror);
             _gloveTip = facePerch;
-            _gloveShown = facePerch;
+            // Claim only: keep a start the player can see leave, then bow onto the word.
+            // Other lessons keep the shared near-start.
+            if (string.Equals(_cueLine, DailyClaimLine))
+                _gloveTip = ClaimGloveStart(_gloveTip, aimGui, faceDh, CoachSafeGui(8f * s));
+            _gloveShown = _gloveTip;
             _gloveFaceOn = true;
             _gloveFaceAng = faceAng;
             _gloveFaceMirror = faceMirror;
@@ -1802,11 +1914,12 @@ namespace FlockFive
             _gloveRestAng = faceAng;
             _gloveAng = faceAng;
             _gloveShownAng = faceAng;
-            var faceAway = facePerch - aimGui;
+            var faceAway = _gloveTip - aimGui;
             if (faceAway.sqrMagnitude > 1f) _gloveAway = faceAway.normalized;
             _glovePhase = 0f;
             _gloveDip = 0f;
             _tapSent = false;
+            _claimGloveArrived = false;
             _gloveReady = true;
             _gloveBranch = _cueBranch;
             _gloveLockOn = true;
@@ -2006,6 +2119,23 @@ namespace FlockFive
                 GloveBeginReappear(aimGui, s, perchLift, fromLeft, approachDeg);
             }
             _cueAimGui = aimGui;
+            // Landed Claim tip stays on the word. The approach already played.
+            if (_claimGloveArrived && _gloveAct == TutorGloveAct.Live
+                && string.Equals(_gloveStepLine, DailyClaimLine))
+            {
+                _gloveShown = _gloveLockOn ? _gloveLockAim : aimGui;
+                _gloveDip = 1f;
+                _gloveHoldDip = 1f;
+                _glovePhase = TapHover + TapPress;
+                if (_gloveFaceOn)
+                {
+                    _gloveShownAng = _gloveFaceAng;
+                    _gloveMirror = _gloveFaceMirror;
+                }
+                GloveArmTap(tapRect, tapHit);
+                _gloveVis = _gloveAlpha > 0.03f;
+                return false;
+            }
             bool hold = _gloveAct == TutorGloveAct.Reappear;
             float pressAt = TapHover + TapPress;
             bool fire = false;
@@ -2049,10 +2179,14 @@ namespace FlockFive
 #endif
             bool angled = !float.IsNaN(_gloveApproach);
             Vector2 aim = _gloveLockOn ? _gloveLockAim : aimGui;
+            bool claimTravel = string.Equals(_gloveStepLine, DailyClaimLine) && !_claimGloveArrived;
             Vector2 arcPos;
-            // Locked facing travels on the approach line. The old arc re-aimed
-            // at draw time whenever the perch or the bow left the glass.
-            if (_gloveFaceOn || angled)
+            // Claim bows from its start onto the word. A locked face otherwise
+            // travels on the approach line. The old arc re-aimed at draw time
+            // whenever the perch or the bow left the glass.
+            if (claimTravel)
+                arcPos = ClaimGloveArc(_gloveTip, aim, travel, GloveDh(s) * 0.55f);
+            else if (_gloveFaceOn || angled)
                 arcPos = Vector2.Lerp(_gloveTip, aim, Mathf.Clamp01(travel));
             else
                 TapArc(_gloveTip, aim, _gloveAway, s, travel, out arcPos, out _, _gloveMirror, _gloveApexMinY);
@@ -2077,6 +2211,16 @@ namespace FlockFive
                     _gloveShown = Vector2.Lerp(_gloveShown, arcPos, pin);
                 }
                 _gloveShownAng = angled ? _gloveApproach : ClampUpright(_gloveMirror);
+            }
+            // First frame the Claim approach reaches the word. Later frames hold
+            // that tip (PinClaimGloveTip) so the poke cycle cannot walk it off.
+            if (claimTravel && _gloveAct == TutorGloveAct.Live && ClaimGloveTravelDone(_glovePhase))
+            {
+                _claimGloveArrived = true;
+                _gloveShown = aim;
+                _gloveDip = 1f;
+                _gloveHoldDip = 1f;
+                _glovePhase = TapHover + TapPress;
             }
             GloveArmTap(tapRect, tapHit);
             _gloveVis = _gloveAlpha > 0.03f;
@@ -4618,11 +4762,10 @@ namespace FlockFive
             bool haveBox = RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 0f, out var drawn);
             if (haveBox && alpha > 0.05f) { _gloveBody = drawn; _gloveBodyFrame = Time.frameCount; GloveBodyAlpha = alpha; }
             var prev = GUI.matrix;
-            var fro = Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
-            var scale = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(sx, squash, 1f));
-            var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, ang), Vector3.one);
-            var to = Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, Vector3.one);
-            var m = to * rot * scale * fro * prev;
+            // Pivot rotation first, then the matrix already in use (GuiBase). The old
+            // order rotated the iPad pillar shift (OffX, 0), so the fingertip landed
+            // above Claim on 820 while phones (OffX 0) stayed on the word.
+            var m = GloveDrawMatrix(pivot, ang, sx, squash, prev);
             // b89 (Brandon): the caption reads on top of the glove. When the hand still
             // reaches this frame's caption plate, it is cut at the plate edge, so it
             // slides out from under the banner instead of lying across it.

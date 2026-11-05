@@ -370,10 +370,14 @@ namespace FlockFive
             if (w < 0) w += WedgeCount;
             float deg = w * WedgeArc + clockwiseDegrees;
             float theta = SignedDegrees(deg - 90f);
-            if (theta <= -90f || theta > 90f)
+            // -90 is hub-to-rim for the top wedge (text reads outward). Treating it as
+            // upside down flipped it to +90, which paints the amount inward and across
+            // the neighbor wedge. Keep -90; only angles strictly past it flip.
+            if (theta < -90f || theta > 90f)
                 theta = SignedDegrees(theta + 180f);
-            if (theta <= -90f) theta += 180f;
+            if (theta < -90f) theta += 180f;
             if (theta > 90f) theta -= 180f;
+            if (theta <= -90f) theta = -89.99f;
             return theta;
         }
 
