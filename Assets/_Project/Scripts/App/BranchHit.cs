@@ -46,21 +46,31 @@ namespace FlockFive
         // b120 R7 (Readability): the tap box of a limb is its bird row plus its wood. Birds stand ON the
         // wood (feet at the seats, body up to ~1 world unit above the limb centre), so the old seat/feet
         // distance gave a tap on a bird's upper half to the limb above. RowRect spans the painted wood
-        // up to the top of the perched birds (BirdRowTopLocal when no bird is drawn).
+        // up to the top of the perched birds; an empty limb's box is just its wood (playtest #240 4a).
         public const float BirdRowTopLocal = 1.02f; // seat (~0.34) + RestLift 0.41 + half a perched bird
         public static Rect RowRect(Rect wood, float birdTop)
             => Rect.MinMaxRect(wood.xMin, wood.yMin, wood.xMax, Mathf.Max(wood.yMax, birdTop));
 
-        // Index of the row box (index-aligned with rows) holding p, or -1. Where a bird band overlaps the
-        // wood of the limb above, the birds win: they are drawn over that wood and are what the player taps.
-        public static int PickRow(Vector2 p, IList<Rect> woods, IList<Rect> rows)
+        // Index of the row box (index-aligned with rows) holding p, or -1. A limb only reserves a bird
+        // band above its wood when birds are drawn there (rows[i] == wood when it is empty). Where a drawn
+        // bird overlaps the wood of the limb above, the bird wins: it is drawn over that wood. "On a bird"
+        // means inside an actual drawn bird's bounds (birds/birdRow, index-aligned) when those are given,
+        // else above the wood inside a reserved band. Otherwise the nearest wood wins (playtest #240 4a).
+        public static int PickRow(Vector2 p, IList<Rect> woods, IList<Rect> rows, IList<Rect> birds = null, IList<int> birdRow = null)
         {
             int best = -1; bool bestBird = false; float bestD = float.MaxValue;
             for (int i = 0; i < rows.Count; i++)
             {
                 var r = rows[i];
                 if (p.x < r.xMin - WoodTol || p.x > r.xMax + WoodTol || p.y < r.yMin - WoodTol || p.y > r.yMax + WoodTol) continue;
-                bool bird = p.y > woods[i].yMax;
+                bool bird;
+                if (birds != null && birdRow != null)
+                {
+                    bird = false;
+                    for (int k = 0; k < birds.Count && k < birdRow.Count; k++)
+                        if (birdRow[k] == i && birds[k].Contains(p)) { bird = true; break; }
+                }
+                else bird = r.yMax > woods[i].yMax + 1e-4f && p.y > woods[i].yMax;
                 float d = RectDist(woods[i], p);
                 if (best < 0 || (bird && !bestBird) || (bird == bestBird && d < bestD))
                 { best = i; bestBird = bird; bestD = d; }

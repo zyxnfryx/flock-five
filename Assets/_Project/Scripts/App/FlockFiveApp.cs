@@ -6318,11 +6318,11 @@ namespace FlockFive
         }
 
         // b120 R7: a tap inside a limb's bird row + wood box picks that limb, before the radius fallbacks.
-        readonly List<Rect> _rowWoods = new List<Rect>(16), _rowBoxes = new List<Rect>(16);
-        readonly List<int> _rowIdx = new List<int>(16);
+        readonly List<Rect> _rowWoods = new List<Rect>(16), _rowBoxes = new List<Rect>(16), _rowBirds = new List<Rect>(64);
+        readonly List<int> _rowIdx = new List<int>(16), _rowBirdRow = new List<int>(64);
         int HitBranchRow(Vector2 world)
         {
-            _rowWoods.Clear(); _rowBoxes.Clear(); _rowIdx.Clear();
+            _rowWoods.Clear(); _rowBoxes.Clear(); _rowIdx.Clear(); _rowBirds.Clear(); _rowBirdRow.Clear();
             for (int i = 0; i < _garden.Branches.Length; i++)
             {
                 var v = _garden.Branches[i];
@@ -6333,16 +6333,19 @@ namespace FlockFive
                 var t = v.transform;
                 var ls = t.lossyScale;
                 var wood = BranchHit.WoodRect(t.position, v.FromRight, v.IsGift, Mathf.Abs(ls.x), Mathf.Abs(ls.y));
-                float top = t.position.y + BranchHit.BirdRowTopLocal * Mathf.Abs(ls.y);
+                float top = wood.yMax; // b120 R7: no birds drawn -> no reserved band (playtest #240 4a)
                 for (int s = 0; s < BranchState.Cap; s++)
                 {
                     var b = v.Birds[s];
                     if (b == null || !b.enabled || b.sprite == null || b.transform.parent != v.transform) continue;
-                    top = Mathf.Max(top, Mathf.Min(b.bounds.max.y, t.position.y + 1.15f * Mathf.Abs(ls.y)));
+                    var bb = b.bounds;
+                    float bt = Mathf.Min(bb.max.y, t.position.y + 1.15f * Mathf.Abs(ls.y));
+                    top = Mathf.Max(top, bt);
+                    _rowBirds.Add(Rect.MinMaxRect(bb.min.x, bb.min.y, bb.max.x, bt)); _rowBirdRow.Add(_rowWoods.Count);
                 }
                 _rowWoods.Add(wood); _rowBoxes.Add(BranchHit.RowRect(wood, top)); _rowIdx.Add(v.Index);
             }
-            int k = BranchHit.PickRow(world, _rowWoods, _rowBoxes);
+            int k = BranchHit.PickRow(world, _rowWoods, _rowBoxes, _rowBirds, _rowBirdRow);
             return k >= 0 ? _rowIdx[k] : -1;
         }
 
