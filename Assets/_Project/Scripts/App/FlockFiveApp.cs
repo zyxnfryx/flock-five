@@ -3762,7 +3762,7 @@ namespace FlockFive
                 if (!_board.CanPick(hit))
                 {
                     _garden.Branches[hit].Shake();
-                    if (_board.IsSleeping(hit)) Sfx.Sleep();
+                    if (_board.IsSleeping(hit)) { Sfx.Sleep(); RaiseRuleSleepTip(); }
                     return;
                 }
                 Select(hit);
@@ -3796,7 +3796,7 @@ namespace FlockFive
                 if (!_board.CanPick(hit))
                 {
                     _garden.Branches[hit].Shake();
-                    if (_board.IsSleeping(hit)) Sfx.Sleep();
+                    if (_board.IsSleeping(hit)) { Sfx.Sleep(); RaiseRuleSleepTip(); }
                     return;
                 }
                 Select(hit);
@@ -3927,7 +3927,10 @@ namespace FlockFive
                 _garden.Branches[from].FlutterTip();
             }
             if (kicked == 0 && _board.IsSleeping(to) && _board.Branches[to].IsFullMatch(out _))
+            {
                 Sfx.Sleep();
+                RaiseRuleSleepTip();
+            }
             if (kicked == 0)
                 CheckOver();
         }

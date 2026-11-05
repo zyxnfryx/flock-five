@@ -65,7 +65,14 @@ namespace FlockFive.Editor
             }
             finally { DeviceFit.TestWindow = keepWindow; }
             Check(Mathf.Abs(CaptionStyles.Ink("coach.rule") - 1f) < 0.001f, "rule plate solid");
-            Check(!TapCue.ForCaption(RuleTips.KitLine) && !TapCue.ForCaption(RuleTips.FeederLine) && !TapCue.ForCaption(RuleTips.SleepLine), "no fingertip tick");
+            Check(!TapCue.ForCaption(RuleTips.KitLine) && !TapCue.ForCaption(CaptionLayout.BeePestLine) && !TapCue.ForCaption(CaptionLayout.FireLine), "no fingertip tick");
+            Check(RuleTips.SleepReady(true, false, false, false), "sleep ready on first nap");
+            Check(!RuleTips.SleepReady(true, false, true, false), "sleep waits on another tip");
+            Check(!RuleTips.SleepReady(false, false, false, false), "sleep without a nap");
+            var band = new Rect(0f, 1000f, 820f, 180f);
+            var safe = new Rect(0f, 34f, 820f, 1146f);
+            FlockFiveApp.ClampGardenBand(ref band, 820f, 1180f, safe);
+            Check(band.yMax <= 1180f - 34f - 4f + 0.5f, "bee plate inside safe " + band.yMax);
             Debug.Log("[rule-tips] " + (fail == 0 ? "PASS " + n + "/" + n : "FAIL " + fail + "/" + n));
         }
     }

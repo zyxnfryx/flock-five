@@ -83,6 +83,8 @@ namespace FlockFive
         const string CoachBeeKey = "flockfive.coach.bee";
         const string CoachHiveGardenKey = "flockfive.coach.hive.garden";
         const float PestCueSeconds = 4.5f;
+        // Bee plate used to stay until a tap (~38s in the L5 recheck). It does not freeze play.
+        const float BeePlateSeconds = 8f;
         // Hawk waits out the sparrow line, then this long, so the two never share a frame.
         const float PestCueGap = 1.05f;
         // About 20% under the old 118px lesson hand.
@@ -861,6 +863,8 @@ namespace FlockFive
                 return;
             }
 
+            // Sleep (and any rule tip) can open on level 1, while the coach still owns this branch.
+            if (_ruleTip != RuleTip.None) return;
             CoachClearCue();
             // b115 (Brandon): the "Stuck? Tap the gift branch" cue is gone. The only gift glove left is the one on the
             // ad offer popup (ArmAdHand, first card only, flag persisted), so it never returns after the first use.
@@ -3690,6 +3694,20 @@ namespace FlockFive
             return true;
         }
 
+        // iPad home indicator. WebGL often reports no inset, and the L5 bee plate then
+        // ended near y 1158 while the safe edge was about 1146 (1180 - 34).
+        public static void ClampGardenBand(ref Rect band, float screenW, float screenH, Rect safe)
+        {
+            float inset = safe.height > 2f ? safe.yMin : 0f;
+            if (inset < 0f) inset = 0f;
+            // Home indicator. The iPad play column is phone-shaped, so aspect does not
+            // mark it as a tablet, and WebGL often reports safe.yMin as 0.
+            if (inset < 34f) inset = 34f;
+            float limit = screenH - inset - 4f;
+            if (limit < 4f) return;
+            if (band.yMax > limit) band.y = Mathf.Max(0f, limit - band.height);
+        }
+
         public static float GardenBannerY(float bandH, float rowBottom, Rect restart, Rect hive, float screenH, float safeBottom, float gap, float topY)
         {
             // b102 (Brandon): the banner is centred on the garden restart button's own rect, so it covers the
@@ -3857,6 +3875,7 @@ namespace FlockFive
             if (drop > 0f)
                 CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s), MinLogoClear(screenH, safe, s));
             if (band.yMax > screenH) band.y = screenH - band.height;
+            if (bottomSeat) ClampGardenBand(ref band, w, screenH, safe);
             if (adHand && band.Overlaps(adAvoid)) { SnugUses++; BannerSkip = "watch button"; return false; }
             BannerSkip = "";
             BannerUses++;
@@ -7541,9 +7560,9 @@ namespace FlockFive
         {
             _pestHeld = 0f;
             _pestCue = kind;
-            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueBee || kind == PestCueOstrich || kind == PestCueFire)
+            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueOstrich || kind == PestCueFire)
                 ? float.PositiveInfinity
-                : PlayClock.Now + PestCueSeconds;
+                : PlayClock.Now + (kind == PestCueBee ? BeePlateSeconds : PestCueSeconds);
             // The bee lesson does not freeze the garden. The sparrow still does.
             // The ostrich lesson stays live and the shared veil gates the tap.
             if (kind == PestCueSparrow) HoldTutorPause(true);

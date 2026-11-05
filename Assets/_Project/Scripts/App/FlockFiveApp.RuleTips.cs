@@ -65,6 +65,20 @@ namespace FlockFive
         // New feeder colour has landed. The collect may still be waking the next
         // row; the tip pauses here so 402 and 820 are not still in that beat
         // when the capture looks for the line.
+        // A branch just became five of a colour no feeder wants. Not gated on the
+        // coach being finished or on a pest line (the L5 bee plate was covering it).
+        void RaiseRuleSleepTip()
+        {
+            if (_board == null) return;
+            bool sleeping = false;
+            for (int i = 0; i < _board.Branches.Count; i++)
+                if (_board.IsSleeping(i)) { sleeping = true; break; }
+            bool blocked = _splash || _won || _restarting || SeasonReveal.HoldsPlay;
+            if (!RuleTips.SleepReady(sleeping, RuleSeen(RuleTip.Sleep), _ruleTip != RuleTip.None, blocked))
+                return;
+            ShowRuleTip(RuleTip.Sleep);
+        }
+
         void RaiseRuleFeederTip()
         {
             RuleTrackFeeders();

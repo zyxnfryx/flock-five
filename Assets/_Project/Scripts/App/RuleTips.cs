@@ -57,6 +57,12 @@ namespace FlockFive
             return turned && !seen && !tipUp && !blocked;
         }
 
+        // First nap in any garden. Not tied to a level name.
+        public static bool SleepReady(bool sleeping, bool seen, bool tipUp, bool blocked)
+        {
+            return sleeping && !seen && !tipUp && !blocked;
+        }
+
         public static string Line(RuleTip t)
         {
             switch (t)
