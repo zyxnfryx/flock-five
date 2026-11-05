@@ -90,6 +90,9 @@ namespace FlockFive
         bool _streakFlyArmed;
         float _pigBurst;
         float _pigJiggle;
+        // One poke per gesture. The press arms it; a later MouseUp must not count again.
+        bool _pigPokeArm;
+        int _pigPokeFrame = -1;
         // Splash rails. Presence eases 0..1; a hidden button takes no slot.
         const int RailPig = 0;
         const int RailHive = 1;
@@ -8618,13 +8621,17 @@ namespace FlockFive
             var prevM = GUI.matrix;
             if (_pigJiggle > 0f)
             {
-                _pigJiggle = Mathf.Max(0f, _pigJiggle - AdPause.UnscaledDelta / 0.30f);
+                // Paint the pose first, then step, and only on Repaint. Layout + the
+                // click used to spend the 0.30s before any pixel moved, so a pill press
+                // showed the idle coin flip and a still pig.
                 float j = _pigJiggle;
                 float wobble = Mathf.Sin(j * Mathf.PI * 3.2f) * 7f * j;
                 float sx = 1f + 0.14f * Mathf.Sin(j * Mathf.PI);
                 float sy = 1f - 0.18f * Mathf.Sin(j * Mathf.PI);
                 GUIUtility.RotateAroundPivot(wobble, pig.center);
                 GUIUtility.ScaleAroundPivot(new Vector2(sx, sy), pig.center);
+                if (GuiPaint())
+                    _pigJiggle = Mathf.Max(0f, _pigJiggle - AdPause.UnscaledDelta / 0.30f);
             }
             DrawRailIcon(pig, SpriteCatalog.Piggy);
             GUI.matrix = prevM;
@@ -8650,13 +8657,14 @@ namespace FlockFive
             DrawCoinFly(pig);
             if (_pigBurst > 0f)
             {
-                _pigBurst = Mathf.Max(0f, _pigBurst - AdPause.UnscaledDelta / 0.55f);
                 var glow = GlowTex();
                 float b = _pigBurst;
                 float pad = pig.width * (0.12f + 0.22f * b);
                 GUI.color = new Color(1f, 0.88f, 0.40f, 0.18f + 0.38f * b);
                 GUI.DrawTexture(new Rect(pig.x - pad, pig.y - pad, pig.width + pad * 2f, pig.height + pad * 2f), glow, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
+                if (GuiPaint())
+                    _pigBurst = Mathf.Max(0f, _pigBurst - AdPause.UnscaledDelta / 0.55f);
             }
         }
 
@@ -8691,6 +8699,42 @@ namespace FlockFive
             if (pig.width < 2f || pig.height < 2f) return default;
             var ir = new Rect(pig.x - 12f - icon, pig.center.y - icon * 0.5f, icon, icon);
             return CoinClusterHit(ir, 1f, coins ?? "$0", CoinBalanceType);
+        }
+
+        // One pad for the pig and the balance beside it, including the gap between them.
+        // A second HitPad on the pill alone never became the poke: its id was conditional,
+        // and the release no longer matched, so TryPigPoke did not run.
+        public static Rect PigPokePad(Rect pig, Rect pill)
+        {
+            if (pig.width < 2f || pig.height < 2f) return default;
+            if (pill.width < 2f || pill.height < 2f) return pig;
+            return UnionRect(pig, pill);
+        }
+
+        public struct PigPokeTick
+        {
+            public bool Fire;
+            public bool Armed;
+            public bool FiredThisFrame;
+        }
+
+        // Press counts once. The matching release does not. A release that never saw its
+        // press still counts (the old HitPad path). A second event in the same frame does not.
+        public static PigPokeTick TickPigPoke(bool allowed, bool blocked, bool downInside, bool releaseHit, bool armed, bool alreadyFiredThisFrame)
+        {
+            var t = new PigPokeTick { FiredThisFrame = alreadyFiredThisFrame };
+            if (releaseHit) t.Armed = false;
+            else t.Armed = armed || (allowed && !blocked && downInside);
+            if (!allowed || blocked) return t;
+            // Armed means this gesture already poked on the press. Later events of the
+            // same hold (the MouseDown after Layout, the Repaint) must not poke again.
+            bool want = !armed && (downInside || releaseHit);
+            if (want && !alreadyFiredThisFrame)
+            {
+                t.Fire = true;
+                t.FiredThisFrame = true;
+            }
+            return t;
         }
 
         // Same amount layout DrawCoinCluster paints into coinR, then unioned with the icon.
@@ -10114,6 +10158,29 @@ namespace FlockFive
             return new Rect(lx, y, size, size);
         }
 
+        static bool GuiPressInside(Rect pad)
+        {
+            var e = Event.current;
+            if (e == null || e.button != 0 || pad.width < 2f || pad.height < 2f) return false;
+            // rawType still sees the press after another control Uses the event.
+            if (e.rawType != EventType.MouseDown) return false;
+            return pad.Contains(e.mousePosition);
+        }
+
+        // The same pointer sample the other home buttons use. Began/Tap only, so a held
+        // finger does not poke again on the next Layout.
+        bool SamplePressInside(Rect pad)
+        {
+            if (pad.width < 2f || pad.height < 2f) return false;
+            for (int i = 0; i < _homeSamples.Count; i++)
+            {
+                var sm = _homeSamples[i];
+                if (sm.Phase != SplashPress.Phase.Began && sm.Phase != SplashPress.Phase.Tap) continue;
+                if (pad.Contains(sm.Pos)) return true;
+            }
+            return false;
+        }
+
         void TryPigPoke()
         {
             Sfx.Oink();
@@ -10329,17 +10396,27 @@ namespace FlockFive
             // Pig above hive: hit-test before the album so taps don't open it.
             // The offer card swallows the rail so a dismiss tap cannot oink.
             var pigR = PiggyRect(s);
-            // b120: the coin pill beside the pig looked tappable and did nothing. It is the pig's balance, so a tap on
-            // it pokes the pig too (same gates as the pig itself). Hit pad is the real drawn amount+icon (CoinClusterHit),
-            // not the fixed icon×0.95×3.6 guess. Pads run only when pigAllowed (and the pill when width>2 and not veiled);
-            // those gates are stable within a frame so Layout/MouseDown ids stay aligned.
+            // b120: the coin pill is the pig's balance. One pad (pig + amount + icon, gap included)
+            // so a press on the coin uses the same poke as a press on the pig. A second HitPad on
+            // the pill dropped the release (its id was conditional), TryPigPoke never ran, and the
+            // only motion left was the coin's idle flip. HomeTapAllowed still gates the whole pad.
             var pillR = CoinPillLive(pigR, s);
             bool pigAllowed = !modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR);
-            bool pigHit = pigAllowed && HitPad(pigR, out _);
-            bool pillHit = pigAllowed && pillR.width > 2f && !VeilBlocks(pillR) && HitPad(pillR, out _);
-            if ((pigHit || pillHit)
-                && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
+            bool pillOpen = pigAllowed && pillR.width > 2f && !VeilBlocks(pillR);
+            var pokePad = PigPokePad(pigR, pillOpen ? pillR : default);
+            bool downInside = pigAllowed && (GuiPressInside(pokePad) || SamplePressInside(pokePad));
+            // One HitPad, always, while the pig accepts taps, so the id does not move between press and release.
+            bool pokeRelease = pigAllowed && HitPad(pokePad.width > 2f ? pokePad : pigR, out _);
+            var pokeEv = Event.current;
+            bool pokePointer = pokeEv != null && (pokeEv.rawType == EventType.MouseDown || pokeEv.rawType == EventType.MouseUp);
+            bool vipBlock = vipDraw && offerVip && !vipHold && pokePointer && VipContains(noAdsR, pokeEv.mousePosition);
+            var poke = TickPigPoke(pigAllowed, vipBlock, downInside, pokeRelease, _pigPokeArm, _pigPokeFrame == Time.frameCount);
+            _pigPokeArm = poke.Armed;
+            if (poke.Fire)
+            {
+                _pigPokeFrame = Time.frameCount;
                 TryPigPoke();
+            }
 
             // Hive lesson hides that slot. The packer closes it; poker slides up under the pig.
             bool hiveDraw = RailLive(RailHive);
