@@ -3688,7 +3688,7 @@ namespace FlockFive
         {
             float key = w * 31f + h * 17f + safe.yMin * 7f + safe.height * 3f + s * 1009f;
             if (key == _gardenSeatKey) return _gardenSeatY;
-            float inset = Mathf.Max(8f, safe.yMin + 4f);
+            float inset = Mathf.Max(8f, CaptionLayout.BottomInset(w, h, safe) + 4f); // b120 R8
             float refH = GardenRefBandH(w, h, safe, s, 0f);
             CornerAnchor.Garden(w, h, safe, out _, out _, out _, out _, out var hive);
             var restart = CornerAnchor.GardenBottomSeat(w, h, safe); // b102 banner seat, not the moved button
