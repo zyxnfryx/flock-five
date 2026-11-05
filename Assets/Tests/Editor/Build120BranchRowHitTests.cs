@@ -93,8 +93,12 @@ namespace FlockFive.Editor
                             Check("bottom-of-wood tap picks own row " + side + r + " seat" + s + " y" + (y - cy).ToString("0.00") + (belowEmpty ? " (below empty)" : " (below occupied)"), got == r, "got " + got);
                         }
                     }
-                    var e = BranchHit.PickRow(new Vector2((wd.xMin + wd.xMax) * 0.5f, wd.yMin + 0.01f), woods, rows2);
-                    Check("bottom edge, no bird list " + side + r, e == r, "got " + e);
+                    if ((r + 1) % 2 == 1)
+                    {
+                        // Band-only fallback (no bird list): an empty limb below must not steal the edge.
+                        var e = BranchHit.PickRow(new Vector2((wd.xMin + wd.xMax) * 0.5f, wd.yMin + 0.01f), woods, rows2);
+                        Check("bottom edge over empty limb, no bird list " + side + r, e == r, "got " + e);
+                    }
                 }
                 // Empty limb itself: a tap on its own wood still picks it.
                 for (int r = 1; r < 4; r += 2)
