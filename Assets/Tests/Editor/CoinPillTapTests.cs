@@ -34,40 +34,60 @@ namespace FlockFive.Editor
             var hit = FlockFiveApp.CoinClusterHit(ir, 1f, "$12,345", 0.95f);
             Check(hit.xMax >= ir.xMax - 0.01f && hit.xMin < ir.xMin, "cluster misses icon or text");
 
-            // Pill press and pig press share one pad, including the gap between them.
-            var seat = new Rect(500f, 200f, 80f, 80f);
-            var pill = new Rect(390f, 220f, 100f, 40f);
-            var pad = FlockFiveApp.PigPokePad(seat, pill);
-            Check(pad.Contains(pill.center), "pad misses the pill");
-            Check(pad.Contains(seat.center), "pad misses the pig");
-            Check(pad.Contains(new Vector2((pill.xMax + seat.xMin) * 0.5f, seat.center.y)), "pad misses the gap");
-            Check(!pad.Contains(new Vector2(pill.xMin - 4f, pill.center.y)), "pad reaches left of the pill");
-            var pigOnly = FlockFiveApp.PigPokePad(seat, default);
-            Check(pigOnly.x == seat.x && pigOnly.width == seat.width && pigOnly.y == seat.y, "no pill is the pig itself");
-            foreach (var w in new[] { 402f, 820f, 412f })
+            // One pad at the real inspector windows. Amount, icon, visible gap, and pig all hit.
+            // 820 is wider than 9:16, so the game column is the pillar width, not 820.
+            var windows = new[] { new Vector2(402f, 874f), new Vector2(412f, 915f), new Vector2(820f, 1180f) };
+            foreach (var win in windows)
             {
-                float icon = FlockFiveApp.CoinBalanceIcon(w, 1f);
-                var livePig = new Rect(w - 20f - 64f, 60f, 64f, 64f);
+                float gw = win.x;
+                if (win.x / win.y > 9f / 16f + 0.03f)
+                    gw = Mathf.Min(win.x, Mathf.Round(win.y * 9f / 16f));
+                float ui = Mathf.Max(win.y / 720f, 1f);
+                float rail = FlockFiveApp.SplashRailSize(gw);
+                float icon = FlockFiveApp.CoinBalanceIcon(gw, ui);
+                float railGap = Mathf.Max(24f, rail * 0.30f);
+                var livePig = new Rect(gw - 20f - rail, win.y * 0.335f - rail - railGap, rail, rail);
+                var iconR = FlockFiveApp.CoinIconRect(livePig, icon);
                 var livePill = FlockFiveApp.CoinPillRect(livePig, icon, "$0");
                 var livePad = FlockFiveApp.PigPokePad(livePig, livePill);
-                Check(livePad.Contains(livePill.center) && livePad.Contains(livePig.center), w + " pad misses pill or pig");
+                var gapC = FlockFiveApp.PigVisibleGapCenter(livePig, iconR);
+                Check(livePad.Contains(livePill.center), win.x + " amount outside pad");
+                Check(livePad.Contains(iconR.center), win.x + " icon outside pad");
+                Check(livePad.Contains(gapC), win.x + " gap outside pad " + gapC + " pad " + livePad);
+                Check(livePad.Contains(livePig.center), win.x + " pig outside pad");
+                Check(!livePad.Contains(new Vector2(livePill.xMin - rail, livePig.center.y)), win.x + " pad swallows the left rail");
             }
 
-            // Press once. The release of that press does not poke again. A bare release still does.
-            // A lesson (not allowed) and a VIP block do not.
-            var press = FlockFiveApp.TickPigPoke(true, false, true, false, false, false);
+            // 360ms, deepest squash on the first frame, gone at the end. Not a 1-frame sine zero.
+            Check(FlockFiveApp.PigPokeDur >= 0.30f && FlockFiveApp.PigPokeDur <= 0.40f, "poke duration " + FlockFiveApp.PigPokeDur);
+            float e0 = FlockFiveApp.PigPokeEnvAt(0f);
+            var s0 = FlockFiveApp.PigPokeScale(e0);
+            Check(e0 > 0.99f && s0.x >= 1.25f && s0.y <= 0.70f, "first frame is not a visible squash " + s0);
+            float em = FlockFiveApp.PigPokeEnvAt(FlockFiveApp.PigPokeDur * 0.5f);
+            var sm = FlockFiveApp.PigPokeScale(em);
+            Check(em > 0.5f && sm.x > 1.10f && sm.y < 0.85f, "mid poke already settled " + sm);
+            Check(FlockFiveApp.PigPokeEnvAt(FlockFiveApp.PigPokeDur) == 0f, "poke does not end");
+            Check(FlockFiveApp.PigPokeScale(0f) == new Vector2(1f, 1f), "rest scale");
+
+            // Press once. The release does not poke again. A release outside the pad clears the arm
+            // so the next press (the pig, after a gap slip) still pokes. A lesson and VIP do not.
+            var press = FlockFiveApp.TickPigPoke(true, false, true, false, false, false, false);
             Check(press.Fire && press.Armed && press.FiredThisFrame, "press did not poke");
-            var again = FlockFiveApp.TickPigPoke(true, false, true, false, press.Armed, press.FiredThisFrame);
+            var again = FlockFiveApp.TickPigPoke(true, false, true, false, false, press.Armed, press.FiredThisFrame);
             Check(!again.Fire && again.Armed, "same frame poked twice");
-            var held = FlockFiveApp.TickPigPoke(true, false, true, false, press.Armed, false);
+            var held = FlockFiveApp.TickPigPoke(true, false, true, false, false, press.Armed, false);
             Check(!held.Fire && held.Armed, "held press poked again");
-            var release = FlockFiveApp.TickPigPoke(true, false, false, true, press.Armed, false);
+            var release = FlockFiveApp.TickPigPoke(true, false, false, true, true, press.Armed, false);
             Check(!release.Fire && !release.Armed, "release counted a second poke");
-            var bare = FlockFiveApp.TickPigPoke(true, false, false, true, false, false);
+            var slipped = FlockFiveApp.TickPigPoke(true, false, false, true, false, press.Armed, false);
+            Check(!slipped.Fire && !slipped.Armed, "outside release stuck the latch");
+            var next = FlockFiveApp.TickPigPoke(true, false, true, false, false, slipped.Armed, false);
+            Check(next.Fire && next.Armed, "press after a slipped release did not poke");
+            var bare = FlockFiveApp.TickPigPoke(true, false, false, true, true, false, false);
             Check(bare.Fire && !bare.Armed, "release without a press did not poke");
-            var lesson = FlockFiveApp.TickPigPoke(false, false, true, false, false, false);
+            var lesson = FlockFiveApp.TickPigPoke(false, false, true, false, false, false, false);
             Check(!lesson.Fire && !lesson.Armed, "lesson still pokes");
-            var vip = FlockFiveApp.TickPigPoke(true, true, true, false, false, false);
+            var vip = FlockFiveApp.TickPigPoke(true, true, true, false, false, false, false);
             Check(!vip.Fire, "VIP block still pokes");
             Debug.Log("[coin-pill-tap] " + (fail == 0 ? "PASS " + n + "/" + n : "FAIL " + fail + "/" + n));
         }
