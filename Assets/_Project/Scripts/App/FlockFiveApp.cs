@@ -89,7 +89,16 @@ namespace FlockFive
         int _streakTickBucket = -1;
         bool _streakFlyArmed;
         float _pigBurst;
-        float _pigJiggle;
+        // Wall-clock start of the squash. -1 when the pig is at rest.
+        float _pigPokeAt = -1f;
+        // First $5 from the piggy. Shown once, then never again.
+        float _pigExplainUntil = -1f;
+        const string PigExplainPref = "flockfive.pig.explain";
+        const string PigExplainLine = "Every few pokes, a coin.";
+        static GUIStyle _pigExplainStyle;
+        // One poke per gesture. The press arms it; any mouse-up clears it.
+        bool _pigPokeArm;
+        int _pigPokeFrame = -1;
         // Splash rails. Presence eases 0..1; a hidden button takes no slot.
         const int RailPig = 0;
         const int RailHive = 1;
@@ -8616,15 +8625,16 @@ namespace FlockFive
         {
             var pig = PiggyRect(s);
             var prevM = GUI.matrix;
-            if (_pigJiggle > 0f)
+            float env = PigPokeEnvAt(AdPause.Unscaled - _pigPokeAt);
+            if (env > 0.004f)
             {
-                _pigJiggle = Mathf.Max(0f, _pigJiggle - AdPause.UnscaledDelta / 0.30f);
-                float j = _pigJiggle;
-                float wobble = Mathf.Sin(j * Mathf.PI * 3.2f) * 7f * j;
-                float sx = 1f + 0.14f * Mathf.Sin(j * Mathf.PI);
-                float sy = 1f - 0.18f * Mathf.Sin(j * Mathf.PI);
+                // Full squash on the first painted frame, then ease home. The old sine
+                // was zero at both ends, so a short frame never showed a squish.
+                var sc = PigPokeScale(env);
+                float age = AdPause.Unscaled - _pigPokeAt;
+                float wobble = Mathf.Sin(age * 16f) * 9f * env;
                 GUIUtility.RotateAroundPivot(wobble, pig.center);
-                GUIUtility.ScaleAroundPivot(new Vector2(sx, sy), pig.center);
+                GUIUtility.ScaleAroundPivot(sc, pig.center);
             }
             DrawRailIcon(pig, SpriteCatalog.Piggy);
             GUI.matrix = prevM;
@@ -8635,6 +8645,7 @@ namespace FlockFive
 
             // Bigger persistent balance: "$12" + coin sprite on the right.
             DrawCoinBalance(s, pig.x - 12f, pig.center.y);
+            DrawPigExplain(pig, s);
             if (!raiseSign) DrawStreakSignLayer(s);
         }
 
@@ -8648,15 +8659,17 @@ namespace FlockFive
             // Streak sign holds, then fades on its own.
             DrawStreakToast(s, pig);
             DrawCoinFly(pig);
-            if (_pigBurst > 0f)
+            float pokeGlow = PigPokeEnvAt(AdPause.Unscaled - _pigPokeAt);
+            float b = _pigBurst > pokeGlow ? _pigBurst : pokeGlow;
+            if (b > 0.01f)
             {
-                _pigBurst = Mathf.Max(0f, _pigBurst - AdPause.UnscaledDelta / 0.55f);
                 var glow = GlowTex();
-                float b = _pigBurst;
-                float pad = pig.width * (0.12f + 0.22f * b);
-                GUI.color = new Color(1f, 0.88f, 0.40f, 0.18f + 0.38f * b);
+                float pad = pig.width * (0.12f + 0.28f * b);
+                GUI.color = new Color(1f, 0.88f, 0.40f, 0.18f + 0.45f * b);
                 GUI.DrawTexture(new Rect(pig.x - pad, pig.y - pad, pig.width + pad * 2f, pig.height + pad * 2f), glow, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
+                if (GuiPaint())
+                    _pigBurst = Mathf.Max(0f, _pigBurst - AdPause.UnscaledDelta / 0.55f);
             }
         }
 
@@ -8673,6 +8686,129 @@ namespace FlockFive
             Mathf.Clamp(SplashRailSize(screenW) * 0.48f * 0.80f, 29f * s, 51f * s);
 
         static float CoinBalanceIcon(float s) => CoinBalanceIcon(PhoneArea.W, s);
+
+        // The home coin pill hit pad: the real drawn amount rect (DrawCoinCluster's coinR) unioned with the
+        // coin icon. Not the fixed icon×0.95×3.6 guess — a long balance on iPad 820 left ~80px of text untappable.
+        Rect CoinPillLive(Rect pig, float s)
+        {
+            if (pig.width < 2f || pig.height < 2f) return default;
+            float icon = CoinBalanceIcon(s);
+            return CoinClusterHit(CoinIconRect(pig, icon), s, Money.Format(CoinsDrawn()), CoinBalanceType);
+        }
+
+        // The coin icon DrawCoinBalance paints, 12px left of the pig. Same rect at every width.
+        public static Rect CoinIconRect(Rect pig, float icon)
+        {
+            if (pig.width < 2f || pig.height < 2f || icon < 2f) return default;
+            return new Rect(pig.x - 12f - icon, pig.center.y - icon * 0.5f, icon, icon);
+        }
+
+        // Testable: union of the amount text rect and the icon, matching DrawCoinCluster's coinR + iconR.
+        public static Rect CoinPillRect(Rect pig, float icon) => CoinPillRect(pig, icon, "$0");
+        public static Rect CoinPillRect(Rect pig, float icon, string coins)
+        {
+            if (pig.width < 2f || pig.height < 2f) return default;
+            return CoinClusterHit(CoinIconRect(pig, icon), 1f, coins ?? "$0", CoinBalanceType);
+        }
+
+        // Pig texture is ~11% empty on each side. The visible gap is the 12px code gap plus that inset.
+        public const float PigSpriteInset = 0.11f;
+        // Same fraction of the pig at 402, 412, and 820. Not a fixed pixel hole that flips with size.
+        public const float PigPokeMarginFrac = 0.16f;
+        // Visible squash. Inside 300–400ms. Wall clock, not "one step per OnGUI event".
+        public const float PigPokeDur = 0.36f;
+
+        // One pad: amount + icon + the gap + the pig, plus a margin that scales with the pig.
+        public static Rect PigPokePad(Rect pig, Rect pill)
+        {
+            if (pig.width < 2f || pig.height < 2f) return default;
+            float inset = pig.width * PigSpriteInset;
+            var body = new Rect(pig.x + inset, pig.y + inset, Mathf.Max(2f, pig.width - 2f * inset), Mathf.Max(2f, pig.height - 2f * inset));
+            var cluster = (pill.width > 2f && pill.height > 2f) ? UnionRect(body, UnionRect(pill, pig)) : pig;
+            float m = pig.width * PigPokeMarginFrac;
+            if (m < 14f) m = 14f;
+            return new Rect(cluster.xMin - m, cluster.yMin - m, cluster.width + 2f * m, cluster.height + 2f * m);
+        }
+
+        // Midpoint of the empty pixels between the coin's right edge and the pig's opaque left edge.
+        public static Vector2 PigVisibleGapCenter(Rect pig, Rect icon)
+        {
+            float left = icon.xMax;
+            float right = pig.x + pig.width * PigSpriteInset;
+            return new Vector2((left + right) * 0.5f, pig.center.y);
+        }
+
+        // 1 at the press, 0 at PigPokeDur. Cosine, so the first frame is the deepest squash.
+        public static float PigPokeEnvAt(float age)
+        {
+            if (age < 0f || age >= PigPokeDur) return 0f;
+            return Mathf.Cos((age / PigPokeDur) * Mathf.PI * 0.5f);
+        }
+
+        // Wider and shorter. env 1 is the pose the player has to be able to see.
+        public static Vector2 PigPokeScale(float env)
+        {
+            if (env < 0f) env = 0f;
+            if (env > 1f) env = 1f;
+            return new Vector2(1f + 0.30f * env, 1f - 0.36f * env);
+        }
+
+        public struct PigPokeTick
+        {
+            public bool Fire;
+            public bool Armed;
+            public bool FiredThisFrame;
+        }
+
+        // Press counts once. Any mouse-up clears the arm, even when it lands outside the pad,
+        // so a narrow gap cannot stick the latch and make the next pig tap do nothing.
+        // A release that never saw its press still counts. A second event in the same frame does not.
+        public static PigPokeTick TickPigPoke(bool allowed, bool blocked, bool downInside, bool up, bool upInside, bool armed, bool alreadyFiredThisFrame)
+        {
+            var t = new PigPokeTick { FiredThisFrame = alreadyFiredThisFrame };
+            if (up) t.Armed = false;
+            else t.Armed = armed || (allowed && !blocked && downInside);
+            if (!allowed || blocked) return t;
+            bool want = !armed && (downInside || (up && upInside));
+            if (want && !alreadyFiredThisFrame)
+            {
+                t.Fire = true;
+                t.FiredThisFrame = true;
+            }
+            return t;
+        }
+
+        // Same amount layout DrawCoinCluster paints into coinR, then unioned with the icon.
+        public static Rect CoinClusterHit(Rect iconR, float s, string coins, float typeScale)
+        {
+            if (iconR.width < 2f || iconR.height < 2f) return default;
+            if (string.IsNullOrEmpty(coins)) coins = "$0";
+            // GUI.skin only exists inside OnGUI; editor tests measure with the same built-in font.
+            var st = new GUIStyle(Event.current != null ? GUI.skin.label : new GUIStyle { font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf") })
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleRight,
+                wordWrap = false,
+                clipping = TextClipping.Overflow,
+                fontSize = Mathf.Max(14, Mathf.RoundToInt(iconR.height * typeScale))
+            };
+            var content = new GUIContent(coins);
+            float leftLimit = Mathf.Max(8f, PhoneArea.Safe.xMin + 8f); // same inset DrawCoinCluster uses
+            float maxW = Mathf.Max(36f, iconR.x - 8f * s - leftLimit);
+            int guard = 0;
+            while (st.fontSize > 14 && guard < 48 && st.CalcSize(content).x > maxW)
+            {
+                st.fontSize -= 1;
+                guard++;
+            }
+            var size = st.CalcSize(content);
+            var coinR = new Rect(iconR.x - 8f * s - size.x, iconR.center.y - size.y * 0.5f, size.x + 4f, size.y);
+            float x0 = Mathf.Min(coinR.xMin, iconR.xMin);
+            float x1 = Mathf.Max(coinR.xMax, iconR.xMax);
+            float y0 = Mathf.Min(coinR.yMin, iconR.yMin);
+            float y1 = Mathf.Max(coinR.yMax, iconR.yMax);
+            return new Rect(x0, y0, x1 - x0, y1 - y0);
+        }
 
         void DrawCoinBalance(float s, float rightX, float centerY)
         {
@@ -8719,6 +8855,7 @@ namespace FlockFive
             else
                 st.fontSize = _coinPx;
             var size = st.CalcSize(content);
+            // coinR is the live amount; the tap pad (CoinPillRect / CoinClusterHit) reuses this same rect + icon.
             var coinR = new Rect(iconR.x - 8f * s - size.x, iconR.center.y - size.y * 0.5f, size.x + 4f, size.y);
             int dark = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.12f));
             StampOutlined(coinR, coins, st, new Color(0.22f, 0.10f, 0.03f), 2, dark);
@@ -10062,18 +10199,137 @@ namespace FlockFive
             return new Rect(lx, y, size, size);
         }
 
+        static bool GuiPressInside(Rect pad)
+        {
+            var e = Event.current;
+            if (e == null || e.button != 0 || pad.width < 2f || pad.height < 2f) return false;
+            // rawType still sees the press after another control Uses the event.
+            if (e.rawType != EventType.MouseDown) return false;
+            return PigPokeHits(pad, GuiPointer(), PhoneArea.OffX);
+        }
+
+        // Read the pointer in the same space as the rail rects. A scaled GUI.matrix
+        // (the coin's Y-flip) otherwise shoves the pig out of the pad and leaves the
+        // gap inside, or the reverse, depending on icon and pig size.
+        static Vector2 GuiPointer()
+        {
+            var e = Event.current;
+            var prev = GUI.matrix;
+            GUI.matrix = PhoneArea.GuiBase;
+            var p = e != null ? e.mousePosition : Vector2.zero;
+            GUI.matrix = prev;
+            return p;
+        }
+
+        static bool PadContains(Rect pad, Vector2 p)
+        {
+            return p.x >= pad.xMin && p.x <= pad.xMax && p.y >= pad.yMin && p.y <= pad.yMax;
+        }
+
+        // Rail rects are PhoneArea coordinates. On an 820-wide iPad the HUD is drawn
+        // OffX pixels to the right (pillar). A real click is already in rail space; a
+        // simulated click is often still in screen pixels, or has had OffX removed twice.
+        // All three land on this same pad. OffX is 0 on phones, so 402 and 412 stay put.
+        public static bool PigPokeHits(Rect railPad, Vector2 pointer, int offX)
+        {
+            if (railPad.width < 2f || railPad.height < 2f) return false;
+            if (PadContains(railPad, pointer)) return true;
+            if (offX == 0) return false;
+            if (PadContains(railPad, new Vector2(pointer.x - offX, pointer.y))) return true;
+            if (PadContains(railPad, new Vector2(pointer.x + offX, pointer.y))) return true;
+            return false;
+        }
+
+        // The same pointer sample the other home buttons use. Began/Tap only, so a held
+        // finger does not poke again on the next Layout.
+        bool SamplePressInside(Rect pad)
+        {
+            if (pad.width < 2f || pad.height < 2f) return false;
+            for (int i = 0; i < _homeSamples.Count; i++)
+            {
+                var sm = _homeSamples[i];
+                if (sm.Phase != SplashPress.Phase.Began && sm.Phase != SplashPress.Phase.Tap) continue;
+                if (PigPokeHits(pad, sm.Pos, PhoneArea.OffX)) return true;
+            }
+            return false;
+        }
+
         void TryPigPoke()
         {
             Sfx.Oink();
-            _pigJiggle = 1f;
-            _pigBurst = Mathf.Max(_pigBurst, 0.85f);
+            _pigPokeAt = AdPause.Unscaled;
+            _pigBurst = Mathf.Max(_pigBurst, 1f);
             var award = PigPoke.Poke();
             if (award.Coins > 0)
             {
                 Sfx.Clink();
                 _pigBurst = 1f;
                 BeginRewardPay(award.Coins);
+                NotePigExplain();
             }
+        }
+
+        void NotePigExplain()
+        {
+            if (_pigExplainUntil >= 0f) return;
+            if (PlayerPrefs.GetInt(PigExplainPref, 0) != 0) return;
+            PlayerPrefs.SetInt(PigExplainPref, 1);
+            PlayerPrefs.Save();
+            _pigExplainUntil = AdPause.Unscaled + 3.2f;
+        }
+
+        // Dark plate under the $ row, ending at the coin icon so it never crosses the amount or the pig.
+        public static Rect PigExplainPlate(Rect pig, float icon, float textW, float textH, float s)
+        {
+            float padX = 8f * s;
+            float padY = 4f * s;
+            float w = textW + padX * 2f;
+            float h = textH + padY * 2f;
+            float right = pig.x - 12f; // icon's right edge
+            float x = right - w;
+            if (x < 8f) x = 8f;
+            float y = pig.center.y + icon * 0.5f + 6f * s;
+            return new Rect(x, y, w, h);
+        }
+
+        void DrawPigExplain(Rect pig, float s)
+        {
+            if (_pigExplainUntil < 0f) return;
+            float left = _pigExplainUntil - AdPause.Unscaled;
+            if (left <= 0f) { _pigExplainUntil = -1f; return; }
+            float icon = CoinBalanceIcon(s);
+            if (icon < 2f) return;
+            float maxW = pig.x - 12f - 8f - 16f * s;
+            if (maxW < 36f) return;
+            if (_pigExplainStyle == null)
+            {
+                _pigExplainStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false,
+                    clipping = TextClipping.Overflow
+                };
+            }
+            var st = _pigExplainStyle;
+            st.fontSize = Mathf.Max(13, Mathf.RoundToInt(15f * Mathf.Min(s, 1.35f)));
+            var content = RimContent(PigExplainLine);
+            int guard = 0;
+            while (st.fontSize > 11 && guard < 12 && st.CalcSize(content).x > maxW)
+            {
+                st.fontSize -= 1;
+                guard++;
+            }
+            var plate = PigExplainPlate(pig, icon, st.CalcSize(content).x, st.fontSize + 2f, s);
+            float a = left < 0.4f ? Mathf.Clamp01(left / 0.4f) : 1f;
+            var prev = GUI.color;
+            GUI.color = new Color(0.10f, 0.06f, 0.03f, 0.92f * a);
+            GUI.DrawTexture(plate, Texture2D.whiteTexture);
+            GUI.color = prev;
+            float insetX = 8f * s;
+            float insetY = 4f * s;
+            var r = new Rect(plate.x + insetX, plate.y + insetY, plate.width - insetX * 2f, plate.height - insetY * 2f);
+            StampOutlined(r, PigExplainLine, st, new Color(1f, 0.96f, 0.84f, a), 0, Mathf.Max(1, st.fontSize / 12));
         }
 
         static bool GuiPaint()
@@ -10270,6 +10526,9 @@ namespace FlockFive
             vipGates.Inactive = !offerVip;
             vipGates.PopupGate = PopupBlocked(PopupKind.Vip);
             vipGates.StepGate = StepGateBlocks(SplashPress.PressHit(SplashPress.Id.Vip).Rect);
+            // Hits share the rail's coordinate space. A scaled matrix left up by the coin
+            // flip would move the pig and the gap by different amounts at each icon size.
+            GUI.matrix = PhoneArea.GuiBase;
             var vipView = StepHomePress(SplashPress.Id.Vip, !SplashPress.Blocks(vipGates), vipGates.LessonOwn);
             bool noAdsHeld = vipView.Pressed;
             bool vipTap = vipView.Launch;
@@ -10277,8 +10536,33 @@ namespace FlockFive
             // Pig above hive: hit-test before the album so taps don't open it.
             // The offer card swallows the rail so a dismiss tap cannot oink.
             var pigR = PiggyRect(s);
-            if (!modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR) && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
+            // b120: the coin pill is the pig's balance. One pad (pig + amount + icon, gap included)
+            // so a press on the coin uses the same poke as a press on the pig. A second HitPad on
+            // the pill dropped the release (its id was conditional), TryPigPoke never ran, and the
+            // only motion left was the coin's idle flip. HomeTapAllowed still gates the whole pad.
+            var pillR = CoinPillLive(pigR, s);
+            bool pigAllowed = !modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR);
+            bool pillOpen = pigAllowed && pillR.width > 2f && !VeilBlocks(pillR);
+            // Amount, icon, gap, and pig. One rect. The margin is a fraction of the pig, so
+            // 402, 412, and 820 cover the same relative targets.
+            var pokePad = PigPokePad(pigR, pillOpen ? pillR : default);
+            GUI.matrix = PhoneArea.GuiBase;
+            var pokeEv = Event.current;
+            bool pokeUp = pokeEv != null && pokeEv.button == 0 && pokeEv.rawType == EventType.MouseUp;
+            bool downInside = pigAllowed && (GuiPressInside(pokePad) || SamplePressInside(pokePad));
+            bool upInside = pokeUp && PigPokeHits(pokePad, GuiPointer(), PhoneArea.OffX);
+            // One HitPad, always, while the pig accepts taps, so the id does not move between press and release.
+            bool pokeRelease = pigAllowed && HitPad(pokePad.width > 2f ? pokePad : pigR, out _);
+            if (!upInside && pokeRelease) upInside = true;
+            bool pokePointer = pokeEv != null && (pokeEv.rawType == EventType.MouseDown || pokeEv.rawType == EventType.MouseUp);
+            bool vipBlock = vipDraw && offerVip && !vipHold && pokePointer && VipContains(noAdsR, pokeEv.mousePosition);
+            var poke = TickPigPoke(pigAllowed, vipBlock, downInside, pokeUp, upInside, _pigPokeArm, _pigPokeFrame == Time.frameCount);
+            _pigPokeArm = poke.Armed;
+            if (poke.Fire)
+            {
+                _pigPokeFrame = Time.frameCount;
                 TryPigPoke();
+            }
 
             // Hive lesson hides that slot. The packer closes it; poker slides up under the pig.
             bool hiveDraw = RailLive(RailHive);
