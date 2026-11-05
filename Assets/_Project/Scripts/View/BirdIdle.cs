@@ -48,6 +48,9 @@ namespace FlockFive
         float _glowA;
         SpriteRenderer[] _aura;
         SpriteRenderer[] _twink;
+        SpriteRenderer _selGold;
+        SpriteRenderer _selDark;
+        static Sprite _selRing;
         float _selectA;
         float _cheerA;
         static Material _silhouette;
@@ -74,6 +77,12 @@ namespace FlockFive
         public static UnityEngine.Color BodyTint(bool shrouded) => shrouded ? HiddenTint : UnityEngine.Color.white;
         static UnityEngine.Color ShroudTint => HiddenTint;
 
+        void OnDisable()
+        {
+            _selectA = 0f;
+            HideSelectRing();
+        }
+
         void Awake()
         {
             _sr = GetComponent<SpriteRenderer>();
@@ -96,6 +105,8 @@ namespace FlockFive
             _flutterUntil = 0f;
             _cheerUntil = 0f;
             _glowA = 0f;
+            _selectA = 0f;
+            HideSelectRing();
             _kitGlide.Ready = false;
             _liftShown = 0f; // re-bound birds (e.g. after Restart) start seated, no pop
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
@@ -259,6 +270,7 @@ namespace FlockFive
             if (_far != null && _far.enabled) _far.enabled = false;
             if (_face != null && _face.enabled) _face.enabled = false;
             _selectA = 0f;
+            HideSelectRing();
             HideFx(_aura);
             _cheerA = 0f;
             HideFx(_twink);
@@ -381,6 +393,9 @@ namespace FlockFive
             if (!isActiveAndEnabled) return;
             if (_flapDrive)
             {
+                // Sling owns the bird. A perch ring must not ride along.
+                _selectA = 0f;
+                HideSelectRing();
                 TickFlapDrive();
                 return;
             }
@@ -448,9 +463,9 @@ namespace FlockFive
             if (kitOn) EnsureKit();
             PlaceKit(kitOn, wings, flapT);
             PlaceFace(mood, BirdDress.FaceOn(show, Veiled));
-            // White silhouette only used to mean "selected". Selection is the colored
-            // aura. A cheer (feeder clear, hawk wave, finale) is twinkles, including
-            // while Frozen, and never that halo. Flight sets Lift with Frozen and stays dark.
+            // Hold marker is the gold annulus in PlaceSelect. It stays while Lift >= 1
+            // and clears on drop. The silhouette copies further down are not that marker.
+            // A cheer is twinkles and never the ring. Flight sets Lift with Frozen and stays dark.
             bool selected = show && !Shrouded && !Sleeping && !Frozen && Lift >= 1f;
             bool cheering = show && !Shrouded && Time.time < _cheerUntil;
             PlaceSelect(selected);
@@ -550,7 +565,7 @@ namespace FlockFive
         const float FlapRate = 1.25f;
 
         // Selected run (BranchView.SetReady lifts tip birds to Lift 1.15) draws
-        // PlaceSelect. The silhouette ring below is unused; celebrations do not call it.
+        // PlaceSelect. The silhouette copies below are unused; celebrations do not call them.
         const int GlowRing = 16;           // copies per ring
         const float GlowSolidPx = 9.5f;    // inner ring radius, in body source px
         const float GlowSoftPx = 14.5f;     // outer (soft) ring radius, in body source px
@@ -1084,63 +1099,282 @@ namespace FlockFive
             return map.Lo != null;
         }
 
+        // Lasting selection ring, one annulus per lifted bird. The pose mesh box is the
+        // wing-tip rectangle; a band around that whole box measured ~270×180 on 820 and
+        // crossed the play edge on 402/412. Foot is the share of that box that matches
+        // the bird. The dark stroke is then clamped inside the play camera.
+        public const float SelectRingFoot = 0.88f;
+        public const float SelectRingPad = 0.06f;
+        public const float SelectRingHole = 0.86f;
+        public const float SelectRingEdge = 0.94f;
+        public const float SelectRingFeather = 0.03f;
+        public const float SelectRingDarkMul = 1.05f;
+        public const float SelectRingBoardInset = 0.06f;
+        public const float SelectRingAlphaFloor = 0.90f;
+        public const float SelectRingOff = 0.01f;
+        // Matches the branch wood tint in BranchView.Highlight so the limb and the flock read as one pick.
+        public static readonly Color SelectRingGold = new Color(1f, 0.82f, 0.15f, 1f);
+        public static readonly Color SelectRingDark = new Color(0.10f, 0.05f, 0.02f, 1f);
+
+        public static float SelectRingAlpha(float selectA, float pulse) =>
+            Mathf.Clamp01(selectA) * Mathf.Lerp(SelectRingAlphaFloor, 1f, Mathf.Clamp01(pulse));
+
+        public static bool SelectRingShown(float selectA) => selectA > SelectRingOff;
+
+        // Outer half-extents of the gold band, in the bird's local space.
+        // Foot pulls the band in from the wing-tip box; pad is a slim margin past that.
+        public static void SelectRingExtents(float bodyHalfX, float bodyHalfY, out float hx, out float hy)
+        {
+            hx = Mathf.Max(0.18f, bodyHalfX) * SelectRingFoot + SelectRingPad;
+            hy = Mathf.Max(0.18f, bodyHalfY) * SelectRingFoot + SelectRingPad;
+        }
+
+        // Keep the outer stroke inside the play rect. Shift first; shrink only when
+        // the stroke is wider than the board. hx/hy are half-extents in the same space as the board.
+        public static void SelectRingClamp(
+            float cx, float cy, float hx, float hy,
+            float boardMinX, float boardMaxX, float boardMinY, float boardMaxY,
+            out float ox, out float oy, out float ohx, out float ohy)
+        {
+            float inset = SelectRingBoardInset;
+            float minX = boardMinX + inset;
+            float maxX = boardMaxX - inset;
+            float minY = boardMinY + inset;
+            float maxY = boardMaxY - inset;
+            if (maxX < minX)
+            {
+                float mid = (boardMinX + boardMaxX) * 0.5f;
+                minX = maxX = mid;
+            }
+            if (maxY < minY)
+            {
+                float mid = (boardMinY + boardMaxY) * 0.5f;
+                minY = maxY = mid;
+            }
+            float roomX = (maxX - minX) * 0.5f;
+            float roomY = (maxY - minY) * 0.5f;
+            ohx = hx > 0f ? hx : 0f;
+            ohy = hy > 0f ? hy : 0f;
+            float fit = 1f;
+            if (ohx > roomX && ohx > 1e-4f) fit = Mathf.Min(fit, roomX / ohx);
+            if (ohy > roomY && ohy > 1e-4f) fit = Mathf.Min(fit, roomY / ohy);
+            ohx *= fit;
+            ohy *= fit;
+            float loX = minX + ohx;
+            float hiX = maxX - ohx;
+            float loY = minY + ohy;
+            float hiY = maxY - ohy;
+            ox = loX <= hiX ? Mathf.Clamp(cx, loX, hiX) : (minX + maxX) * 0.5f;
+            oy = loY <= hiY ? Mathf.Clamp(cy, loY, hiY) : (minY + maxY) * 0.5f;
+        }
+
+        // Inner half-extent of the gold band (mid-feather). Must sit inside the pose so the bird covers the hole.
+        public static float SelectRingInner(float outerHalf) => outerHalf * SelectRingHole;
+
+        // Half-extent where the hole is fully clear (inside the feather). Still has to sit on the bird.
+        public static float SelectRingClear(float outerHalf)
+        {
+            float edge = SelectRingEdge > 0.05f ? SelectRingEdge : 0.05f;
+            float d = SelectRingHole * edge - SelectRingFeather;
+            if (d < 0f) d = 0f;
+            return outerHalf * d / edge;
+        }
+
         void PlaceSelect(bool on)
         {
             _selectA = Mathf.MoveTowards(_selectA, on ? 1f : 0f, 8f * Time.deltaTime);
-            if (_selectA <= 0.01f)
+            var pose = _poseSprite != null ? _poseSprite : (_sr != null ? _sr.sprite : null);
+            if (!SelectRingShown(_selectA) || pose == null || _sr == null)
             {
+                HideSelectRing();
                 HideFx(_aura);
                 return;
             }
-            EnsureAura();
-            var tint = Wow.Of(Color);
-            float pulse = 0.72f + 0.28f * Mathf.Sin(Time.time * 5.2f + _phase);
-            float a = _selectA * pulse;
-            int order = _sr != null ? _sr.sortingOrder : 12;
-            int layer = _sr != null ? _sr.sortingLayerID : 0;
-            var halo = _aura[0];
-            halo.sprite = SpriteCatalog.Glow;
-            halo.color = new Color(tint.r, tint.g, tint.b, 0.40f * a);
-            halo.transform.localPosition = new Vector3(0f, 0.42f, 0f);
-            halo.transform.localRotation = Quaternion.identity;
-            halo.transform.localScale = Vector3.one * (3.15f + 0.28f * pulse);
-            halo.sortingOrder = order - 3;
-            halo.sortingLayerID = layer;
-            halo.enabled = true;
-            float spin = Time.time * 70f + _phase * 20f;
-            for (int i = 0; i < 5; i++)
+            var ring = SelectRingSprite();
+            if (ring == null)
             {
-                var dot = _aura[1 + i];
-                float ang = (spin + i * 72f) * Mathf.Deg2Rad;
-                dot.sprite = SpriteCatalog.Glow;
-                dot.color = new Color(tint.r, tint.g, tint.b, 0.88f * a);
-                dot.transform.localPosition = new Vector3(Mathf.Cos(ang) * 1.15f, 0.42f + Mathf.Sin(ang) * 1.15f, 0f);
-                dot.transform.localRotation = Quaternion.identity;
-                dot.transform.localScale = Vector3.one * 0.42f;
-                dot.sortingOrder = order + 3;
-                dot.sortingLayerID = layer;
-                dot.enabled = true;
+                HideSelectRing();
+                return;
             }
-            for (int i = 0; i < 3; i++)
-            {
-                var sp = _aura[6 + i];
-                float ang = (-spin * 1.35f + i * 120f) * Mathf.Deg2Rad;
-                float rad = 1.45f + 0.12f * Mathf.Sin(Time.time * 3f + i);
-                float tw = 0.28f + 0.10f * Mathf.Sin(Time.time * 8f + i * 2f);
-                sp.sprite = SpriteCatalog.Sparkle;
-                sp.color = new Color(
-                    Mathf.Lerp(tint.r, 1f, 0.35f),
-                    Mathf.Lerp(tint.g, 1f, 0.35f),
-                    Mathf.Lerp(tint.b, 1f, 0.35f),
-                    0.92f * a);
-                sp.transform.localPosition = new Vector3(Mathf.Cos(ang) * rad, 0.42f + Mathf.Sin(ang) * rad * 0.82f, 0f);
-                sp.transform.localScale = Vector3.one * tw;
-                sp.transform.localRotation = Quaternion.Euler(0f, 0f, Time.time * 120f + i * 40f);
-                sp.sortingOrder = order + 4;
-                sp.sortingLayerID = layer;
-                sp.enabled = true;
-            }
+            EnsureSelectRing();
+            // Full pose, then the worn crown/bow and the split far wing. The drawn body
+            // is punched, so its own bounds would leave the back wing outside the ring.
+            SelectSpan(pose, _sr.flipX, out float cx, out float cy, out float bodyHx, out float bodyHy);
+            SelectRingExtents(bodyHx, bodyHy, out float hx, out float hy);
+            ClampSelectRing(ref cx, ref cy, ref hx, ref hy);
+            float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * 3.2f + _phase);
+            float a = SelectRingAlpha(_selectA, pulse) * _sr.color.a;
+            int order = _sr.sortingOrder;
+            int layer = _sr.sortingLayerID;
+            var pos = new Vector3(cx, cy, 0f);
+            // Behind the far wing (body-2) and the bow (body-1), still above leaves.
+            ShowSelectBand(_selDark, ring, pos, hx * SelectRingDarkMul, hy * SelectRingDarkMul,
+                new Color(SelectRingDark.r, SelectRingDark.g, SelectRingDark.b, a), layer, order - 4);
+            ShowSelectBand(_selGold, ring, pos, hx, hy,
+                new Color(SelectRingGold.r, SelectRingGold.g, SelectRingGold.b, a), layer, order - 3);
         }
+
+        void ClampSelectRing(ref float cx, ref float cy, ref float hx, ref float hy)
+        {
+            float sx = Mathf.Abs(transform.lossyScale.x);
+            float sy = Mathf.Abs(transform.lossyScale.y);
+            if (sx < 1e-4f) sx = 1f;
+            if (sy < 1e-4f) sy = 1f;
+            var world = transform.TransformPoint(new Vector3(cx, cy, 0f));
+            PlayBoard(out float minX, out float maxX, out float minY, out float maxY);
+            SelectRingClamp(world.x, world.y, hx * SelectRingDarkMul * sx, hy * SelectRingDarkMul * sy,
+                minX, maxX, minY, maxY, out float ox, out float oy, out float owx, out float owy);
+            float backX = SelectRingDarkMul * sx;
+            float backY = SelectRingDarkMul * sy;
+            if (backX < 1e-4f) backX = 1f;
+            if (backY < 1e-4f) backY = 1f;
+            hx = owx / backX;
+            hy = owy / backY;
+            var local = transform.InverseTransformPoint(new Vector3(ox, oy, world.z));
+            cx = local.x;
+            cy = local.y;
+        }
+
+        static void PlayBoard(out float minX, out float maxX, out float minY, out float maxY)
+        {
+            var cam = Camera.main;
+            float halfH = cam != null && cam.orthographic ? cam.orthographicSize : WorldBuilder.CamOrtho;
+            float aspect = cam != null && cam.orthographic ? cam.aspect : DeviceFit.PhoneAspect;
+            if (aspect < 0.05f) aspect = DeviceFit.PhoneAspect;
+            float halfW = halfH * aspect;
+            float cx = cam != null ? cam.transform.position.x : 0f;
+            float cy = cam != null ? cam.transform.position.y : WorldBuilder.CamRestY;
+            minX = cx - halfW;
+            maxX = cx + halfW;
+            minY = cy - halfH;
+            maxY = cy + halfH;
+        }
+
+        void SelectSpan(Sprite pose, bool flipX, out float cx, out float cy, out float hx, out float hy)
+        {
+            var b = pose.bounds;
+            float minX = b.min.x;
+            float maxX = b.max.x;
+            float minY = b.min.y;
+            float maxY = b.max.y;
+            if (flipX)
+            {
+                float lo = -maxX;
+                maxX = -minX;
+                minX = lo;
+            }
+            IncludeBand(_far, ref minX, ref maxX, ref minY, ref maxY);
+            IncludeBand(_kit, ref minX, ref maxX, ref minY, ref maxY);
+            cx = (minX + maxX) * 0.5f;
+            cy = (minY + maxY) * 0.5f;
+            hx = (maxX - minX) * 0.5f;
+            hy = (maxY - minY) * 0.5f;
+        }
+
+        static void IncludeBand(SpriteRenderer src, ref float minX, ref float maxX, ref float minY, ref float maxY)
+        {
+            if (src == null || !src.enabled || src.sprite == null) return;
+            var b = src.sprite.bounds;
+            float s = Mathf.Abs(src.transform.localScale.x);
+            if (s < 1e-4f) s = 1f;
+            float left = b.min.x * s;
+            float right = b.max.x * s;
+            float bottom = b.min.y * s;
+            float top = b.max.y * s;
+            if (src.flipX)
+            {
+                float lo = -right;
+                right = -left;
+                left = lo;
+            }
+            float rad = src.transform.localEulerAngles.z * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad);
+            float sn = Mathf.Sin(rad);
+            if (c < 0f) c = -c;
+            if (sn < 0f) sn = -sn;
+            float hx = (right - left) * 0.5f;
+            float hy = (top - bottom) * 0.5f;
+            float mx = src.transform.localPosition.x + (left + right) * 0.5f;
+            float my = src.transform.localPosition.y + (bottom + top) * 0.5f;
+            float ehx = hx * c + hy * sn;
+            float ehy = hx * sn + hy * c;
+            if (mx - ehx < minX) minX = mx - ehx;
+            if (mx + ehx > maxX) maxX = mx + ehx;
+            if (my - ehy < minY) minY = my - ehy;
+            if (my + ehy > maxY) maxY = my + ehy;
+        }
+
+        static void ShowSelectBand(SpriteRenderer sr, Sprite ring, Vector3 pos, float hx, float hy, Color color, int layer, int order)
+        {
+            if (sr == null || ring == null) return;
+            float edge = Mathf.Max(0.05f, SelectRingEdge);
+            sr.sprite = ring;
+            sr.color = color;
+            sr.flipX = false;
+            sr.transform.localPosition = pos;
+            sr.transform.localRotation = Quaternion.identity;
+            sr.transform.localScale = new Vector3(2f * hx / edge, 2f * hy / edge, 1f);
+            sr.sortingLayerID = layer;
+            sr.sortingOrder = order;
+            sr.enabled = true;
+        }
+
+        void EnsureSelectRing()
+        {
+            if (_selGold == null) _selGold = MakeSelectBand("SelRing");
+            if (_selDark == null) _selDark = MakeSelectBand("SelRingDark");
+        }
+
+        SpriteRenderer MakeSelectBand(string name)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(transform, false);
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.enabled = false;
+            return sr;
+        }
+
+        void HideSelectRing()
+        {
+            if (_selGold != null && _selGold.enabled) _selGold.enabled = false;
+            if (_selDark != null && _selDark.enabled) _selDark.enabled = false;
+        }
+
+        static Sprite SelectRingSprite()
+        {
+            if (_selRing != null) return _selRing;
+            const int n = 128;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.name = "SelRing";
+            tex.hideFlags = HideFlags.HideAndDontSave;
+            float m = (n - 1) * 0.5f;
+            float inner = SelectRingHole * SelectRingEdge;
+            float outer = SelectRingEdge;
+            float feather = SelectRingFeather;
+            for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+            {
+                float dx = (x - m) / m;
+                float dy = (y - m) / m;
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                float inn = Mathf.InverseLerp(inner - feather, inner + feather, d);
+                float outA = 1f - Mathf.InverseLerp(outer - feather, outer + feather, d);
+                float a = Mathf.Clamp01(inn) * Mathf.Clamp01(outA);
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            }
+            tex.Apply(false, false);
+            _selRing = Sprite.Create(tex, new Rect(0, 0, n, n), new Vector2(0.5f, 0.5f), n);
+            _selRing.name = "SelRing";
+            _selRing.hideFlags = HideFlags.HideAndDontSave;
+            return _selRing;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetSelectRing() => _selRing = null;
 
         void PlaceCheerFx(bool on)
         {
@@ -1179,11 +1413,11 @@ namespace FlockFive
         void EnsureAura()
         {
             if (_aura != null) return;
-            _aura = new SpriteRenderer[9];
+            _aura = new SpriteRenderer[10];
             for (int i = 0; i < _aura.Length; i++)
             {
-                var spr = i >= 6 ? SpriteCatalog.Sparkle : SpriteCatalog.Glow;
-                var go = WorldBuilder.Sprite(i == 0 ? "Aura" : "AuraBit", spr, transform.position, 0.2f, 11, transform);
+                var spr = i >= 6 && i < 9 ? SpriteCatalog.Sparkle : SpriteCatalog.Glow;
+                var go = WorldBuilder.Sprite(i == 0 ? "Aura" : i == 9 ? "AuraRim" : "AuraBit", spr, transform.position, 0.2f, 11, transform);
                 go.transform.localRotation = Quaternion.identity;
                 var sr = go.GetComponent<SpriteRenderer>();
                 sr.enabled = false;
