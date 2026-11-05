@@ -8674,14 +8674,54 @@ namespace FlockFive
 
         static float CoinBalanceIcon(float s) => CoinBalanceIcon(PhoneArea.W, s);
 
-        // The home coin pill (amount + coin icon) as drawn by DrawStreakRewards: right edge 12px left of the pig.
-        Rect CoinPillRect(Rect pig, float s) => CoinPillRect(pig, CoinBalanceIcon(s));
-        public static Rect CoinPillRect(Rect pig, float icon)
+        // The home coin pill hit pad: the real drawn amount rect (DrawCoinCluster's coinR) unioned with the
+        // coin icon. Not the fixed icon×0.95×3.6 guess — a long balance on iPad 820 left ~80px of text untappable.
+        Rect CoinPillRect(Rect pig, float s)
         {
             if (pig.width < 2f || pig.height < 2f) return default;
-            float right = pig.x - 12f;
-            float w = icon + BadgerCoinPillTextW(icon);
-            return new Rect(right - w, pig.center.y - icon * 0.5f, w, icon);
+            float icon = CoinBalanceIcon(s);
+            var ir = new Rect(pig.x - 12f - icon, pig.center.y - icon * 0.5f, icon, icon);
+            return CoinClusterHit(ir, s, Money.Format(CoinsDrawn()), CoinBalanceType);
+        }
+
+        // Testable: union of the amount text rect and the icon, matching DrawCoinCluster's coinR + iconR.
+        public static Rect CoinPillRect(Rect pig, float icon) => CoinPillRect(pig, icon, "$0");
+        public static Rect CoinPillRect(Rect pig, float icon, string coins)
+        {
+            if (pig.width < 2f || pig.height < 2f) return default;
+            var ir = new Rect(pig.x - 12f - icon, pig.center.y - icon * 0.5f, icon, icon);
+            return CoinClusterHit(ir, 1f, coins ?? "$0", CoinBalanceType);
+        }
+
+        // Same amount layout DrawCoinCluster paints into coinR, then unioned with the icon.
+        public static Rect CoinClusterHit(Rect iconR, float s, string coins, float typeScale)
+        {
+            if (iconR.width < 2f || iconR.height < 2f) return default;
+            if (string.IsNullOrEmpty(coins)) coins = "$0";
+            var st = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleRight,
+                wordWrap = false,
+                clipping = TextClipping.Overflow,
+                fontSize = Mathf.Max(14, Mathf.RoundToInt(iconR.height * typeScale))
+            };
+            var content = new GUIContent(coins);
+            float leftLimit = 8f;
+            float maxW = Mathf.Max(36f, iconR.x - 8f * s - leftLimit);
+            int guard = 0;
+            while (st.fontSize > 14 && guard < 48 && st.CalcSize(content).x > maxW)
+            {
+                st.fontSize -= 1;
+                guard++;
+            }
+            var size = st.CalcSize(content);
+            var coinR = new Rect(iconR.x - 8f * s - size.x, iconR.center.y - size.y * 0.5f, size.x + 4f, size.y);
+            float x0 = Mathf.Min(coinR.xMin, iconR.xMin);
+            float x1 = Mathf.Max(coinR.xMax, iconR.xMax);
+            float y0 = Mathf.Min(coinR.yMin, iconR.yMin);
+            float y1 = Mathf.Max(coinR.yMax, iconR.yMax);
+            return new Rect(x0, y0, x1 - x0, y1 - y0);
         }
 
         void DrawCoinBalance(float s, float rightX, float centerY)
@@ -8729,6 +8769,7 @@ namespace FlockFive
             else
                 st.fontSize = _coinPx;
             var size = st.CalcSize(content);
+            // coinR is the live amount; the tap pad (CoinPillRect / CoinClusterHit) reuses this same rect + icon.
             var coinR = new Rect(iconR.x - 8f * s - size.x, iconR.center.y - size.y * 0.5f, size.x + 4f, size.y);
             int dark = Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.12f));
             StampOutlined(coinR, coins, st, new Color(0.22f, 0.10f, 0.03f), 2, dark);
@@ -10288,8 +10329,9 @@ namespace FlockFive
             // The offer card swallows the rail so a dismiss tap cannot oink.
             var pigR = PiggyRect(s);
             // b120: the coin pill beside the pig looked tappable and did nothing. It is the pig's balance, so a tap on
-            // it pokes the pig too (same gates as the pig itself).
-            // Both pads claim their IMGUI control id every event (no short-circuit), so later ids never shift.
+            // it pokes the pig too (same gates as the pig itself). Hit pad is the real drawn amount+icon (CoinClusterHit),
+            // not the fixed icon×0.95×3.6 guess. Pads run only when pigAllowed (and the pill when width>2 and not veiled);
+            // those gates are stable within a frame so Layout/MouseDown ids stay aligned.
             var pillR = CoinPillRect(pigR, s);
             bool pigAllowed = !modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR);
             bool pigHit = pigAllowed && HitPad(pigR, out _);
