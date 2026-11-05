@@ -8698,7 +8698,8 @@ namespace FlockFive
         {
             if (iconR.width < 2f || iconR.height < 2f) return default;
             if (string.IsNullOrEmpty(coins)) coins = "$0";
-            var st = new GUIStyle(GUI.skin.label)
+            // GUI.skin only exists inside OnGUI; editor tests measure with the same built-in font.
+            var st = new GUIStyle(Event.current != null ? GUI.skin.label : new GUIStyle { font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf") })
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleRight,
