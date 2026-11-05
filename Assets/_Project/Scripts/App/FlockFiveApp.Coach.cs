@@ -4613,11 +4613,11 @@ namespace FlockFive
             bool haveBox = RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 0f, out var drawn);
             if (haveBox && alpha > 0.05f) { _gloveBody = drawn; _gloveBodyFrame = Time.frameCount; GloveBodyAlpha = alpha; }
             var prev = GUI.matrix;
-            var fro = Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
-            var scale = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(sx, squash, 1f));
-            var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, ang), Vector3.one);
-            var to = Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, Vector3.one);
-            var m = to * rot * scale * fro * prev;
+            // Pivot is in the phone area. The GUI matrix carries the iPad pillar shift
+            // (PhoneArea.OffX, ~78px at 820x1180). That shift has to stay outside the
+            // finger rotation: inside it, a sideways hand swings OffX up into the tip
+            // and the glove settles about a row off the bird. Phones have OffX 0.
+            var m = GlovePoseMatrix(prev, pivot, ang, sx, squash);
             // b89 (Brandon): the caption reads on top of the glove. When the hand still
             // reaches this frame's caption plate, it is cut at the plate edge, so it
             // slides out from under the banner instead of lying across it.
@@ -4688,6 +4688,18 @@ namespace FlockFive
             GL.End();
             GL.PopMatrix();
             return true;
+        }
+
+        // Finger rotation around `pivot` (area pixels), then the active GUI matrix
+        // (pillar shift, HUD shake). The tip vertex is `pivot`, so it lands on
+        // gui * pivot at every angle, including a mirrored scale.
+        public static Matrix4x4 GlovePoseMatrix(Matrix4x4 gui, Vector2 pivot, float angDeg, float scaleX, float scaleY)
+        {
+            var fro = Matrix4x4.TRS(new Vector3(-pivot.x, -pivot.y, 0f), Quaternion.identity, Vector3.one);
+            var scale = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scaleX, scaleY, 1f));
+            var rot = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 0f, angDeg), Vector3.one);
+            var to = Matrix4x4.TRS(new Vector3(pivot.x, pivot.y, 0f), Quaternion.identity, Vector3.one);
+            return gui * (to * rot * scale * fro);
         }
 
         public const float GloveScreenMargin = 6f;
