@@ -37,6 +37,7 @@ public static class CaptionStyles
         { "adopt.greet",    new Spot(true, 8f, 1f) }, // 'Look, a bird followed you home!' — solid, down over VIP / No Ads
         { "home.intro",     new Spot(true) },     // other home narration lines
         { "coach.line",     new Spot(true) },     // in-garden coach lines (level lessons)
+        { "coach.rule",     new Spot(true, ink: 1f) }, // b120: first-time rule tips. Solid plate; 0.86 left 412's dark type on the garden.
         { "badger.caption", new Spot(true) },     // badger fight narration
         { "home.daily",     new Spot(false) },    // 'Tap Daily for your bonus!' (rail button)
         { "daily.claim",    new Spot(false) },    // Daily card claim step (inside the card)

@@ -715,6 +715,72 @@ namespace FlockFive
             return 1f + RoomBoost * wide;
         }
 
+        // Rule tips keep their authored rows. The column stays in from the screen
+        // edge so the outline is not clipped into a stray mark (iPad 820).
+        public static float RuleTextWidth(float screenW)
+        {
+            float full = screenW < 8f ? 8f : screenW;
+            float w = full * 0.86f;
+            if (w < 48f) w = full > 48f ? 48f : full;
+            return w;
+        }
+
+        public static int RuleFontFloor(int bannerPx)
+        {
+            int hi = bannerPx < 1 ? 1 : bannerPx;
+            int floor = Mathf.RoundToInt(hi * 0.5f);
+            if (floor < 16) floor = 16;
+            if (floor > hi) floor = hi;
+            return floor;
+        }
+
+        public struct KeptFit
+        {
+            public string Shown;
+            public int Font;
+            public float TextH;
+            public int Lines;
+            public bool Overflow;
+        }
+
+        // Shrink until every authored row fits maxW. Never joins rows, so a phrase
+        // the author put on its own line ("bows with bows!") cannot be split to
+        // balance a two-line banner. At the floor a row may wrap at spaces.
+        public static KeptFit FitKept(GUIStyle style, string text, float maxW, int font, int floor)
+        {
+            var fit = new KeptFit { Shown = text ?? "", Font = 1, TextH = 1f, Lines = 1 };
+            if (string.IsNullOrEmpty(text)) return fit;
+            if (font < 1) font = 1;
+            if (floor < 1) floor = 1;
+            if (floor > font) floor = font;
+            if (maxW < 8f) maxW = 8f;
+            int chosen = floor;
+            for (int px = font; px >= floor; px--)
+            {
+                chosen = px;
+                if (WidthsFit(style, text.Split('\n'), maxW, px)) break;
+            }
+            string shown = text;
+            bool overflow = !WidthsFit(style, shown.Split('\n'), maxW, chosen);
+            if (overflow)
+            {
+                shown = WrapAt(style, text, maxW, chosen);
+                overflow = !WidthsFit(style, shown.Split('\n'), maxW, chosen);
+            }
+            int lines = 1;
+            for (int i = 0; i < shown.Length; i++)
+                if (shown[i] == '\n') lines++;
+            if (lines < 1) lines = 1;
+            float textH = LineHeight(style, chosen) * lines;
+            if (textH < 1f) textH = 1f;
+            fit.Shown = shown;
+            fit.Font = chosen;
+            fit.TextH = textH;
+            fit.Lines = lines;
+            fit.Overflow = overflow;
+            return fit;
+        }
+
         public static int BannerFont(float screenW, float screenH)
         {
             float ui = DeviceFit.Ui(screenW, screenH) * TextFit(screenW, screenH);

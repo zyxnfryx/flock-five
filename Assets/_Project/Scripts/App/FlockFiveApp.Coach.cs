@@ -3034,7 +3034,7 @@ namespace FlockFive
             _coachLineHoldX = seat.x;
             _coachHoldXOn = true;
             _coachLineHeld = true;
-            CapSpot("coach.line"); PaintCoachCaption(text, seat, s, lo, hi, default, false, StandardCaptionSlack);
+            CapSpot(RuleTips.IsLine(text) ? "coach.rule" : "coach.line"); PaintCoachCaption(text, seat, s, lo, hi, default, false, StandardCaptionSlack);
         }
 
         // One x,y per tutorial sentence. The first call after this frame's pose
@@ -3762,12 +3762,22 @@ namespace FlockFive
                 return true;
             }
             var st = CoachLineStyle();
-            float maxW = CaptionLayout.BannerMeasureWidth(w, st, text, px);
-            var fitted = CaptionLayout.FitBanner(st, text, maxW, px);
-            BannerText = string.IsNullOrEmpty(fitted.Shown) ? text : fitted.Shown;
-            px = fitted.Font;
+            bool ruleLine = RuleTips.IsLine(text);
+            float maxW = ruleLine ? CaptionLayout.RuleTextWidth(w) : CaptionLayout.BannerMeasureWidth(w, st, text, px);
+            if (ruleLine)
+            {
+                var kept = CaptionLayout.FitKept(st, text, maxW, px, CaptionLayout.RuleFontFloor(px));
+                BannerText = string.IsNullOrEmpty(kept.Shown) ? text : kept.Shown;
+                px = kept.Font;
+            }
+            else
+            {
+                var fitted = CaptionLayout.FitBanner(st, text, maxW, px);
+                BannerText = string.IsNullOrEmpty(fitted.Shown) ? text : fitted.Shown;
+                px = fitted.Font;
+            }
             float minTop = Mathf.Max(safe.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
-            if (spot != "coach.line" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(screenH, safe, s));
+            if (spot != "coach.line" && spot != "coach.rule" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(screenH, safe, s));
             float gap = 8f * s;
             // The bee banner stays high under the title. Sliding it under a subject
             // would drop it onto the hive and the glove.
@@ -3821,7 +3831,7 @@ namespace FlockFive
                     // is room above; otherwise the glove is clipped at the band edge.
                     // b92 (Brandon): a garden banner also stays off the top branch row and the
                     // birds lifted above it. Lift the band over that row when there is room above.
-                    if (spot == "coach.line" && BoardTopGui(out float rowTop) && band.yMax > rowTop - gap)
+                    if ((spot == "coach.line" || spot == "coach.rule") && BoardTopGui(out float rowTop) && band.yMax > rowTop - gap)
                     {
                         float up = rowTop - gap - band.height;
                         if (up >= minTop && band.y - up > 0.5f) { band.y = up; moved = true; }
@@ -3837,7 +3847,9 @@ namespace FlockFive
                     }
                     if (!moved) break;
                 }
-                if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
+                // A rule tip has no glove. A stale tap rect must not drop it onto the snug
+                // plate (412 painted dark type with no banner behind it).
+                if (!RuleTips.IsLine(text) && _gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
             }
             else if (bee && band.y < minTop + screenH * CaptionLayout.BeeGardenDropFrac)
                 band.y = minTop + screenH * CaptionLayout.BeeGardenDropFrac;
@@ -3904,16 +3916,26 @@ namespace FlockFive
             var st = CoachLineStyle();
             int keep = st.fontSize;
             bool wrap = st.wordWrap;
-            float maxW = CaptionLayout.BannerMeasureWidth(w, st, text ?? "", px);
+            bool ruleLine = RuleTips.IsLine(text);
+            float maxW = ruleLine ? CaptionLayout.RuleTextWidth(w) : CaptionLayout.BannerMeasureWidth(w, st, text ?? "", px);
             float th = px;
             try
             {
-                var fit = CaptionLayout.FitBanner(st, text ?? "", maxW, px);
-                px = fit.Font;
-                st.wordWrap = true;
-                st.fontSize = px;
-                var content = new GUIContent(string.IsNullOrEmpty(fit.Shown) ? (text ?? "") : fit.Shown);
-                th = st.CalcHeight(content, maxW) - CaptionLayout.GapCut(st, content.text);
+                if (ruleLine)
+                {
+                    var kept = CaptionLayout.FitKept(st, text ?? "", maxW, px, CaptionLayout.RuleFontFloor(px));
+                    px = kept.Font;
+                    th = kept.TextH;
+                }
+                else
+                {
+                    var fit = CaptionLayout.FitBanner(st, text ?? "", maxW, px);
+                    px = fit.Font;
+                    st.wordWrap = true;
+                    st.fontSize = px;
+                    var content = new GUIContent(string.IsNullOrEmpty(fit.Shown) ? (text ?? "") : fit.Shown);
+                    th = st.CalcHeight(content, maxW) - CaptionLayout.GapCut(st, content.text);
+                }
                 if (th < 1f) th = 1f;
             }
             finally
@@ -3925,7 +3947,7 @@ namespace FlockFive
             if (s < 0.01f) s = 1f;
             float minTop = Mathf.Max(safe.yMin, TopHudBox(h, safe, 0f) + (56f * 2f + 4f) * s * 0.92f);
             // b94/b118: home banners (everything but the garden and the bee callout) clear the DRAWN logo plus a visible gap.
-            if (spot != "coach.line" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(h, safe, s));
+            if (spot != "coach.line" && spot != "coach.rule" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(h, safe, s));
             float y = seat.y - (bh - seat.height) * 0.85f;
             if (y < minTop) y = minTop;
             // b86: while adopt is up, every banner starts under the title. Only a spot
@@ -3942,7 +3964,7 @@ namespace FlockFive
                 badge = AdoptVipBadgeRect(w, h, safe);
                 CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s), MinLogoClear(h, safe, s));
             }
-            LiftOffMainButtons(ref band, w, h, safe, s, badge, (spot == "coach.line" || spot == "bee.garden") ? 0f : HomeBannerTop(h, safe, s));
+            LiftOffMainButtons(ref band, w, h, safe, s, badge, (spot == "coach.line" || spot == "coach.rule" || spot == "bee.garden") ? 0f : HomeBannerTop(h, safe, s));
             return band;
         }
 
@@ -4121,13 +4143,17 @@ namespace FlockFive
                 _bannerLast = band; _bannerLastFrame = Time.frameCount;
                 BannerLast = band + " fade " + fade + " ev " + (Event.current != null ? Event.current.type.ToString() : "-") + " px " + bandPx;
                 var prevC = GUI.color;
-                GUI.color = new Color(0f, 0f, 0f, CaptionStyles.Ink(_bannerInkSpot) * fade); // b86 shared tint; adopt greet is solid
+                GUI.color = new Color(0f, 0f, 0f, CaptionStyles.Ink(_bannerInkSpot) * fade); // b86 shared tint; adopt greet and rule tips are solid
                 GUI.DrawTexture(band, Texture2D.whiteTexture);
-                GUI.color = prevC;
+                // Incoming GUI.color tints the fill. A dim left over from the garden stamp
+                // turned 412's rule type dark on a plate that no longer read as a plate.
+                GUI.color = RuleTips.IsLine(text) ? Color.white : prevC;
                 int keep = st.fontSize;
                 st.fontSize = bandPx;
                 st.wordWrap = true;
-                float inner = CaptionLayout.BannerMeasureWidth(band.width, st, text, bandPx);
+                float inner = RuleTips.IsLine(text)
+                    ? CaptionLayout.RuleTextWidth(band.width)
+                    : CaptionLayout.BannerMeasureWidth(band.width, st, text, bandPx);
                 float ix = band.x + (band.width - inner) * 0.5f;
                 // Same face and size as the adopt greet. A row that reaches the
                 // screen edge keeps a stroke that fits, instead of a sliced rim.
@@ -4136,6 +4162,7 @@ namespace FlockFive
                 if (room < ring) ring = Mathf.Max(2, Mathf.FloorToInt(Mathf.Max(0f, room)));
                 var words = new Rect(ix, band.y - CaptionLayout.BannerInkLift(bandPx), inner, band.height);
                 StampBannerText(words, BannerText ?? text, st, fade, true, ring);
+                GUI.color = prevC;
                 KeepCaptionOnTop(1, band, words, BannerText ?? text, bandPx, fade, ring);
                 st.fontSize = keep;
                 st.wordWrap = false;

@@ -16,9 +16,11 @@ namespace FlockFive
         public const string FeederKey = "flockfive.coach.rule.feeder";
         public const string SleepKey = "flockfive.coach.rule.sleep";
 
-        public const string KitLine = "Crowns go with crowns, bows with bows!\nA set is five matching birds.";
+        // Each row is one phrase. The banner keeps these breaks and shrinks;
+        // it must not reflow them into "bows with" / "bows!" (iPad 820).
+        public const string KitLine = "Crowns go with crowns,\nbows with bows!\nA set is five matching birds.";
         public const string FeederLine = "Nice! That feeder now wants\na new colour. Check the top.";
-        public const string SleepLine = "These birds are napping.\nThey wake when a feeder wants their colour.";
+        public const string SleepLine = "These birds are napping.\nThey wake when a feeder\nwants their colour.";
 
         // Longest a frozen tip may hold the garden before it clears itself.
         public const float HoldMax = 30f;
@@ -41,6 +43,18 @@ namespace FlockFive
             if (b.AnySleeping && !seen.Sleep) return RuleTip.Sleep;
             if (b.HasKit && !seen.Kit) return RuleTip.Kit;
             return RuleTip.None;
+        }
+
+        public static bool IsLine(string text)
+        {
+            return text == KitLine || text == FeederLine || text == SleepLine;
+        }
+
+        // The new feeder colour is on screen. Open the tip even if the collect
+        // animation has not finished. blocked: splash, win, restart, or another lesson.
+        public static bool FeederReady(bool turned, bool seen, bool tipUp, bool blocked)
+        {
+            return turned && !seen && !tipUp && !blocked;
         }
 
         public static string Line(RuleTip t)

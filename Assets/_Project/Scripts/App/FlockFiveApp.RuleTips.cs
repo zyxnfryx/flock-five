@@ -58,6 +58,26 @@ namespace FlockFive
             if (seen.Kit && seen.Feeder && seen.Sleep) return false;
             var due = RuleTips.Due(seen, RuleBoardNow());
             if (due == RuleTip.None) return false;
+            ShowRuleTip(due);
+            return true;
+        }
+
+        // New feeder colour has landed. The collect may still be waking the next
+        // row; the tip pauses here so 402 and 820 are not still in that beat
+        // when the capture looks for the line.
+        void RaiseRuleFeederTip()
+        {
+            RuleTrackFeeders();
+            bool blocked = _splash || _won || _restarting || _board == null
+                || _coach || _pestCue != 0 || _leafIntro || _hiveLevelLive
+                || SeasonReveal.HoldsPlay;
+            if (!RuleTips.FeederReady(_ruleTurned, RuleSeen(RuleTip.Feeder), _ruleTip != RuleTip.None, blocked))
+                return;
+            ShowRuleTip(RuleTip.Feeder);
+        }
+
+        void ShowRuleTip(RuleTip due)
+        {
             _ruleTip = due;
             _ruleHeld = 0f;
             _cueHand = false;
@@ -66,10 +86,13 @@ namespace FlockFive
             _cueGift = false;
             _cueBranch = -1;
             _gloveVis = false;
+            _gloveTapRectOn = false;
             CoachHideGlow();
             CueLine(RuleTips.Line(due));
+            // Full plate on the first paint. A fade from 0 left the backing clear
+            // and the type dark for the whole time a device sat on the first frames.
+            _coachFade = 1f;
             HoldTutorPause(true);
-            return true;
         }
 
         // Runs while GamePause holds the garden: fade in, watchdog, any tap continues.

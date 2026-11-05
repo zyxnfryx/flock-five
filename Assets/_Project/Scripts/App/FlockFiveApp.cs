@@ -4643,7 +4643,11 @@ namespace FlockFive
             _pestClearScored = true;
             if (feeder != null)
             {
-                if (_scoreImmediate) feeder.SnapHome();
+                if (_scoreImmediate)
+                {
+                    feeder.SnapHome();
+                    RaiseRuleFeederTip();
+                }
                 else yield return RetireFeeder(feeder, slot, gen);
             }
         }
@@ -5312,7 +5316,11 @@ namespace FlockFive
                 guard += Time.deltaTime;
                 yield return null;
             }
-            if (gen != _motionGen && feeder != null) feeder.SnapHome();
+            if (gen != _motionGen)
+            {
+                if (feeder != null) feeder.SnapHome();
+            }
+            else RaiseRuleFeederTip();
         }
 
         IEnumerator FlyHit(Transform tr, Vector3 dest, float delay, float dur, int pop, FeederView feeder, int[] landed)
