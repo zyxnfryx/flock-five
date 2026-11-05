@@ -37,6 +37,7 @@ namespace FlockFive.Editor
             Suite("ad-clock-skew", AdClockSkewTests.Run);
             Suite("poker-bet", PokerBetTests.Run);
             Suite("money-compact", MoneyCompactTests.Run);
+            Suite("coin-pill-tap", CoinPillTapTests.Run);
             Suite("discard-anim", PokerDiscardAnimTests.Run);
             Suite("pest", PestScheduleTests.Run);
             Suite("honey-drip", HoneyDripTests.Run);
