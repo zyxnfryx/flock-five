@@ -23,7 +23,7 @@ namespace FlockFive.Editor
 
             var all = CoachTap.All;
             // 43 = 0..42 after b127 added CoachStep.BadgerBreakFree (42). CoachTap.All is the enum, so also pin it to the enum.
-            Check("step-count", all != null && all.Length == 44 && all.Length == System.Enum.GetValues(typeof(CoachStep)).Length && System.Array.IndexOf(all, CoachStep.BadgerBreakFree) == 42, "n=" + (all == null ? 0 : all.Length));
+            Check("step-count", all != null && all.Length == 47 && all.Length == System.Enum.GetValues(typeof(CoachStep)).Length && System.Array.IndexOf(all, CoachStep.BadgerBreakFree) == 42, "n=" + (all == null ? 0 : all.Length));
             if (all != null)
             {
                 for (int i = 0; i < all.Length; i++)
@@ -135,6 +135,9 @@ namespace FlockFive.Editor
                 case CoachStep.Bee:
                 case CoachStep.Fire:
                 case CoachStep.Leaf:
+                case CoachStep.RuleKit:
+                case CoachStep.RuleFeeder:
+                case CoachStep.RuleSleep:
                 case CoachStep.AlbumHoney:
                 case CoachStep.AdoptGreet:
                 case CoachStep.VipWelcome:

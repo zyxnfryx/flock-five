@@ -3610,6 +3610,9 @@ namespace FlockFive
             AudioGuard.Tick();
             if (_shot82e) MuteShotAudio();
             MaybeSmokeLaunch();
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            MaybeDevLevelSkip();
+#endif
             PollHomeAtt();
             TickSettingsMotion();
             ClearFivesOffPoker();
@@ -3688,6 +3691,19 @@ namespace FlockFive
                 if (HitHud(heldTap)) return;
                 return;
             }
+            // A rule tip owns the pointer. Dismiss it and do not fall through onto a branch,
+            // even if the tutor pause did not catch this frame.
+            if (_ruleTip != RuleTip.None)
+            {
+                if (Pressed(out var ruleTap)) RuleTipTap(ruleTap);
+                return;
+            }
+            if (_ruleEatGesture)
+            {
+                bool edge = Pressed(out _);
+                if (edge || RulePointerHeld()) return;
+                _ruleEatGesture = false;
+            }
             if (!Pressed(out var screen)) return;
             // Informational leaf and pest lessons eat the press before a stamp,
             // the hud, or a branch move. Restart is exempt inside the helper.
@@ -3714,6 +3730,7 @@ namespace FlockFive
 
         void HandleTap(Vector2 world)
         {
+            if (_ruleTip != RuleTip.None || _ruleEatGesture) return;
             if (LessonTapBlocked()) return;
             if (_busy || _won || _board == null) return;
             if (GateNow < _swallowTapsUntil) return;
@@ -3762,7 +3779,7 @@ namespace FlockFive
                 if (!_board.CanPick(hit))
                 {
                     _garden.Branches[hit].Shake();
-                    if (_board.IsSleeping(hit)) Sfx.Sleep();
+                    if (_board.IsSleeping(hit)) { Sfx.Sleep(); RaiseRuleSleepTip(); }
                     return;
                 }
                 Select(hit);
@@ -3796,7 +3813,7 @@ namespace FlockFive
                 if (!_board.CanPick(hit))
                 {
                     _garden.Branches[hit].Shake();
-                    if (_board.IsSleeping(hit)) Sfx.Sleep();
+                    if (_board.IsSleeping(hit)) { Sfx.Sleep(); RaiseRuleSleepTip(); }
                     return;
                 }
                 Select(hit);
@@ -3927,7 +3944,10 @@ namespace FlockFive
                 _garden.Branches[from].FlutterTip();
             }
             if (kicked == 0 && _board.IsSleeping(to) && _board.Branches[to].IsFullMatch(out _))
+            {
                 Sfx.Sleep();
+                RaiseRuleSleepTip();
+            }
             if (kicked == 0)
                 CheckOver();
         }
@@ -4643,7 +4663,11 @@ namespace FlockFive
             _pestClearScored = true;
             if (feeder != null)
             {
-                if (_scoreImmediate) feeder.SnapHome();
+                if (_scoreImmediate)
+                {
+                    feeder.SnapHome();
+                    RaiseRuleFeederTip();
+                }
                 else yield return RetireFeeder(feeder, slot, gen);
             }
         }
@@ -5312,7 +5336,11 @@ namespace FlockFive
                 guard += Time.deltaTime;
                 yield return null;
             }
-            if (gen != _motionGen && feeder != null) feeder.SnapHome();
+            if (gen != _motionGen)
+            {
+                if (feeder != null) feeder.SnapHome();
+            }
+            else RaiseRuleFeederTip();
         }
 
         IEnumerator FlyHit(Transform tr, Vector3 dest, float delay, float dur, int pop, FeederView feeder, int[] landed)
@@ -6660,6 +6688,7 @@ namespace FlockFive
         void OnGUIBody()
         {
             SwallowLessonGuard();
+            SwallowRuleTipPointer();
             SwallowResumePointer();
             SwallowBadgerShowPointer();
             if (GamePause.Paused)

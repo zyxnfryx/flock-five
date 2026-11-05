@@ -1,4 +1,3 @@
-using System.Text;
 using UnityEngine;
 
 namespace FlockFive
@@ -26,24 +25,12 @@ namespace FlockFive
         public const float MarkAlpha = 0.28f;
         public const float MarkEm = 0.22f;
 
-        static string Norm(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return "";
-            var sb = new StringBuilder(s.Length);
-            foreach (char c in s) if (!char.IsWhiteSpace(c)) sb.Append(c);
-            return sb.ToString();
-        }
-
-        // True when this caption text belongs to a tap-to-continue step. Wrapping and HeadlineGap ignored.
+        // Caption plates do not draw the fingertip. Any tap still continues.
         public static bool ForCaption(string text)
         {
-            string n = Norm(text);
-            if (n.Length == 0) return false;
-            foreach (CoachStep step in System.Enum.GetValues(typeof(CoachStep)))
-            {
-                if (!CoachTap.AnyTap(step)) continue;
-                if (Norm(CoachTap.Caption(step)) == n) return true;
-            }
+            // The fingertip's dark outline vanishes into a caption plate and the
+            // white core (250,250,252) reads as a tick at the bottom-right.
+            // Lightning, bees, and the rule tips all did this. Any tap still continues.
             return false;
         }
 

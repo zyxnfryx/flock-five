@@ -34,6 +34,7 @@ namespace FlockFive.Editor
             Suite("heal", TutorialHealTests.Run);
             Suite("reset-guard", CoachResetGuardTests.Run);
             Suite("glove-snug", GloveSnugTests.Run);
+            Suite("rule-tips", RuleTipTests.Run);
             Suite("ad-clock-skew", AdClockSkewTests.Run);
             Suite("poker-bet", PokerBetTests.Run);
             Suite("money-compact", MoneyCompactTests.Run);
@@ -138,6 +139,7 @@ namespace FlockFive.Editor
             Suite("build128", Build128BadgerPowerTests.Run);
             Suite("build129", Build129BadgerGapTests.Run);
             Suite("build130", Build130BadgerStackTests.Run);
+            Suite("rule-tips", RuleTipTests.Run);
             Debug.Log("BADGER_POLISH_GATE_DONE");
         }
 

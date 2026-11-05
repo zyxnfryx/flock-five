@@ -21,15 +21,10 @@ namespace FlockFive.Editor
             foreach (CoachStep step in System.Enum.GetValues(typeof(CoachStep)))
             {
                 string cap = CoachTap.Caption(step);
-                bool any = CoachTap.AnyTap(step);
-                bool cue = TapCue.ForCaption(cap) && TapCue.ForCaption(CaptionLayout.HeadlineGap(cap))
-                    && TapCue.ForCaption((cap ?? "").Replace("\n", " "));
-                if (any) Check("cue-on-" + step, cue, cap);
-                else
-                {
-                    // A required/claim caption whose text equals an any-tap caption would be ambiguous; none do today.
-                    Check("no-cue-on-" + step, !TapCue.ForCaption(cap), cap);
-                }
+                bool cue = TapCue.ForCaption(cap) || TapCue.ForCaption(CaptionLayout.HeadlineGap(cap))
+                    || TapCue.ForCaption((cap ?? "").Replace("\n", " "));
+                // The fingertip drew as a white tick on every caption plate (bees, lightning, rule tips).
+                Check("no-tick-on-" + step, !cue, cap);
             }
 
             int px = 52;

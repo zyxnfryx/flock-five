@@ -611,6 +611,60 @@ namespace FlockFive
             PressLevelButton();
         }
 
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+        bool _devLevelSkipDone;
+
+        // Temporary inspector hook. Compiled only for WebGL development builds.
+        // Release player builds do not contain it. Open the page with ?fflevel=3
+        // (lightning still owed) or ?fflevel=5 (bee still owed). Other gardens
+        // load too, with both of those lessons stamped seen.
+        void MaybeDevLevelSkip()
+        {
+            if (_devLevelSkipDone) return;
+            if (!AdConsent.FirstFrameReady || StartupInputHeld) return;
+            if (!_splash || _home != HomeFace.Splash) return;
+            string url = Application.absoluteURL;
+            if (string.IsNullOrEmpty(url)) return;
+            var plan = DevLevelSkip.Plan(url, LevelData.Count);
+            _devLevelSkipDone = true;
+            if (plan.Index < 0) return;
+            PlayerPrefs.SetInt("flockfive.next", plan.Index);
+            PlayerPrefs.SetInt(CoachKey, 1);
+            PlayerPrefs.SetInt(CoachLeafKey, 1);
+            PlayerPrefs.SetInt(CoachSparrowKey, 1);
+            PlayerPrefs.SetInt(CoachHawkKey, 1);
+            PlayerPrefs.SetInt(CoachOstrichKey, 1);
+            PlayerPrefs.SetInt(RuleTips.KitKey, 1);
+            PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
+            PlayerPrefs.SetInt(RuleTips.SleepKey, 1);
+            if (plan.KeepBee) PlayerPrefs.DeleteKey(CoachBeeKey);
+            else PlayerPrefs.SetInt(CoachBeeKey, 1);
+            if (plan.KeepFire)
+            {
+                PlayerPrefs.DeleteKey(CoachFireKey);
+                PlayerPrefs.DeleteKey(LightningStrike.StruckKey);
+            }
+            else
+            {
+                PlayerPrefs.SetInt(CoachFireKey, 1);
+                PlayerPrefs.SetInt(LightningStrike.StruckKey, 1);
+            }
+            PlayerPrefs.Save();
+            AdConsent.DismissTransient();
+            Debug.Log("FF_DEV_LEVEL display=" + (plan.Index + 1) + " keepBee=" + (plan.KeepBee ? 1 : 0)
+                + " keepFire=" + (plan.KeepFire ? 1 : 0));
+            if (!LevelCurtain.Armed) LevelCurtain.Arm(AdPause.Unscaled);
+            if (!LevelCurtain.LoadStarted)
+            {
+                LevelCurtain.BeginLoad();
+                Sfx.GateGo();
+                Load(plan.Index);
+                LevelCurtain.MarkReady();
+                LevelCurtain.Fire(AdPause.Unscaled);
+            }
+        }
+#endif
+
         void PollHomeAtt()
         {
             bool mid = !_splash;

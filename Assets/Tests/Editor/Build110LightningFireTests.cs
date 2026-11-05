@@ -35,6 +35,7 @@ namespace FlockFive.Editor
                 Lesson(Check);
                 Caption(Check);
                 Wiring(Check);
+                DevSkip(Check);
             }
             catch (System.Exception ex)
             {
@@ -248,6 +249,35 @@ namespace FlockFive.Editor
             Check("lesson-on-pest-cue-path",
                 coach.IndexOf("PestCueFire") >= 0 && coach.IndexOf("CoachFireKey") >= 0
                 && coach.IndexOf("CoachStep.Fire") >= 0 && coach.IndexOf("FireDue()") >= 0, "coach");
+            // L3 plate: same bottom garden seat and 8s dismiss as the bee plate. Not in
+            // GardenBottomLines, so that shared seat height is unchanged.
+            Check("lightning-shares-bee-plate",
+                coach.IndexOf("_pestCueUntil = (kind == PestCueSparrow || kind == PestCueOstrich)") >= 0
+                && coach.IndexOf("kind == PestCueBee || kind == PestCueFire ? BeePlateSeconds") >= 0
+                && coach.IndexOf("PestCueOstrich || kind == PestCueFire") < 0
+                && coach.IndexOf("IsGardenBottomLine(text) || CaptionLayout.IsFireLine(text)") >= 0
+                && coach.IndexOf("CaptionLayout.FireLine,") < 0,
+                "timer + bottom seat");
+            // PlayClock drops hitch frames and the paused tick never reads it. The plate
+            // starts BeePlateSeconds on GateNow when BeginPestCue shows it.
+            Check("lightning-starts-bee-seconds",
+                coach.IndexOf("_firePlateUntil = GateNow + BeePlateSeconds") >= 0
+                && coach.IndexOf("bool FirePlateTimedOut()") >= 0
+                && coach.IndexOf("if (FirePlateTimedOut()) DismissPestIntro();") >= 0
+                && coach.IndexOf("if (FirePlateTimedOut())") >= 0,
+                "GateNow deadline");
+            // L5 bee plate: same GateNow arm and the same dismiss, including while paused.
+            Check("bee-plate-uses-gate-now",
+                coach.IndexOf("if (kind == PestCueBee || kind == PestCueFire)") >= 0
+                && coach.IndexOf("(_pestCue == PestCueBee || _pestCue == PestCueFire)") >= 0
+                && coach.IndexOf("_ruleTip == RuleTip.None") >= 0,
+                "bee shares the lightning deadline");
+            // L5: full plate on the frame the 8s starts. Lightning still fades in.
+            Check("bee-plate-text-and-panel-together",
+                coach.IndexOf("if (_pestCue == PestCueBee)\n                _coachFade = 1f;") >= 0
+                && coach.IndexOf("_coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);") >= 0
+                && coach.IndexOf("_firePlateUntil = GateNow + BeePlateSeconds") >= 0,
+                "bee fade 1, lightning ramp kept");
             string branch = Read("Assets/_Project/Scripts/View/BranchView.cs");
             Check("burn-timeline-lengthened",
                 Mathf.Abs(BranchView.ScorchSeconds - 1.5f) < 0.0001f && BranchView.ScorchSeconds >= 0.58f * 2f
@@ -265,6 +295,38 @@ namespace FlockFive.Editor
             Check("target-rules-untouched",
                 strike.IndexOf("!st.AdLocked || st.Count > 0") >= 0 && strike.IndexOf("KeepsSolvable(board, index)") >= 0
                 && strike.IndexOf("MaxPerLevel) return -1") >= 0, "strike");
+        }
+
+        // ?fflevel=3 / ?fflevel=5. The loader itself is WebGL development builds only.
+        static void DevSkip(System.Action<string, bool, string> Check)
+        {
+            Check("fflevel-absent", DevLevelSkip.DisplayFromUrl("http://h/index.html") == 0
+                && DevLevelSkip.DisplayFromUrl(null) == 0 && DevLevelSkip.DisplayFromUrl("") == 0, "none");
+            Check("fflevel-5", DevLevelSkip.DisplayFromUrl("http://h/index.html?fflevel=5") == 5, "5");
+            Check("fflevel-3-among", DevLevelSkip.DisplayFromUrl("http://h/?a=1&fflevel=3&b=2#x") == 3, "3");
+            Check("fflevel-junk", DevLevelSkip.DisplayFromUrl("http://h/?fflevel=L5") == 0
+                && DevLevelSkip.DisplayFromUrl("http://h/?fflevel=") == 0
+                && DevLevelSkip.DisplayFromUrl("http://h/?fflevel=0") == 0, "junk");
+            var l3 = DevLevelSkip.Plan("http://h/?fflevel=3", 50);
+            Check("plan-l3-keeps-fire", l3.Index == 2 && l3.KeepFire && !l3.KeepBee, "index " + l3.Index);
+            var l5 = DevLevelSkip.Plan("http://h/?fflevel=5", 50);
+            Check("plan-l5-keeps-bee", l5.Index == 4 && l5.KeepBee && !l5.KeepFire, "index " + l5.Index);
+            var other = DevLevelSkip.Plan("http://h/?fflevel=4", 50);
+            Check("plan-other-stamps-both", other.Index == 3 && !other.KeepBee && !other.KeepFire, "index " + other.Index);
+            var bad = DevLevelSkip.Plan("http://h/?fflevel=99", 50);
+            Check("plan-out-of-range", bad.Index < 0 && DevLevelSkip.Plan("http://h/?fflevel=5", 0).Index < 0, "index " + bad.Index);
+            string settings = Read("Assets/_Project/Scripts/App/FlockFiveApp.Settings.cs");
+            string app = Read("Assets/_Project/Scripts/App/FlockFiveApp.cs");
+            int gate = settings.IndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD");
+            int hook = settings.IndexOf("void MaybeDevLevelSkip()");
+            int end = hook >= 0 ? settings.IndexOf("#endif", hook) : -1;
+            int call = app.IndexOf("MaybeDevLevelSkip();");
+            int appGate = app.IndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD");
+            Check("skip-is-webgl-dev-only",
+                gate >= 0 && hook > gate && end > hook
+                && settings.IndexOf("?fflevel=3") >= 0 && settings.IndexOf("?fflevel=5") >= 0
+                && appGate >= 0 && call > appGate && app.IndexOf("#endif", call) > call,
+                "gate");
         }
     }
 }

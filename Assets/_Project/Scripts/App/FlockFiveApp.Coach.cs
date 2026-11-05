@@ -76,13 +76,16 @@ namespace FlockFive
         const int PestCueHawk = 2;
         const int PestCueBee = 3;
         const int PestCueOstrich = 4;
-        // b110 (Brandon): the first lightning fire. Informational like the bee line: any tap dismisses it.
+        // b110 (Brandon): the first lightning fire. Informational like the bee line: any tap dismisses it,
+        // and it leaves on the bee plate's timer.
         const int PestCueFire = 5;
         const string CoachFireKey = "flockfive.coach.fire";
         const string FireIntroLine = CaptionLayout.FireLine;
         const string CoachBeeKey = "flockfive.coach.bee";
         const string CoachHiveGardenKey = "flockfive.coach.hive.garden";
         const float PestCueSeconds = 4.5f;
+        // Bee plate used to stay until a tap (~38s in the L5 recheck). It does not freeze play.
+        const float BeePlateSeconds = 8f;
         // Hawk waits out the sparrow line, then this long, so the two never share a frame.
         const float PestCueGap = 1.05f;
         // About 20% under the old 118px lesson hand.
@@ -205,6 +208,11 @@ namespace FlockFive
         bool _hiveLevelCue;
         bool _hiveLevelLive;
         float _pestCueUntil;
+        // Bee and lightning plate deadline. GateNow is wall time minus ads.
+        // PlayClock drops frames over 0.5s and stands still while the garden is
+        // paused, and the paused tick never reads _pestCueUntil, so those plates
+        // stayed up. -1 while neither plate is showing. A new BeginPestCue restarts it.
+        float _firePlateUntil = -1f;
         float _pestNext;
         int _pestSlot = -1;
         bool _hivePopping;
@@ -374,6 +382,7 @@ namespace FlockFive
             _adHand = false;
             _pestCue = 0;
             _pestCueUntil = 0f;
+            _firePlateUntil = -1f;
             _pestNext = 0f;
             _pestSlot = -1;
             if (!_coach) CoachRelease();
@@ -567,6 +576,7 @@ namespace FlockFive
             CoachHideRipples();
             _pestCue = 0;
             _pestCueUntil = 0f;
+            _firePlateUntil = -1f;
             _pestSlot = -1;
         }
 
@@ -792,6 +802,8 @@ namespace FlockFive
         // is in flight — CoachMoved still has to recognize the move that just landed.
         void CoachAdvance()
         {
+            // Before any early return. A paused garden uses TickPausedTutorial instead.
+            if (FirePlateTimedOut()) DismissPestIntro();
             NoteSeasonTutor();
             TickCoachReset(false, false);
             if (_gloveWiggle > 0f)
@@ -853,12 +865,16 @@ namespace FlockFive
                 // Garden hive callout stays up. CoachRelease was wiping it every frame
                 // once the level-1 coach had finished.
                 if (_hiveLevelLive) return;
+                if (RuleTipAdvance())
+                    return;
                 if (PestStageFree() && PestIntroAdvance())
                     return;
                 CoachRelease();
                 return;
             }
 
+            // Sleep (and any rule tip) can open on level 1, while the coach still owns this branch.
+            if (_ruleTip != RuleTip.None) return;
             CoachClearCue();
             // b115 (Brandon): the "Stuck? Tap the gift branch" cue is gone. The only gift glove left is the one on the
             // ad offer popup (ArmAdHand, first card only, flag persisted), so it never returns after the first use.
@@ -3032,7 +3048,7 @@ namespace FlockFive
             _coachLineHoldX = seat.x;
             _coachHoldXOn = true;
             _coachLineHeld = true;
-            CapSpot("coach.line"); PaintCoachCaption(text, seat, s, lo, hi, default, false, StandardCaptionSlack);
+            CapSpot(RuleTips.IsLine(text) ? "coach.rule" : "coach.line"); PaintCoachCaption(text, seat, s, lo, hi, default, false, StandardCaptionSlack);
         }
 
         // One x,y per tutorial sentence. The first call after this frame's pose
@@ -3688,6 +3704,20 @@ namespace FlockFive
             return true;
         }
 
+        // iPad home indicator. WebGL often reports no inset, and the L5 bee plate then
+        // ended near y 1158 while the safe edge was about 1146 (1180 - 34).
+        public static void ClampGardenBand(ref Rect band, float screenW, float screenH, Rect safe)
+        {
+            float inset = safe.height > 2f ? safe.yMin : 0f;
+            if (inset < 0f) inset = 0f;
+            // Home indicator. The iPad play column is phone-shaped, so aspect does not
+            // mark it as a tablet, and WebGL often reports safe.yMin as 0.
+            if (inset < 34f) inset = 34f;
+            float limit = screenH - inset - 4f;
+            if (limit < 4f) return;
+            if (band.yMax > limit) band.y = Mathf.Max(0f, limit - band.height);
+        }
+
         public static float GardenBannerY(float bandH, float rowBottom, Rect restart, Rect hive, float screenH, float safeBottom, float gap, float topY)
         {
             // b102 (Brandon): the banner is centred on the garden restart button's own rect, so it covers the
@@ -3760,12 +3790,22 @@ namespace FlockFive
                 return true;
             }
             var st = CoachLineStyle();
-            float maxW = CaptionLayout.BannerMeasureWidth(w, st, text, px);
-            var fitted = CaptionLayout.FitBanner(st, text, maxW, px);
-            BannerText = string.IsNullOrEmpty(fitted.Shown) ? text : fitted.Shown;
-            px = fitted.Font;
+            bool ruleLine = RuleTips.IsLine(text);
+            float maxW = ruleLine ? CaptionLayout.RuleTextWidth(w) : CaptionLayout.BannerMeasureWidth(w, st, text, px);
+            if (ruleLine)
+            {
+                var kept = CaptionLayout.FitKept(st, text, maxW, px, CaptionLayout.RuleFontFloor(px));
+                BannerText = string.IsNullOrEmpty(kept.Shown) ? text : kept.Shown;
+                px = kept.Font;
+            }
+            else
+            {
+                var fitted = CaptionLayout.FitBanner(st, text, maxW, px);
+                BannerText = string.IsNullOrEmpty(fitted.Shown) ? text : fitted.Shown;
+                px = fitted.Font;
+            }
             float minTop = Mathf.Max(safe.yMin, TopHud() + (56f * 2f + 4f) * s * 0.92f);
-            if (spot != "coach.line" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(screenH, safe, s));
+            if (spot != "coach.line" && spot != "coach.rule" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(screenH, safe, s));
             float gap = 8f * s;
             // The bee banner stays high under the title. Sliding it under a subject
             // would drop it onto the hive and the glove.
@@ -3774,7 +3814,11 @@ namespace FlockFive
             // lowest branch row and over the restart / hive controls, when it fits there and the
             // glove target is not in it. Otherwise it keeps the top seat (rules below).
             bool bottomSeat = false;
-            if (spot == "coach.line" && IsGardenBottomLine(text))
+            // Rule tips (nap, feeder, crowns) used the top seat and covered the first
+            // bird rows. They ride the same bottom safe band as the other garden banners.
+            // Lightning used that top band (about y192 on the 820 column). Same seat,
+            // without joining GardenBottomLines, so the shared seat height stays put.
+            if ((spot == "coach.line" && (IsGardenBottomLine(text) || CaptionLayout.IsFireLine(text))) || spot == "coach.rule" || RuleTips.IsLine(text))
             {
                 band.y = GardenFixedSeatY(w, screenH, safe, s, band.height);
                 bottomSeat = true;
@@ -3819,7 +3863,7 @@ namespace FlockFive
                     // is room above; otherwise the glove is clipped at the band edge.
                     // b92 (Brandon): a garden banner also stays off the top branch row and the
                     // birds lifted above it. Lift the band over that row when there is room above.
-                    if (spot == "coach.line" && BoardTopGui(out float rowTop) && band.yMax > rowTop - gap)
+                    if ((spot == "coach.line" || spot == "coach.rule") && BoardTopGui(out float rowTop) && band.yMax > rowTop - gap)
                     {
                         float up = rowTop - gap - band.height;
                         if (up >= minTop && band.y - up > 0.5f) { band.y = up; moved = true; }
@@ -3835,7 +3879,9 @@ namespace FlockFive
                     }
                     if (!moved) break;
                 }
-                if (_gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
+                // A rule tip has no glove. A stale tap rect must not drop it onto the snug
+                // plate (412 painted dark type with no banner behind it).
+                if (!RuleTips.IsLine(text) && _gloveTapRectOn && GloveTargetFresh() && _gloveTapRect.width > 2f && band.Overlaps(_gloveTapRect)) { SnugUses++; BannerSkip = "glove target"; return false; }
             }
             else if (bee && band.y < minTop + screenH * CaptionLayout.BeeGardenDropFrac)
                 band.y = minTop + screenH * CaptionLayout.BeeGardenDropFrac;
@@ -3843,6 +3889,7 @@ namespace FlockFive
             if (drop > 0f)
                 CoverDown(ref band, AdoptVipBadgeRect(w, screenH, safe), drop * s, SplashWordBottom(screenH, safe, s), MinLogoClear(screenH, safe, s));
             if (band.yMax > screenH) band.y = screenH - band.height;
+            if (bottomSeat) ClampGardenBand(ref band, w, screenH, safe);
             if (adHand && band.Overlaps(adAvoid)) { SnugUses++; BannerSkip = "watch button"; return false; }
             BannerSkip = "";
             BannerUses++;
@@ -3902,16 +3949,26 @@ namespace FlockFive
             var st = CoachLineStyle();
             int keep = st.fontSize;
             bool wrap = st.wordWrap;
-            float maxW = CaptionLayout.BannerMeasureWidth(w, st, text ?? "", px);
+            bool ruleLine = RuleTips.IsLine(text);
+            float maxW = ruleLine ? CaptionLayout.RuleTextWidth(w) : CaptionLayout.BannerMeasureWidth(w, st, text ?? "", px);
             float th = px;
             try
             {
-                var fit = CaptionLayout.FitBanner(st, text ?? "", maxW, px);
-                px = fit.Font;
-                st.wordWrap = true;
-                st.fontSize = px;
-                var content = new GUIContent(string.IsNullOrEmpty(fit.Shown) ? (text ?? "") : fit.Shown);
-                th = st.CalcHeight(content, maxW) - CaptionLayout.GapCut(st, content.text);
+                if (ruleLine)
+                {
+                    var kept = CaptionLayout.FitKept(st, text ?? "", maxW, px, CaptionLayout.RuleFontFloor(px));
+                    px = kept.Font;
+                    th = kept.TextH;
+                }
+                else
+                {
+                    var fit = CaptionLayout.FitBanner(st, text ?? "", maxW, px);
+                    px = fit.Font;
+                    st.wordWrap = true;
+                    st.fontSize = px;
+                    var content = new GUIContent(string.IsNullOrEmpty(fit.Shown) ? (text ?? "") : fit.Shown);
+                    th = st.CalcHeight(content, maxW) - CaptionLayout.GapCut(st, content.text);
+                }
                 if (th < 1f) th = 1f;
             }
             finally
@@ -3923,7 +3980,7 @@ namespace FlockFive
             if (s < 0.01f) s = 1f;
             float minTop = Mathf.Max(safe.yMin, TopHudBox(h, safe, 0f) + (56f * 2f + 4f) * s * 0.92f);
             // b94/b118: home banners (everything but the garden and the bee callout) clear the DRAWN logo plus a visible gap.
-            if (spot != "coach.line" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(h, safe, s));
+            if (spot != "coach.line" && spot != "coach.rule" && spot != "bee.garden") minTop = Mathf.Max(minTop, HomeBannerTop(h, safe, s));
             float y = seat.y - (bh - seat.height) * 0.85f;
             if (y < minTop) y = minTop;
             // b86: while adopt is up, every banner starts under the title. Only a spot
@@ -3940,7 +3997,7 @@ namespace FlockFive
                 badge = AdoptVipBadgeRect(w, h, safe);
                 CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s), MinLogoClear(h, safe, s));
             }
-            LiftOffMainButtons(ref band, w, h, safe, s, badge, (spot == "coach.line" || spot == "bee.garden") ? 0f : HomeBannerTop(h, safe, s));
+            LiftOffMainButtons(ref band, w, h, safe, s, badge, (spot == "coach.line" || spot == "coach.rule" || spot == "bee.garden") ? 0f : HomeBannerTop(h, safe, s));
             return band;
         }
 
@@ -4119,13 +4176,17 @@ namespace FlockFive
                 _bannerLast = band; _bannerLastFrame = Time.frameCount;
                 BannerLast = band + " fade " + fade + " ev " + (Event.current != null ? Event.current.type.ToString() : "-") + " px " + bandPx;
                 var prevC = GUI.color;
-                GUI.color = new Color(0f, 0f, 0f, CaptionStyles.Ink(_bannerInkSpot) * fade); // b86 shared tint; adopt greet is solid
+                GUI.color = new Color(0f, 0f, 0f, CaptionStyles.Ink(_bannerInkSpot) * fade); // b86 shared tint; adopt greet and rule tips are solid
                 GUI.DrawTexture(band, Texture2D.whiteTexture);
-                GUI.color = prevC;
+                // Incoming GUI.color tints the fill. A dim left over from the garden stamp
+                // turned 412's rule type dark on a plate that no longer read as a plate.
+                GUI.color = RuleTips.IsLine(text) ? Color.white : prevC;
                 int keep = st.fontSize;
                 st.fontSize = bandPx;
                 st.wordWrap = true;
-                float inner = CaptionLayout.BannerMeasureWidth(band.width, st, text, bandPx);
+                float inner = RuleTips.IsLine(text)
+                    ? CaptionLayout.RuleTextWidth(band.width)
+                    : CaptionLayout.BannerMeasureWidth(band.width, st, text, bandPx);
                 float ix = band.x + (band.width - inner) * 0.5f;
                 // Same face and size as the adopt greet. A row that reaches the
                 // screen edge keeps a stroke that fits, instead of a sliced rim.
@@ -4134,6 +4195,7 @@ namespace FlockFive
                 if (room < ring) ring = Mathf.Max(2, Mathf.FloorToInt(Mathf.Max(0f, room)));
                 var words = new Rect(ix, band.y - CaptionLayout.BannerInkLift(bandPx), inner, band.height);
                 StampBannerText(words, BannerText ?? text, st, fade, true, ring);
+                GUI.color = prevC;
                 KeepCaptionOnTop(1, band, words, BannerText ?? text, bandPx, fade, ring);
                 st.fontSize = keep;
                 st.wordWrap = false;
@@ -6204,6 +6266,11 @@ namespace FlockFive
         // Glove, caption, and the completing tap stay alive while the garden is frozen.
         void TickPausedTutorial()
         {
+            if (FirePlateTimedOut())
+            {
+                DismissPestIntro();
+                return;
+            }
             if (_pestCue == PestCueSparrow)
             {
                 if (!PestCueAlive())
@@ -6221,6 +6288,11 @@ namespace FlockFive
                 ApplyPestCue();
             }
             else _pestHeld = 0f;
+            if (_ruleTip != RuleTip.None)
+            {
+                RuleTipPausedTick();
+                return;
+            }
             if (Ads.IsShowing) return;
             if (!Pressed(out var screen)) return;
             if (_pestCue != 0)
@@ -7151,6 +7223,7 @@ namespace FlockFive
             if (CoachAteThisFrame()) return true;
             if (NoteLeafTap(screen)) return true;
             if (_pestCue != 0 && PestIntroTap(screen)) return true;
+            if (_ruleTip != RuleTip.None && RuleTipTap(screen)) return true;
             return false;
         }
 
@@ -7378,6 +7451,7 @@ namespace FlockFive
             if (_pestCue == 0) return;
             _pestCue = 0;
             _pestCueUntil = 0f;
+            _firePlateUntil = -1f;
             _pestSlot = -1;
             _cueHand = false;
             _cueForce = false;
@@ -7413,7 +7487,7 @@ namespace FlockFive
             }
             if (_pestCue != 0)
             {
-                if (!PestCueAlive() || PlayClock.Now >= _pestCueUntil)
+                if (!PestCueAlive() || PlayClock.Now >= _pestCueUntil || FirePlateTimedOut())
                 {
                     DismissPestIntro();
                     return false;
@@ -7506,9 +7580,17 @@ namespace FlockFive
         {
             _pestHeld = 0f;
             _pestCue = kind;
-            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueBee || kind == PestCueOstrich || kind == PestCueFire)
+            // Sparrow and ostrich wait on their subject. Bee and lightning start
+            // BeePlateSeconds on GateNow here, when the plate is shown. PlayClock
+            // still records that span for the unpaused tick, but it drops hitch
+            // frames and the paused tick never reads it.
+            _pestCueUntil = (kind == PestCueSparrow || kind == PestCueOstrich)
                 ? float.PositiveInfinity
-                : PlayClock.Now + PestCueSeconds;
+                : PlayClock.Now + (kind == PestCueBee || kind == PestCueFire ? BeePlateSeconds : PestCueSeconds);
+            if (kind == PestCueBee || kind == PestCueFire)
+                _firePlateUntil = GateNow + BeePlateSeconds;
+            else
+                _firePlateUntil = -1f;
             // The bee lesson does not freeze the garden. The sparrow still does.
             // The ostrich lesson stays live and the shared veil gates the tap.
             if (kind == PestCueSparrow) HoldTutorPause(true);
@@ -7532,6 +7614,15 @@ namespace FlockFive
             ApplyPestCue();
         }
 
+        // True once the bee or lightning plate has been up for BeePlateSeconds of GateNow.
+        // A rule tip shares the caption and the pause. Dismissing under it would clear
+        // that line and unfreeze the garden. The 8s still elapses; the plate leaves
+        // on the first tick after the tip closes.
+        bool FirePlateTimedOut() =>
+            _ruleTip == RuleTip.None
+            && (_pestCue == PestCueBee || _pestCue == PestCueFire)
+            && _firePlateUntil >= 0f && GateNow >= _firePlateUntil;
+
         void ApplyPestCue()
         {
             _cueHand = true;
@@ -7546,7 +7637,14 @@ namespace FlockFive
             else if (_pestCue == PestCueOstrich) pestLine = OstrichIntroLine;
             else if (_pestCue == PestCueFire) pestLine = FireIntroLine;
             CueLine(pestLine);
-            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
+            // Bee: text and the dark wash on this same call. CueLine starts a fade at 0,
+            // and PlayClock barely moves on a hitchy frame, so the type read as bare
+            // dark text for seconds before the wash. BeePlateSeconds is stamped above
+            // in this same BeginPestCue, before the first paint. Lightning keeps the fade.
+            if (_pestCue == PestCueBee)
+                _coachFade = 1f;
+            else
+                _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
         }
 
         void DismissPestIntro()
