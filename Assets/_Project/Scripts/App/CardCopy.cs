@@ -11,8 +11,8 @@ namespace FlockFive
             return kind.Back ?? "";
         }
 
-        // The flipped side. Cards that own a back line (BeeKind.OwnBack) say it there;
-        // every other card still repeats Shown on both faces.
+        // The flipped side. OwnBack defaults to true, so every roster card says its
+        // Back line here; Shown is only the fallback when Back is empty.
         public static string BackOwn(BeeKind kind) =>
             kind.OwnBack && !string.IsNullOrEmpty(kind.Back) ? kind.Back : Shown(kind);
     }
