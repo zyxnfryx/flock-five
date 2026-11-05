@@ -8676,7 +8676,7 @@ namespace FlockFive
 
         // The home coin pill hit pad: the real drawn amount rect (DrawCoinCluster's coinR) unioned with the
         // coin icon. Not the fixed icon×0.95×3.6 guess — a long balance on iPad 820 left ~80px of text untappable.
-        Rect CoinPillRect(Rect pig, float s)
+        Rect CoinPillLive(Rect pig, float s)
         {
             if (pig.width < 2f || pig.height < 2f) return default;
             float icon = CoinBalanceIcon(s);
@@ -10332,7 +10332,7 @@ namespace FlockFive
             // it pokes the pig too (same gates as the pig itself). Hit pad is the real drawn amount+icon (CoinClusterHit),
             // not the fixed icon×0.95×3.6 guess. Pads run only when pigAllowed (and the pill when width>2 and not veiled);
             // those gates are stable within a frame so Layout/MouseDown ids stay aligned.
-            var pillR = CoinPillRect(pigR, s);
+            var pillR = CoinPillLive(pigR, s);
             bool pigAllowed = !modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR);
             bool pigHit = pigAllowed && HitPad(pigR, out _);
             bool pillHit = pigAllowed && pillR.width > 2f && !VeilBlocks(pillR) && HitPad(pillR, out _);
