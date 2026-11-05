@@ -116,6 +116,7 @@ namespace FlockFive.Editor
             Suite("build119-collection-banner", Build119CollectionBannerTests.Run);
             Suite("season-scene", SeasonSceneTests.Run);
             Suite("glove-travel", GloveTravelTests.Run);
+            Suite("daily-claim-wheel", DailyClaimWheelTests.Run);
             Suite("build128-badger-power", Build128BadgerPowerTests.Run);
             Suite("build129-badger-gap", Build129BadgerGapTests.Run);
             Suite("build130-badger-stack", Build130BadgerStackTests.Run);

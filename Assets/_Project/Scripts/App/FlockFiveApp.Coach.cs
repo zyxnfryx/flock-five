@@ -1338,6 +1338,9 @@ namespace FlockFive
             {
                 float handS = DeviceFit.Ui();
                 bool onClaim = _dailyOpen;
+                // First frame the card is up. The gift tap just faded the hand on the
+                // rail; Claim is the target now, so that fade must not finish there.
+                bool enteredClaim = onClaim && !_dailyGloveOnClaim;
                 if (onClaim != _dailyGloveOnClaim)
                 {
                     _dailyGloveOnClaim = onClaim;
@@ -1345,6 +1348,8 @@ namespace FlockFive
                     _gloveDip = 0f;
                     _tapSent = false;
                 }
+                if (enteredClaim)
+                    DropRailFadeForClaim();
                 Vector2 dailyAim;
                 LessonLine(onClaim ? DailyClaimLine : DailyIntroLine);
                 _gloveInward = !onClaim;
@@ -1352,6 +1357,16 @@ namespace FlockFive
                 {
                     DailyClaimGlove(handS, out dailyAim, out float perchLift, out bool fromLeft);
                     CoachGloveAt(dailyAim, dt, handS, perchLift, fromLeft, float.NaN, DailyClaimTapRect(handS));
+                    // The claim press fades the hand in place. Pin the fingertip on the
+                    // Claim aim for that whole fade, including the frames before the
+                    // spin is armed, so it cannot freeze mid-travel off the button.
+                    if (_gloveAct == TutorGloveAct.FadeOutOnTap && _gloveLockOn
+                        && string.Equals(_gloveStepLine, DailyClaimLine))
+                    {
+                        _gloveShown = _gloveLockAim;
+                        _gloveDip = 1f;
+                        _gloveHoldDip = 1f;
+                    }
                 }
                 else
                 {
@@ -1513,6 +1528,25 @@ namespace FlockFive
             _gloveTapHit = null;
             _gloveTapRect = default;
             _glovePestKind = 0;
+        }
+
+        // The gift tap fades the hand on the rail medal. The card is open on this
+        // frame and Claim is the target, so that fade (or a still-live rail pose)
+        // must not finish off the button. Hidden lets CoachGloveAt start the Claim
+        // arc this frame. Only the frame the card opens calls this.
+        void DropRailFadeForClaim()
+        {
+            if (_gloveFadeDismissed) return;
+            if (_gloveAct != TutorGloveAct.FadeOutOnTap
+                && _gloveAct != TutorGloveAct.Live
+                && _gloveAct != TutorGloveAct.Reappear)
+                return;
+            _gloveAct = TutorGloveAct.Hidden;
+            _gloveAlpha = 0f;
+            _gloveHoldPose = false;
+            _gloveReady = false;
+            _gloveVis = false;
+            _gloveHidStep = -1;
         }
 
         // Freeze the drawn pose and drop alpha. A second tap does not restart it.
@@ -1683,6 +1717,13 @@ namespace FlockFive
                     _gloveVis = false;
                     _gloveHoldPose = false;
                     _gloveReady = false;
+                    // Claim tap: the hand stayed on the button for this fade. The spin
+                    // starts now, and the lesson ends. Do not arm a return on the rail.
+                    if (_dailyGloveThroughTap)
+                    {
+                        FinishClaimGloveTap();
+                        return;
+                    }
                     _gloveHidStep = CoachPress.ReturnStep(_gloveFadeStep, LiveCoachStep(), _gloveFadeDismissed);
                     _gloveHidAt = AdPause.Unscaled;
                     return;

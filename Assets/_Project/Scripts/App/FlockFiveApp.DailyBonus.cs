@@ -13,6 +13,10 @@ namespace FlockFive
         bool _dailyClaimFollowUp;
         bool _dailyClaimFirst;
         bool _dailyTutorSpin;
+        // Tutorial Claim tap: the flower and the glove stay until the press fade ends.
+        // The spin clock stays unarmed (_dailySpinAt < 0) so the disc does not turn
+        // out from under the fingertip.
+        bool _dailyGloveThroughTap;
         enum DailyWheelPhase { Ready, Spin, Landed }
         DailyWheelPhase _dailyPhase;
         float _dailyAngle;
@@ -441,7 +445,8 @@ namespace FlockFive
             if ((chrome == 2 || chrome == 3) && !_dailyAdBusy)
                 collectHit = HitPad(chrome == 3 && _wheelPayMul >= 2 ? watch : collect, out collectHeld);
             bool claim = false;
-            bool claimHeld = false;
+            // The tutorial press fade still owns the flower. Keep it sunk under the glove.
+            bool claimHeld = _dailyGloveThroughTap;
             if (flowerOn && _dailyPhase != DailyWheelPhase.Spin)
                 claim = HitPad(claimHit, out claimHeld);
             HitPad(swallow, out _);
@@ -470,7 +475,7 @@ namespace FlockFive
             var pivot = flowerOn ? DailyPivot(card, flower) : card.center;
             var prev = GUI.matrix;
             if (k < 0.999f || k > 1.001f)
-                GUIUtility.ScaleAroundPivot(new Vector2(k, k), pivot);
+                PhoneArea.ScaleAround(new Vector2(k, k), pivot);
 
             DrawDailyFrame(card, board, band, s, breathe, glow);
             EnsureDailyStyles();
@@ -528,6 +533,9 @@ namespace FlockFive
         // 0 claim flower, 1 wheel only, 2 collect bar, 3 collect plus the x2 ad.
         int DailyChrome()
         {
+            // The tutorial press is still on Claim. Spin is armed but the flower
+            // stays until that fade ends, so the hand is not pointing at empty air.
+            if (_dailyGloveThroughTap) return 0;
             if (_dailyPayHold || _dailyCloseAt >= 0f) return 1;
             if (_dailyPhase == DailyWheelPhase.Spin) return 1;
             bool fresh = _dailyPhase == DailyWheelPhase.Landed && DailyBonus.Landed && !DailyBonus.Resolved;
@@ -543,6 +551,9 @@ namespace FlockFive
             if (ShotDailyWheel != 0) return;
 #endif
             if (_dailyPhase != DailyWheelPhase.Spin || !_dailyOpen) return;
+            // Claim is still under the glove. Starting the clock here would spin the
+            // disc before the tap fade finishes.
+            if (_dailyGloveThroughTap || _dailySpinAt < 0f) return;
             float dur = DailySpinDur;
             if (dur < 0.2f) dur = 0.2f;
             float u = (AdPause.Unscaled - _dailySpinAt) / dur;
@@ -592,11 +603,49 @@ namespace FlockFive
             _dailyPhase = DailyWheelPhase.Spin;
             _dailySpinFrom = 0f;
             _dailySpinTo = DailyBonus.PointerAngle(wedge) + 360f * 5f;
-            _dailySpinAt = AdPause.Unscaled;
             _dailyAngle = 0f;
             Sfx.CardTap();
             RescheduleDailyReminder();
+            // Fresh-player lesson: the hand is on Claim. Hold the button and the
+            // fingertip through the press fade, then start the spin. A glove that
+            // never armed still dismisses with the spin, as before.
+            if (tutorial && HoldGloveOnClaimTap())
+                return;
+            _dailySpinAt = AdPause.Unscaled;
             if (tutorial) DismissDailyIntro();
+        }
+
+        // Pin the fingertip on the Claim aim and fade it there. False when there
+        // is no hand to hold, so the caller starts the spin immediately.
+        bool HoldGloveOnClaimTap()
+        {
+            bool live = _gloveAct == TutorGloveAct.Live
+                || _gloveAct == TutorGloveAct.Reappear
+                || _gloveAct == TutorGloveAct.FadeOutOnTap
+                || _gloveAlpha > 0.03f;
+            if (!_gloveLockOn || !live) return false;
+            _dailyGloveThroughTap = true;
+            _dailySpinAt = -1f;
+            _gloveShown = _gloveLockAim;
+            _gloveDip = 1f;
+            _gloveHoldDip = 1f;
+            _glovePhase = TapHover + TapPress;
+            if (_gloveAct != TutorGloveAct.FadeOutOnTap)
+                GloveStartFadeOut();
+            if (_gloveAct == TutorGloveAct.FadeOutOnTap)
+                return true;
+            _dailyGloveThroughTap = false;
+            return false;
+        }
+
+        // The press fade finished (or the card is leaving). The spin may turn now.
+        void FinishClaimGloveTap()
+        {
+            if (!_dailyGloveThroughTap) return;
+            _dailyGloveThroughTap = false;
+            if (_dailyOpen && _dailyPhase == DailyWheelPhase.Spin && _dailySpinAt < 0f)
+                _dailySpinAt = AdPause.Unscaled;
+            DismissDailyIntro();
         }
 
         void LandDailyWheel()
@@ -726,6 +775,7 @@ namespace FlockFive
             bool first = _dailyClaimFirst;
             bool follow = _dailyClaimFollowUp;
             _dailyClaimFollowUp = false;
+            _dailyGloveThroughTap = false;
             _dailyOpen = false;
             _dailyPopAt = -1f;
             _dailyCloseAt = -1f;
@@ -902,6 +952,9 @@ namespace FlockFive
         void DismissDaily()
         {
             if (!_dailyOpen || _dailyPayHold || _dailyCloseAt >= 0f) return;
+            // The claim tap already committed the spin. Let the hand finish, then
+            // the spin-dismiss path below pays if they leave on the X.
+            if (_dailyGloveThroughTap) FinishClaimGloveTap();
             // Leaving after the spin has been picked still pays 1x. The lesson
             // stays until Claim, so an X before the spin does not finish it.
             if (_dailyPhase == DailyWheelPhase.Spin || (DailyBonus.Landed && !DailyBonus.Resolved))
@@ -967,9 +1020,9 @@ namespace FlockFive
             return aim;
         }
 
-        // Claim step. Fingertip is the center of the real Claim button (the pedestal
-        // face, same FlowerDisc the Watch glove uses), never a reward box. Shared
-        // rise. _gloveKeepOff holds the palm off the button face.
+        // Claim step. Fingertip is on the Claim face (the pedestal disc, same
+        // FlowerDisc the Watch glove uses), on the left rim so the centered word
+        // stays readable. Never a reward box. _gloveKeepOff holds the palm off the face.
         void DailyClaimGlove(float s, out Vector2 aim, out float perchLift, out bool fromLeft)
         {
             DailyLayout(s, out var card, out var flower, out _, out _);
@@ -1554,24 +1607,26 @@ namespace FlockFive
             if (wheel.width < 8f) return;
             EnsureWheelArt();
             GUI.color = PopFade(Color.white);
-            bool spinning = _dailyPhase == DailyWheelPhase.Spin;
+            // The claim-tap hold keeps phase Spin so the prize is committed, but the
+            // disc stays still until the glove fade ends. Ghosts would read as a turn.
+            bool spinning = _dailyPhase == DailyWheelPhase.Spin && !_dailyGloveThroughTap && _dailySpinAt >= 0f;
             bool landed = _dailyPhase == DailyWheelPhase.Landed && (DailyBonus.Landed || DailyBonus.ClaimedToday);
             float angle = _dailyAngle;
             var prev = GUI.matrix;
             if (spinning)
             {
                 // Ghosts trail the live disc so a frozen frame still reads as a spin.
-                GUIUtility.RotateAroundPivot(angle - 36f, wheel.center);
+                PhoneArea.RotateAround(angle - 36f, wheel.center);
                 GUI.color = PopFade(new Color(1f, 0.94f, 0.78f, 0.22f));
                 GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
                 GUI.matrix = prev;
-                GUIUtility.RotateAroundPivot(angle - 18f, wheel.center);
+                PhoneArea.RotateAround(angle - 18f, wheel.center);
                 GUI.color = PopFade(new Color(1f, 0.96f, 0.86f, 0.42f));
                 GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
                 GUI.matrix = prev;
                 GUI.color = PopFade(Color.white);
             }
-            GUIUtility.RotateAroundPivot(angle, wheel.center);
+            PhoneArea.RotateAround(angle, wheel.center);
             GUI.DrawTexture(wheel, _wheelDisc, ScaleMode.ScaleToFit, true);
             GUI.matrix = prev;
 
@@ -1588,7 +1643,7 @@ namespace FlockFive
                 _dailyTile.fontSize = WheelLabelPx(text, jack, fixedLab);
                 _dailyTile.fontStyle = FontStyle.Bold;
                 var hold = GUI.matrix;
-                GUIUtility.RotateAroundPivot(DailyBonus.WedgeLabelDegrees(i, angle), lab.center);
+                PhoneArea.RotateAround(DailyBonus.WedgeLabelDegrees(i, angle), lab.center);
                 StampOutlined(lab, text, _dailyTile, new Color(1f, 0.97f, 0.88f), jack ? 2 : 1, jack ? 3 : 1);
                 GUI.matrix = hold;
                 if (!jack) continue;
@@ -1693,7 +1748,7 @@ namespace FlockFive
                 ? 0f
                 : DailyBonus.PointerFlick(AdPause.Unscaled - _wheelFlickAt, _wheelFlickSign);
             var prev = GUI.matrix;
-            GUIUtility.RotateAroundPivot(flick, pivot);
+            PhoneArea.RotateAround(flick, pivot);
             GUI.DrawTexture(pointer, _wheelPointer, ScaleMode.ScaleToFit, true);
             GUI.matrix = prev;
 #if UNITY_EDITOR
