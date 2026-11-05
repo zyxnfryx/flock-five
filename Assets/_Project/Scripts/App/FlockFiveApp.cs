@@ -8707,7 +8707,7 @@ namespace FlockFive
                 fontSize = Mathf.Max(14, Mathf.RoundToInt(iconR.height * typeScale))
             };
             var content = new GUIContent(coins);
-            float leftLimit = 8f;
+            float leftLimit = Mathf.Max(8f, PhoneArea.Safe.xMin + 8f); // same inset DrawCoinCluster uses
             float maxW = Mathf.Max(36f, iconR.x - 8f * s - leftLimit);
             int guard = 0;
             while (st.fontSize > 14 && guard < 48 && st.CalcSize(content).x > maxW)
