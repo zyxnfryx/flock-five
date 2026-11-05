@@ -272,6 +272,12 @@ namespace FlockFive.Editor
                 && coach.IndexOf("(_pestCue == PestCueBee || _pestCue == PestCueFire)") >= 0
                 && coach.IndexOf("_ruleTip == RuleTip.None") >= 0,
                 "bee shares the lightning deadline");
+            // L5: full plate on the frame the 8s starts. Lightning still fades in.
+            Check("bee-plate-text-and-panel-together",
+                coach.IndexOf("if (_pestCue == PestCueBee)\n                _coachFade = 1f;") >= 0
+                && coach.IndexOf("_coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);") >= 0
+                && coach.IndexOf("_firePlateUntil = GateNow + BeePlateSeconds") >= 0,
+                "bee fade 1, lightning ramp kept");
             string branch = Read("Assets/_Project/Scripts/View/BranchView.cs");
             Check("burn-timeline-lengthened",
                 Mathf.Abs(BranchView.ScorchSeconds - 1.5f) < 0.0001f && BranchView.ScorchSeconds >= 0.58f * 2f

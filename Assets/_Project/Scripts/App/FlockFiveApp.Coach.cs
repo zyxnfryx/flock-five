@@ -7637,7 +7637,14 @@ namespace FlockFive
             else if (_pestCue == PestCueOstrich) pestLine = OstrichIntroLine;
             else if (_pestCue == PestCueFire) pestLine = FireIntroLine;
             CueLine(pestLine);
-            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
+            // Bee: text and the dark wash on this same call. CueLine starts a fade at 0,
+            // and PlayClock barely moves on a hitchy frame, so the type read as bare
+            // dark text for seconds before the wash. BeePlateSeconds is stamped above
+            // in this same BeginPestCue, before the first paint. Lightning keeps the fade.
+            if (_pestCue == PestCueBee)
+                _coachFade = 1f;
+            else
+                _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
         }
 
         void DismissPestIntro()
