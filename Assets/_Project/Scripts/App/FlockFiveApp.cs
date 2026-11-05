@@ -3688,6 +3688,19 @@ namespace FlockFive
                 if (HitHud(heldTap)) return;
                 return;
             }
+            // A rule tip owns the pointer. Dismiss it and do not fall through onto a branch,
+            // even if the tutor pause did not catch this frame.
+            if (_ruleTip != RuleTip.None)
+            {
+                if (Pressed(out var ruleTap)) RuleTipTap(ruleTap);
+                return;
+            }
+            if (_ruleEatGesture)
+            {
+                bool edge = Pressed(out _);
+                if (edge || RulePointerHeld()) return;
+                _ruleEatGesture = false;
+            }
             if (!Pressed(out var screen)) return;
             // Informational leaf and pest lessons eat the press before a stamp,
             // the hud, or a branch move. Restart is exempt inside the helper.
@@ -3714,6 +3727,7 @@ namespace FlockFive
 
         void HandleTap(Vector2 world)
         {
+            if (_ruleTip != RuleTip.None || _ruleEatGesture) return;
             if (LessonTapBlocked()) return;
             if (_busy || _won || _board == null) return;
             if (GateNow < _swallowTapsUntil) return;
@@ -6671,6 +6685,7 @@ namespace FlockFive
         void OnGUIBody()
         {
             SwallowLessonGuard();
+            SwallowRuleTipPointer();
             SwallowResumePointer();
             SwallowBadgerShowPointer();
             if (GamePause.Paused)

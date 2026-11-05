@@ -3804,7 +3804,9 @@ namespace FlockFive
             // lowest branch row and over the restart / hive controls, when it fits there and the
             // glove target is not in it. Otherwise it keeps the top seat (rules below).
             bool bottomSeat = false;
-            if (spot == "coach.line" && IsGardenBottomLine(text))
+            // Rule tips (nap, feeder, crowns) used the top seat and covered the first
+            // bird rows. They ride the same bottom safe band as the other garden banners.
+            if ((spot == "coach.line" && IsGardenBottomLine(text)) || spot == "coach.rule" || RuleTips.IsLine(text))
             {
                 band.y = GardenFixedSeatY(w, screenH, safe, s, band.height);
                 bottomSeat = true;

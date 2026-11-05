@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace FlockFive
 {
@@ -8,6 +9,8 @@ namespace FlockFive
     {
         RuleTip _ruleTip;
         float _ruleHeld;
+        // The press that closed a rule tip. Held until that pointer is up so it cannot select a bird.
+        bool _ruleEatGesture;
         Board _ruleBoardRef;
         BirdColor?[] _ruleLive;
         bool _ruleTurned;
@@ -148,8 +151,49 @@ namespace FlockFive
             _cueSpoken = null;
             _cueBranch = -1;
             _tutorSeatOn = false;
+            _ruleEatGesture = true;
             ReleaseTutorPause();
             NoteLessonDismiss(RuleTips.Step(t));
+        }
+
+        // Runs even while the garden is paused, before any control. The feeder tip's
+        // first press dismisses and is eaten here, not one frame later on the board.
+        void SwallowRuleTipPointer()
+        {
+            var e = Event.current;
+            if (e == null) return;
+            var t = e.type;
+            if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            if (_ruleTip != RuleTip.None)
+            {
+                if (t == EventType.MouseDown && e.button == 0 && !RestartGui(e.mousePosition))
+                {
+                    var screen = new Vector2(e.mousePosition.x, PhoneArea.H - e.mousePosition.y);
+                    RuleTipTap(screen);
+                }
+                if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+                e.Use();
+                return;
+            }
+            if (!_ruleEatGesture) return;
+            if (t == EventType.MouseUp)
+            {
+                GUIUtility.hotControl = 0;
+                if (!RulePointerHeld()) _ruleEatGesture = false;
+            }
+            e.Use();
+        }
+
+        static bool RulePointerHeld()
+        {
+            if (Mouse.current != null && Mouse.current.leftButton.isPressed) return true;
+            var touch = Touchscreen.current;
+            if (touch != null)
+            {
+                var primary = touch.primaryTouch;
+                if (primary != null && primary.press.isPressed) return true;
+            }
+            return false;
         }
     }
 }
