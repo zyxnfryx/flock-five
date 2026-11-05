@@ -264,7 +264,28 @@ namespace FlockFive
             if (DisplayNumber == 16)
                 InsertEmptyLimb(b);
             ApplyAuthored(b, Current);
+            // Debut and later visits come from BlackbirdSchedule.Visit.
+            if (BlackbirdSchedule.Due(DisplayNumber))
+            {
+                // The blackbird is the visit. An ostrich authored on that garden steps aside.
+                b.Ostrich = null;
+                BlackbirdRival.Dress(b, BlackbirdSchedule.Notch(DisplayNumber),
+                    BlackbirdSchedule.CalmEveryFor(DisplayNumber),
+                    BlackbirdSchedule.RattleEveryFor(DisplayNumber));
+            }
             return b;
+        }
+
+        public static bool TryIndex(int number, out int index)
+        {
+            for (int i = 0; i < All.Length; i++)
+            {
+                if (All[i] == null || All[i].Number != number) continue;
+                index = i;
+                return true;
+            }
+            index = 0;
+            return false;
         }
 
         // Feeders and the ostrich come from the level, after Pack has copied the maker.
@@ -302,6 +323,7 @@ namespace FlockFive
             get
             {
                 if (Current != null && Current.Ostrich) return 0;
+                if (BlackbirdSchedule.Due(DisplayNumber)) return 0;
                 int n = DisplayNumber;
                 if (n < PestSchedule.FirstSparrowGarden) return 0; // b126: sparrow first on garden 4 (garden 3 is the first lightning strike)
                 if (n <= 6) return 1;
@@ -316,6 +338,7 @@ namespace FlockFive
             get
             {
                 if (Current != null && Current.Ostrich) return 0;
+                if (BlackbirdSchedule.Due(DisplayNumber)) return 0;
                 return DisplayNumber <= 10 ? 0 : 1;
             }
         }
