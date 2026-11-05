@@ -65,6 +65,7 @@ namespace FlockFive.Editor
             }
             finally { DeviceFit.TestWindow = keepWindow; }
             Check(Mathf.Abs(CaptionStyles.Ink("coach.rule") - 1f) < 0.001f, "rule plate solid");
+            Check(!TapCue.ForCaption(RuleTips.KitLine) && !TapCue.ForCaption(RuleTips.FeederLine) && !TapCue.ForCaption(RuleTips.SleepLine), "no fingertip tick");
             Debug.Log("[rule-tips] " + (fail == 0 ? "PASS " + n + "/" + n : "FAIL " + fail + "/" + n));
         }
     }

@@ -39,6 +39,11 @@ namespace FlockFive
         {
             string n = Norm(text);
             if (n.Length == 0) return false;
+            // b120 rule tips are full-width plates. The fingertip's dark outline
+            // disappears into the plate and the white core reads as a tick at the
+            // bottom-right corner (402, 412, and the iPad). Any tap still continues.
+            if (n == Norm(RuleTips.KitLine) || n == Norm(RuleTips.FeederLine) || n == Norm(RuleTips.SleepLine))
+                return false;
             foreach (CoachStep step in System.Enum.GetValues(typeof(CoachStep)))
             {
                 if (!CoachTap.AnyTap(step)) continue;

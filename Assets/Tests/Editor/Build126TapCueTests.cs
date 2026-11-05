@@ -22,9 +22,12 @@ namespace FlockFive.Editor
             {
                 string cap = CoachTap.Caption(step);
                 bool any = CoachTap.AnyTap(step);
+                bool rule = step == CoachStep.RuleKit || step == CoachStep.RuleFeeder || step == CoachStep.RuleSleep;
                 bool cue = TapCue.ForCaption(cap) && TapCue.ForCaption(CaptionLayout.HeadlineGap(cap))
                     && TapCue.ForCaption((cap ?? "").Replace("\n", " "));
-                if (any) Check("cue-on-" + step, cue, cap);
+                if (rule)
+                    Check("no-tick-on-" + step, !TapCue.ForCaption(cap) && !TapCue.ForCaption(CaptionLayout.HeadlineGap(cap)), cap);
+                else if (any) Check("cue-on-" + step, cue, cap);
                 else
                 {
                     // A required/claim caption whose text equals an any-tap caption would be ambiguous; none do today.
