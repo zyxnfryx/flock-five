@@ -34,7 +34,10 @@ namespace FlockFive.Editor
                 float y = FlockFiveApp.GardenFixedSeatY(w, h, safe, s, 0f);
                 var band = new Rect(0f, y, w, refH);
                 float pad = 4f * s;
-                bool covers = band.yMin <= rs.yMin - pad && band.yMax >= rs.yMax + pad;
+                // b120 R8: the band now stops at the home-indicator floor (CaptionLayout.BottomInset); it must
+                // cover the seat down to that floor (or the seat plus pad, whichever is higher).
+                float coverTo = Mathf.Min(rs.yMax + pad, h - CaptionLayout.BottomInset(w, h, safe) - pad);
+                bool covers = band.yMin <= rs.yMin - pad && band.yMax >= coverTo - 0.5f;
                 // Lowest branch row of the Level 1 garden target rows: step-2 destination (branch 5) bird bottom.
                 float destBottom = h * 0.39f + h * 0.026f;
                 Check("banner covers restart " + tags[d], covers && band.yMin > destBottom,
