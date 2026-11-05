@@ -3,43 +3,38 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // b120 item 3: garden sideways gloves must keep a visible start-to-target run.
-    // AngledStartSnug is for the poker-Back entry override only; applying it to every
-    // angled start collapsed L1 steps 1–2 into a near-zero travel that looked like no glove.
+    // b120 item 3: garden sideways gloves keep the start GloveLockPose seats (AngledLockStart).
+    // #224 ran every angled start through AngledStartSnug, which applies GloveScaleTravel a second
+    // time and pulls the hand toward its target. Only the poker-Back entry override is snugged now.
+    // Garden travel is already short by design (b95 0.67x, b125 GloveTravelScale 0.5); this guards
+    // that it is not shortened again, not that it is long.
     static class GardenGloveEntryTests
     {
         public static void Run()
         {
-            int fail = 0;
-            float s = 2f;
-            float dh = FlockFiveApp.GloveDh(s);
-            var safe = new Rect(40f, 40f, 740f, 1100f);
-            var aim = new Vector2(200f, 320f);
-            var rest = aim + new Vector2(1f, 0f) * 80f;
-            var away = new Vector2(1f, 0f);
-            var start = FlockFiveApp.GloveEntryPoint(rest, aim, away, dh);
-            float gardenTravel = (start - aim).magnitude;
-            var snug = FlockFiveApp.AngledStartSnug(start, aim, s, safe);
-            float snugTravel = (snug - aim).magnitude;
-            if (!(gardenTravel > dh * 0.8f))
+            int fail = 0, n = 0;
+            void Check(bool ok, string what) { n++; if (!ok) { fail++; Debug.LogError("[garden-glove-entry] FAIL " + what); } }
+            foreach (float s in new[] { 1f, 2f })
             {
-                fail++;
-                Debug.LogError("[garden-glove-entry] FAIL garden travel " + gardenTravel + " dh " + dh);
+                float dh = FlockFiveApp.GloveDh(s);
+                var safe = new Rect(8f * s, 40f * s, 410f * s, 590f * s);
+                var aim = new Vector2(100f * s, 160f * s);
+                var away = new Vector2(1f, 0f);
+                var rest = aim + away * 40f * s;
+                var start = FlockFiveApp.AngledLockStart(rest, aim, away, s, safe, false, default);
+                float garden = (start - aim).magnitude;
+                var snug = FlockFiveApp.AngledStartSnug(start, aim, s, safe);
+                float snugged = (snug - aim).magnitude;
+                Check(start.y >= aim.y + 28f * s - 0.01f, s + " garden start not below the target line " + start);
+                Check(garden >= FlockFiveApp.GloveMinStartHands * dh - 0.01f, s + " garden start inside min travel " + garden + " dh " + dh);
+                Check(start.x > aim.x, s + " garden start lost its sideways (right) entry side " + start);
+                Check(snugged < garden - 1f, s + " snug would not have shortened garden travel (fix is moot) snug=" + snugged + " garden=" + garden);
+                var back = FlockFiveApp.GloveMiddleRightEntry(safe);
+                var backStart = FlockFiveApp.AngledLockStart(rest, aim, away, s, safe, true, back);
+                var backSnug = FlockFiveApp.AngledStartSnug(backStart, aim, s, safe);
+                Check((backSnug - aim).magnitude <= dh * 1.7f + 1f, s + " poker-Back snug dist " + (backSnug - aim).magnitude);
             }
-            if (!(snugTravel < gardenTravel * 0.75f))
-            {
-                fail++;
-                Debug.LogError("[garden-glove-entry] FAIL snug did not collapse vs garden entry snug="
-                    + snugTravel + " garden=" + gardenTravel);
-            }
-            var backStart = FlockFiveApp.GloveMiddleRightEntry(safe);
-            var backSnug = FlockFiveApp.AngledStartSnug(backStart, aim, s, safe);
-            if (!((backSnug - aim).magnitude <= dh * 1.7f + 1f))
-            {
-                fail++;
-                Debug.LogError("[garden-glove-entry] FAIL poker-Back snug dist " + (backSnug - aim).magnitude);
-            }
-            Debug.Log("[garden-glove-entry] " + (fail == 0 ? "PASS 3/3" : "FAIL " + fail));
+            Debug.Log("[garden-glove-entry] " + (fail == 0 ? "PASS " + n + "/" + n : "FAIL " + fail + "/" + n));
         }
     }
 }

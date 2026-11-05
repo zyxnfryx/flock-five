@@ -1750,21 +1750,8 @@ namespace FlockFive
             _gloveVel = Vector2.zero;
             if (angled)
             {
-                float dh = GloveDh(s);
                 var safe = CoachSafeGui(8f * s);
-                var start = GloveEntryPoint(rest, aimGui, away, dh);
-                float pad = dh * 0.42f;
-                float x0 = safe.xMin + pad;
-                float x1 = safe.xMax - pad;
-                float y0 = safe.yMin + pad;
-                float y1 = safe.yMax - pad;
-                if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
-                if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
-                if (_gloveEntryOverrideOn) start = _gloveEntryOverride;
-                start.x = Mathf.Clamp(start.x, x0, x1);
-                start.y = Mathf.Clamp(start.y, y0, y1);
-                float below = _cueAimGui.y + 28f * s;
-                if (start.y < below) start.y = Mathf.Min(y1, below);
+                var start = AngledLockStart(rest, aimGui, away, s, safe, _gloveEntryOverrideOn, _gloveEntryOverride);
                 // b120: an entry override (poker Back: middle right) used to seat the hand a whole screen
                 // away, so it travelled across the phone. Only that override is held snug — garden
                 // sideways entries keep their GloveEntryPoint start so the hand is visible traveling
@@ -1811,6 +1798,28 @@ namespace FlockFive
 
         // Middle of the right edge, fully inside the safe rect (the clamp in GloveLockPose keeps the whole hand on screen).
         public static Vector2 GloveMiddleRightEntry(Rect safe) => new Vector2(safe.xMax, safe.center.y);
+
+        // Pure: the angled glove's start exactly as GloveLockPose seats it (entry point or override,
+        // clamped inside the safe pad, then lifted below the target line). Testable without a live app.
+        public static Vector2 AngledLockStart(Vector2 rest, Vector2 aimGui, Vector2 away, float s, Rect safe,
+            bool overrideOn, Vector2 overrideStart)
+        {
+            float dh = GloveDh(s);
+            var start = GloveEntryPoint(rest, aimGui, away, dh);
+            float pad = dh * 0.42f;
+            float x0 = safe.xMin + pad;
+            float x1 = safe.xMax - pad;
+            float y0 = safe.yMin + pad;
+            float y1 = safe.yMax - pad;
+            if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
+            if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
+            if (overrideOn) start = overrideStart;
+            start.x = Mathf.Clamp(start.x, x0, x1);
+            start.y = Mathf.Clamp(start.y, y0, y1);
+            float below = aimGui.y + 28f * s;
+            if (start.y < below) start.y = Mathf.Min(y1, below);
+            return start;
+        }
 
         // b120: angled starts obey the same near-start cap as plain gloves (GloveNearStartHands, 0.5x travel).
         public static Vector2 AngledStartSnug(Vector2 start, Vector2 aim, float s, Rect safe)
