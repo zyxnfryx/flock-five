@@ -3911,6 +3911,36 @@ namespace FlockFive
             return band;
         }
 
+        // b120 R4: every home icon the poker line could land on (rail buttons + VIP's No Ads ribbon).
+        Rect[] PokerRowIcons(Rect button)
+        {
+            EnsureSplashRails();
+            var vip = _railRect[RailVip];
+            return new[] { button, _railRect[RailHive], _railRect[RailDaily], vip, vip.width > 2f ? SplashNoAdsRibbon(vip) : default };
+        }
+
+        // b120 R4: push the band down until it clears every icon it overlaps and the glove body. Pure geometry.
+        public static float PokerCoinsSeat(Rect band, Rect[] icons, Rect hand, float minTop, float gap)
+        {
+            float y = Mathf.Max(band.y, minTop);
+            for (int pass = 0; pass < 8; pass++)
+            {
+                bool moved = false;
+                var b = new Rect(band.x, y, band.width, band.height);
+                if (hand.width > 2f && hand.height > 2f && b.Overlaps(hand)) { y = hand.yMax + gap; moved = true; }
+                if (icons != null)
+                    for (int i = 0; i < icons.Length; i++)
+                    {
+                        var r = icons[i];
+                        if (r.width <= 2f || r.height <= 2f) continue;
+                        b = new Rect(band.x, y, band.width, band.height);
+                        if (b.Overlaps(r)) { y = r.yMax + gap; moved = true; }
+                    }
+                if (!moved) break;
+            }
+            return y;
+        }
+
         // Under the poker button and its landed glove, inside the safe area, off the main buttons.
         Rect PokerCoinsBand(Rect band, float w, float h, Rect safe, float s)
         {
@@ -3918,14 +3948,21 @@ namespace FlockFive
             float safeTop = h - safe.yMax, safeBottom = h - safe.yMin; // safeArea is bottom-up
             float minTop = Mathf.Max(safeTop, HomeBannerTop(h, safe, s));
             var button = SplashPokerRect();
+            float floorY = minTop;
             if (button.width > 2f)
             {
                 var hand = PokerPointHand(GloveTargetAt(button, PokerGloveU, PokerGloveV), s);
                 float rowBottom = Mathf.Max(button.yMax, hand.height > 2f ? hand.yMax : 0f);
                 band.y = Mathf.Max(minTop, rowBottom + gap);
+                // b120 R4 (Readability): the line sits BELOW the whole icon row it names (Poker and the
+                // VIP medal + No Ads ribbon across from it, every rail button it would touch) and below the
+                // landed glove, so neither the targets nor the glove sit on the text.
+                var icons = PokerRowIcons(button);
+                band.y = PokerCoinsSeat(band, icons, hand, minTop, gap);
+                floorY = band.y;
             }
             else band.y = CoinsBannerY(w, h, safe, s, minTop, band.y);
-            LiftOffMainButtons(ref band, w, h, safe, s, default, minTop);
+            LiftOffMainButtons(ref band, w, h, safe, s, default, floorY);
             if (band.yMax > safeBottom) band.y = safeBottom - band.height;
             if (band.y < minTop) band.y = minTop;
             return band;
@@ -6680,6 +6717,9 @@ namespace FlockFive
             {
                 float discTop = FlowerDisc(disc, 0f).yMin;
                 float rowBottom = Mathf.Max(hand.height > 2f ? hand.yMax : 0f, button.height > 2f ? button.yMax : 0f);
+                // b120 R4: below the VIP medal / ribbon and any rail icon across from Poker too.
+                var probe = new Rect(0f, rowBottom, PhoneArea.W, 6f * s + r.height + hang.y * 2f);
+                rowBottom = PokerCoinsSeat(probe, PokerRowIcons(button), hand, rowBottom, 0f);
                 // The snug plate pads with the shared BoxPad only (no disc-cover pad).
                 float gapY = 6f * s;
                 float belowY = rowBottom + gapY + hang.y;
