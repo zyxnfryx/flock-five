@@ -565,6 +565,10 @@ namespace FlockFive
             PhoneArea.BindCamera(_cam);
             if (PhoneArea.Pillar)
             {
+                // The area texture is filled edge to edge (rect is ignored while a
+                // targetTexture is set). A letterbox left over from a taller window
+                // would make WorldToScreenPoint disagree with that picture.
+                _cam.rect = new Rect(0f, 0f, 1f, 1f);
                 if (_bleed != null) _bleed.enabled = false;
                 return;
             }
