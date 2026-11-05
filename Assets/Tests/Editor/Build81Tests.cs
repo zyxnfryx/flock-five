@@ -965,40 +965,19 @@ namespace FlockFive.Editor
                 + " text=" + bee.TextW.ToString("0") + "x" + bee.TextH.ToString("0")
                 + " line=" + bee.LineH.ToString("0.0"));
 
-            // b131: Restart sits in the top-right gutter of the top bar; Hive keeps the bottom-right corner.
-            // Strict: exact pad inset from the safe top-right, exact size, above the playfield and the HUD
-            // band, clear of the hive and of every feeder bulb (2 and 3 feeders), hive at its old inset.
+            // b120 R5 (Brandon's standing rule): Restart is back bottom-left, mirroring the hive's
+            // padding (left inset == hive right inset, same row and size), clear of the hive.
             var safe = new Rect(0f, 102f, W, H - 102f - 177f);
             FlockFiveApp.GardenCorners(W, H, safe, out var restart, out var hive);
             float pt = H / 852f;
             string TopRight(Rect sf, Rect rs, Rect hv, out bool ok)
             {
-                CornerAnchor.Garden(W, H, sf, out float sc, out float hudTop, out _, out _, out _);
-                float pad = 6f * sc;
-                float safeTop = H - sf.yMax;
-                float limit = Mathf.Min(hudTop, CornerAnchor.PlayfieldTopGui(W, H)) - pad;
-                float gutterL = CornerAnchor.FeederRightGui(W, H) + pad;
-                float wantSize = Mathf.Max(Mathf.Min(CornerAnchor.SizeRef * sc, Mathf.Min(limit - (safeTop + pad), sf.xMax - pad - gutterL)), CornerAnchor.MinTapPx(Screen.dpi));
-                float right = sf.xMax - rs.xMax, topIn = rs.yMin - safeTop;
-                float hiveRight = sf.xMax - hv.xMax;
-                bool feedersClear = true;
-                float fy = WorldBuilder.FeederYFor(CornerAnchor.TallFor(W, H), safeTop / H);
-                for (int fn = 2; fn <= 3; fn++)
-                    for (int fi = 0; fi < fn; fi++)
-                    {
-                        float fx = FeederRow.X(fi, fn);
-                        var fa = CornerAnchor.WorldToGui(W, H, fx - FeederRow.BulbHalf, fy + 1.34f);
-                        var fb = CornerAnchor.WorldToGui(W, H, fx + FeederRow.BulbHalf, fy - 1.47f);
-                        if (Rect.MinMaxRect(fa.x, fa.y, fb.x, fb.y).Overlaps(rs)) feedersClear = false;
-                    }
-                ok = Mathf.Abs(right - pad) <= pt && Mathf.Abs(topIn - pad) <= pt
-                    && Mathf.Abs(rs.width - wantSize) <= 0.5f && Mathf.Abs(rs.height - rs.width) <= 0.01f
-                    && rs.xMin >= gutterL - 0.5f && rs.yMax <= limit + pad + 0.01f && rs.width >= CornerAnchor.MinTapPx(0f)
-                    && !rs.Overlaps(hv) && feedersClear
-                    && Mathf.Abs(hiveRight - CornerAnchor.InsetRef * sc) <= pt && hv.width > 8f;
-                return "right=" + right.ToString("0.0") + " top=" + topIn.ToString("0.0") + " pad=" + pad.ToString("0.0")
-                    + " size=" + rs.width.ToString("0.0") + "/" + wantSize.ToString("0.0") + " yMax=" + rs.yMax.ToString("0.0") + "/" + (limit + pad).ToString("0.0")
-                    + " hiveRight=" + hiveRight.ToString("0.0") + " feeders=" + feedersClear;
+                float left = rs.xMin - sf.xMin, hiveRight = sf.xMax - hv.xMax;
+                ok = Mathf.Abs(left - hiveRight) <= pt && Mathf.Abs(rs.yMin - hv.yMin) <= pt
+                    && Mathf.Abs(rs.width - hv.width) <= pt && rs.width >= CornerAnchor.MinTapPx(0f)
+                    && !rs.Overlaps(hv) && rs.yMin > H * 0.5f;
+                return "left=" + left.ToString("0.0") + " hiveRight=" + hiveRight.ToString("0.0")
+                    + " size=" + rs.width.ToString("0.0") + "/" + hv.width.ToString("0.0") + " y=" + rs.yMin.ToString("0.0") + "/" + hv.yMin.ToString("0.0");
             }
             string d1 = TopRight(safe, restart, hive, out bool ok1);
             Check("hud-mirror", ok1, d1);
@@ -1006,7 +985,7 @@ namespace FlockFive.Editor
             var shifted = new Rect(36f, 102f, W - 36f - 18f, H - 102f - 177f);
             FlockFiveApp.GardenCorners(W, H, shifted, out var r2, out var h2);
             string d2 = TopRight(shifted, r2, h2, out bool ok2);
-            Check("hud-mirror-safe", ok2 && r2.xMax <= shifted.xMax + 0.01f && h2.xMax <= shifted.xMax + 0.01f, d2);
+            Check("hud-mirror-safe", ok2 && r2.xMin >= shifted.xMin - 0.01f && h2.xMax <= shifted.xMax + 0.01f, d2);
 
             var off = new Vector2(13.5f, -8.25f);
             FlockFiveApp.GardenCornersShaken(W, H, safe, off, 0f, out var sr, out var sh);

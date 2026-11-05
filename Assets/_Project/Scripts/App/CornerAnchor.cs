@@ -24,14 +24,27 @@ namespace FlockFive
         public static float EdgeInsetRight(float screenW, Rect safe)
             => Mathf.Max(16f, (screenW - safe.xMax) + 10f);
 
-        // b131 (Brandon): Restart sits in the top bar, never in the playfield, so it cannot steal a
-        // branch or perch tap. Its hit rect stays above PlayfieldTopGui (the highest reach of any
-        // branch, bird or perch-pad hit) and inside the safe area, right of the streak stamp seat.
+        // b120 R5 (Brandon's standing rule): Restart lives at the bottom-left, the mirror of the hive
+        // (same size, same edge inset, same bottom margin), clear of the low/ad branches (b105 rules in
+        // GardenCore) and below the top safe band. This replaces the b131 top-bar seat, which sat inside
+        // the 59 pt top band on notched phones. TopBarRestart is kept for reference/tests only.
         public static void Garden(float screenW, float screenH, Rect safe,
             out float scale, out float top, out float bot, out Rect restart, out Rect hive)
         {
-            GardenCore(screenW, screenH, safe, out scale, out top, out bot, out var seat, out hive);
-            restart = TopBarRestart(screenW, screenH, safe, scale, top);
+            GardenCore(screenW, screenH, safe, out scale, out top, out bot, out restart, out hive);
+        }
+
+        // "Restart" caption under the bottom-left button (above it when the bottom safe edge is too close).
+        public static Rect RestartLabel(Rect restart, float screenH, Rect safe, float scale)
+        {
+            float lh = Mathf.Max(16f, 22f * scale);
+            float lw = Mathf.Max(restart.width * 1.5f, 96f * scale);
+            float x = restart.center.x - lw * 0.5f;
+            if (x < safe.xMin + 2f) x = safe.xMin + 2f;
+            float safeBotY = screenH - Mathf.Max(0f, safe.yMin);
+            float y = restart.yMax + 2f * scale;
+            if (y + lh > safeBotY) y = restart.yMin - lh - 2f * scale;
+            return new Rect(x, y, lw, lh);
         }
 
         // The old bottom-left restart seat. Garden lesson banners still centre on it (b102).
