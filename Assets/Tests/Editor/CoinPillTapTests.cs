@@ -89,6 +89,17 @@ namespace FlockFive.Editor
             Check(!lesson.Fire && !lesson.Armed, "lesson still pokes");
             var vip = FlockFiveApp.TickPigPoke(true, true, true, false, false, false, false);
             Check(!vip.Fire, "VIP block still pokes");
+
+            // 820 pillar: the same pad hits in rail space, screen space, and a double-shifted pointer.
+            // Phones pass offX 0, so a screen-sized shift must not count.
+            var pad820 = new Rect(400f, 240f, 220f, 90f);
+            var railPt = new Vector2(pad820.center.x, pad820.center.y);
+            Check(FlockFiveApp.PigPokeHits(pad820, railPt, 78), "820 rail pointer misses");
+            Check(FlockFiveApp.PigPokeHits(pad820, new Vector2(railPt.x + 78f, railPt.y), 78), "820 screen pointer misses");
+            Check(FlockFiveApp.PigPokeHits(pad820, new Vector2(railPt.x - 78f, railPt.y), 78), "820 double-shift pointer misses");
+            Check(!FlockFiveApp.PigPokeHits(pad820, new Vector2(railPt.x, railPt.y + 200f), 78), "820 far pointer hits");
+            Check(FlockFiveApp.PigPokeHits(pad820, railPt, 0), "phone rail pointer misses");
+            Check(!FlockFiveApp.PigPokeHits(pad820, new Vector2(railPt.x + 78f, railPt.y), 0), "phone treats a screen shift as a hit");
             Debug.Log("[coin-pill-tap] " + (fail == 0 ? "PASS " + n + "/" + n : "FAIL " + fail + "/" + n));
         }
     }

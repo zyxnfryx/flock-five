@@ -91,6 +91,11 @@ namespace FlockFive
         float _pigBurst;
         // Wall-clock start of the squash. -1 when the pig is at rest.
         float _pigPokeAt = -1f;
+        // First $5 from the piggy. Shown once, then never again.
+        float _pigExplainUntil = -1f;
+        const string PigExplainPref = "flockfive.pig.explain";
+        const string PigExplainLine = "Every few pokes, a coin.";
+        static GUIStyle _pigExplainStyle;
         // One poke per gesture. The press arms it; any mouse-up clears it.
         bool _pigPokeArm;
         int _pigPokeFrame = -1;
@@ -8640,6 +8645,7 @@ namespace FlockFive
 
             // Bigger persistent balance: "$12" + coin sprite on the right.
             DrawCoinBalance(s, pig.x - 12f, pig.center.y);
+            DrawPigExplain(pig, s);
             if (!raiseSign) DrawStreakSignLayer(s);
         }
 
@@ -10199,7 +10205,7 @@ namespace FlockFive
             if (e == null || e.button != 0 || pad.width < 2f || pad.height < 2f) return false;
             // rawType still sees the press after another control Uses the event.
             if (e.rawType != EventType.MouseDown) return false;
-            return PadContains(pad, GuiPointer());
+            return PigPokeHits(pad, GuiPointer(), PhoneArea.OffX);
         }
 
         // Read the pointer in the same space as the rail rects. A scaled GUI.matrix
@@ -10220,6 +10226,20 @@ namespace FlockFive
             return p.x >= pad.xMin && p.x <= pad.xMax && p.y >= pad.yMin && p.y <= pad.yMax;
         }
 
+        // Rail rects are PhoneArea coordinates. On an 820-wide iPad the HUD is drawn
+        // OffX pixels to the right (pillar). A real click is already in rail space; a
+        // simulated click is often still in screen pixels, or has had OffX removed twice.
+        // All three land on this same pad. OffX is 0 on phones, so 402 and 412 stay put.
+        public static bool PigPokeHits(Rect railPad, Vector2 pointer, int offX)
+        {
+            if (railPad.width < 2f || railPad.height < 2f) return false;
+            if (PadContains(railPad, pointer)) return true;
+            if (offX == 0) return false;
+            if (PadContains(railPad, new Vector2(pointer.x - offX, pointer.y))) return true;
+            if (PadContains(railPad, new Vector2(pointer.x + offX, pointer.y))) return true;
+            return false;
+        }
+
         // The same pointer sample the other home buttons use. Began/Tap only, so a held
         // finger does not poke again on the next Layout.
         bool SamplePressInside(Rect pad)
@@ -10229,7 +10249,7 @@ namespace FlockFive
             {
                 var sm = _homeSamples[i];
                 if (sm.Phase != SplashPress.Phase.Began && sm.Phase != SplashPress.Phase.Tap) continue;
-                if (PadContains(pad, sm.Pos)) return true;
+                if (PigPokeHits(pad, sm.Pos, PhoneArea.OffX)) return true;
             }
             return false;
         }
@@ -10245,7 +10265,51 @@ namespace FlockFive
                 Sfx.Clink();
                 _pigBurst = 1f;
                 BeginRewardPay(award.Coins);
+                NotePigExplain();
             }
+        }
+
+        void NotePigExplain()
+        {
+            if (_pigExplainUntil >= 0f) return;
+            if (PlayerPrefs.GetInt(PigExplainPref, 0) != 0) return;
+            PlayerPrefs.SetInt(PigExplainPref, 1);
+            PlayerPrefs.Save();
+            _pigExplainUntil = AdPause.Unscaled + 3.2f;
+        }
+
+        void DrawPigExplain(Rect pig, float s)
+        {
+            if (_pigExplainUntil < 0f) return;
+            float left = _pigExplainUntil - AdPause.Unscaled;
+            if (left <= 0f) { _pigExplainUntil = -1f; return; }
+            float icon = CoinBalanceIcon(s);
+            float right = pig.x - 12f - icon - 8f;
+            float width = right - 8f;
+            if (width < 36f) return;
+            if (_pigExplainStyle == null)
+            {
+                _pigExplainStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false,
+                    clipping = TextClipping.Overflow
+                };
+            }
+            var st = _pigExplainStyle;
+            st.fontSize = Mathf.Max(13, Mathf.RoundToInt(15f * Mathf.Min(s, 1.35f)));
+            var content = RimContent(PigExplainLine);
+            int guard = 0;
+            while (st.fontSize > 11 && guard < 12 && st.CalcSize(content).x > width)
+            {
+                st.fontSize -= 1;
+                guard++;
+            }
+            float h = st.fontSize + 6f;
+            var r = new Rect(8f, pig.center.y - h * 0.5f, width, h);
+            float a = left < 0.4f ? Mathf.Clamp01(left / 0.4f) : 1f;
+            StampOutlined(r, PigExplainLine, st, new Color(1f, 0.96f, 0.84f, a), 0, Mathf.Max(1, st.fontSize / 12));
         }
 
         static bool GuiPaint()
@@ -10466,7 +10530,7 @@ namespace FlockFive
             var pokeEv = Event.current;
             bool pokeUp = pokeEv != null && pokeEv.button == 0 && pokeEv.rawType == EventType.MouseUp;
             bool downInside = pigAllowed && (GuiPressInside(pokePad) || SamplePressInside(pokePad));
-            bool upInside = pokeUp && pokePad.width > 2f && PadContains(pokePad, GuiPointer());
+            bool upInside = pokeUp && PigPokeHits(pokePad, GuiPointer(), PhoneArea.OffX);
             // One HitPad, always, while the pig accepts taps, so the id does not move between press and release.
             bool pokeRelease = pigAllowed && HitPad(pokePad.width > 2f ? pokePad : pigR, out _);
             if (!upInside && pokeRelease) upInside = true;
