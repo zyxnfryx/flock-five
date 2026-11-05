@@ -950,9 +950,43 @@ namespace FlockFive
                 ClearGiftHint(ref _coachGiftUntil, ref _coachResumeFade, ref _deadEndNudged);
                 return nearBranch >= 0;
             }
-            if (HitBranch(world) == _cueBranch) return false;
+            if (CoachTargetPress(world)) return false;
             CoachNudge();
             return true;
+        }
+
+        // Gameplay HitBranch stays as it is (the bird radius and the pad still pick a limb in free play).
+        // A guided step advances only when that pick is the cued limb AND the press is on its painted
+        // wood or on a bird perched on that wood. The old seat radius (56 px, at least 1.05 world units)
+        // reached past the tip and up into the limb above; the BoxCollider2D is that same tall pad and
+        // is not the coach target.
+        bool CoachTargetPress(Vector2 world)
+        {
+            return HitBranch(world) == _cueBranch && CoachTapOnTarget(world);
+        }
+
+        bool CoachTapOnTarget(Vector2 world)
+        {
+            if (_garden.Branches == null || (uint)_cueBranch >= (uint)_garden.Branches.Length) return false;
+            var v = _garden.Branches[_cueBranch];
+            if (v == null) return false;
+            var t = v.transform;
+            var ls = t.lossyScale;
+            float sx = Mathf.Abs(ls.x);
+            float sy = Mathf.Abs(ls.y);
+            var wood = BranchHit.WoodRect((Vector2)t.position, v.FromRight, v.IsGift, sx, sy);
+            if (BranchHit.RectDist(wood, world) <= BranchHit.WoodTol) return true;
+            if (v.Birds == null) return false;
+            float scale = sx > 0.01f ? sx : 1f;
+            for (int s = 0; s < v.Birds.Length; s++)
+            {
+                var bird = v.Birds[s];
+                if (bird == null || !bird.enabled) continue;
+                if (bird.transform.parent != t) continue;
+                if (BranchHit.CoachBird(world, bird.transform.position, v.FromRight, wood, scale))
+                    return true;
+            }
+            return false;
         }
 
         // The gift tap was honoured: no hint window, no resume fade, and no stuck-nudge re-arm for this spell.
@@ -1621,7 +1655,7 @@ namespace FlockFive
                 return other >= 0 && NearGift(other, world);
             }
             if (_cueBranch < 0) return false;
-            return HitBranch(world) == _cueBranch;
+            return CoachTargetPress(world);
         }
 
         // Kind is the pest the hand was pointing at. Dismiss clears _pestCue in
