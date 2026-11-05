@@ -1020,20 +1020,25 @@ namespace FlockFive
             return aim;
         }
 
-        // Claim step. Fingertip is on the Claim face (the pedestal disc, same
-        // FlowerDisc the Watch glove uses), on the left rim so the centered word
-        // stays readable. Never a reward box. _gloveKeepOff holds the palm off the face.
+        // Centroid of the "Claim" word. Same seat DrawDailyClaim paints. The glove
+        // fingertip lands here, on the button face, not on the empty rim beside it.
+        public static Vector2 DailyClaimWordCenter(Rect disc)
+        {
+            float y = disc.y + disc.height * 0.22f;
+            float h = disc.height * 0.56f;
+            return new Vector2(disc.center.x, y + h * 0.5f);
+        }
+
+        // Claim step. Fingertip is the Claim word's center (the pedestal face).
+        // The hand still comes from the left so the palm is not the thing covering
+        // the word. Never a reward box. _gloveKeepOff holds the wind-up off the face.
         void DailyClaimGlove(float s, out Vector2 aim, out float perchLift, out bool fromLeft)
         {
             DailyLayout(s, out var card, out var flower, out _, out _);
             float k = 1f; // b86: no pop scale (the wheel appears assembled)
             var pivot = DailyPivot(card, flower);
             var disc = DailyScaleRect(FlowerDisc(flower, 0f), pivot, k);
-            // Build 86 (Brandon): the glove never covers the 'Claim' label. Tap the button's
-            // lower-right rim; the hand hangs down and out, clear of the centered word.
-            // The hand meets the left rim from the left (cuff toward the screen edge), so the
-            // glove sits beside the button and the centered word stays clear.
-            aim = new Vector2(disc.x + disc.width * 0.12f, disc.center.y + disc.height * 0.10f);
+            aim = DailyClaimWordCenter(disc);
             perchLift = float.NaN;
             fromLeft = true;
             _gloveKeepOff = disc;
@@ -1602,6 +1607,42 @@ namespace FlockFive
         static Texture2D _wheelHi;
         static Texture2D _wheelPointer;
 
+        // One wedge amount, rotated about its own center in GUI space. Outline offsets
+        // are in the label's local pixels so they turn with the glyphs. No second
+        // rotation, so a neighbor's text cannot land on this wedge.
+        void DrawRadialWheelLabel(Rect lab, string text, float deg, bool jack)
+        {
+            if (string.IsNullOrEmpty(text) || lab.width < 2f || lab.height < 2f) return;
+            var prev = GUI.matrix;
+            var prevC = GUI.color;
+            PhoneArea.RotateAround(deg, lab.center);
+            GUI.color = Color.white;
+            var body = RimContent(text);
+            int dark = jack ? 5 : 2;
+            int light = jack ? 2 : 1;
+            Paint(_dailyTile, PopFade(new Color(0.08f, 0.04f, 0.02f, 1f)));
+            int nd = LabelRim.Count(dark);
+            for (int i = 0; i < nd; i++)
+            {
+                LabelRim.At(dark, i, out int dx, out int dy);
+                GUI.Label(new Rect(lab.x + dx, lab.y + dy, lab.width, lab.height), body, _dailyTile);
+            }
+            if (light > 0)
+            {
+                Paint(_dailyTile, PopFade(new Color(1f, 0.97f, 0.90f, 1f)));
+                int nl = LabelRim.Count(light);
+                for (int i = 0; i < nl; i++)
+                {
+                    LabelRim.At(light, i, out int dx, out int dy);
+                    GUI.Label(new Rect(lab.x + dx, lab.y + dy, lab.width, lab.height), body, _dailyTile);
+                }
+            }
+            Paint(_dailyTile, PopFade(new Color(1f, 0.97f, 0.88f, 1f)));
+            GUI.Label(lab, body, _dailyTile);
+            GUI.matrix = prev;
+            GUI.color = prevC;
+        }
+
         void DrawDailyWheel(Rect wheel, float s, float breathe, Texture2D glow)
         {
             if (wheel.width < 8f) return;
@@ -1642,10 +1683,10 @@ namespace FlockFive
                 var fixedLab = WheelWedgeLabelRect(wheel, i, 0f, false);
                 _dailyTile.fontSize = WheelLabelPx(text, jack, fixedLab);
                 _dailyTile.fontStyle = FontStyle.Bold;
-                var hold = GUI.matrix;
-                PhoneArea.RotateAround(DailyBonus.WedgeLabelDegrees(i, angle), lab.center);
-                StampOutlined(lab, text, _dailyTile, new Color(1f, 0.97f, 0.88f), jack ? 2 : 1, jack ? 3 : 1);
-                GUI.matrix = hold;
+                // StampOutlined re-rotates a pre-rotated matrix around the rect corner
+                // (and pre-multiplies the iPad pillar). Idle labels then leave their
+                // wedges and stack. Draw under the same center pivot as the disc.
+                DrawRadialWheelLabel(lab, text, DailyBonus.WedgeLabelDegrees(i, angle), jack);
                 if (!jack) continue;
                 var starAt = wheel.center + DailyBonus.WedgeOffset(i, angle + DailyBonus.JackpotStarLean, wheel.width * 0.36f);
                 float tw = 0.55f + 0.45f * Mathf.Sin(AdPause.Unscaled * 3.2f);

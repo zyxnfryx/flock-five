@@ -1357,6 +1357,20 @@ namespace FlockFive
                 {
                     DailyClaimGlove(handS, out dailyAim, out float perchLift, out bool fromLeft);
                     CoachGloveAt(dailyAim, dt, handS, perchLift, fromLeft, float.NaN, DailyClaimTapRect(handS));
+                    // Once the fingertip has reached Claim, leave it there. The shared
+                    // tap cycle would lift back to the perch (left of the button).
+                    if (_gloveAct == TutorGloveAct.Live && _gloveLockOn
+                        && string.Equals(_gloveStepLine, DailyClaimLine))
+                    {
+                        float pressAt = TapHover + TapPress;
+                        if (_glovePhase >= pressAt)
+                        {
+                            _glovePhase = pressAt;
+                            _gloveShown = _gloveLockAim;
+                            _gloveDip = 1f;
+                            _gloveHoldDip = 1f;
+                        }
+                    }
                     // The claim press fades the hand in place. Pin the fingertip on the
                     // Claim aim for that whole fade, including the frames before the
                     // spin is armed, so it cannot freeze mid-travel off the button.

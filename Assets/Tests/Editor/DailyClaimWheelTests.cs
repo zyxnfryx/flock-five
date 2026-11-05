@@ -109,12 +109,24 @@ namespace FlockFive.Editor
             int wheelFn = daily.IndexOf("void DrawDailyWheel(");
             int pointerFn = daily.IndexOf("void DrawWheelPointer(");
             string wheelBody = wheelFn >= 0 && pointerFn > wheelFn ? daily.Substring(wheelFn, pointerFn - wheelFn) : "";
+            int radialFn = daily.IndexOf("void DrawRadialWheelLabel(");
+            string radialBody = radialFn >= 0 && wheelFn > radialFn ? daily.Substring(radialFn, wheelFn - radialFn) : "";
             Check("wheel draw uses GUI-space pivots",
                 wheelBody.Contains("PhoneArea.RotateAround(angle, wheel.center)")
-                && wheelBody.Contains("PhoneArea.RotateAround(DailyBonus.WedgeLabelDegrees(i, angle), lab.center)")
+                && wheelBody.Contains("DrawRadialWheelLabel(lab, text, DailyBonus.WedgeLabelDegrees(i, angle), jack)")
                 && wheelBody.Contains("WheelWedgeLabelRect(wheel, i, angle, false)")
-                && !wheelBody.Contains("GUIUtility.RotateAroundPivot"),
+                && !wheelBody.Contains("StampOutlined(lab,")
+                && !wheelBody.Contains("GUIUtility.RotateAroundPivot")
+                && radialBody.Contains("PhoneArea.RotateAround(deg, lab.center)"),
                 "len " + wheelBody.Length);
+            var face = new Rect(40f, 80f, 200f, 140f);
+            var word = FlockFiveApp.DailyClaimWordCenter(face);
+            var wordBox = new Rect(face.x, face.y + face.height * 0.22f, face.width, face.height * 0.56f);
+            Check("claim glove aims at the Claim word",
+                (word - wordBox.center).magnitude < 0.01f
+                && face.Contains(word)
+                && word.x > face.x + face.width * 0.4f,
+                word.ToString());
             Check("claim glove drops the rail fade and stays through the tap",
                 coach.Contains("void DropRailFadeForClaim(")
                 && coach.Contains("if (enteredClaim)")
