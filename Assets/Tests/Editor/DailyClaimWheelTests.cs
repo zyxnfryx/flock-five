@@ -142,6 +142,51 @@ namespace FlockFive.Editor
                 && face.Contains(word)
                 && word.x > face.x + face.width * 0.4f,
                 word.ToString());
+            // Phone GUI width and the iPad pillar's phone-aspect width. The arc is
+            // GUI space; GuiBase (OffX) is applied outside the pose, so a traveling
+            // tip and the landed tip both keep that shift horizontal.
+            foreach (var (gw, gh, off) in new[] { (402f, 874f, 0f), (664f, 1180f, 78f) })
+            {
+                var safe = new Rect(0f, 0f, gw, gh);
+                var wordAim = new Vector2(gw * 0.5f, gh * 0.72f);
+                float dh = FlockFiveApp.GloveDh(1f);
+                var perched = wordAim + new Vector2(-12f, -6f);
+                var start = FlockFiveApp.ClaimGloveStart(perched, wordAim, dh, safe);
+                float apart = (start - wordAim).magnitude;
+                float arch = dh * 0.55f;
+                var p0 = FlockFiveApp.ClaimGloveArc(start, wordAim, 0f, arch);
+                var mid = FlockFiveApp.ClaimGloveArc(start, wordAim, 0.45f, arch);
+                var landed = FlockFiveApp.ClaimGloveArc(start, wordAim, 1f, arch);
+                var chord = Vector2.Lerp(start, wordAim, 0.45f);
+                Check("claim travel start mid and land differ w " + gw,
+                    apart > 70f
+                    && (p0 - start).magnitude < 0.5f
+                    && (mid - start).magnitude > 28f
+                    && (mid - wordAim).magnitude > 28f
+                    && (landed - wordAim).magnitude < 0.5f
+                    && mid.y < chord.y - 12f
+                    && !FlockFiveApp.ClaimGloveTravelDone(0f)
+                    && FlockFiveApp.ClaimGloveTravelDone(0.82f),
+                    "apart " + apart.ToString("0") + " mid " + mid + " land " + landed);
+                foreach (var pose in new[] { p0, mid, landed })
+                {
+                    var gui = Matrix4x4.Translate(new Vector3(off, 0f, 0f));
+                    var drawn = FlockFiveApp.GloveDrawMatrix(pose, -40f, -1.07f, 0.88f, gui);
+                    Vector2 tip = drawn.MultiplyPoint3x4(pose);
+                    Vector2 wantTip = pose + new Vector2(off, 0f);
+                    Check("claim arc tip keeps pillar shift outside rotation w " + gw + " off " + off,
+                        (tip - wantTip).magnitude < 0.5f, tip + " want " + wantTip);
+                }
+            }
+            int pinAt = coach.IndexOf("void PinClaimGloveTip()");
+            int pinEnd = pinAt >= 0 ? coach.IndexOf("public const float ClaimGloveMinHands", pinAt) : -1;
+            string pinBody = pinAt >= 0 && pinEnd > pinAt ? coach.Substring(pinAt, pinEnd - pinAt) : "";
+            Check("claim pin holds the word and leaves the arc start",
+                pinBody.Contains("_gloveShown = _gloveLockAim")
+                && !pinBody.Contains("_gloveTip = _gloveLockAim")
+                && coach.Contains("ClaimGloveArc(")
+                && coach.Contains("if (_claimGloveArrived && _gloveLockOn && string.Equals(_gloveStepLine, DailyClaimLine))"),
+                "pin " + pinBody.Length);
             Check("claim glove drops the rail fade and stays through the tap",
                 coach.Contains("void DropRailFadeForClaim(")
                 && coach.Contains("if (enteredClaim)")
