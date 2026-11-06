@@ -623,6 +623,10 @@ namespace FlockFive
         // cascade seen, seeds the purse, and, with no fflevel, loads garden 2.
         // Garden 2 can nap: a finished flock whose color is not on a feeder sleeps.
         // The nap rule tip is left unseen so that first Zzz can still raise it.
+        // ?keepTips=1 on that skip also leaves the kit and feeder plates owed.
+        // Those three prefs are what hide FeederLine and SleepLine ("color")
+        // and the kit line. Leaf, the first-garden coach, and the pest lessons
+        // stay stamped: a live leaf or coach blocks the feeder plate.
         void MaybeDevLevelSkip()
         {
             if (_devLevelSkipDone) return;
@@ -656,11 +660,23 @@ namespace FlockFive
             PlayerPrefs.SetInt(CoachSparrowKey, 1);
             PlayerPrefs.SetInt(CoachHawkKey, 1);
             PlayerPrefs.SetInt(CoachOstrichKey, 1);
-            PlayerPrefs.SetInt(RuleTips.KitKey, 1);
-            PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
-            // Nap tip stays owed on the skip path. A plain ?fflevel= still marks it seen.
-            if (plan.SkipOnboarding) PlayerPrefs.DeleteKey(RuleTips.SleepKey);
-            else PlayerPrefs.SetInt(RuleTips.SleepKey, 1);
+            // keepTips=1 leaves the rule plates owed, including a stamp left by an
+            // earlier skip in this browser profile. Leaf and the other coach keys
+            // above stay seen so their plates do not cover FeederLine.
+            if (plan.KeepTips)
+            {
+                PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                PlayerPrefs.DeleteKey(RuleTips.SleepKey);
+            }
+            else
+            {
+                PlayerPrefs.SetInt(RuleTips.KitKey, 1);
+                PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
+                // Nap tip stays owed on the skip path. A plain ?fflevel= still marks it seen.
+                if (plan.SkipOnboarding) PlayerPrefs.DeleteKey(RuleTips.SleepKey);
+                else PlayerPrefs.SetInt(RuleTips.SleepKey, 1);
+            }
             if (plan.KeepBee) PlayerPrefs.DeleteKey(CoachBeeKey);
             else PlayerPrefs.SetInt(CoachBeeKey, 1);
             if (plan.KeepFire)
@@ -677,7 +693,8 @@ namespace FlockFive
             PlayerPrefs.Save();
             AdConsent.DismissTransient();
             if (plan.SkipOnboarding)
-                Debug.Log("FF_DEV_SKIP_ONBOARDING display=" + (plan.Index + 1) + " coins=" + Purse.Coins);
+                Debug.Log("FF_DEV_SKIP_ONBOARDING display=" + (plan.Index + 1) + " coins=" + Purse.Coins
+                    + " keepTips=" + (plan.KeepTips ? 1 : 0));
             Debug.Log("FF_DEV_LEVEL display=" + (plan.Index + 1) + " keepBee=" + (plan.KeepBee ? 1 : 0)
                 + " keepFire=" + (plan.KeepFire ? 1 : 0));
             if (!LevelCurtain.Armed) LevelCurtain.Arm(AdPause.Unscaled);
@@ -704,9 +721,12 @@ namespace FlockFive
         // stamped too. The bee-card plate is CoachBeeKey, already stamped above
         // unless this garden asked to keep it. The nap rule tip is cleared, not
         // stamped: Garden 2 can sleep a flock that has no feeder, and the tip
-        // has to be able to open on that first Zzz. Coins go through Purse.Credit
-        // so flockfive.coins and its PrefGuard checksum match what the rail and
-        // the poker deal read back (including the Boot on the next home).
+        // has to be able to open on that first Zzz. Kit and feeder are cleared
+        // only when the URL also says keepTips=1, and that happens in
+        // MaybeDevLevelSkip so this home cascade is the same either way. Coins
+        // go through Purse.Credit so flockfive.coins and its PrefGuard checksum
+        // match what the rail and the poker deal read back (including the Boot
+        // on the next home).
         void StampDevOnboardingSeen()
         {
             PlayerPrefs.SetInt(AdConsent.AttAskKey, 2);
