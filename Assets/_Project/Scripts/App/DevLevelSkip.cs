@@ -7,6 +7,7 @@ namespace FlockFive
     {
         public const string QueryKey = "fflevel";
         public const string OnboardingKey = "skipOnboarding";
+        public const string KeepTipsKey = "keepTips";
         // 1-based. Garden 2 is the first board where restart and the hive can
         // both show. Garden 1 may hide the hive until collection progress.
         // Bee Thicket opens on Gold and Teal feeders and still has full Ruby
@@ -25,6 +26,10 @@ namespace FlockFive
             public bool KeepBee;
             public bool KeepFire;
             public bool SkipOnboarding;
+            // True only when this load is the skip path and the page also said
+            // keepTips=1. The boot then leaves the kit, feeder, and sleep rule
+            // plates owed. keepTips without skipOnboarding does not set this.
+            public bool KeepTips;
         }
 
         // 1-based garden from ?fflevel=, or 0 when the page did not ask.
@@ -37,6 +42,13 @@ namespace FlockFive
         public static bool OnboardingFromUrl(string url)
         {
             return QueryInt(url, OnboardingKey) == 1;
+        }
+
+        // True only for ?keepTips=1. Any other value is not a request.
+        // Honored only together with skipOnboarding. See Plan.
+        public static bool KeepTipsFromUrl(string url)
+        {
+            return QueryInt(url, KeepTipsKey) == 1;
         }
 
         // How many coins to add so the purse reaches OnboardingCoins.
@@ -53,6 +65,9 @@ namespace FlockFive
         // ?skipOnboarding=1 with no fflevel loads garden 2 and asks the boot to
         // stamp the home cascade seen, seed the purse, and leave the nap tip
         // unseen. A valid fflevel still picks the garden.
+        // ?keepTips=1 on that same skip also leaves the kit and feeder rule
+        // plates owed. keepTips without skipOnboarding leaves KeepTips false,
+        // so a plain ?fflevel= load still stamps those plates.
         public static Choice Plan(string url, int levelCount)
         {
             int display = DisplayFromUrl(url);
@@ -66,6 +81,7 @@ namespace FlockFive
                 KeepBee = display == 5,
                 KeepFire = display == 3,
                 SkipOnboarding = skip,
+                KeepTips = skip && KeepTipsFromUrl(url),
             };
         }
 
