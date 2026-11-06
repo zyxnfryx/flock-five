@@ -74,17 +74,20 @@ namespace FlockFive.Editor
             var safe = new Rect(m, m, Mathf.Max(8f, w - 2f * m), Mathf.Max(8f, h - 2f * m));
             var screenSafe = new Rect(0f, 0f, w, h);
             var chrome = FlockFiveApp.LayoutPokerChrome(w, h, screenSafe, s);
-            var aim = chrome.Back.center;
-            if (chrome.Back.width < 2f || aim.y > h * 0.35f || aim.x > w * 0.4f)
-                aim = new Vector2(64f, Mathf.Min(72f, h * 0.12f));
+            var aim = FlockFiveApp.PokerBackSettleAim(chrome.Back.center, chrome.Back, w, h);
+            bool phone = w / h <= DeviceFit.PhoneAspect + 0.04f;
+            bool nudged = phone
+                ? aim.x < chrome.Back.center.x - 8f && aim.y < chrome.Back.center.y - 8f
+                : aim == chrome.Back.center;
 
-            check("back-settle-inside-hit-" + tag, chrome.Back.width > 2f && chrome.Back.Contains(aim), chrome.Back + " aim " + aim);
+            check("back-settle-inside-hit-" + tag, chrome.Back.width > 2f && chrome.Back.Contains(aim) && nudged,
+                chrome.Back + " aim " + aim + " center " + chrome.Back.center);
 
             int px = CaptionLayout.BannerFont(w, h);
             float bandH = CaptionLayout.BannerBandHeight(px * 2.2f, px);
             var lane = FlockFiveApp.PokerBackGloveLane(aim, s);
             var band = FlockFiveApp.PokerBackTipBand(w, h, screenSafe, s, bandH, chrome.Back, aim);
-            bool above = band.yMin < lane.yMin && band.yMin < aim.y;
+            bool above = band.yMin < aim.y && band.yMin < h * 0.25f;
             bool clear = !band.Overlaps(lane) && !band.Overlaps(chrome.Back);
             bool readable = band.width >= 140f && band.height >= 48f && band.xMax <= w + 0.5f && band.yMin >= 0f;
             check("back-tip-above-glove-" + tag, above && clear && readable,

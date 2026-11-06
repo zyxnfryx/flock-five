@@ -13535,7 +13535,9 @@ namespace FlockFive
                 _pokerBackAimOk = false;
                 return;
             }
-            _pokerBackAim = back.center;
+            float winW = Screen.width > 2 ? Screen.width : PhoneArea.W;
+            float winH = Screen.height > 2 ? Screen.height : PhoneArea.H;
+            _pokerBackAim = PokerBackSettleAim(back.center, back, winW, winH);
             _pokerBackTap = back;
             _pokerBackAimOk = back.width > 2f;
             // Glove first, tip plate last, so the words stay the highest layer.
