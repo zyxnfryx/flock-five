@@ -5,9 +5,10 @@ namespace FlockFive
 {
     /// <summary>
     /// Idle bird. The kit (bow or crown) is a sibling SpriteRenderer.
-    /// A bow tucks behind the head. A crown sits on the dome, in front of the body
-    /// and under the face. The far wing draws behind that topper. The near wing
-    /// stays on the body. Bare (Plain) draws no kit.
+    /// A bow tucks behind the head, pitched slightly. A crown sits in front of
+    /// the body and under the face, its band flush on the skull. The far wing
+    /// draws behind that topper. The near wing stays on the body. Bare (Plain)
+    /// draws no kit.
     /// </summary>
     public sealed class BirdIdle : MonoBehaviour
     {
@@ -1322,10 +1323,14 @@ namespace FlockFive
         // Max distance the smoothed seat may leave the interpolated dome point.
         const float KitSeatSlack = 0.04f;
         // Fractions of the head span: how far behind the dome peak the kit seats, and how much
-        // lower it settles there. Static (not const) so the b85 before/after still can set 0.
+        // lower a crown settles there. Static (not const) so the b85 before/after still can set 0.
+        // One fraction for every portrait glass (iPad 820, then phones 402 and 412). The level-2
+        // avatar pick'em reads the same Seat, so the crown stays flush there too.
         public static bool KitStableSeat = true;
         public static float KitBack = 0.12f; // b86: 0.30 overshot behind the skull (iPad photos); sit on the crest
-        public static float KitBackDrop = 0.02f;
+        // Crown band past KitNest. 0.02 left daylight under the gold: the bow's 12° pitch
+        // lifted one side of the band off the skull. Bows pass 0 and keep that pitch.
+        public static float KitBackDrop = 0.12f;
         static KitGlide[] _kitSlots;
 
         struct KitGlide
@@ -1533,7 +1538,10 @@ namespace FlockFive
             var dome = SpriteCatalog.HeadDome(body);
             if (head < 0.05f) head = 0.05f;
             float lean = SpriteCatalog.HeadTilt(body);
-            if (lean < 1f) lean = KitTiltDeg;
+            // The bow keeps a slight tuck pitch. A crown follows the skull (level on
+            // this sheet) so the band stays down on the head instead of one side
+            // lifting clear of it. Facing still mirrors with the bird.
+            if (worn != BirdKit.Crown && lean < 1f) lean = KitTiltDeg;
             if (lean > 26f) lean = 26f;
             tilt = faceLeft ? lean : -lean;
             flip = faceLeft;
@@ -1548,8 +1556,9 @@ namespace FlockFive
             // Build 85 (Brandon): seat a little further back on the skull, away from the eye and
             // beak, settling down the back slope of the dome by the same small amount.
             // Polish 2: the bow's wide loops reach the eye first, so it sits a touch further back.
+            // The crown drops KitBackDrop further so the band meets the feathers. The knot does not.
             float back = head * KitBack * (worn == BirdKit.Bow ? 1.15f : 1f);
-            float drop = worn == BirdKit.Bow ? 0f : KitBackDrop; // loops hang down; do not lower the knot
+            float drop = worn == BirdKit.Bow ? 0f : KitBackDrop;
             float domeX = faceLeft ? -(dome.x - back) : dome.x - back;
             x = domeX - rx;
             y = dome.y - head * (KitNest + drop) - ry;
