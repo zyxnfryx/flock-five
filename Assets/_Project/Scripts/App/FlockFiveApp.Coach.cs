@@ -2002,13 +2002,6 @@ namespace FlockFive
             return box;
         }
 
-        static Rect UnionRect(Rect a, Rect b)
-        {
-            return Rect.MinMaxRect(
-                Mathf.Min(a.xMin, b.xMin), Mathf.Min(a.yMin, b.yMin),
-                Mathf.Max(a.xMax, b.xMax), Mathf.Max(a.yMax, b.yMax));
-        }
-
         // Back tip plate. Starts above the settled hand and sits to the right of the
         // medal and the glove lane, so the two never share a pixel. A screen-bottom
         // band sits under the hand (tip_above_glove fails). iPhone and iPad share this
