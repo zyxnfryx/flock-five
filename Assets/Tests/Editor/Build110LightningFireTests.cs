@@ -326,7 +326,35 @@ namespace FlockFive.Editor
                 && !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=2"), "junk");
             var garden2 = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1", 50);
             Check("plan-onboard-garden-2", garden2.Index == 1 && garden2.SkipOnboarding && !garden2.KeepBee && !garden2.KeepFire
-                && !garden2.KeepTips, "index " + garden2.Index);
+                && !garden2.KeepTips && !garden2.ForceFeeder && !garden2.ForceNap && !garden2.OpenPoker,
+                "index " + garden2.Index);
+            Check("force-feeder-1", DevLevelSkip.ForceFeederFromUrl(
+                "http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1&forceFeeder=1"), "1");
+            Check("force-nap-1", DevLevelSkip.ForceNapFromUrl(
+                "http://h/?skipOnboarding=1&forceNap=1"), "1");
+            Check("open-poker-1", DevLevelSkip.OpenPokerFromUrl(
+                "http://h/portrait?w=820&h=1180&skipOnboarding=1&openPoker=1"), "1");
+            Check("force-junk", !DevLevelSkip.ForceFeederFromUrl("http://h/?forceFeeder=0")
+                && !DevLevelSkip.ForceFeederFromUrl("http://h/?forceFeeder=true")
+                && !DevLevelSkip.ForceNapFromUrl("http://h/?forceNap=")
+                && !DevLevelSkip.ForceNapFromUrl("http://h/?forceNap=2")
+                && !DevLevelSkip.OpenPokerFromUrl("http://h/?openPoker=0")
+                && !DevLevelSkip.OpenPokerFromUrl(null), "junk");
+            var feed = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1&forceFeeder=1", 50);
+            Check("plan-force-feeder", feed.Index == 1 && feed.SkipOnboarding && feed.KeepTips && feed.ForceFeeder
+                && !feed.ForceNap && !feed.OpenPoker, "index " + feed.Index);
+            var nap = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forceNap=1", 50);
+            Check("plan-force-nap", nap.Index == 1 && nap.SkipOnboarding && nap.ForceNap && !nap.KeepTips
+                && !nap.ForceFeeder && !nap.OpenPoker, "index " + nap.Index);
+            var poker = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&openPoker=1", 50);
+            Check("plan-open-poker", poker.Index == 1 && poker.SkipOnboarding && poker.OpenPoker
+                && !poker.ForceFeeder && !poker.ForceNap && !poker.KeepTips, "index " + poker.Index);
+            var pokerBad = DevLevelSkip.Plan("http://h/?fflevel=99&skipOnboarding=1&openPoker=1", 50);
+            Check("plan-open-poker-bad-level", pokerBad.Index < 0 && pokerBad.SkipOnboarding && pokerBad.OpenPoker,
+                "index " + pokerBad.Index);
+            var forceAlone = DevLevelSkip.Plan("http://h/?fflevel=4&forceFeeder=1&forceNap=1&openPoker=1", 50);
+            Check("plan-force-needs-skip", forceAlone.Index == 3 && !forceAlone.SkipOnboarding
+                && !forceAlone.ForceFeeder && !forceAlone.ForceNap && !forceAlone.OpenPoker, "index " + forceAlone.Index);
             Check("keeptips-absent", !DevLevelSkip.KeepTipsFromUrl("http://h/index.html")
                 && !DevLevelSkip.KeepTipsFromUrl(null) && !DevLevelSkip.KeepTipsFromUrl(""), "none");
             Check("keeptips-1", DevLevelSkip.KeepTipsFromUrl(
@@ -398,7 +426,7 @@ namespace FlockFive.Editor
                 && gated.IndexOf("AvatarNamePref") >= 0
                 && gated.IndexOf("CoachDailyKey") >= 0
                 && gated.IndexOf("CoachPokerKey") >= 0
-                && gated.IndexOf("CoachPokerBackKey") < 0
+                && gated.IndexOf("SetInt(CoachPokerBackKey") < 0
                 && gated.IndexOf("CoachHiveKey") >= 0
                 && gated.IndexOf("CoachHiveGardenKey") >= 0
                 && gated.IndexOf("CoachHiveAlbumKey") >= 0
@@ -430,6 +458,28 @@ namespace FlockFive.Editor
                 && gated.IndexOf("Purse.Credit", stamp) > 0
                 && gated.IndexOf("AdConsent.AttAskKey", stamp) > 0,
                 "owed");
+            int pokerIf = gated.IndexOf("if (plan.OpenPoker)");
+            int loadCall = gated.IndexOf("Load(plan.Index)");
+            int showFeeder = gated.IndexOf("ShowRuleTip(RuleTip.Feeder)");
+            int raiseSleep = gated.IndexOf("RaiseRuleSleepTip()");
+            int forceLog = gated.IndexOf("FF_DEV_FORCE");
+            Check("dev-force-plates",
+                pokerIf > keepElse && loadCall > pokerIf
+                && showFeeder > loadCall
+                && raiseSleep > loadCall
+                && gated.IndexOf("ShowRuleTip(RuleTip.Sleep)") < 0
+                && gated.IndexOf("DeleteKey(CoachPokerBackKey)") > pokerIf
+                && gated.IndexOf("SetInt(CoachPokerBackKey") < 0
+                && gated.IndexOf("HomeFace.Poker") > pokerIf
+                && gated.IndexOf("_pokerLessonHand = true") > pokerIf
+                && gated.IndexOf("BirdPoker.Draw()") > pokerIf
+                && gated.IndexOf("IsSleeping(branch)") > 0
+                && forceLog >= 0 && forceLog < gated.Length
+                && settings.IndexOf("FF_DEV_FORCE", end) < 0
+                && settings.IndexOf("DevOpenPokerTable", end) < 0
+                && settings.IndexOf("DevForceSleepingFlock", end) < 0
+                && settings.IndexOf("ShowRuleTip(RuleTip.Feeder)", end) < 0,
+                "force");
         }
     }
 }

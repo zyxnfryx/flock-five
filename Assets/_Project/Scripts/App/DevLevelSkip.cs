@@ -8,6 +8,9 @@ namespace FlockFive
         public const string QueryKey = "fflevel";
         public const string OnboardingKey = "skipOnboarding";
         public const string KeepTipsKey = "keepTips";
+        public const string ForceFeederKey = "forceFeeder";
+        public const string ForceNapKey = "forceNap";
+        public const string OpenPokerKey = "openPoker";
         // 1-based. Garden 2 is the first board where restart and the hive can
         // both show. Garden 1 may hide the hive until collection progress.
         // Bee Thicket opens on Gold and Teal feeders and still has full Ruby
@@ -30,6 +33,13 @@ namespace FlockFive
             // keepTips=1. The boot then leaves the kit, feeder, and sleep rule
             // plates owed. keepTips without skipOnboarding does not set this.
             public bool KeepTips;
+            // True only with skipOnboarding=1. The boot turns one feeder and
+            // raises the feeder plate, stacks a napping flock and raises the
+            // sleep plate through the live nap gate, or opens Bird Poker on a
+            // drawn hand with the Back tip still owed.
+            public bool ForceFeeder;
+            public bool ForceNap;
+            public bool OpenPoker;
         }
 
         // 1-based garden from ?fflevel=, or 0 when the page did not ask.
@@ -51,6 +61,24 @@ namespace FlockFive
             return QueryInt(url, KeepTipsKey) == 1;
         }
 
+        // True only for ?forceFeeder=1. Any other value is not a request.
+        public static bool ForceFeederFromUrl(string url)
+        {
+            return QueryInt(url, ForceFeederKey) == 1;
+        }
+
+        // True only for ?forceNap=1. Any other value is not a request.
+        public static bool ForceNapFromUrl(string url)
+        {
+            return QueryInt(url, ForceNapKey) == 1;
+        }
+
+        // True only for ?openPoker=1. Any other value is not a request.
+        public static bool OpenPokerFromUrl(string url)
+        {
+            return QueryInt(url, OpenPokerKey) == 1;
+        }
+
         // How many coins to add so the purse reaches OnboardingCoins.
         // Already at or above that stake adds nothing.
         public static int CoinsToSeed(int have)
@@ -68,13 +96,16 @@ namespace FlockFive
         // ?keepTips=1 on that same skip also leaves the kit and feeder rule
         // plates owed. keepTips without skipOnboarding leaves KeepTips false,
         // so a plain ?fflevel= load still stamps those plates.
+        // forceFeeder, forceNap, and openPoker are the same: only a
+        // skipOnboarding=1 load sets them. Absent the flag, the plate still
+        // waits for a real feeder turn, a real nap, or a real walk to poker.
         public static Choice Plan(string url, int levelCount)
         {
             int display = DisplayFromUrl(url);
             bool skip = OnboardingFromUrl(url);
             if (display < 1 && skip) display = OnboardingGarden;
             if (display < 1 || levelCount < 1 || display > levelCount)
-                return new Choice { Index = -1 };
+                return new Choice { Index = -1, SkipOnboarding = skip, OpenPoker = skip && OpenPokerFromUrl(url) };
             return new Choice
             {
                 Index = display - 1,
@@ -82,6 +113,9 @@ namespace FlockFive
                 KeepFire = display == 3,
                 SkipOnboarding = skip,
                 KeepTips = skip && KeepTipsFromUrl(url),
+                ForceFeeder = skip && ForceFeederFromUrl(url),
+                ForceNap = skip && ForceNapFromUrl(url),
+                OpenPoker = skip && OpenPokerFromUrl(url),
             };
         }
 
