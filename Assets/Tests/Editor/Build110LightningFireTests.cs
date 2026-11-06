@@ -336,6 +336,13 @@ namespace FlockFive.Editor
             var skipBad = DevLevelSkip.Plan("http://h/?fflevel=99&skipOnboarding=1", 50);
             Check("plan-onboard-bad-fflevel", skipBad.Index < 0
                 && DevLevelSkip.Plan("http://h/?skipOnboarding=1", 1).Index < 0, "index " + skipBad.Index);
+            Check("onboard-coins", DevLevelSkip.OnboardingCoins >= 1000
+                && DevLevelSkip.CoinsToSeed(0) == DevLevelSkip.OnboardingCoins
+                && DevLevelSkip.CoinsToSeed(400) == DevLevelSkip.OnboardingCoins - 400
+                && DevLevelSkip.CoinsToSeed(DevLevelSkip.OnboardingCoins) == 0
+                && DevLevelSkip.CoinsToSeed(DevLevelSkip.OnboardingCoins + 500) == 0
+                && DevLevelSkip.CoinsToSeed(-3) == DevLevelSkip.OnboardingCoins,
+                "stake " + DevLevelSkip.OnboardingCoins);
             string settings = Read("Assets/_Project/Scripts/App/FlockFiveApp.Settings.cs");
             string app = Read("Assets/_Project/Scripts/App/FlockFiveApp.cs");
             int gate = settings.IndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD");
@@ -349,18 +356,34 @@ namespace FlockFive.Editor
                 && settings.IndexOf("?fflevel=3") >= 0 && settings.IndexOf("?fflevel=5") >= 0
                 && appGate >= 0 && call > appGate && app.IndexOf("#endif", call) > call,
                 "gate");
+            int stamp = gated.IndexOf("void StampDevOnboardingSeen()");
+            int coins = stamp >= 0 ? gated.IndexOf("Purse.Credit", stamp) : -1;
+            int sleepSet = gated.IndexOf("SetInt(RuleTips.SleepKey, 1)");
+            int sleepDrop = gated.IndexOf("DeleteKey(RuleTips.SleepKey)");
+            int early = gated.IndexOf("_devOnboardingStamped = true");
+            int earlyDismiss = early >= 0 ? gated.IndexOf("AdConsent.DismissTransient()", early) : -1;
+            int loadGate = earlyDismiss >= 0 ? gated.IndexOf("if (!AdConsent.FirstFrameReady) return;", earlyDismiss) : -1;
             Check("onboard-stamps-live-keys",
                 gated.IndexOf("FF_DEV_SKIP_ONBOARDING") >= 0
-                && gated.IndexOf("StampDevOnboardingSeen") >= 0
+                && gated.IndexOf("coins=") >= 0
+                && stamp >= 0
+                && coins > stamp
+                && gated.IndexOf("DevLevelSkip.CoinsToSeed") >= 0
                 && gated.IndexOf("AdConsent.AttAskKey") >= 0
+                && gated.IndexOf("AdConsent.EditorHoldAtt = false") >= 0
+                && early >= 0 && earlyDismiss > early && loadGate > earlyDismiss
                 && gated.IndexOf("AvatarAdoptedPref") >= 0
                 && gated.IndexOf("AvatarNamedPref") >= 0
                 && gated.IndexOf("AvatarNamePref") >= 0
                 && gated.IndexOf("CoachDailyKey") >= 0
                 && gated.IndexOf("CoachPokerKey") >= 0
+                && gated.IndexOf("CoachPokerBackKey") < 0
                 && gated.IndexOf("CoachHiveKey") >= 0
                 && gated.IndexOf("CoachHiveGardenKey") >= 0
                 && gated.IndexOf("CoachHiveAlbumKey") >= 0
+                && sleepDrop >= 0 && sleepDrop < stamp
+                && sleepSet > sleepDrop
+                && gated.IndexOf("if (plan.SkipOnboarding) PlayerPrefs.DeleteKey(RuleTips.SleepKey);") >= 0
                 && settings.IndexOf("FF_DEV_SKIP_ONBOARDING") == gated.IndexOf("FF_DEV_SKIP_ONBOARDING") + gate
                 && settings.IndexOf("FF_DEV_SKIP_ONBOARDING", end) < 0
                 && settings.IndexOf("StampDevOnboardingSeen", end) < 0,

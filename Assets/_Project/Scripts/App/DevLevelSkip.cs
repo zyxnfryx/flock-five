@@ -9,7 +9,15 @@ namespace FlockFive
         public const string OnboardingKey = "skipOnboarding";
         // 1-based. Garden 2 is the first board where restart and the hive can
         // both show. Garden 1 may hide the hive until collection progress.
+        // Bee Thicket opens on Gold and Teal feeders and still has full Ruby
+        // and Violet flocks, so a finished flock sleeps until a feeder wants
+        // that color. A sleeping-bird check does not need a later garden.
+        // ?fflevel= still overrides this.
         public const int OnboardingGarden = 2;
+        // Inspector stake. Daily's coin ceiling is $1,000 (DailyBonus.BaseCap)
+        // and the poker floor is $5, so this covers a long table session.
+        // Purse.Credit writes flockfive.coins and the checksum the purse reads.
+        public const int OnboardingCoins = 1000;
 
         public struct Choice
         {
@@ -31,10 +39,20 @@ namespace FlockFive
             return QueryInt(url, OnboardingKey) == 1;
         }
 
+        // How many coins to add so the purse reaches OnboardingCoins.
+        // Already at or above that stake adds nothing.
+        public static int CoinsToSeed(int have)
+        {
+            if (have < 0) have = 0;
+            if (have >= OnboardingCoins) return 0;
+            return OnboardingCoins - have;
+        }
+
         // Index is the 0-based LevelData slot, or -1 when there is nothing to load.
         // Garden 3 keeps the lightning lesson owed. Garden 5 keeps the bee lesson owed.
         // ?skipOnboarding=1 with no fflevel loads garden 2 and asks the boot to
-        // stamp the home cascade seen. A valid fflevel still picks the garden.
+        // stamp the home cascade seen, seed the purse, and leave the nap tip
+        // unseen. A valid fflevel still picks the garden.
         public static Choice Plan(string url, int levelCount)
         {
             int display = DisplayFromUrl(url);
