@@ -3,12 +3,11 @@ using UnityEngine;
 namespace FlockFive
 {
     // Garden HUD seats. The hive plate stays bottom-right. Restart sits in the top
-    // bar. Its right edge is the hive halo, not the tighter hit plate: DrawHiveGlow
-    // paints HiveGlowPadFrac past the plate, and that outer edge is what lines up
-    // with Restart. Both rects are at rest (the welcome pulse is not part of the
-    // seat). Draw them inside the HUD shake matrix as-is. A world pin or a hit
-    // test applies Shake once, with the same offset the matrix uses, so the hive
-    // moves with the restart.
+    // bar on the full halo quad (HiveArtRight). DrawHiveGlow then pulls that quad
+    // in by HiveGlowGlyphPull so the counted glyphs share an x. Both rects are at
+    // rest (the welcome pulse is not part of the seat). Draw them inside the HUD
+    // shake matrix as-is. A world pin or a hit test applies Shake once, with the
+    // same offset the matrix uses, so the hive moves with the restart.
     public static class CornerAnchor
     {
         public const float SizeRef = 72f;
@@ -69,23 +68,51 @@ namespace FlockFive
             return edge;
         }
 
-        // DrawHiveGlow pads the plate by this share of its width on every side.
-        // The disc's outer texels are clear, so a bbox sits a couple of pixels
-        // inside the quad; the quad is the art the button lines up with.
+        // DrawHiveGlow pads the plate by this share of its width on every side
+        // before HiveGlowGlyphPull. The restart rect sits on that full quad.
         public const float HiveGlowPadFrac = 0.18f;
 
-        // Resting halo's right edge for a hive plate. The welcome pulse scales the
-        // halo for a fraction of a second; the seat stays on the resting quad so
-        // Restart does not breathe, and does not jump when the hive is hidden.
+        // ff752147: Inspector's counted glyphs were still 12px apart on 820, 402,
+        // and 412 (hive past restart). The miss does not scale with the button.
+        // DrawHiveGlow subtracts these pixels so the counted hive edge meets the
+        // counted restart edge. The restart rect stays on the full quad; its
+        // counted rim is this far inside that rect.
+        public const float HiveGlowGlyphPull = 12f;
+
+        // Outset of the glow quad actually drawn, past the plate, on one side.
+        public static float HiveGlowOutset(float width)
+        {
+            float g = width * HiveGlowPadFrac - HiveGlowGlyphPull;
+            return g > 0f ? g : 0f;
+        }
+
+        // Resting halo quad's right edge (before the glyph pull). The welcome
+        // pulse scales the halo for a fraction of a second; the seat stays on
+        // this quad so Restart does not breathe, and does not jump when the
+        // hive is hidden.
         public static float HiveArtRight(Rect hive)
         {
             if (hive.width < 2f) return hive.xMax;
             return hive.xMax + hive.width * HiveGlowPadFrac;
         }
 
+        // Counted hive glyph: the right edge of the glow quad DrawHiveGlow paints.
+        public static float HiveGlyphRight(Rect hive)
+        {
+            if (hive.width < 2f) return hive.xMax;
+            return hive.xMax + HiveGlowOutset(hive.width);
+        }
+
+        // Counted restart glyph: the bright rim, HiveGlowGlyphPull inside the rect.
+        public static float RestartGlyphRight(Rect restart)
+        {
+            return restart.xMax - HiveGlowGlyphPull;
+        }
+
         // Top-right gutter of the top bar: right of every feeder bulb, above every branch / bird /
-        // perch reach, inside the safe area. The right edge is the hive halo (HiveArtRight),
-        // so Restart lines up with the glow and does not jump when the hive appears.
+        // perch reach, inside the safe area. The rect's right edge is the full halo quad
+        // (HiveArtRight). The counted glyph is RestartGlyphRight, which meets the pulled
+        // glow. The seat does not jump when the hive appears.
         public static Rect TopBarRestart(float w, float h, Rect safe, float scale, float top, Rect hive)
         {
             if (safe.width < 2f || safe.height < 2f) safe = new Rect(0f, 0f, w, h);
