@@ -944,9 +944,53 @@ namespace FlockFive
             if (kit < 0 || kit > 2) return;
             if (kit == 1 && !AvatarBowArt()) return;
             if (kit == 2 && !AvatarCrownArt()) return;
+            if (SavedAvatarKit() == kit) return;
             PlayerPrefs.SetInt(AvatarKitPref, kit);
             PlayerPrefs.Save();
             Sfx.CardTap();
+        }
+
+        // Which worn kit a pointer hits. rects are None, Bow, Crown in GUI space
+        // (empty rects are absent). offX is the iPad pillar: window pixels sit
+        // that far right of the GUI. 0 on phones. -1 is a miss.
+        public static int AvatarKitChipHit(Rect none, Rect bow, Rect crown, Vector2 pointer, int offX)
+        {
+            int local = AvatarKitChipRow(none, bow, crown, pointer);
+            if (local >= 0 || offX == 0) return local;
+            return AvatarKitChipRow(none, bow, crown, new Vector2(pointer.x - offX, pointer.y));
+        }
+
+        public const float AvatarKitChipPadX = 12f;
+        public const float AvatarKitChipPadY = 14f;
+
+        static int AvatarKitChipRow(Rect none, Rect bow, Rect crown, Vector2 p)
+        {
+            var rects = new[] { none, bow, crown };
+            int best = -1;
+            float bestD = 1e9f;
+            for (int i = 0; i < rects.Length; i++)
+            {
+                var r = rects[i];
+                if (r.width < 2f || r.height < 2f) continue;
+                var hit = new Rect(
+                    r.x - AvatarKitChipPadX, r.y - AvatarKitChipPadY,
+                    r.width + AvatarKitChipPadX * 2f, r.height + AvatarKitChipPadY * 2f);
+                if (!hit.Contains(p)) continue;
+                float d = Mathf.Abs(p.x - r.center.x);
+                if (d >= bestD) continue;
+                bestD = d;
+                best = i;
+            }
+            return best;
+        }
+
+        // Last frame's name plate, in GUI space. A lesson gate must not eat taps on it.
+        public static bool RenamePlateOwns(bool open, Rect plate, Vector2 pointer, int offX)
+        {
+            if (!open || plate.width < 2f || plate.height < 2f) return false;
+            if (plate.Contains(pointer)) return true;
+            if (offX == 0) return false;
+            return plate.Contains(new Vector2(pointer.x - offX, pointer.y));
         }
 
         int AvatarKitChoices()
@@ -965,6 +1009,57 @@ namespace FlockFive
             if (kit == 1) return "Bow";
             if (kit == 2) return "Crown";
             return "None";
+        }
+
+        void TryPickAvatarKit()
+        {
+            var e = Event.current;
+            if (e == null || e.type != EventType.MouseDown || e.button != 0) return;
+            if (_avatarKitN < 2) return;
+            Rect none = default, bow = default, crown = default;
+            for (int i = 0; i < _avatarKitN; i++)
+            {
+                int id = _avatarKitId[i];
+                if (id == 0) none = _avatarKitR[i];
+                else if (id == 1) bow = _avatarKitR[i];
+                else if (id == 2) crown = _avatarKitR[i];
+            }
+            int hit = AvatarKitChipHit(none, bow, crown, e.mousePosition, PhoneArea.OffX);
+            if (hit < 0) return;
+            e.Use();
+            PickAvatarKit(hit);
+        }
+
+        string _avatarKitChipLog;
+
+        // Screen pixels (the pillar included) so a capture at 820/402/412 can retap the chips.
+        void NoteAvatarKitChips()
+        {
+            var e = Event.current;
+            if (e == null || e.type != EventType.Repaint || _avatarKitN < 2) return;
+            Rect none = default, bow = default, crown = default;
+            for (int i = 0; i < _avatarKitN; i++)
+            {
+                int id = _avatarKitId[i];
+                if (id == 0) none = _avatarKitR[i];
+                else if (id == 1) bow = _avatarKitR[i];
+                else if (id == 2) crown = _avatarKitR[i];
+            }
+            int ox = PhoneArea.OffX;
+            string line = "FF_AVATAR_KIT_CHIPS selected=" + SavedAvatarKit()
+                + " none=" + ChipLog(none, ox)
+                + " bow=" + ChipLog(bow, ox)
+                + " crown=" + ChipLog(crown, ox);
+            if (line == _avatarKitChipLog) return;
+            _avatarKitChipLog = line;
+            Debug.Log(line);
+        }
+
+        static string ChipLog(Rect r, int offX)
+        {
+            if (r.width < 2f) return "-";
+            return Mathf.RoundToInt(r.x + offX) + "," + Mathf.RoundToInt(r.y) + ","
+                + Mathf.RoundToInt(r.width) + "," + Mathf.RoundToInt(r.height);
         }
 
         // Painted name plate. Edge gutters and the inner block the plate hangs around.
@@ -1168,6 +1263,11 @@ namespace FlockFive
             StampBannerText(line, prompt, st, 1f, true);
 
             bool arm = Time.frameCount == _avatarOpenFrame;
+            // Before the color row and the name field, so a chip press is not lost
+            // to another control. MouseDown selects; the row birds draw the new kit
+            // in this same pass. The home and adopt birds pick it up on the next paint.
+            if (!arm) TryPickAvatarKit();
+            int kitNow = SavedAvatarKit();
             int shown = (int)SavedAvatar();
             if (shown < 0 || shown > 4) shown = (int)BirdColor.Gold;
             for (int i = 0; i < 5; i++)
@@ -1177,15 +1277,12 @@ namespace FlockFive
                 DrawColorSwatch(_avatarSwatch[i], (BirdColor)i, s, i == shown, held);
                 if (fire) PickAvatarColor(i);
             }
-            int kitNow = SavedAvatarKit();
             for (int i = 0; i < _avatarKitN; i++)
             {
                 int kit = _avatarKitId[i];
-                bool held = false;
-                bool fire = !arm && HitPad(_avatarKitR[i], out held);
-                DrawChoiceChip(_avatarKitR[i], AvatarKitLabel(kit), s, kit == kitNow, held);
-                if (fire) PickAvatarKit(kit);
+                DrawChoiceChip(_avatarKitR[i], AvatarKitLabel(kit), s, kit == kitNow, false);
             }
+            NoteAvatarKitChips();
 
             var fieldTex = AvatarFieldTex();
             if (fieldTex != null)

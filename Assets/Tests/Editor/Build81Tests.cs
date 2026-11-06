@@ -129,6 +129,7 @@ namespace FlockFive.Editor
             CheckGearLaunch(Check);
             CheckPass4(Check);
             CheckAvatarKit(Check);
+            CheckAvatarKitChips(Check);
             CheckPassH(Check);
 
             Debug.Log("[build81] " + (fail == 0 ? "BUILD81_OK " + pass : "BUILD81_FAIL " + fail + " passed " + pass));
@@ -865,6 +866,37 @@ namespace FlockFive.Editor
                 && FlockKit.BehindBody(BirdKit.Bow)
                 && !FlockKit.BehindBody(BirdKit.Crown),
                 "sink " + (BirdIdle.KitNest + BirdIdle.KitBackDrop).ToString("0.00"));
+        }
+
+        // Rename-plate kit chips. Centers select that kit. A tap down on the
+        // level flower does not. An iPad pointer (GUI rect + OffX) still hits.
+        static void CheckAvatarKitChips(System.Action<string, bool, string> Check)
+        {
+            var none = new Rect(174f, 474f, 145f, 49f);
+            var bow = new Rect(337f, 474f, 145f, 49f);
+            var crown = new Rect(500f, 474f, 145f, 49f);
+            int atNone = FlockFiveApp.AvatarKitChipHit(none, bow, crown, none.center, 0);
+            int atBow = FlockFiveApp.AvatarKitChipHit(none, bow, crown, bow.center, 0);
+            int atCrown = FlockFiveApp.AvatarKitChipHit(none, bow, crown, crown.center, 0);
+            Check("kit-chip-centers", atNone == 0 && atBow == 1 && atCrown == 2,
+                "none " + atNone + " bow " + atBow + " crown " + atCrown);
+            var gap = new Vector2((none.xMax + bow.xMin) * 0.5f, none.center.y);
+            int atGap = FlockFiveApp.AvatarKitChipHit(none, bow, crown, gap, 0);
+            Check("kit-chip-gap", atGap == 0 || atGap == 1, "gap " + atGap);
+            int flower = FlockFiveApp.AvatarKitChipHit(none, bow, crown, new Vector2(bow.center.x, 814f), 0);
+            Check("kit-chip-misses-flower", flower < 0, "flower " + flower);
+            int off = 120;
+            var shifted = new Vector2(crown.center.x + off, crown.center.y);
+            int ipad = FlockFiveApp.AvatarKitChipHit(none, bow, crown, shifted, off);
+            int phone = FlockFiveApp.AvatarKitChipHit(none, bow, crown, shifted, 0);
+            Check("kit-chip-ipad-shift", ipad == 2 && phone < 0, "ipad " + ipad + " phone " + phone);
+            var plate = new Rect(100f, 280f, 520f, 280f);
+            Check("rename-plate-keeps-tap",
+                FlockFiveApp.RenamePlateOwns(true, plate, new Vector2(360f, 500f), 0)
+                && FlockFiveApp.RenamePlateOwns(true, plate, new Vector2(360f + off, 500f), off)
+                && !FlockFiveApp.RenamePlateOwns(true, plate, new Vector2(360f, 814f), 0)
+                && !FlockFiveApp.RenamePlateOwns(false, plate, plate.center, 0),
+                "plate");
         }
 
         static void CheckPassH(System.Action<string, bool, string> Check)
