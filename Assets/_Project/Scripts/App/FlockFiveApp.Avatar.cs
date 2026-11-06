@@ -1425,9 +1425,10 @@ namespace FlockFive
 
         static readonly int[] _kitPaint = new int[3];
 
-        // Bow sits behind the body. Crown sits in front. The far wing sits behind
-        // either topper. The near wing stays in the body sheet. KitPaintSequence
-        // is the same order the garden writes with KitDrawOrder.
+        // Bow sits behind the body. Crown sits in front, band flush via BirdIdle.KitAnchor.
+        // The far wing sits behind either topper. The near wing stays in the body
+        // sheet. KitPaintSequence is the same order the garden writes with KitDrawOrder.
+        // The level-2 avatar pick'em (adopt bird and the color row) draws through here.
         // buttonSeat is the five color buttons. Home and adopt birds leave it false.
         Rect DrawDressedBird(BirdColor col, int kit, Vector2 c, float icon, bool faceLeft, bool wings, float clock, bool buttonSeat = false, int glideSlot = -1)
         {

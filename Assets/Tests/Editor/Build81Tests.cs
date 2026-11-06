@@ -838,7 +838,9 @@ namespace FlockFive.Editor
                     float dy = Mathf.Abs(ty - (dome.y - nest - (bowK ? 0f : span * BirdIdle.KitBackDrop)));
                     float yLimit = Mathf.Max(0.05f, span * 0.12f);
                     BirdIdle.KitAnchor(kitKind, 0, true, kitBody, kit, out float mx, out _, out _, out _, out bool mflip);
-                    if (onDome && (dx > yLimit || dy > yLimit || flip || Mathf.Abs(tilt) < 1f
+                    // Bows keep the tuck pitch. Crowns follow the skull, which is level on this sheet.
+                    bool pitchOk = bowK ? Mathf.Abs(tilt) >= 1f : Mathf.Abs(tilt) <= 26f;
+                    if (onDome && (dx > yLimit || dy > yLimit || flip || !pitchOk
                         || !mflip || Mathf.Abs(mx + x) > 0.02f))
                     {
                         onDome = false;
@@ -857,6 +859,12 @@ namespace FlockFive.Editor
                 gardenDetail.Length == 0 ? "under " + BirdIdle.KitMaxOfBird.ToString("0.00") + " of the body" : gardenDetail);
             Check("kit-anchor-on-dome", onDome,
                 domeDetail.Length == 0 ? "seat on the skull" : domeDetail);
+            // Crown band sinks far enough to meet the skull. Bows stay behind the head.
+            Check("crown-band-flush",
+                BirdIdle.KitNest + BirdIdle.KitBackDrop >= 0.14f
+                && FlockKit.BehindBody(BirdKit.Bow)
+                && !FlockKit.BehindBody(BirdKit.Crown),
+                "sink " + (BirdIdle.KitNest + BirdIdle.KitBackDrop).ToString("0.00"));
         }
 
         static void CheckPassH(System.Action<string, bool, string> Check)
