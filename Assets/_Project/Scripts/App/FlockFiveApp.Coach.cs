@@ -194,8 +194,6 @@ namespace FlockFive
         // the gift in. A save that already cleared level 1 leaves this false.
         bool _dailyRailLocked;
         bool _dailyGloveOnClaim;
-        // Set once the Claim approach reaches the word. Before that, the glove travels.
-        bool _claimGloveArrived;
         bool _leafIntro;
         float _leafSeen;
         // Screen rect of the leafy branches, so the caption can sit off them.
@@ -1349,7 +1347,6 @@ namespace FlockFive
                     _glovePhase = 0f;
                     _gloveDip = 0f;
                     _tapSent = false;
-                    _claimGloveArrived = false;
                 }
                 if (enteredClaim)
                     DropRailFadeForClaim();
@@ -1358,13 +1355,10 @@ namespace FlockFive
                 _gloveInward = !onClaim;
                 if (onClaim)
                 {
+                    // Same poke clock as the other garden gloves. The seat is beside
+                    // the word, and the hand keeps tapping while this cue is up.
                     DailyClaimGlove(handS, out dailyAim, out float perchLift, out bool fromLeft);
                     CoachGloveAt(dailyAim, dt, handS, perchLift, fromLeft, float.NaN, DailyClaimTapRect(handS));
-                    // The approach arc ends on the word. Only then hold the tip there
-                    // through the poke cycle and the Claim tap. Pinning earlier pulls
-                    // the arc start onto the word, so every still is the landed pose.
-                    if (_claimGloveArrived && _gloveLockOn && string.Equals(_gloveStepLine, DailyClaimLine))
-                        PinClaimGloveTip();
                 }
                 else
                 {
@@ -1521,7 +1515,6 @@ namespace FlockFive
             _gloveStepApproach = float.NaN;
             _gloveLockAim = Vector2.zero;
             _gloveStepAim = Vector2.zero;
-            _claimGloveArrived = false;
             _gloveTapFrame = -1;
             _gloveTapRectOn = false;
             _gloveTapHit = null;
@@ -1541,20 +1534,7 @@ namespace FlockFive
             return guiBase * to * rot * scale * fro;
         }
 
-        // Landed Claim pose. The draw pivot is the index tip, in GUI space (the
-        // same space as DailyClaimWordCenter). GuiBase is applied later, outside
-        // the rotation. This does not move _gloveTip: that point is the arc start,
-        // and copying the word onto it collapses the travel into a still.
-        void PinClaimGloveTip()
-        {
-            _gloveShown = _gloveLockAim;
-            _gloveDip = 1f;
-            _gloveHoldDip = 1f;
-            _glovePhase = TapHover + TapPress;
-            _gloveVis = true;
-        }
-
-        // How far the Claim approach starts from the word, in hand-heights.
+        // How far the Claim approach starts from the seat, in hand-heights.
         // The shared near-start can sit almost on the button, so stills match.
         public const float ClaimGloveMinHands = 1.15f;
 
@@ -1579,8 +1559,9 @@ namespace FlockFive
         }
 
         // Claim travel in GUI space. t = 0 is the start pose, t = 1 is exactly the
-        // word. The bow sits above the higher end (y down) so a mid frame is off
-        // the straight chord. archPx is the control height, not the mid-frame height.
+        // seat beside the word. The bow sits above the higher end (y down) so a
+        // mid frame is off the straight chord. archPx is the control height, not
+        // the mid-frame height.
         public static Vector2 ClaimGloveArc(Vector2 start, Vector2 aim, float t, float archPx)
         {
             t = Mathf.Clamp01(t);
@@ -1591,11 +1572,34 @@ namespace FlockFive
             return start * (u * u) + ctrl * (2f * u * t) + aim * (t * t);
         }
 
-        // True once the shared poke has reached full reach. The hold starts then.
+        // True from the press until this poke wraps. The lift and the pause are
+        // still this poke. The next hover is not, and nothing here holds the hand.
         public static bool ClaimGloveTravelDone(float phase)
         {
-            return phase >= TapHover + TapPress - 0.0001f;
+            return phase >= TapHover + TapPress - 0.0001f && phase < TapCycle;
         }
+
+        // Shared poke clock (hover, press, lift, pause). Garden gloves wrap this
+        // while their cue is up. The Claim hand uses the same clock.
+        public static float ClaimGloveCycle => TapCycle;
+
+        // phase 0 is the start pose. Values past one poke fold back into it.
+        public static float ClaimGloveWrap(float phase)
+        {
+            float cycle = TapCycle;
+            if (cycle <= 0.0001f || phase <= 0f) return 0f;
+            float w = phase % cycle;
+            return w < 0f ? w + cycle : w;
+        }
+
+        // 0 at the start pose, 1 at the seat, then back to 0 on the lift. Wrapping
+        // phase repeats that poke instead of holding the press.
+        public static float ClaimGloveTravelAt(float phase) => TapTravel(ClaimGloveWrap(phase));
+
+        // Fingertip on the Claim poke. start is the wind-up, seat is the offset
+        // aim, phase is the shared clock. GuiBase is applied later, outside this.
+        public static Vector2 ClaimGlovePose(Vector2 start, Vector2 seat, float phase, float archPx)
+            => ClaimGloveArc(start, seat, ClaimGloveTravelAt(phase), archPx);
 
         // The gift tap fades the hand on the rail medal. The card is open on this
         // frame and Claim is the target, so that fade (or a still-live rail pose)
@@ -1902,8 +1906,10 @@ namespace FlockFive
             CommitApproachFace(ref facePerch, aimGui, faceDh, faceDw, PhoneArea.W, PhoneArea.H, _gloveMirror,
                 out float faceAng, out bool faceMirror);
             _gloveTip = facePerch;
-            // Claim only: keep a start the player can see leave, then bow onto the word.
-            // Other lessons keep the shared near-start.
+            // Claim only: keep a start the player can see leave, then bow onto the
+            // seat. The poke clock loops that path. Other lessons keep the shared
+            // near-start. _gloveTip stays the start; copying the seat onto it
+            // collapses every frame into the landed pose.
             if (string.Equals(_cueLine, DailyClaimLine))
                 _gloveTip = ClaimGloveStart(_gloveTip, aimGui, faceDh, CoachSafeGui(8f * s));
             _gloveShown = _gloveTip;
@@ -1919,7 +1925,6 @@ namespace FlockFive
             _glovePhase = 0f;
             _gloveDip = 0f;
             _tapSent = false;
-            _claimGloveArrived = false;
             _gloveReady = true;
             _gloveBranch = _cueBranch;
             _gloveLockOn = true;
@@ -2119,23 +2124,6 @@ namespace FlockFive
                 GloveBeginReappear(aimGui, s, perchLift, fromLeft, approachDeg);
             }
             _cueAimGui = aimGui;
-            // Landed Claim tip stays on the word. The approach already played.
-            if (_claimGloveArrived && _gloveAct == TutorGloveAct.Live
-                && string.Equals(_gloveStepLine, DailyClaimLine))
-            {
-                _gloveShown = _gloveLockOn ? _gloveLockAim : aimGui;
-                _gloveDip = 1f;
-                _gloveHoldDip = 1f;
-                _glovePhase = TapHover + TapPress;
-                if (_gloveFaceOn)
-                {
-                    _gloveShownAng = _gloveFaceAng;
-                    _gloveMirror = _gloveFaceMirror;
-                }
-                GloveArmTap(tapRect, tapHit);
-                _gloveVis = _gloveAlpha > 0.03f;
-                return false;
-            }
             bool hold = _gloveAct == TutorGloveAct.Reappear;
             float pressAt = TapHover + TapPress;
             bool fire = false;
@@ -2179,13 +2167,18 @@ namespace FlockFive
 #endif
             bool angled = !float.IsNaN(_gloveApproach);
             Vector2 aim = _gloveLockOn ? _gloveLockAim : aimGui;
-            bool claimTravel = string.Equals(_gloveStepLine, DailyClaimLine) && !_claimGloveArrived;
-            Vector2 arcPos;
-            // Claim bows from its start onto the word. A locked face otherwise
+            // Claim keeps bowing from its start onto the seat for every poke.
+            // The phase wrap above is what loops it. A locked face otherwise
             // travels on the approach line. The old arc re-aimed at draw time
             // whenever the perch or the bow left the glass.
-            if (claimTravel)
-                arcPos = ClaimGloveArc(_gloveTip, aim, travel, GloveDh(s) * 0.55f);
+            bool claimCue = string.Equals(_gloveStepLine, DailyClaimLine);
+            Vector2 arcPos;
+            if (claimCue)
+            {
+                // Same travel the pose uses, so the settle (travel 1) is not wiggled off the seat.
+                travel = ClaimGloveTravelAt(posePhase);
+                arcPos = ClaimGlovePose(_gloveTip, aim, posePhase, GloveDh(s) * 0.55f);
+            }
             else if (_gloveFaceOn || angled)
                 arcPos = Vector2.Lerp(_gloveTip, aim, Mathf.Clamp01(travel));
             else
@@ -2211,16 +2204,6 @@ namespace FlockFive
                     _gloveShown = Vector2.Lerp(_gloveShown, arcPos, pin);
                 }
                 _gloveShownAng = angled ? _gloveApproach : ClampUpright(_gloveMirror);
-            }
-            // First frame the Claim approach reaches the word. Later frames hold
-            // that tip (PinClaimGloveTip) so the poke cycle cannot walk it off.
-            if (claimTravel && _gloveAct == TutorGloveAct.Live && ClaimGloveTravelDone(_glovePhase))
-            {
-                _claimGloveArrived = true;
-                _gloveShown = aim;
-                _gloveDip = 1f;
-                _gloveHoldDip = 1f;
-                _glovePhase = TapHover + TapPress;
             }
             GloveArmTap(tapRect, tapHit);
             _gloveVis = _gloveAlpha > 0.03f;
