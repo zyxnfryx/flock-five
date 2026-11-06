@@ -247,9 +247,11 @@ namespace FlockFive
         bool _gloveVis;
         bool _gloveReady;
         Vector2 _gloveTip;
-        // b124: a caller may seat the angled glove's entry point (poker Back: middle right). Clamped to the safe rect.
+        // b124: a caller may seat the angled glove's entry point (poker Back rises from just below the medal).
         Vector2 _gloveEntryOverride;
         bool _gloveEntryOverrideOn;
+        // Poker Back: once the fingertip reaches the medal it stays there, inside the hitbox.
+        bool _pokerBackGloveHeld;
         Vector2 _gloveVel;
         Vector2 _gloveAway;
         float _gloveAng;
@@ -1886,13 +1888,18 @@ namespace FlockFive
                 if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
                 if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
                 if (_gloveEntryOverrideOn) start = _gloveEntryOverride;
-                start.x = Mathf.Clamp(start.x, x0, x1);
-                start.y = Mathf.Clamp(start.y, y0, y1);
+                else
+                {
+                    start.x = Mathf.Clamp(start.x, x0, x1);
+                    start.y = Mathf.Clamp(start.y, y0, y1);
+                }
                 if (_gloveEntryOverrideOn)
                 {
-                    // Poker Back passes the finished perch (short hop beside the medal).
-                    // The shared below-shove and near-start scale would drop that hop
-                    // back down the screen, through the bottom tip.
+                    // Keep the medal's x. The shared pad would shove this hop right, into the tip.
+                    // The below-shove and near-start scale would also walk it off the hitbox.
+                    if (PhoneArea.W > 4f) start.x = Mathf.Clamp(start.x, 0f, PhoneArea.W);
+                    float yLim = PhoneArea.H > 4f ? PhoneArea.H : y1;
+                    start.y = Mathf.Clamp(start.y, 0f, yLim);
                     _gloveTip = start;
                 }
                 else
@@ -1943,42 +1950,95 @@ namespace FlockFive
             _gloveStepApproach = approachDeg;
             // A new pose owns the hand. The previous lesson's dismiss no longer holds it.
             _gloveFadeDismissed = false;
+            _pokerBackGloveHeld = false;
         }
 
         // Middle of the right edge, fully inside the safe rect (the clamp in GloveLockPose keeps the whole hand on screen).
         public static Vector2 GloveMiddleRightEntry(Rect safe) => new Vector2(safe.xMax, safe.center.y);
 
-        // Poker Back hop, in hand-heights, from the right of the medal. Shorter than the
-        // shared near-start (0.8 hands along the old middle-right line) and level with Back,
-        // so the cuff stays in the top corner instead of diving through the tip.
-        public const float PokerBackGloveHopHands = 0.62f;
+        // Poker Back hop, in hand-heights, straight up onto the medal. Shorter than the
+        // old middle-right run. The hand hangs below the fingertip, in the left column.
+        public const float PokerBackGloveHopHands = 0.50f;
 
-        // Rest perch for the poker Back glove. A short hop to the right of `aim`, dropped
-        // only as far as the glass needs so the quad fits. The straight flight to the medal
-        // stays up there, clear of the bottom tip.
+        // Where the hop begins: directly under the medal. The settle (after the hop) is
+        // the medal itself, so this point is only the approach.
         public static Vector2 PokerBackGloveStart(Vector2 aim, float s, Rect safe, float screenW, float screenH)
         {
             float dh = Mathf.Max(8f, GloveDh(s));
             float dw = GloveDrawW(dh);
             float hop = PokerBackGloveHopHands * dh;
             float pad = dh * 0.42f;
-            float x0, x1, y0, y1;
-            GlovePadRange(safe, pad, out x0, out x1, out y0, out y1);
-            var start = new Vector2(Mathf.Clamp(aim.x + hop, x0, x1), Mathf.Clamp(aim.y, y0, y1));
-            float yCap = Mathf.Min(y1, screenH > 4f ? screenH * 0.42f : y1);
-            for (int i = 0; i < 28; i++)
+            GlovePadRange(safe, pad, out _, out _, out float y0, out float y1);
+            // Stay on the medal's x. The safe pad would shove a top-left aim right, into the tip.
+            var start = new Vector2(aim.x, aim.y + hop);
+            if (screenW > 4f)
+                start.x = Mathf.Clamp(start.x, 0f, screenW);
+            start.y = Mathf.Clamp(start.y, Mathf.Min(y0, aim.y), y1);
+            for (int i = 0; i < 12; i++)
             {
                 float ang = GloveApproachDeg(start, aim);
                 if (screenW < 4f || screenH < 4f || dw < 1f
                     || GloveQuadOverflow(start, ang, false, dw, dh, screenW, screenH) <= 0.5f)
                     break;
                 float next = start.y + dh * 0.04f;
-                if (next > yCap + 0.01f) break;
+                if (next > y1) break;
                 start.y = next;
             }
-            start.x = Mathf.Clamp(start.x, x0, x1);
-            start.y = Mathf.Clamp(start.y, y0, y1);
+            start.x = aim.x;
+            start.y = Mathf.Clamp(start.y, Mathf.Min(y0, aim.y), y1);
             return start;
+        }
+
+        // Union of the settle pose and the short rise under it. The tip plate stays out of this lane.
+        public static Rect PokerBackGloveLane(Vector2 aim, float s)
+        {
+            float dh = Mathf.Max(8f, GloveDh(s));
+            float hop = PokerBackGloveHopHands * dh;
+            var start = new Vector2(aim.x, aim.y + hop);
+            Rect box = GloveAuditBox(aim, 0f, dh, 0f);
+            box = UnionRect(box, GloveAuditBox(aim, 0f, dh, 1f));
+            box = UnionRect(box, GloveAuditBox(start, 0f, dh, 0f));
+            box = UnionRect(box, GloveAuditBox(start, 0f, dh, 1f));
+            return box;
+        }
+
+        static Rect UnionRect(Rect a, Rect b)
+        {
+            return Rect.MinMaxRect(
+                Mathf.Min(a.xMin, b.xMin), Mathf.Min(a.yMin, b.yMin),
+                Mathf.Max(a.xMax, b.xMax), Mathf.Max(a.yMax, b.yMax));
+        }
+
+        // Back tip plate. Starts above the settled hand and sits to the right of the
+        // medal and the glove lane, so the two never share a pixel. A screen-bottom
+        // band sits under the hand (tip_above_glove fails). iPhone and iPad share this
+        // Back-adjacent seat; the plate may still be tall.
+        public static Rect PokerBackTipBand(float w, float h, Rect safe, float s, float bandH, Rect back, Vector2 aim)
+        {
+            if (s < 0.01f) s = 1f;
+            if (bandH < 8f) bandH = 8f;
+            var lane = aim.sqrMagnitude > 1f ? PokerBackGloveLane(aim, s) : back;
+            float gap = 12f * s;
+            float top = 8f;
+            if (safe.height > 2f)
+            {
+                float guiTop = h - safe.yMax;
+                if (guiTop > top) top = guiTop;
+            }
+            float left = Mathf.Max(back.xMax, lane.xMax) + gap;
+            float textW = Mathf.Min(w * 0.72f, Mathf.Max(180f, w - left));
+            if (w - left < textW * 0.85f)
+                left = Mathf.Max(8f, w - textW);
+            float laneRight = Mathf.Max(back.xMax, lane.xMax) + gap;
+            if (left < laneRight) left = laneRight;
+            float width = Mathf.Max(48f, w - left);
+            if (left + width > w) width = Mathf.Max(48f, w - left);
+            float y = top;
+            // When the hand starts lower, keep the whole plate above it.
+            float room = lane.yMin - gap - y;
+            if (room > 48f * s)
+                bandH = Mathf.Min(bandH, room);
+            return new Rect(left, y, width, bandH);
         }
 
         static void GlovePadRange(Rect safe, float pad, out float x0, out float x1, out float y0, out float y1)
@@ -2208,6 +2268,22 @@ namespace FlockFive
                 _gloveVis = _gloveAlpha > 0.03f;
                 return false;
             }
+            // Landed poker Back tip stays on the medal. The hop already played.
+            // Dip stays down so the medal does not look held in.
+            if (_pokerBackGloveHeld && _gloveAct == TutorGloveAct.Live
+                && string.Equals(_gloveStepLine, PokerBackLine))
+            {
+                _gloveShown = _gloveLockOn ? _gloveLockAim : aimGui;
+                _gloveDip = 0f;
+                if (_gloveFaceOn)
+                {
+                    _gloveShownAng = _gloveFaceAng;
+                    _gloveMirror = _gloveFaceMirror;
+                }
+                GloveArmTap(tapRect, tapHit);
+                _gloveVis = _gloveAlpha > 0.03f;
+                return false;
+            }
             bool hold = _gloveAct == TutorGloveAct.Reappear;
             float pressAt = TapHover + TapPress;
             bool fire = false;
@@ -2293,6 +2369,15 @@ namespace FlockFive
                 _gloveDip = 1f;
                 _gloveHoldDip = 1f;
                 _glovePhase = TapHover + TapPress;
+            }
+            // First frame the Back hop reaches the medal. Later frames keep the fingertip
+            // there (the early-out above) so the rest pose is inside the Back hitbox.
+            if (!_pokerBackGloveHeld && string.Equals(_gloveStepLine, PokerBackLine)
+                && _gloveAct == TutorGloveAct.Live && travel >= 0.98f)
+            {
+                _pokerBackGloveHeld = true;
+                _gloveShown = aim;
+                _gloveDip = 0f;
             }
             GloveArmTap(tapRect, tapHit);
             _gloveVis = _gloveAlpha > 0.03f;
@@ -4053,9 +4138,9 @@ namespace FlockFive
                 if (adHandBox.width >= 2f && adHandBox.yMax > adFloor) adFloor = adHandBox.yMax;
                 if (band.y < adFloor + gap) band.y = adFloor + gap;
             }
-            // Brandon: the Back tip is a full-width banner on the bottom of the page.
-            // It may cover WIN and the bet controls. It does not move to dodge them,
-            // the cards, or the glove. The glove stays up at the Back medal.
+            // Brandon: the Back tip starts above the hand, to the right of the medal,
+            // so it does not sit in the screen-bottom band under the glove. It may
+            // still cover whatever is behind that upper-right plate.
             bool pokerBack = spot == "poker.back";
             if (pokerBack)
             {
@@ -4114,26 +4199,14 @@ namespace FlockFive
             return true;
         }
 
-        // 'Tap the back button to return home.' Pinned to the bottom edge on every
-        // portrait window (iPhone 402/412 and iPad 820). The home indicator stays clear.
-        // WIN and the bet controls may sit under the plate; they do not push it up.
+        // 'Tap the back button to return home.' Upper seat, right of the medal and
+        // the glove lane, top edge above the hand. Not the screen-bottom band.
         Rect PokerBackBand(Rect band, float h, Rect safe, float s)
         {
-            // s is already in the measured plate. The seat is the bottom edge on every width.
-            return PokerBackBottomBand(band, h, safe);
-        }
-
-        public static Rect PokerBackBottomBand(Rect band, float screenH, Rect safe)
-        {
-            float inset = safe.height > 2f ? safe.yMin : 0f;
-            if (inset < 0f) inset = 0f;
-            // Same home-indicator floor ClampGardenBand uses, so the two agree.
-            if (inset < 34f) inset = 34f;
-            float limit = screenH - inset - 4f;
-            float y = limit - band.height;
-            if (y < 0f) y = 0f;
-            band.y = y;
-            return band;
+            var back = _pokerCapGeo.Back;
+            var aim = back.width > 2f ? back.center : new Vector2(48f, 48f);
+            float width = PhoneArea.W > 2f ? PhoneArea.W : band.width;
+            return PokerBackTipBand(width, h, safe, s, band.height, back, aim);
         }
 
         // Under the poker button and its landed glove, inside the safe area, off the main buttons.
