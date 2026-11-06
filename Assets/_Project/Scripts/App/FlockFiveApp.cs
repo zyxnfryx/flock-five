@@ -13470,10 +13470,11 @@ namespace FlockFive
             float handS = DeviceFit.Ui();
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBackLine);
-            // Standard shared arc: the hand rides over the top and the fingertip comes straight
-            // down onto the back button. Only a tap inside the back rect is a valid tap.
-            // b124: the hand rides in from the middle right, fully on screen, pointing left at Back.
-            _gloveEntryOverride = GloveMiddleRightEntry(CoachSafeGui(8f * handS));
+            // Short hop from the right, level with the Back medal. The old middle-right
+            // line faced the cuff down the page and through the tip. Only a tap inside
+            // the back rect counts.
+            var gloveSafe = CoachSafeGui(8f * handS);
+            _gloveEntryOverride = PokerBackGloveStart(_pokerBackAim, handS, gloveSafe, PhoneArea.W, PhoneArea.H);
             _gloveEntryOverrideOn = true;
             CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, -90f, _pokerBackTap);
             _gloveEntryOverrideOn = false;
@@ -13518,10 +13519,10 @@ namespace FlockFive
             _pokerBackAim = back.center;
             _pokerBackTap = back;
             _pokerBackAimOk = back.width > 2f;
-            // Standard caption under the dealt row (PokerStepAnchor: BelowCards), clear of the
-            // PAY TABLE tab, the logo and BET/DEAL; the glove still points up at Back.
-            DrawPokerStandardLine(PokerBackLine, s);
+            // Glove first, tip plate last. The bottom banner is the highest layer on
+            // this step, so a cuff that still meets it stays under the words.
             DrawTutorOverlay(s);
+            DrawPokerStandardLine(PokerBackLine, s);
         }
 
         // Back medal, coin icon, wordmark, halo, and PAY TABLE tab.

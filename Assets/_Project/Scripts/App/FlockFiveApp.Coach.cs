@@ -19,7 +19,8 @@ namespace FlockFive
     // The gift line still sits above its branch. The plate does not move when
     // the glove animates. ClearGloveOfCaption still keeps the perch off that
     // plate. DrawTutorOverlay paints the glove after the caption, so the hand
-    // is always on top.
+    // is on top. Poker Back paints its bottom tip after the glove, so that
+    // plate stays the highest layer on that step.
     // The pose clock is PlayClock, so a suspension cannot skip the arc.
     // Other taps wait. One glove on screen at a time.
     public sealed partial class FlockFiveApp
@@ -1887,11 +1888,21 @@ namespace FlockFive
                 if (_gloveEntryOverrideOn) start = _gloveEntryOverride;
                 start.x = Mathf.Clamp(start.x, x0, x1);
                 start.y = Mathf.Clamp(start.y, y0, y1);
-                float below = _cueAimGui.y + 28f * s;
-                if (start.y < below) start.y = Mathf.Min(y1, below);
-                // b120: an entry override (poker Back: middle right) used to seat the hand a whole screen
-                // away, so it travelled across the phone. Every angled start is now held snug to its target.
-                _gloveTip = AngledStartSnug(start, aimGui, s, safe);
+                if (_gloveEntryOverrideOn)
+                {
+                    // Poker Back passes the finished perch (short hop beside the medal).
+                    // The shared below-shove and near-start scale would drop that hop
+                    // back down the screen, through the bottom tip.
+                    _gloveTip = start;
+                }
+                else
+                {
+                    float below = _cueAimGui.y + 28f * s;
+                    if (start.y < below) start.y = Mathf.Min(y1, below);
+                    // b120: angled starts stay snug to the target. A whole-screen entry
+                    // used to cross the phone.
+                    _gloveTip = AngledStartSnug(start, aimGui, s, safe);
+                }
             }
             else
                 _gloveTip = GloveNearStart(rest, aimGui, s, ang, _gloveMirror);
@@ -1936,6 +1947,67 @@ namespace FlockFive
 
         // Middle of the right edge, fully inside the safe rect (the clamp in GloveLockPose keeps the whole hand on screen).
         public static Vector2 GloveMiddleRightEntry(Rect safe) => new Vector2(safe.xMax, safe.center.y);
+
+        // Poker Back hop, in hand-heights, from the right of the medal. Shorter than the
+        // shared near-start (0.8 hands along the old middle-right line) and level with Back,
+        // so the cuff stays in the top corner instead of diving through the tip.
+        public const float PokerBackGloveHopHands = 0.62f;
+
+        // Rest perch for the poker Back glove. A short hop to the right of `aim`, dropped
+        // only as far as the glass needs so the quad fits. The straight flight to the medal
+        // stays up there, clear of the bottom tip.
+        public static Vector2 PokerBackGloveStart(Vector2 aim, float s, Rect safe, float screenW, float screenH)
+        {
+            float dh = Mathf.Max(8f, GloveDh(s));
+            float dw = GloveDrawW(dh);
+            float hop = PokerBackGloveHopHands * dh;
+            float pad = dh * 0.42f;
+            float x0, x1, y0, y1;
+            GlovePadRange(safe, pad, out x0, out x1, out y0, out y1);
+            var start = new Vector2(Mathf.Clamp(aim.x + hop, x0, x1), Mathf.Clamp(aim.y, y0, y1));
+            float yCap = Mathf.Min(y1, screenH > 4f ? screenH * 0.42f : y1);
+            for (int i = 0; i < 28; i++)
+            {
+                float ang = GloveApproachDeg(start, aim);
+                if (screenW < 4f || screenH < 4f || dw < 1f
+                    || GloveQuadOverflow(start, ang, false, dw, dh, screenW, screenH) <= 0.5f)
+                    break;
+                float next = start.y + dh * 0.04f;
+                if (next > yCap + 0.01f) break;
+                start.y = next;
+            }
+            start.x = Mathf.Clamp(start.x, x0, x1);
+            start.y = Mathf.Clamp(start.y, y0, y1);
+            return start;
+        }
+
+        static void GlovePadRange(Rect safe, float pad, out float x0, out float x1, out float y0, out float y1)
+        {
+            x0 = safe.xMin + pad;
+            x1 = safe.xMax - pad;
+            y0 = safe.yMin + pad;
+            y1 = safe.yMax - pad;
+            if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
+            if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
+        }
+
+        // True when the locked approach (one angle for the whole hop) misses `banner`
+        // at the rest, along the straight poke, and on the medal, dip up or down.
+        public static bool PokerBackFlightClears(Vector2 start, Vector2 aim, float s, Rect banner)
+        {
+            if (banner.width < 1f || banner.height < 1f) return true;
+            float dh = Mathf.Max(8f, GloveDh(s));
+            float ang = GloveApproachDeg(start, aim);
+            float gap = CaptionLayout.GloveBannerGap * s;
+            var grown = new Rect(banner.x - gap, banner.y - gap, banner.width + gap * 2f, banner.height + gap * 2f);
+            for (int i = 0; i <= 4; i++)
+            {
+                var p = Vector2.Lerp(start, aim, i / 4f);
+                if (GloveAuditBox(p, ang, dh, 0f).Overlaps(grown)) return false;
+                if (GloveAuditBox(p, ang, dh, 1f).Overlaps(grown)) return false;
+            }
+            return true;
+        }
 
         // b120: angled starts obey the same near-start cap as plain gloves (GloveNearStartHands, 0.5x travel).
         public static Vector2 AngledStartSnug(Vector2 start, Vector2 aim, float s, Rect safe)
@@ -3981,7 +4053,9 @@ namespace FlockFive
                 if (adHandBox.width >= 2f && adHandBox.yMax > adFloor) adFloor = adHandBox.yMax;
                 if (band.y < adFloor + gap) band.y = adFloor + gap;
             }
-            // b124: the first-hand result caption covers the bet controls' original seat, full width, bottom of the page.
+            // Brandon: the Back tip is a full-width banner on the bottom of the page.
+            // It may cover WIN and the bet controls. It does not move to dodge them,
+            // the cards, or the glove. The glove stays up at the Back medal.
             bool pokerBack = spot == "poker.back";
             if (pokerBack)
             {
@@ -4040,17 +4114,24 @@ namespace FlockFive
             return true;
         }
 
-        // iPad fix: 'Tap the back button' seats near the back medal (top-left): under the back
-        // medal, logo/halo and PAY TABLE tab, above the dealt row, inside the safe area.
+        // 'Tap the back button to return home.' Pinned to the bottom edge on every
+        // portrait window (iPhone 402/412 and iPad 820). The home indicator stays clear.
+        // WIN and the bet controls may sit under the plate; they do not push it up.
         Rect PokerBackBand(Rect band, float h, Rect safe, float s)
         {
-            var g = _pokerCapGeo;
-            float gap = 8f * s;
-            float safeTop = h - safe.yMax, safeBottom = h - safe.yMin; // safeArea is bottom-up
-            float y = Mathf.Max(safeTop, g.Back.yMax, g.LogoClear, g.Tab.yMax) + gap;
-            if (g.Row.height > 2f && y + band.height > g.Row.yMin - gap)
-                y = Mathf.Max(Mathf.Max(safeTop, g.Back.yMax + gap), g.Row.yMin - gap - band.height);
-            if (y + band.height > safeBottom) y = safeBottom - band.height;
+            // s is already in the measured plate. The seat is the bottom edge on every width.
+            return PokerBackBottomBand(band, h, safe);
+        }
+
+        public static Rect PokerBackBottomBand(Rect band, float screenH, Rect safe)
+        {
+            float inset = safe.height > 2f ? safe.yMin : 0f;
+            if (inset < 0f) inset = 0f;
+            // Same home-indicator floor ClampGardenBand uses, so the two agree.
+            if (inset < 34f) inset = 34f;
+            float limit = screenH - inset - 4f;
+            float y = limit - band.height;
+            if (y < 0f) y = 0f;
             band.y = y;
             return band;
         }
