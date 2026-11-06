@@ -152,13 +152,25 @@ namespace FlockFive
             return owed + extra;
         }
 
-        // forceNap draws Zzz under the level rainbow. The plate waits until that
-        // pose has been drawn and the stage is open, for one presented frame.
-        // openFrames counts those open frames. A held stage or a flock that has
-        // not drawn Zzz is not ready.
-        public static bool NapPlateReady(bool napBegun, bool stageHeld, int openFrames)
+        // How long Zzz must be on the open garden before forceNap may raise the
+        // plate. One frame is not enough at 412: the stage gate can open while
+        // the star wipe is still the picture, and that frame was being counted.
+        public const float NapPlateOpenSeconds = 0.4f;
+
+        // True while the star wipe still owns the screen. StageHeld's realtime
+        // failsafe can drop on a narrow phone before the paint clock finishes,
+        // so a live rainbow still counts as covered.
+        public static bool NapWipeCovers(bool rainbowLive, bool stageHeld)
         {
-            return napBegun && !stageHeld && openFrames >= 1;
+            return rainbowLive || stageHeld;
+        }
+
+        // forceNap draws Zzz under the level rainbow. The plate waits until that
+        // pose has been drawn and the garden has been the picture (wipe gone)
+        // for NapPlateOpenSeconds. openSeconds is that open-garden time.
+        public static bool NapPlateReady(bool napBegun, bool stageHeld, float openSeconds)
+        {
+            return napBegun && !stageHeld && openSeconds >= NapPlateOpenSeconds;
         }
 
         // How many coins to add so the purse reaches OnboardingCoins.
