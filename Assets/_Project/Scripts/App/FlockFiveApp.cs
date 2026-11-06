@@ -6449,7 +6449,7 @@ namespace FlockFive
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
             HudShaken(out _, out var hive);
-            _garden.Hive.TrackHud(cam, hive);
+            _garden.Hive.TrackHud(cam, CornerAnchor.HivePaintRect(hive));
         }
 
         // The wood skep is the OnGUI button. This glow sits under it, so it follows the same gate.
@@ -6775,7 +6775,8 @@ namespace FlockFive
             else
                 GUI.Box(restart, "↩");
             if (HiveReachable())
-                DrawHiveButton(hive, s, orbit: true, pop: true);
+                // Paint is left of the hit plate so the straw/halo mask meets the restart glyph.
+                DrawHiveButton(CornerAnchor.HivePaintRect(hive), s, orbit: true, pop: true);
             else
             {
                 if (_levelHive) CloseLevelHive();
