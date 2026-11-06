@@ -308,13 +308,98 @@ namespace FlockFive.Editor
                 && DevLevelSkip.DisplayFromUrl("http://h/?fflevel=") == 0
                 && DevLevelSkip.DisplayFromUrl("http://h/?fflevel=0") == 0, "junk");
             var l3 = DevLevelSkip.Plan("http://h/?fflevel=3", 50);
-            Check("plan-l3-keeps-fire", l3.Index == 2 && l3.KeepFire && !l3.KeepBee, "index " + l3.Index);
+            Check("plan-l3-keeps-fire", l3.Index == 2 && l3.KeepFire && !l3.KeepBee && !l3.SkipOnboarding, "index " + l3.Index);
             var l5 = DevLevelSkip.Plan("http://h/?fflevel=5", 50);
-            Check("plan-l5-keeps-bee", l5.Index == 4 && l5.KeepBee && !l5.KeepFire, "index " + l5.Index);
+            Check("plan-l5-keeps-bee", l5.Index == 4 && l5.KeepBee && !l5.KeepFire && !l5.SkipOnboarding, "index " + l5.Index);
             var other = DevLevelSkip.Plan("http://h/?fflevel=4", 50);
-            Check("plan-other-stamps-both", other.Index == 3 && !other.KeepBee && !other.KeepFire, "index " + other.Index);
+            Check("plan-other-stamps-both", other.Index == 3 && !other.KeepBee && !other.KeepFire && !other.SkipOnboarding, "index " + other.Index);
             var bad = DevLevelSkip.Plan("http://h/?fflevel=99", 50);
             Check("plan-out-of-range", bad.Index < 0 && DevLevelSkip.Plan("http://h/?fflevel=5", 0).Index < 0, "index " + bad.Index);
+            Check("onboard-absent", !DevLevelSkip.OnboardingFromUrl("http://h/index.html")
+                && !DevLevelSkip.OnboardingFromUrl(null) && !DevLevelSkip.OnboardingFromUrl(""), "none");
+            Check("onboard-1", DevLevelSkip.OnboardingFromUrl("http://h/portrait?w=820&h=1180&skipOnboarding=1"), "1");
+            Check("onboard-among", DevLevelSkip.OnboardingFromUrl("http://h/?fflevel=5&skipOnboarding=1#x")
+                && DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=1&fflevel=3"), "both");
+            Check("onboard-junk", !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=0")
+                && !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=")
+                && !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=true")
+                && !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=2"), "junk");
+            var garden2 = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1", 50);
+            Check("plan-onboard-garden-2", garden2.Index == 1 && garden2.SkipOnboarding && !garden2.KeepBee && !garden2.KeepFire
+                && !garden2.KeepTips && !garden2.ForceFeeder && !garden2.ForceNap && !garden2.OpenPoker,
+                "index " + garden2.Index);
+            Check("force-feeder-1", DevLevelSkip.ForceFeederFromUrl(
+                "http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1&forceFeeder=1"), "1");
+            Check("force-nap-1", DevLevelSkip.ForceNapFromUrl(
+                "http://h/?skipOnboarding=1&forceNap=1"), "1");
+            Check("open-poker-1", DevLevelSkip.OpenPokerFromUrl(
+                "http://h/portrait?w=820&h=1180&skipOnboarding=1&openPoker=1"), "1");
+            Check("force-junk", !DevLevelSkip.ForceFeederFromUrl("http://h/?forceFeeder=0")
+                && !DevLevelSkip.ForceFeederFromUrl("http://h/?forceFeeder=true")
+                && !DevLevelSkip.ForceNapFromUrl("http://h/?forceNap=")
+                && !DevLevelSkip.ForceNapFromUrl("http://h/?forceNap=2")
+                && !DevLevelSkip.OpenPokerFromUrl("http://h/?openPoker=0")
+                && !DevLevelSkip.OpenPokerFromUrl(null), "junk");
+            var feed = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1&forceFeeder=1", 50);
+            Check("plan-force-feeder", feed.Index == 1 && feed.SkipOnboarding && feed.KeepTips && feed.ForceFeeder
+                && !feed.ForceNap && !feed.OpenPoker, "index " + feed.Index);
+            var nap = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forceNap=1", 50);
+            Check("plan-force-nap", nap.Index == 1 && nap.SkipOnboarding && nap.ForceNap && !nap.KeepTips
+                && !nap.ForceFeeder && !nap.OpenPoker, "index " + nap.Index);
+            Check("nap-plate-not-before-zzz", !DevLevelSkip.NapPlateReady(false, false, 1f), "asleep only");
+            Check("nap-plate-not-under-curtain", !DevLevelSkip.NapPlateReady(true, true, 1f), "held");
+            Check("nap-plate-needs-a-frame", !DevLevelSkip.NapPlateReady(true, false, 0f), "same frame");
+            Check("nap-plate-beat-short", !DevLevelSkip.NapPlateReady(true, false, DevLevelSkip.NapPlateOpenSeconds - 0.05f), "short");
+            Check("nap-plate-after-visible-zzz", DevLevelSkip.NapPlateReady(true, false, DevLevelSkip.NapPlateOpenSeconds), "open");
+            Check("nap-wipe-still-painting", DevLevelSkip.NapWipeCovers(true, false)
+                && !DevLevelSkip.NapPlateReady(true, DevLevelSkip.NapWipeCovers(true, false), 1f), "live");
+            Check("nap-wipe-open", !DevLevelSkip.NapWipeCovers(false, false), "open");
+            var poker = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&openPoker=1", 50);
+            Check("plan-open-poker", poker.Index == 1 && poker.SkipOnboarding && poker.OpenPoker
+                && !poker.ForceFeeder && !poker.ForceNap && !poker.KeepTips, "index " + poker.Index);
+            var pokerBad = DevLevelSkip.Plan("http://h/?fflevel=99&skipOnboarding=1&openPoker=1", 50);
+            Check("plan-open-poker-bad-level", pokerBad.Index < 0 && pokerBad.SkipOnboarding && pokerBad.OpenPoker,
+                "index " + pokerBad.Index);
+            var forceAlone = DevLevelSkip.Plan("http://h/?fflevel=4&forceFeeder=1&forceNap=1&openPoker=1", 50);
+            Check("plan-force-needs-skip", forceAlone.Index == 3 && !forceAlone.SkipOnboarding
+                && !forceAlone.ForceFeeder && !forceAlone.ForceNap && !forceAlone.OpenPoker, "index " + forceAlone.Index);
+            Check("keeptips-absent", !DevLevelSkip.KeepTipsFromUrl("http://h/index.html")
+                && !DevLevelSkip.KeepTipsFromUrl(null) && !DevLevelSkip.KeepTipsFromUrl(""), "none");
+            Check("keeptips-1", DevLevelSkip.KeepTipsFromUrl(
+                "http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1"), "1");
+            Check("keeptips-among", DevLevelSkip.KeepTipsFromUrl("http://h/?fflevel=5&skipOnboarding=1&keepTips=1#x")
+                && DevLevelSkip.KeepTipsFromUrl("http://h/?keepTips=1&skipOnboarding=1"), "both");
+            Check("keeptips-junk", !DevLevelSkip.KeepTipsFromUrl("http://h/?keepTips=0")
+                && !DevLevelSkip.KeepTipsFromUrl("http://h/?keepTips=")
+                && !DevLevelSkip.KeepTipsFromUrl("http://h/?keepTips=true")
+                && !DevLevelSkip.KeepTipsFromUrl("http://h/?keepTips=2"), "junk");
+            var kept = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1", 50);
+            Check("plan-keeptips-garden-2", kept.Index == 1 && kept.SkipOnboarding && kept.KeepTips
+                && !kept.KeepBee && !kept.KeepFire, "index " + kept.Index);
+            var kept5 = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=5&keepTips=1", 50);
+            Check("plan-keeptips-keeps-fflevel", kept5.Index == 4 && kept5.SkipOnboarding && kept5.KeepTips
+                && kept5.KeepBee && !kept5.KeepFire, "index " + kept5.Index);
+            var tipsOnly = DevLevelSkip.Plan("http://h/?fflevel=4&keepTips=1", 50);
+            Check("plan-keeptips-needs-skip", tipsOnly.Index == 3 && !tipsOnly.SkipOnboarding && !tipsOnly.KeepTips
+                && !tipsOnly.KeepBee && !tipsOnly.KeepFire, "index " + tipsOnly.Index);
+            var with5 = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=5", 50);
+            Check("plan-onboard-keeps-fflevel", with5.Index == 4 && with5.SkipOnboarding && with5.KeepBee && !with5.KeepFire,
+                "index " + with5.Index);
+            var with3 = DevLevelSkip.Plan("http://h/?fflevel=3&skipOnboarding=1", 50);
+            Check("plan-onboard-keeps-fire", with3.Index == 2 && with3.SkipOnboarding && with3.KeepFire && !with3.KeepBee
+                && !with3.KeepTips, "index " + with3.Index);
+            Check("plan-default-does-not-keep-tips",
+                !l3.KeepTips && !l5.KeepTips && !other.KeepTips && !with5.KeepTips && !with3.KeepTips, "off");
+            var skipBad = DevLevelSkip.Plan("http://h/?fflevel=99&skipOnboarding=1", 50);
+            Check("plan-onboard-bad-fflevel", skipBad.Index < 0
+                && DevLevelSkip.Plan("http://h/?skipOnboarding=1", 1).Index < 0, "index " + skipBad.Index);
+            Check("onboard-coins", DevLevelSkip.OnboardingCoins >= 1000
+                && DevLevelSkip.CoinsToSeed(0) == DevLevelSkip.OnboardingCoins
+                && DevLevelSkip.CoinsToSeed(400) == DevLevelSkip.OnboardingCoins - 400
+                && DevLevelSkip.CoinsToSeed(DevLevelSkip.OnboardingCoins) == 0
+                && DevLevelSkip.CoinsToSeed(DevLevelSkip.OnboardingCoins + 500) == 0
+                && DevLevelSkip.CoinsToSeed(-3) == DevLevelSkip.OnboardingCoins,
+                "stake " + DevLevelSkip.OnboardingCoins);
             string settings = Read("Assets/_Project/Scripts/App/FlockFiveApp.Settings.cs");
             string app = Read("Assets/_Project/Scripts/App/FlockFiveApp.cs");
             int gate = settings.IndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD");
@@ -322,11 +407,91 @@ namespace FlockFive.Editor
             int end = hook >= 0 ? settings.IndexOf("#endif", hook) : -1;
             int call = app.IndexOf("MaybeDevLevelSkip();");
             int appGate = app.IndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD");
+            string gated = gate >= 0 && end > gate ? settings.Substring(gate, end - gate) : "";
             Check("skip-is-webgl-dev-only",
                 gate >= 0 && hook > gate && end > hook
                 && settings.IndexOf("?fflevel=3") >= 0 && settings.IndexOf("?fflevel=5") >= 0
                 && appGate >= 0 && call > appGate && app.IndexOf("#endif", call) > call,
                 "gate");
+            int stamp = gated.IndexOf("void StampDevOnboardingSeen()");
+            int coins = stamp >= 0 ? gated.IndexOf("Purse.Credit", stamp) : -1;
+            int sleepSet = gated.IndexOf("SetInt(RuleTips.SleepKey, 1)");
+            int sleepDrop = gated.IndexOf("DeleteKey(RuleTips.SleepKey)");
+            int early = gated.IndexOf("_devOnboardingStamped = true");
+            int earlyDismiss = early >= 0 ? gated.IndexOf("AdConsent.DismissTransient()", early) : -1;
+            int loadGate = earlyDismiss >= 0 ? gated.IndexOf("if (!AdConsent.FirstFrameReady) return;", earlyDismiss) : -1;
+            Check("onboard-stamps-live-keys",
+                gated.IndexOf("FF_DEV_SKIP_ONBOARDING") >= 0
+                && gated.IndexOf("coins=") >= 0
+                && stamp >= 0
+                && coins > stamp
+                && gated.IndexOf("DevLevelSkip.CoinsToSeed") >= 0
+                && gated.IndexOf("AdConsent.AttAskKey") >= 0
+                && gated.IndexOf("AdConsent.EditorHoldAtt = false") >= 0
+                && early >= 0 && earlyDismiss > early && loadGate > earlyDismiss
+                && gated.IndexOf("AvatarAdoptedPref") >= 0
+                && gated.IndexOf("AvatarNamedPref") >= 0
+                && gated.IndexOf("AvatarNamePref") >= 0
+                && gated.IndexOf("CoachDailyKey") >= 0
+                && gated.IndexOf("CoachPokerKey") >= 0
+                && gated.IndexOf("SetInt(CoachPokerBackKey") < 0
+                && gated.IndexOf("CoachHiveKey") >= 0
+                && gated.IndexOf("CoachHiveGardenKey") >= 0
+                && gated.IndexOf("CoachHiveAlbumKey") >= 0
+                && sleepDrop >= 0 && sleepDrop < stamp
+                && sleepSet > sleepDrop
+                && gated.IndexOf("if (plan.SkipOnboarding) PlayerPrefs.DeleteKey(RuleTips.SleepKey);") >= 0
+                && settings.IndexOf("FF_DEV_SKIP_ONBOARDING") == gated.IndexOf("FF_DEV_SKIP_ONBOARDING") + gate
+                && settings.IndexOf("FF_DEV_SKIP_ONBOARDING", end) < 0
+                && settings.IndexOf("StampDevOnboardingSeen", end) < 0,
+                "stamps");
+            int keepIf = gated.IndexOf("if (plan.KeepTips)");
+            int keepElse = keepIf >= 0 ? gated.IndexOf("\n            else", keepIf) : -1;
+            string keepBody = keepIf >= 0 && keepElse > keepIf ? gated.Substring(keepIf, keepElse - keepIf) : "";
+            int leafSet = gated.IndexOf("SetInt(CoachLeafKey, 1)");
+            int coachSet = gated.IndexOf("SetInt(CoachKey, 1)");
+            Check("keeptips-owes-rule-plates",
+                keepIf >= 0 && keepElse > keepIf && keepElse < stamp
+                && keepBody.IndexOf("DeleteKey(RuleTips.KitKey)") >= 0
+                && keepBody.IndexOf("DeleteKey(RuleTips.FeederKey)") >= 0
+                && keepBody.IndexOf("DeleteKey(RuleTips.SleepKey)") >= 0
+                && keepBody.IndexOf("SetInt(RuleTips") < 0
+                && gated.IndexOf("SetInt(RuleTips.KitKey, 1)") > keepElse
+                && gated.IndexOf("SetInt(RuleTips.FeederKey, 1)") > keepElse
+                && gated.IndexOf("if (plan.SkipOnboarding) PlayerPrefs.DeleteKey(RuleTips.SleepKey);") > keepElse
+                && coachSet >= 0 && coachSet < keepIf
+                && leafSet >= 0 && leafSet < keepIf
+                && gated.IndexOf("keepTips=\" +") > keepElse && gated.IndexOf("keepTips=\" +") < stamp
+                && settings.IndexOf("keepTips=\" +", end) < 0
+                && gated.IndexOf("Purse.Credit", stamp) > 0
+                && gated.IndexOf("AdConsent.AttAskKey", stamp) > 0,
+                "owed");
+            int pokerIf = gated.IndexOf("if (plan.OpenPoker)");
+            int loadCall = gated.IndexOf("Load(plan.Index)");
+            int showFeeder = gated.IndexOf("ShowRuleTip(RuleTip.Feeder)");
+            int raiseSleep = gated.IndexOf("RaiseRuleSleepTip()");
+            int forceLog = gated.IndexOf("FF_DEV_FORCE");
+            Check("dev-force-plates",
+                pokerIf > keepElse && loadCall > pokerIf
+                && showFeeder > loadCall
+                && raiseSleep > loadCall
+                && gated.IndexOf("ShowRuleTip(RuleTip.Sleep)") < 0
+                && gated.IndexOf("_devNapHold = true") >= 0
+                && gated.IndexOf("PressRainbow.Live()") > gated.IndexOf("_devNapHold = true")
+                && gated.IndexOf("NapPlateReady") > gated.IndexOf("_devNapHold = true")
+                && gated.IndexOf("RaiseRuleSleepTip()") > gated.IndexOf("NapPlateReady")
+                && gated.IndexOf("DeleteKey(CoachPokerBackKey)") > pokerIf
+                && gated.IndexOf("SetInt(CoachPokerBackKey") < 0
+                && gated.IndexOf("HomeFace.Poker") > pokerIf
+                && gated.IndexOf("_pokerLessonHand = true") > pokerIf
+                && gated.IndexOf("BirdPoker.Draw()") > pokerIf
+                && gated.IndexOf("IsSleeping(branch)") > 0
+                && forceLog >= 0 && forceLog < gated.Length
+                && settings.IndexOf("FF_DEV_FORCE", end) < 0
+                && settings.IndexOf("DevOpenPokerTable", end) < 0
+                && settings.IndexOf("DevForceSleepingFlock", end) < 0
+                && settings.IndexOf("ShowRuleTip(RuleTip.Feeder)", end) < 0,
+                "force");
         }
     }
 }
