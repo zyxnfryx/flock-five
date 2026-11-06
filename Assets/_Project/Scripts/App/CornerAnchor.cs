@@ -3,9 +3,9 @@ using UnityEngine;
 namespace FlockFive
 {
     // Garden HUD seats. The hive plate stays bottom-right. Restart sits in the top
-    // bar on the full halo quad (HiveArtRight). The garden hive is painted in
-    // HivePaintRect, shifted left by the 12px Inspector still counted past the
-    // restart glyph. Both rects are at rest (the welcome pulse is not part of
+    // bar on the full halo quad (HiveArtRight). The garden skep is drawn so its
+    // straw column shares the restart spiral's right edge, and the glow stops
+    // on that column. Both rects are at rest (the welcome pulse is not part of
     // the seat). Draw them inside the HUD
     // shake matrix as-is. A world pin or a hit test applies Shake once, with the
     // same offset the matrix uses, so the hive moves with the restart.
@@ -69,37 +69,45 @@ namespace FlockFive
             return edge;
         }
 
-        // DrawHiveGlow pads the plate by this share of its width on every side
-        // before HiveGlowGlyphPull. The restart rect sits on that full quad.
+        // DrawHiveGlow's old pad. The restart rect still sits on this quad.
         public const float HiveGlowPadFrac = 0.18f;
 
-        // ff752147 and aa2441cd: Inspector's counted glyphs stayed 12px apart on
-        // 820, 402, and 412 (hive past restart). Subtracting that from the glow
-        // quad did not move the straw/halo mask. HivePaintRect shifts every
-        // painted hive layer left by this many pixels so the mask moves with it.
-        // The restart rect stays on the full quad; its counted rim is this far
-        // inside that rect.
-        public const float HiveGlowGlyphPull = 12f;
+        // HSV straw/orange columns of the button textures (right edge is exclusive).
+        // fx_restart.png 751 wide, last straw column 739. fx_hive.png 1024, straw x 113..910.
+        public const float RestartArtFrac = 740f / 751f;
+        public const float HiveArtFrac = 911f / 1024f;
+        public const float HiveArtLeftFrac = 113f / 1024f;
 
-        // Same gap, applied to the draw. Constant across those viewports.
-        public const float HivePaintShiftPx = 12f;
-
-        // Painted hive, left of the hit plate by HivePaintShiftPx. Hit tests keep
-        // the unshifted rect. The right edge of every layer drawn in this rect
-        // (straw, shadow, glow, sparkles) moves with it.
-        public static Rect HivePaintRect(Rect hive)
+        // Right edge of the restart spiral the straw mask counts.
+        public static float RestartGlyphRight(Rect restart)
         {
-            if (hive.width < 2f) return hive;
-            float pull = HivePaintShiftPx;
-            if (pull > hive.width * 0.45f) pull = hive.width * 0.45f;
-            return new Rect(hive.x - pull, hive.y, hive.width, hive.height);
+            return restart.xMin + restart.width * RestartArtFrac;
         }
 
-        // Outset of the glow quad actually drawn, past the plate, on one side.
+        // Square the hive texture is drawn in so its straw column lands on the restart glyph.
+        public static Rect HiveAlignedDraw(Rect hive, Rect restart)
+        {
+            float w = hive.width;
+            float target = RestartGlyphRight(restart);
+            float x = target - HiveArtFrac * w;
+            return new Rect(x, hive.y, w, hive.height);
+        }
+
+        // Straw texels only. Right edge is the painted mask; the clear pad to the
+        // right of the skep is not a hit.
+        public static Rect HiveStrawHit(Rect draw)
+        {
+            if (draw.width < 2f) return draw;
+            float x0 = draw.xMin + draw.width * HiveArtLeftFrac;
+            float x1 = draw.xMin + draw.width * HiveArtFrac;
+            return Rect.MinMaxRect(x0, draw.yMin, x1, draw.yMax);
+        }
+
+        // Glow disc ends on the straw's right texel, so the orange mask cannot
+        // stick out past the skep.
         public static float HiveGlowOutset(float width)
         {
-            float g = width * HiveGlowPadFrac - HiveGlowGlyphPull;
-            return g > 0f ? g : 0f;
+            return -width * (1f - HiveArtFrac);
         }
 
         // Resting halo quad's right edge (before the glyph pull). The welcome
@@ -112,18 +120,11 @@ namespace FlockFive
             return hive.xMax + hive.width * HiveGlowPadFrac;
         }
 
-        // Counted hive glyph. The mask tracked the full pad past the plate and
-        // ignored HiveGlowOutset; it does follow HivePaintRect.
-        public static float HiveGlyphRight(Rect hive)
+        // Counted hive straw right edge for a texture drawn in `draw`.
+        public static float HiveGlyphRight(Rect draw)
         {
-            if (hive.width < 2f) return hive.xMax;
-            return HivePaintRect(hive).xMax + hive.width * HiveGlowPadFrac;
-        }
-
-        // Counted restart glyph: the bright rim, HiveGlowGlyphPull inside the rect.
-        public static float RestartGlyphRight(Rect restart)
-        {
-            return restart.xMax - HiveGlowGlyphPull;
+            if (draw.width < 2f) return draw.xMax;
+            return draw.xMin + draw.width * HiveArtFrac;
         }
 
         // Top-right gutter of the top bar: right of every feeder bulb, above every branch / bird /
