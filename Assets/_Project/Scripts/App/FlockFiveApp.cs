@@ -7140,7 +7140,7 @@ namespace FlockFive
         {
             var glow = GlowTex();
             if (glow == null || alpha < 0.02f) return;
-            float g = hive.width * CornerAnchor.HiveGlowPadFrac;
+            float g = CornerAnchor.HiveGlowOutset(hive.width);
             GUI.color = new Color(1f, 0.78f, 0.28f, alpha);
             GUI.DrawTexture(
                 new Rect(hive.center.x - hive.width * 0.5f - g, hive.center.y - hive.height * 0.5f - g, hive.width + g * 2f, hive.height + g * 2f),
