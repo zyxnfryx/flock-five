@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace FlockFive
@@ -627,6 +628,11 @@ namespace FlockFive
         // Those three prefs are what hide FeederLine and SleepLine ("color")
         // and the kit line. Leaf, the first-garden coach, and the pest lessons
         // stay stamped: a live leaf or coach blocks the feeder plate.
+        // ?forceFeeder=1 turns one feeder and raises that plate.
+        // ?forceNap=1 stacks a flock no feeder wants, then the live sleep
+        // raise waits until a bird has drawn Zzz.
+        // ?openPoker=1 stays on the home shell, deals one hand, and draws it
+        // so the Back tip is the plate on screen. The Back pref stays owed.
         void MaybeDevLevelSkip()
         {
             if (_devLevelSkipDone) return;
@@ -635,7 +641,7 @@ namespace FlockFive
             string url = Application.absoluteURL;
             if (string.IsNullOrEmpty(url)) return;
             var plan = DevLevelSkip.Plan(url, LevelData.Count);
-            if (plan.Index < 0)
+            if (plan.Index < 0 && !plan.OpenPoker)
             {
                 if (!AdConsent.FirstFrameReady) return;
                 _devLevelSkipDone = true;
@@ -654,7 +660,7 @@ namespace FlockFive
             }
             if (!AdConsent.FirstFrameReady) return;
             _devLevelSkipDone = true;
-            PlayerPrefs.SetInt("flockfive.next", plan.Index);
+            if (plan.Index >= 0) PlayerPrefs.SetInt("flockfive.next", plan.Index);
             PlayerPrefs.SetInt(CoachKey, 1);
             PlayerPrefs.SetInt(CoachLeafKey, 1);
             PlayerPrefs.SetInt(CoachSparrowKey, 1);
@@ -690,11 +696,21 @@ namespace FlockFive
                 PlayerPrefs.SetInt(LightningStrike.StruckKey, 1);
             }
             if (plan.SkipOnboarding) StampDevOnboardingSeen();
+            if (plan.ForceFeeder) PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+            if (plan.ForceNap) PlayerPrefs.DeleteKey(RuleTips.SleepKey);
             PlayerPrefs.Save();
             AdConsent.DismissTransient();
             if (plan.SkipOnboarding)
                 Debug.Log("FF_DEV_SKIP_ONBOARDING display=" + (plan.Index + 1) + " coins=" + Purse.Coins
-                    + " keepTips=" + (plan.KeepTips ? 1 : 0));
+                    + " keepTips=" + (plan.KeepTips ? 1 : 0)
+                    + " forceFeeder=" + (plan.ForceFeeder ? 1 : 0)
+                    + " forceNap=" + (plan.ForceNap ? 1 : 0)
+                    + " openPoker=" + (plan.OpenPoker ? 1 : 0));
+            if (plan.OpenPoker)
+            {
+                DevOpenPokerTable();
+                return;
+            }
             Debug.Log("FF_DEV_LEVEL display=" + (plan.Index + 1) + " keepBee=" + (plan.KeepBee ? 1 : 0)
                 + " keepFire=" + (plan.KeepFire ? 1 : 0));
             if (!LevelCurtain.Armed) LevelCurtain.Arm(AdPause.Unscaled);
@@ -706,6 +722,134 @@ namespace FlockFive
                 LevelCurtain.MarkReady();
                 LevelCurtain.Fire(AdPause.Unscaled);
             }
+            if (plan.ForceNap && DevForceSleepingFlock(plan.ForceFeeder))
+                StartCoroutine(DevRaiseForcedNap());
+            if (plan.ForceFeeder) DevForceFeederPlate();
+        }
+
+        // One limb becomes five of a color no feeder wants, then Sync seats them
+        // asleep. Zzz is drawn in LateUpdate. The sleep plate is raised by
+        // RaiseRuleSleepTip, which on the nap-gate build waits for that Zzz.
+        bool DevForceSleepingFlock(bool feederPlateToo)
+        {
+            if (_board == null) return false;
+            BirdColor nap = BirdColor.Ruby;
+            bool free = false;
+            for (int c = 0; c < 5; c++)
+            {
+                var col = (BirdColor)c;
+                if (_board.LiveHas(col)) continue;
+                nap = col;
+                free = true;
+                break;
+            }
+            if (!free && _board.Live != null && _board.Live.Length > 0)
+            {
+                nap = _board.Live[0] ?? BirdColor.Ruby;
+                _board.Live[0] = null;
+                // Clearing the bulb is itself a feeder turn. Stamp that plate
+                // seen so it does not cover the nap, unless this URL also asked
+                // for the feeder plate.
+                if (!feederPlateToo) PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
+            }
+            int branch = -1;
+            for (int i = 0; i < _board.Branches.Count; i++)
+            {
+                var br = _board.Branches[i];
+                if (br == null || br.Broken || br.Burned || br.IsBonus) continue;
+                branch = i;
+                break;
+            }
+            if (branch < 0) return false;
+            var limb = _board.Branches[branch];
+            limb.Birds.Clear();
+            limb.Shrouded.Clear();
+            limb.Broken = false;
+            limb.AdLocked = false;
+            for (int i = 0; i < BranchState.Cap; i++)
+            {
+                limb.Birds.Add(new Bird(nap, BirdKit.Plain));
+                limb.Shrouded.Add(false);
+            }
+            SyncAll();
+            Sfx.Sleep();
+            return _board.IsSleeping(branch);
+        }
+
+        // Retries the live raise until the plate is up. The first call lands on
+        // a build that shows the nap as soon as the flock is asleep. A build
+        // that waits for Zzz no-ops until LateUpdate notes the pose.
+        IEnumerator DevRaiseForcedNap()
+        {
+            float waited = 0f;
+            while (_ruleTip != RuleTip.Sleep && waited < 3f)
+            {
+                RaiseRuleSleepTip();
+                if (_ruleTip == RuleTip.Sleep) break;
+                waited += Mathf.Max(Time.unscaledDeltaTime, 0.01f);
+                yield return null;
+            }
+            Debug.Log("FF_DEV_FORCE nap=1 tip=" + (_ruleTip == RuleTip.Sleep ? 1 : 0));
+        }
+
+        // The bulb changes, then the feeder plate is shown directly so OCR does
+        // not have to play until a real collect turns a feeder.
+        void DevForceFeederPlate()
+        {
+            if (_board != null && _board.Live != null && _board.Live.Length > 0)
+            {
+                BirdColor? before = _board.Live[0];
+                BirdColor next = before == BirdColor.Violet ? BirdColor.Peach : BirdColor.Violet;
+                for (int c = 0; c < 5; c++)
+                {
+                    var col = (BirdColor)c;
+                    if (before == col || _board.LiveHas(col)) continue;
+                    next = col;
+                    break;
+                }
+                _board.Live[0] = next;
+                SyncAll();
+            }
+            ShowRuleTip(RuleTip.Feeder);
+            Debug.Log("FF_DEV_FORCE feeder=1 tip=" + (_ruleTip == RuleTip.Feeder ? 1 : 0));
+        }
+
+        // Home shell, one dealt-and-drawn hand, Back still owed. The page and
+        // dealt prefs are stamped and this visit is the lesson hand, so the
+        // Back gate holds the result instead of settling it away. The home
+        // poker intro was already stamped with the cascade.
+        void DevOpenPokerTable()
+        {
+            PlayerPrefs.DeleteKey(CoachPokerBackKey);
+            _pokerBackDone = false;
+            _pokerBackKnown = true;
+            PlayerPrefs.SetInt(CoachPokerPageKey, 1);
+            PlayerPrefs.SetInt(CoachPokerDealtKey, 1);
+            PlayerPrefs.Save();
+            _pokerLessonHand = true;
+            _pokerPageOn = false;
+            _pokerPageStep = -1;
+            _pokerDealHint = false;
+            _pokerDealAimOk = false;
+            _pokerIntro = false;
+            _pokerIntroLive = false;
+            _pokerPayOpen = false;
+            _fivesOpen = false;
+            _pokerStamp = false;
+            _pokerMotion = PokerMotion.None;
+            _pokerWinT = -1f;
+            _splash = true;
+            _home = HomeFace.Poker;
+            NotePokerIntroLeft(false);
+            BirdPoker.Boot();
+            BirdPoker.BeginVisit();
+            BirdPoker.SyncBet();
+            bool dealt = BirdPoker.Deal();
+            bool drawn = dealt && BirdPoker.Draw();
+            Debug.Log("FF_DEV_FORCE openPoker=1 dealt=" + (dealt ? 1 : 0)
+                + " drawn=" + (drawn ? 1 : 0)
+                + " coins=" + Purse.Coins
+                + " backOwed=" + (PokerBackDone() ? 0 : 1));
         }
 
         // Home cascade the inspector otherwise has to tap through before a garden
