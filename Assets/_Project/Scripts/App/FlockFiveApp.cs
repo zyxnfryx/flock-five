@@ -3943,12 +3943,17 @@ namespace FlockFive
                 }
                 _garden.Branches[from].FlutterTip();
             }
-            if (kicked == 0 && _board.IsSleeping(to) && _board.Branches[to].IsFullMatch(out _))
+            // The nap caption pauses the garden. CheckOver stays behind it, as it
+            // did when the tip opened here, so the ice does not start under the line.
+            bool napTip = kicked == 0 && _board.IsSleeping(to) && _board.Branches[to].IsFullMatch(out _);
+            if (napTip)
             {
                 Sfx.Sleep();
-                RaiseRuleSleepTip();
+                // Stay in this move until the caption (or the wait gives up), so the
+                // turn gate does not open on the frame the birds first tuck.
+                yield return StartCoroutine(RaiseSleepTipWhenNapping(to, gen));
             }
-            if (kicked == 0)
+            else if (kicked == 0)
                 CheckOver();
         }
 
