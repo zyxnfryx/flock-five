@@ -618,6 +618,8 @@ namespace FlockFive
         // Release player builds do not contain it. Open the page with ?fflevel=3
         // (lightning still owed) or ?fflevel=5 (bee still owed). Other gardens
         // load too, with both of those lessons stamped seen.
+        // ?skipOnboarding=1 (alone, or with ?fflevel=) also stamps the home
+        // cascade seen and, with no fflevel, loads garden 2.
         void MaybeDevLevelSkip()
         {
             if (_devLevelSkipDone) return;
@@ -649,8 +651,11 @@ namespace FlockFive
                 PlayerPrefs.SetInt(CoachFireKey, 1);
                 PlayerPrefs.SetInt(LightningStrike.StruckKey, 1);
             }
+            if (plan.SkipOnboarding) StampDevOnboardingSeen();
             PlayerPrefs.Save();
             AdConsent.DismissTransient();
+            if (plan.SkipOnboarding)
+                Debug.Log("FF_DEV_SKIP_ONBOARDING display=" + (plan.Index + 1));
             Debug.Log("FF_DEV_LEVEL display=" + (plan.Index + 1) + " keepBee=" + (plan.KeepBee ? 1 : 0)
                 + " keepFire=" + (plan.KeepFire ? 1 : 0));
             if (!LevelCurtain.Armed) LevelCurtain.Arm(AdPause.Unscaled);
@@ -662,6 +667,29 @@ namespace FlockFive
                 LevelCurtain.MarkReady();
                 LevelCurtain.Fire(AdPause.Unscaled);
             }
+        }
+
+        // Home cascade the inspector otherwise has to tap through before a garden
+        // with both restart and the hive can show. Keys are the live gates:
+        // ATT ask finished (AdConsent.Consider returns none once ask >= 2),
+        // avatar adopted and named (AdoptResume stays off; Goldie is the Gold
+        // suggestion BeginAdopt writes), Daily and poker intros, and the
+        // collection lesson. CoachHiveKey is also what draws the garden hive.
+        // The in-garden hive callout and the album tutor are the collection
+        // follow-ups, so they are stamped too. The bee-card plate is CoachBeeKey,
+        // already stamped above unless this garden asked to keep it.
+        void StampDevOnboardingSeen()
+        {
+            PlayerPrefs.SetInt(AdConsent.AttAskKey, 2);
+            PlayerPrefs.SetInt(AvatarPref, (int)BirdColor.Gold);
+            PlayerPrefs.SetString(AvatarNamePref, "Goldie");
+            PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
+            PlayerPrefs.SetInt(AvatarNamedPref, 1);
+            PlayerPrefs.SetInt(CoachDailyKey, 1);
+            PlayerPrefs.SetInt(CoachPokerKey, 1);
+            PlayerPrefs.SetInt(CoachHiveKey, 1);
+            PlayerPrefs.SetInt(CoachHiveGardenKey, 1);
+            PlayerPrefs.SetInt(CoachHiveAlbumKey, 1);
         }
 #endif
 
