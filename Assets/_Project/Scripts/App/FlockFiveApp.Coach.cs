@@ -1960,6 +1960,34 @@ namespace FlockFive
         // old middle-right run. The hand hangs below the fingertip, in the left column.
         public const float PokerBackGloveHopHands = 0.50f;
 
+        // Phone windows only. The drawn index tip sits this far southeast of the pivot,
+        // and the phone medal is small enough that a center aim leaves the fingertip
+        // outside the hit (402: (68,60) vs Back (49,41); 412: (67,62) vs (50,43)).
+        // The iPad pillar medal already contains the unshifted tip.
+        public const float PokerBackPhoneTipNudgeX = -18f;
+        public const float PokerBackPhoneTipNudgeY = -19f;
+
+        // Settled fingertip target. Phones shift the pivot up-left so the drawn tip
+        // lands inside the medal. Wider windows (the 820 pillar) keep the center.
+        public static Vector2 PokerBackSettleAim(Vector2 medalCenter, Rect medal, float windowW, float windowH)
+        {
+            var aim = medalCenter;
+            float aspect = windowH > 1f ? windowW / windowH : 1f;
+            if (aspect <= DeviceFit.PhoneAspect + 0.04f)
+                aim += new Vector2(PokerBackPhoneTipNudgeX, PokerBackPhoneTipNudgeY);
+            if (medal.width > 2f && medal.height > 2f)
+            {
+                float inset = Mathf.Min(3f, medal.width * 0.15f);
+                float x0 = medal.xMin + inset, x1 = medal.xMax - inset;
+                float y0 = medal.yMin + inset, y1 = medal.yMax - inset;
+                if (x1 < x0) { x0 = x1 = medal.center.x; }
+                if (y1 < y0) { y0 = y1 = medal.center.y; }
+                aim.x = Mathf.Clamp(aim.x, x0, x1);
+                aim.y = Mathf.Clamp(aim.y, y0, y1);
+            }
+            return aim;
+        }
+
         // Where the hop begins: directly under the medal. The settle (after the hop) is
         // the medal itself, so this point is only the approach.
         public static Vector2 PokerBackGloveStart(Vector2 aim, float s, Rect safe, float screenW, float screenH)
@@ -4197,7 +4225,9 @@ namespace FlockFive
         Rect PokerBackBand(Rect band, float h, Rect safe, float s)
         {
             var back = _pokerCapGeo.Back;
-            var aim = back.width > 2f ? back.center : new Vector2(48f, 48f);
+            float winW = Screen.width > 2 ? Screen.width : PhoneArea.W;
+            float winH = Screen.height > 2 ? Screen.height : PhoneArea.H;
+            var aim = back.width > 2f ? PokerBackSettleAim(back.center, back, winW, winH) : new Vector2(48f, 48f);
             float width = PhoneArea.W > 2f ? PhoneArea.W : band.width;
             return PokerBackTipBand(width, h, safe, s, band.height, back, aim);
         }
