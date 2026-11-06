@@ -1006,8 +1006,8 @@ namespace FlockFive.Editor
                 + " line=" + bee.LineH.ToString("0.0"));
 
             // b131: Restart sits in the top-right gutter of the top bar; Hive keeps the bottom-right corner.
-            // Restart's right edge is the hive's (InsetRef inside safe.xMax), top pad stays 6*scale,
-            // above the playfield, clear of the hive and of every feeder bulb (2 and 3 feeders).
+            // The hive plate is InsetRef inside safe.xMax. Restart's right edge is the halo past that
+            // plate. Top pad stays 6*scale, above the playfield, clear of the hive and of every feeder bulb.
             var safe = new Rect(0f, 102f, W, H - 102f - 177f);
             FlockFiveApp.GardenCorners(W, H, safe, out var restart, out var hive);
             float pt = H / 852f;
@@ -1018,10 +1018,12 @@ namespace FlockFive.Editor
                 float safeTop = H - sf.yMax;
                 float limit = Mathf.Min(hudTop, CornerAnchor.PlayfieldTopGui(W, H)) - pad;
                 float edge = CornerAnchor.RightEdge(W, sf, sc);
+                float art = CornerAnchor.HiveArtRight(hv);
                 float feeder = CornerAnchor.FeederRightGui(W, H);
-                float clear = Mathf.Max(0f, edge - feeder);
+                float clear = Mathf.Max(0f, art - feeder);
                 float right = sf.xMax - rs.xMax, topIn = rs.yMin - safeTop;
                 float hiveRight = sf.xMax - hv.xMax;
+                float halo = hv.width * CornerAnchor.HiveGlowPadFrac;
                 bool feedersClear = true;
                 float fy = WorldBuilder.FeederYFor(CornerAnchor.TallFor(W, H), safeTop / H);
                 for (int fn = 2; fn <= 3; fn++)
@@ -1033,9 +1035,10 @@ namespace FlockFive.Editor
                         if (Rect.MinMaxRect(fa.x, fa.y, fb.x, fb.y).Overlaps(rs)) feedersClear = false;
                     }
                 float floor = Mathf.Min(CornerAnchor.MinTapPx(0f), clear);
-                ok = Mathf.Abs(rs.xMax - edge) <= 0.51f && Mathf.Abs(hv.xMax - edge) <= 0.51f
-                    && Mathf.Abs(right - hiveRight) <= 0.51f
-                    && Mathf.Abs(right - CornerAnchor.InsetRef * sc) <= 0.51f
+                ok = Mathf.Abs(hv.xMax - edge) <= 0.51f
+                    && Mathf.Abs(rs.xMax - art) <= 0.51f
+                    && Mathf.Abs(right - (hiveRight - halo)) <= 0.51f
+                    && Mathf.Abs(right - (CornerAnchor.InsetRef * sc - halo)) <= 0.51f
                     && Mathf.Abs(topIn - pad) <= pt
                     && Mathf.Abs(rs.height - rs.width) <= 0.01f
                     && rs.xMin + 0.51f >= feeder && rs.yMax <= limit + pad + 0.01f
