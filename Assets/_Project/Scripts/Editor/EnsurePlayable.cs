@@ -122,6 +122,7 @@ namespace FlockFive.Editor
             Suite("build129-badger-gap", Build129BadgerGapTests.Run);
             Suite("build130-badger-stack", Build130BadgerStackTests.Run);
             Suite("build131-reset", Build131ResetTests.Run);
+            Suite("restart-hive-inset", RestartHiveInsetTests.Run);
             Suite("usa-plane-day", UsaPlaneDayTests.Run);
             Suite("build119-fives", Build119FivesBoardTests.Run);
             Suite("build119-playtest", Build119PlaytestTests.Run);

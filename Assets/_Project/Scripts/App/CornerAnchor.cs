@@ -2,10 +2,10 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // One seat for the garden's two bottom corners. Restart is the left button,
-    // hive is the right. Both rects are at rest. Draw them inside the HUD shake
-    // matrix as-is. A world pin or a hit test applies Shake once, with the same
-    // offset the matrix uses, so the hive moves with the restart.
+    // Garden HUD seats. The hive stays bottom-right. Restart sits in the top bar
+    // and shares the hive's right edge. Both rects are at rest. Draw them inside
+    // the HUD shake matrix as-is. A world pin or a hit test applies Shake once,
+    // with the same offset the matrix uses, so the hive moves with the restart.
     public static class CornerAnchor
     {
         public const float SizeRef = 72f;
@@ -56,8 +56,19 @@ namespace FlockFive
         public const float FeederRightWorld = FeederRow.Triple + FeederRow.BulbHalf + 0.12f;
         public static float FeederRightGui(float w, float h) => WorldToGui(w, h, FeederRightWorld, 0f).x;
 
+        // Right edge shared by the hive and the top-bar restart: InsetRef inside
+        // safe.xMax, clamped to the screen. Does not depend on the hive being drawn.
+        public static float RightEdge(float screenW, Rect safe, float scale)
+        {
+            float edge = safe.xMax - InsetRef * scale;
+            if (edge > screenW) edge = screenW;
+            if (edge < 0f) edge = 0f;
+            return edge;
+        }
+
         // Top-right gutter of the top bar: right of every feeder bulb, above every branch / bird /
-        // perch reach, inside the safe area.
+        // perch reach, inside the safe area. The right edge is RightEdge, the same air the hive
+        // keeps, so Restart lines up with the hive and does not jump when the hive appears.
         public static Rect TopBarRestart(float w, float h, Rect safe, float scale, float top)
         {
             if (safe.width < 2f || safe.height < 2f) safe = new Rect(0f, 0f, w, h);
@@ -65,10 +76,22 @@ namespace FlockFive
             float pad = 6f * scale;
             float limit = Mathf.Min(top, PlayfieldTopGui(w, h)) - pad;
             float y = safeTop + pad;
-            float left = FeederRightGui(w, h) + pad;
-            float right = Mathf.Min(safe.xMax, w) - pad;
-            float size = Mathf.Min(SizeRef * scale, Mathf.Min(limit - y, right - left));
-            size = Mathf.Max(size, MinTapPx(Screen.dpi));
+            float right = RightEdge(w, safe, scale);
+            float feeder = FeederRightGui(w, h);
+            float vert = limit - y;
+            if (vert < 0f) vert = 0f;
+            float size = Mathf.Min(SizeRef * scale, vert);
+            float gutter = right - (feeder + pad);
+            if (size > gutter) size = gutter;
+            // At least 44px, and the dpi tap target when the feeder air can hold it.
+            // Growth stops at FeederRightGui (already 0.12 world clear of the widest
+            // bulb) and never slides the right edge back out toward the glass.
+            float clear = right - feeder;
+            if (clear < 0f) clear = 0f;
+            float tap = Mathf.Max(MinTapPx(0f), MinTapPx(Screen.dpi));
+            if (size < tap) size = tap < clear ? tap : clear;
+            if (size > vert) size = vert;
+            if (size < 0f) size = 0f;
             return new Rect(right - size, y, size, size);
         }
 
@@ -92,9 +115,8 @@ namespace FlockFive
             if (y < 0f) y = 0f;
             bot = screenH - y;
             float left = safe.xMin + inset;
-            float right = safe.xMax - inset - size;
+            float right = RightEdge(screenW, safe, scale) - size;
             if (left < 0f) left = 0f;
-            if (right + size > screenW) right = screenW - size;
             if (right < 0f) right = 0f;
             // b105 (Brandon): the corner buttons must never sit on the bottom ad (gift) branch or its
             // arrow sign. This is the base layout for every window, not a tablet path: phones and the
@@ -120,8 +142,7 @@ namespace FlockFive
                     y = Mathf.Max(0f, adTop - 6f * scale - size);
                 }
                 bot = screenH - y;
-                right = safe.xMax - inset - size;
-                if (right + size > screenW) right = screenW - size;
+                right = RightEdge(screenW, safe, scale) - size;
                 if (right < 0f) right = 0f;
             }
             restart = new Rect(left, y, size, size);
