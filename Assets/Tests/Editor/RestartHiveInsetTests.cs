@@ -177,6 +177,7 @@ namespace FlockFive.Editor
                 "Assets/_Project/Scripts/App/FlockFiveApp.cs"));
             Check("glow pull is the drawn outset",
                 app.IndexOf("CornerAnchor.HiveGlowOutset", System.StringComparison.Ordinal) >= 0
+                && app.IndexOf("CornerAnchor.HivePaintRect", System.StringComparison.Ordinal) >= 0
                 && app.IndexOf("hive.width * 0.18f", System.StringComparison.Ordinal) < 0
                 && app.IndexOf("hive.width * CornerAnchor.HiveGlowPadFrac", System.StringComparison.Ordinal) < 0,
                 "DrawHiveGlow");

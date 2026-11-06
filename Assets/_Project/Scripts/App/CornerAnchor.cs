@@ -3,9 +3,10 @@ using UnityEngine;
 namespace FlockFive
 {
     // Garden HUD seats. The hive plate stays bottom-right. Restart sits in the top
-    // bar on the full halo quad (HiveArtRight). DrawHiveGlow then pulls that quad
-    // in by HiveGlowGlyphPull so the counted glyphs share an x. Both rects are at
-    // rest (the welcome pulse is not part of the seat). Draw them inside the HUD
+    // bar on the full halo quad (HiveArtRight). The garden hive is painted in
+    // HivePaintRect, shifted left by the 12px Inspector still counted past the
+    // restart glyph. Both rects are at rest (the welcome pulse is not part of
+    // the seat). Draw them inside the HUD
     // shake matrix as-is. A world pin or a hit test applies Shake once, with the
     // same offset the matrix uses, so the hive moves with the restart.
     public static class CornerAnchor
@@ -72,12 +73,27 @@ namespace FlockFive
         // before HiveGlowGlyphPull. The restart rect sits on that full quad.
         public const float HiveGlowPadFrac = 0.18f;
 
-        // ff752147: Inspector's counted glyphs were still 12px apart on 820, 402,
-        // and 412 (hive past restart). The miss does not scale with the button.
-        // DrawHiveGlow subtracts these pixels so the counted hive edge meets the
-        // counted restart edge. The restart rect stays on the full quad; its
-        // counted rim is this far inside that rect.
+        // ff752147 and aa2441cd: Inspector's counted glyphs stayed 12px apart on
+        // 820, 402, and 412 (hive past restart). Subtracting that from the glow
+        // quad did not move the straw/halo mask. HivePaintRect shifts every
+        // painted hive layer left by this many pixels so the mask moves with it.
+        // The restart rect stays on the full quad; its counted rim is this far
+        // inside that rect.
         public const float HiveGlowGlyphPull = 12f;
+
+        // Same gap, applied to the draw. Constant across those viewports.
+        public const float HivePaintShiftPx = 12f;
+
+        // Painted hive, left of the hit plate by HivePaintShiftPx. Hit tests keep
+        // the unshifted rect. The right edge of every layer drawn in this rect
+        // (straw, shadow, glow, sparkles) moves with it.
+        public static Rect HivePaintRect(Rect hive)
+        {
+            if (hive.width < 2f) return hive;
+            float pull = HivePaintShiftPx;
+            if (pull > hive.width * 0.45f) pull = hive.width * 0.45f;
+            return new Rect(hive.x - pull, hive.y, hive.width, hive.height);
+        }
 
         // Outset of the glow quad actually drawn, past the plate, on one side.
         public static float HiveGlowOutset(float width)
@@ -96,11 +112,12 @@ namespace FlockFive
             return hive.xMax + hive.width * HiveGlowPadFrac;
         }
 
-        // Counted hive glyph: the right edge of the glow quad DrawHiveGlow paints.
+        // Counted hive glyph. The mask tracked the full pad past the plate and
+        // ignored HiveGlowOutset; it does follow HivePaintRect.
         public static float HiveGlyphRight(Rect hive)
         {
             if (hive.width < 2f) return hive.xMax;
-            return hive.xMax + HiveGlowOutset(hive.width);
+            return HivePaintRect(hive).xMax + hive.width * HiveGlowPadFrac;
         }
 
         // Counted restart glyph: the bright rim, HiveGlowGlyphPull inside the rect.
