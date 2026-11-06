@@ -65,14 +65,17 @@ namespace FlockFive.Editor
                     float inset = safe.xMax - rs.xMax;
                     float glass = d.W - rs.xMax;
                     float oldPad = 6f * sc;
+                    var hiveDraw = CornerAnchor.HiveAlignedDraw(hv, rs);
                     float restartGlyph = CornerAnchor.RestartGlyphRight(rs);
-                    float hiveGlyph = CornerAnchor.HiveGlyphRight(hv);
-                    // Plate stays on RightEdge. Restart's rect is the full halo quad.
-                    // When that quad is wider than the glyph pull, the counted edges
-                    // (restart rim inside the rect, hive glow drawn with the pull)
-                    // agree within 2px.
-                    bool glyphs = halo + 0.01f < CornerAnchor.HiveGlowGlyphPull
-                        || Mathf.Abs(restartGlyph - hiveGlyph) <= 2f;
+                    float hiveGlyph = CornerAnchor.HiveGlyphRight(hiveDraw);
+                    var strawHit = CornerAnchor.HiveStrawHit(hiveDraw);
+                    // Straw mask right edges agree within 2px. The clear pad to the
+                    // right of the skep is outside the hit; the painted left stays inside.
+                    bool glyphs = Mathf.Abs(restartGlyph - hiveGlyph) <= 2f
+                        && strawHit.xMax <= hiveGlyph + 0.51f
+                        && strawHit.xMax + 0.51f >= hiveGlyph
+                        && !strawHit.Contains(new Vector2(hiveGlyph + 6f, strawHit.center.y))
+                        && strawHit.Contains(new Vector2(strawHit.xMin + 4f, strawHit.center.y));
                     bool aligned = Mathf.Abs(rs.xMax - art) <= 0.51f
                         && Mathf.Abs(hv.xMax - edge) <= 0.51f
                         && Mathf.Abs(art - (hv.xMax + halo)) <= 0.51f
@@ -146,15 +149,18 @@ namespace FlockFive.Editor
                     CornerAnchor.Garden(col, screenH, full, out _, out _, out _, out var rs, out var hv);
                     float art = CornerAnchor.HiveArtRight(hv);
                     float pad = art - hv.xMax;
+                    var hiveDraw = CornerAnchor.HiveAlignedDraw(hv, rs);
                     float restartGlyph = off + CornerAnchor.RestartGlyphRight(rs);
-                    float hiveGlyph = off + CornerAnchor.HiveGlyphRight(hv);
+                    float hiveGlyph = off + CornerAnchor.HiveGlyphRight(hiveDraw);
                     float glyphDelta = restartGlyph - hiveGlyph;
+                    var strawHit = CornerAnchor.HiveStrawHit(hiveDraw);
                     bool ok = Mathf.Abs(rs.xMax - art) <= 0.51f
                         && pad > 8f
                         && Mathf.Abs(pad - hv.width * CornerAnchor.HiveGlowPadFrac) <= 0.51f
                         && rs.xMax <= col + 0.01f
                         && Mathf.Abs(glyphDelta) <= 2f
-                        && Mathf.Abs(CornerAnchor.HiveGlowGlyphPull - 12f) <= 0.01f;
+                        && strawHit.xMax <= hiveGlyph + 0.51f
+                        && !strawHit.Contains(new Vector2(hiveGlyph + 6f - off, strawHit.center.y));
                     Check("inspector halo " + name, ok,
                         "screenRestart " + (off + rs.xMax).ToString("0.0")
                         + " screenPlate " + (off + hv.xMax).ToString("0.0")
@@ -175,12 +181,12 @@ namespace FlockFive.Editor
             string app = System.IO.File.ReadAllText(System.IO.Path.Combine(
                 System.IO.Path.GetDirectoryName(Application.dataPath),
                 "Assets/_Project/Scripts/App/FlockFiveApp.cs"));
-            Check("glow pull is the drawn outset",
-                app.IndexOf("CornerAnchor.HiveGlowOutset", System.StringComparison.Ordinal) >= 0
-                && app.IndexOf("CornerAnchor.HivePaintRect", System.StringComparison.Ordinal) >= 0
-                && app.IndexOf("hive.width * 0.18f", System.StringComparison.Ordinal) < 0
-                && app.IndexOf("hive.width * CornerAnchor.HiveGlowPadFrac", System.StringComparison.Ordinal) < 0,
-                "DrawHiveGlow");
+            Check("straw draw is what the mask sees",
+                app.IndexOf("CornerAnchor.HiveAlignedDraw", System.StringComparison.Ordinal) >= 0
+                && app.IndexOf("CornerAnchor.HiveStrawHit", System.StringComparison.Ordinal) >= 0
+                && app.IndexOf("CornerAnchor.HiveGlowOutset", System.StringComparison.Ordinal) >= 0
+                && app.IndexOf("hive.width * 0.18f", System.StringComparison.Ordinal) < 0,
+                "DrawHiveButton");
 
             Debug.Log("[restart-inset] " + (fail == 0 ? "ALL OK " + pass : "FAILED " + fail + " passed " + pass));
         }
