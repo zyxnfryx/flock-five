@@ -4,10 +4,11 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // Brandon: the top-right garden Restart hugs the glass. Its right edge must match the
-    // hive (InsetRef inside safe.xMax) on the sizes he judges — iPhone 402 and 412, iPad 820,
-    // Samsung — and on the pixel sizes those devices lay out. The inset is the same when the
-    // hive is not drawn, so Restart does not jump inward the moment the hive appears.
+    // Brandon: the top-right garden Restart must share the hive's right padding. The hit
+    // plate sits InsetRef inside safe.xMax. DrawHiveGlow paints HiveGlowPadFrac past that
+    // plate, and Restart's right edge is that halo (HiveArtRight) — the same seat when the
+    // hive is not drawn, so the button does not jump when the hive appears. Judged sizes:
+    // iPhone 402 and 412, iPad 820, Samsung, and the pixel sizes those devices lay out.
     // Batch: -executeMethod FlockFive.Editor.RestartHiveInsetTests.Run
     public static class RestartHiveInsetTests
     {
@@ -56,29 +57,35 @@ namespace FlockFive.Editor
                     // TopBarRestart is the seat whether or not the hive is drawn. Garden's
                     // restart rect is that call, so the inset cannot jump when the hive appears.
                     CornerAnchor.Garden(d.W, d.H, safe, out float sc, out float top, out _, out var rs, out var hv);
-                    var alone = CornerAnchor.TopBarRestart(d.W, d.H, safe, sc, top);
+                    var alone = CornerAnchor.TopBarRestart(d.W, d.H, safe, sc, top, hv);
 
                     float edge = CornerAnchor.RightEdge(d.W, safe, sc);
+                    float art = CornerAnchor.HiveArtRight(hv);
+                    float halo = hv.width * CornerAnchor.HiveGlowPadFrac;
                     float inset = safe.xMax - rs.xMax;
                     float glass = d.W - rs.xMax;
                     float oldPad = 6f * sc;
-                    bool aligned = Mathf.Abs(rs.xMax - hv.xMax) <= 0.51f
-                        && Mathf.Abs(rs.xMax - edge) <= 0.51f
+                    // Plate stays on RightEdge. Restart's right edge is the halo past that plate.
+                    bool aligned = Mathf.Abs(rs.xMax - art) <= 0.51f
                         && Mathf.Abs(hv.xMax - edge) <= 0.51f
-                        && Mathf.Abs(inset - CornerAnchor.InsetRef * sc) <= 0.51f;
+                        && Mathf.Abs(art - (hv.xMax + halo)) <= 0.51f
+                        && halo > 4f
+                        && Mathf.Abs(inset - (CornerAnchor.InsetRef * sc - halo)) <= 0.51f;
                     bool sameWhenHidden = Mathf.Abs(alone.xMax - rs.xMax) <= 0.51f
                         && Mathf.Abs(alone.x - rs.x) <= 0.51f
                         && Mathf.Abs(alone.width - rs.width) <= 0.51f
                         && Mathf.Abs(alone.y - rs.y) <= 0.51f;
-                    bool notFlush = glass >= 36f && inset > oldPad + 8f;
-                    Check("right edge matches hive " + d.Name, aligned && sameWhenHidden && notFlush,
-                        "restartX " + rs.xMax.ToString("0.0") + " hiveX " + hv.xMax.ToString("0.0")
+                    // Halo trims the old 40-ref inset, and still leaves the glass well clear of the old 6*scale pad.
+                    bool notFlush = glass >= 24f && inset > oldPad + 12f;
+                    Check("right edge matches hive halo " + d.Name, aligned && sameWhenHidden && notFlush,
+                        "restartX " + rs.xMax.ToString("0.0") + " hivePlate " + hv.xMax.ToString("0.0")
+                        + " halo " + art.ToString("0.0") + " pad " + halo.ToString("0.0")
                         + " inset " + inset.ToString("0.0") + " glass " + glass.ToString("0.0")
                         + " oldPad " + oldPad.ToString("0.0") + " hiddenX " + alone.xMax.ToString("0.0"));
 
                     float field = CornerAnchor.PlayfieldTopGui(d.W, d.H);
                     float feeder = CornerAnchor.FeederRightGui(d.W, d.H);
-                    float clear = Mathf.Max(0f, edge - feeder);
+                    float clear = Mathf.Max(0f, art - feeder);
                     bool above = rs.yMax <= field + 0.01f && rs.yMax <= top + 0.01f && rs.yMin + 0.01f >= d.H - safe.yMax;
                     bool square = Mathf.Abs(rs.width - rs.height) <= 0.01f && rs.width > 8f;
                     bool inGutter = rs.xMin + 0.51f >= feeder && rs.xMax <= safe.xMax + 0.01f;
@@ -108,6 +115,54 @@ namespace FlockFive.Editor
             {
                 DeviceFit.TestWindow = prev;
             }
+
+            try
+            {
+                // Inspector viewports (point size). iPad is wider than 9:16, so the game lays
+                // the HUD out in the centered phone column and the screenshot x adds OffX.
+                // Restart's screenshot xMax is the halo, not the plate (a98a07d6 measured the
+                // plate: 676/360/368 against a halo near 695/372/380).
+                void Inspector(string name, float screenW, float screenH)
+                {
+                    float col = screenW;
+                    float off = 0f;
+                    if (screenW / screenH > DeviceFit.PhoneAspect + 0.03f)
+                    {
+                        col = Mathf.Min(screenW, Mathf.Round(screenH * DeviceFit.PhoneAspect));
+                        off = Mathf.Floor((screenW - col) * 0.5f);
+                    }
+                    DeviceFit.TestWindow = col / screenH;
+                    var full = new Rect(0f, 0f, col, screenH);
+                    CornerAnchor.Garden(col, screenH, full, out _, out _, out _, out var rs, out var hv);
+                    float art = CornerAnchor.HiveArtRight(hv);
+                    float pad = art - hv.xMax;
+                    bool ok = Mathf.Abs(rs.xMax - art) <= 0.51f
+                        && pad > 8f
+                        && Mathf.Abs(pad - hv.width * CornerAnchor.HiveGlowPadFrac) <= 0.51f
+                        && rs.xMax <= col + 0.01f
+                        && rs.xMax <= full.xMax - 16f;
+                    Check("inspector halo " + name, ok,
+                        "screenRestart " + (off + rs.xMax).ToString("0.0")
+                        + " screenPlate " + (off + hv.xMax).ToString("0.0")
+                        + " pad " + pad.ToString("0.0")
+                        + " col " + col.ToString("0") + " off " + off.ToString("0"));
+                }
+                Inspector("ipad 820", 820f, 1180f);
+                Inspector("iphone 402", 402f, 874f);
+                Inspector("iphone 412", 412f, 915f);
+            }
+            finally
+            {
+                DeviceFit.TestWindow = prev;
+            }
+
+            string app = System.IO.File.ReadAllText(System.IO.Path.Combine(
+                System.IO.Path.GetDirectoryName(Application.dataPath),
+                "Assets/_Project/Scripts/App/FlockFiveApp.cs"));
+            Check("glow pad is the shared fraction",
+                app.IndexOf("CornerAnchor.HiveGlowPadFrac", System.StringComparison.Ordinal) >= 0
+                && app.IndexOf("hive.width * 0.18f", System.StringComparison.Ordinal) < 0,
+                "DrawHiveGlow");
 
             Debug.Log("[restart-inset] " + (fail == 0 ? "ALL OK " + pass : "FAILED " + fail + " passed " + pass));
         }
