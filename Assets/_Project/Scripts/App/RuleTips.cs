@@ -19,8 +19,8 @@ namespace FlockFive
         // Each row is one phrase. The banner keeps these breaks and shrinks;
         // it must not reflow them into "bows with" / "bows!" (iPad 820).
         public const string KitLine = "Crowns go with crowns,\nbows with bows!\nA set is five matching birds.";
-        public const string FeederLine = "Nice! That feeder now wants\na new colour. Check the top.";
-        public const string SleepLine = "These birds are napping.\nThey wake when a feeder\nwants their colour.";
+        public const string FeederLine = "Nice! That feeder now wants\na new color. Check the top.";
+        public const string SleepLine = "These birds are napping.\nThey wake when a feeder\nwants their color.";
 
         // Longest a frozen tip may hold the garden before it clears itself.
         public const float HoldMax = 30f;
