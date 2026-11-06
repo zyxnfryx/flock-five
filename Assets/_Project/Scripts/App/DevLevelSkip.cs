@@ -152,6 +152,15 @@ namespace FlockFive
             return owed + extra;
         }
 
+        // forceNap draws Zzz under the level rainbow. The plate waits until that
+        // pose has been drawn and the stage is open, for one presented frame.
+        // openFrames counts those open frames. A held stage or a flock that has
+        // not drawn Zzz is not ready.
+        public static bool NapPlateReady(bool napBegun, bool stageHeld, int openFrames)
+        {
+            return napBegun && !stageHeld && openFrames >= 1;
+        }
+
         // How many coins to add so the purse reaches OnboardingCoins.
         // Already at or above that stake adds nothing.
         public static int CoinsToSeed(int have)

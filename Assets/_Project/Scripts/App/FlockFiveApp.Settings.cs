@@ -632,8 +632,8 @@ namespace FlockFive
         // and the kit line. Leaf, the first-garden coach, and the pest lessons
         // stay stamped: a live leaf or coach blocks the feeder plate.
         // ?forceFeeder=1 turns one feeder and raises that plate.
-        // ?forceNap=1 stacks a flock no feeder wants, then the live sleep
-        // raise waits until a bird has drawn Zzz.
+        // ?forceNap=1 stacks a flock no feeder wants and seats them asleep.
+        // The plate stays down until Zzz has been drawn on an open stage.
         // ?openPoker=1 stays on the home shell, deals one hand, and draws it
         // so the Back tip is the plate on screen. The Back pref stays owed.
         // ?forceClear=1 is a WebGL Development inspect hook only, not a
@@ -741,8 +741,9 @@ namespace FlockFive
                 LevelCurtain.MarkReady();
                 LevelCurtain.Fire(AdPause.Unscaled);
             }
-            if (plan.ForceNap && DevForceSleepingFlock(plan.ForceFeeder))
-                StartCoroutine(DevRaiseForcedNap());
+            int napBranch = plan.ForceNap ? DevForceSleepingFlock(plan.ForceFeeder) : -1;
+            if (napBranch >= 0)
+                StartCoroutine(DevRaiseForcedNap(napBranch));
             if (plan.ForceFeeder) DevForceFeederPlate();
             if (plan.ForceClear)
             {
@@ -752,11 +753,11 @@ namespace FlockFive
         }
 
         // One limb becomes five of a color no feeder wants, then Sync seats them
-        // asleep. Zzz is drawn in LateUpdate. The sleep plate is raised by
-        // RaiseRuleSleepTip, which on the nap-gate build waits for that Zzz.
-        bool DevForceSleepingFlock(bool feederPlateToo)
+        // asleep. Returns that limb, or -1 when the board cannot nap.
+        // Zzz is drawn in LateUpdate. The plate waits for that draw.
+        int DevForceSleepingFlock(bool feederPlateToo)
         {
-            if (_board == null) return false;
+            if (_board == null) return -1;
             BirdColor nap = BirdColor.Ruby;
             bool free = false;
             for (int c = 0; c < 5; c++)
@@ -784,7 +785,7 @@ namespace FlockFive
                 branch = i;
                 break;
             }
-            if (branch < 0) return false;
+            if (branch < 0) return -1;
             var limb = _board.Branches[branch];
             limb.Birds.Clear();
             limb.Shrouded.Clear();
@@ -797,22 +798,30 @@ namespace FlockFive
             }
             SyncAll();
             Sfx.Sleep();
-            return _board.IsSleeping(branch);
+            return _board.IsSleeping(branch) ? branch : -1;
         }
 
-        // Retries the live raise until the plate is up. The first call lands on
-        // a build that shows the nap as soon as the flock is asleep. A build
-        // that waits for Zzz no-ops until LateUpdate notes the pose.
-        IEnumerator DevRaiseForcedNap()
+        // Seats are asleep. Hold the plate until LateUpdate has drawn Zzz and
+        // that pose has been presented with the stage open (the level rainbow
+        // covers the first frames). Then the live raise, which still requires
+        // NapBegun. This does not call ShowRuleTip for sleep.
+        IEnumerator DevRaiseForcedNap(int branch)
         {
+            _devNapHold = true;
             float waited = 0f;
-            while (_ruleTip != RuleTip.Sleep && waited < 3f)
+            int openFrames = 0;
+            while (waited < 5f)
             {
-                RaiseRuleSleepTip();
-                if (_ruleTip == RuleTip.Sleep) break;
+                bool begun = BranchNapBegun(branch);
+                bool stageHeld = PressRainbow.StageHeld();
+                if (DevLevelSkip.NapPlateReady(begun, stageHeld, openFrames)) break;
+                if (begun && !stageHeld) openFrames++;
+                else openFrames = 0;
                 waited += Mathf.Max(Time.unscaledDeltaTime, 0.01f);
                 yield return null;
             }
+            _devNapHold = false;
+            if (BranchNapBegun(branch)) RaiseRuleSleepTip();
             Debug.Log("FF_DEV_FORCE nap=1 tip=" + (_ruleTip == RuleTip.Sleep ? 1 : 0));
         }
 
