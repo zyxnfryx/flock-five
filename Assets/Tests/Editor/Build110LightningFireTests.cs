@@ -308,13 +308,34 @@ namespace FlockFive.Editor
                 && DevLevelSkip.DisplayFromUrl("http://h/?fflevel=") == 0
                 && DevLevelSkip.DisplayFromUrl("http://h/?fflevel=0") == 0, "junk");
             var l3 = DevLevelSkip.Plan("http://h/?fflevel=3", 50);
-            Check("plan-l3-keeps-fire", l3.Index == 2 && l3.KeepFire && !l3.KeepBee, "index " + l3.Index);
+            Check("plan-l3-keeps-fire", l3.Index == 2 && l3.KeepFire && !l3.KeepBee && !l3.SkipOnboarding, "index " + l3.Index);
             var l5 = DevLevelSkip.Plan("http://h/?fflevel=5", 50);
-            Check("plan-l5-keeps-bee", l5.Index == 4 && l5.KeepBee && !l5.KeepFire, "index " + l5.Index);
+            Check("plan-l5-keeps-bee", l5.Index == 4 && l5.KeepBee && !l5.KeepFire && !l5.SkipOnboarding, "index " + l5.Index);
             var other = DevLevelSkip.Plan("http://h/?fflevel=4", 50);
-            Check("plan-other-stamps-both", other.Index == 3 && !other.KeepBee && !other.KeepFire, "index " + other.Index);
+            Check("plan-other-stamps-both", other.Index == 3 && !other.KeepBee && !other.KeepFire && !other.SkipOnboarding, "index " + other.Index);
             var bad = DevLevelSkip.Plan("http://h/?fflevel=99", 50);
             Check("plan-out-of-range", bad.Index < 0 && DevLevelSkip.Plan("http://h/?fflevel=5", 0).Index < 0, "index " + bad.Index);
+            Check("onboard-absent", !DevLevelSkip.OnboardingFromUrl("http://h/index.html")
+                && !DevLevelSkip.OnboardingFromUrl(null) && !DevLevelSkip.OnboardingFromUrl(""), "none");
+            Check("onboard-1", DevLevelSkip.OnboardingFromUrl("http://h/portrait?w=820&h=1180&skipOnboarding=1"), "1");
+            Check("onboard-among", DevLevelSkip.OnboardingFromUrl("http://h/?fflevel=5&skipOnboarding=1#x")
+                && DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=1&fflevel=3"), "both");
+            Check("onboard-junk", !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=0")
+                && !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=")
+                && !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=true")
+                && !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=2"), "junk");
+            var garden2 = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1", 50);
+            Check("plan-onboard-garden-2", garden2.Index == 1 && garden2.SkipOnboarding && !garden2.KeepBee && !garden2.KeepFire,
+                "index " + garden2.Index);
+            var with5 = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=5", 50);
+            Check("plan-onboard-keeps-fflevel", with5.Index == 4 && with5.SkipOnboarding && with5.KeepBee && !with5.KeepFire,
+                "index " + with5.Index);
+            var with3 = DevLevelSkip.Plan("http://h/?fflevel=3&skipOnboarding=1", 50);
+            Check("plan-onboard-keeps-fire", with3.Index == 2 && with3.SkipOnboarding && with3.KeepFire && !with3.KeepBee,
+                "index " + with3.Index);
+            var skipBad = DevLevelSkip.Plan("http://h/?fflevel=99&skipOnboarding=1", 50);
+            Check("plan-onboard-bad-fflevel", skipBad.Index < 0
+                && DevLevelSkip.Plan("http://h/?skipOnboarding=1", 1).Index < 0, "index " + skipBad.Index);
             string settings = Read("Assets/_Project/Scripts/App/FlockFiveApp.Settings.cs");
             string app = Read("Assets/_Project/Scripts/App/FlockFiveApp.cs");
             int gate = settings.IndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD");
@@ -322,11 +343,28 @@ namespace FlockFive.Editor
             int end = hook >= 0 ? settings.IndexOf("#endif", hook) : -1;
             int call = app.IndexOf("MaybeDevLevelSkip();");
             int appGate = app.IndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD");
+            string gated = gate >= 0 && end > gate ? settings.Substring(gate, end - gate) : "";
             Check("skip-is-webgl-dev-only",
                 gate >= 0 && hook > gate && end > hook
                 && settings.IndexOf("?fflevel=3") >= 0 && settings.IndexOf("?fflevel=5") >= 0
                 && appGate >= 0 && call > appGate && app.IndexOf("#endif", call) > call,
                 "gate");
+            Check("onboard-stamps-live-keys",
+                gated.IndexOf("FF_DEV_SKIP_ONBOARDING") >= 0
+                && gated.IndexOf("StampDevOnboardingSeen") >= 0
+                && gated.IndexOf("AdConsent.AttAskKey") >= 0
+                && gated.IndexOf("AvatarAdoptedPref") >= 0
+                && gated.IndexOf("AvatarNamedPref") >= 0
+                && gated.IndexOf("AvatarNamePref") >= 0
+                && gated.IndexOf("CoachDailyKey") >= 0
+                && gated.IndexOf("CoachPokerKey") >= 0
+                && gated.IndexOf("CoachHiveKey") >= 0
+                && gated.IndexOf("CoachHiveGardenKey") >= 0
+                && gated.IndexOf("CoachHiveAlbumKey") >= 0
+                && settings.IndexOf("FF_DEV_SKIP_ONBOARDING") == gated.IndexOf("FF_DEV_SKIP_ONBOARDING") + gate
+                && settings.IndexOf("FF_DEV_SKIP_ONBOARDING", end) < 0
+                && settings.IndexOf("StampDevOnboardingSeen", end) < 0,
+                "stamps");
         }
     }
 }
