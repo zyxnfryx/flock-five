@@ -966,8 +966,8 @@ namespace FlockFive.Editor
                 + " line=" + bee.LineH.ToString("0.0"));
 
             // b131: Restart sits in the top-right gutter of the top bar; Hive keeps the bottom-right corner.
-            // Strict: exact pad inset from the safe top-right, exact size, above the playfield and the HUD
-            // band, clear of the hive and of every feeder bulb (2 and 3 feeders), hive at its old inset.
+            // Restart's right edge is the hive's (InsetRef inside safe.xMax), top pad stays 6*scale,
+            // above the playfield, clear of the hive and of every feeder bulb (2 and 3 feeders).
             var safe = new Rect(0f, 102f, W, H - 102f - 177f);
             FlockFiveApp.GardenCorners(W, H, safe, out var restart, out var hive);
             float pt = H / 852f;
@@ -977,8 +977,9 @@ namespace FlockFive.Editor
                 float pad = 6f * sc;
                 float safeTop = H - sf.yMax;
                 float limit = Mathf.Min(hudTop, CornerAnchor.PlayfieldTopGui(W, H)) - pad;
-                float gutterL = CornerAnchor.FeederRightGui(W, H) + pad;
-                float wantSize = Mathf.Max(Mathf.Min(CornerAnchor.SizeRef * sc, Mathf.Min(limit - (safeTop + pad), sf.xMax - pad - gutterL)), CornerAnchor.MinTapPx(Screen.dpi));
+                float edge = CornerAnchor.RightEdge(W, sf, sc);
+                float feeder = CornerAnchor.FeederRightGui(W, H);
+                float clear = Mathf.Max(0f, edge - feeder);
                 float right = sf.xMax - rs.xMax, topIn = rs.yMin - safeTop;
                 float hiveRight = sf.xMax - hv.xMax;
                 bool feedersClear = true;
@@ -991,13 +992,18 @@ namespace FlockFive.Editor
                         var fb = CornerAnchor.WorldToGui(W, H, fx + FeederRow.BulbHalf, fy - 1.47f);
                         if (Rect.MinMaxRect(fa.x, fa.y, fb.x, fb.y).Overlaps(rs)) feedersClear = false;
                     }
-                ok = Mathf.Abs(right - pad) <= pt && Mathf.Abs(topIn - pad) <= pt
-                    && Mathf.Abs(rs.width - wantSize) <= 0.5f && Mathf.Abs(rs.height - rs.width) <= 0.01f
-                    && rs.xMin >= gutterL - 0.5f && rs.yMax <= limit + pad + 0.01f && rs.width >= CornerAnchor.MinTapPx(0f)
+                float floor = Mathf.Min(CornerAnchor.MinTapPx(0f), clear);
+                ok = Mathf.Abs(rs.xMax - edge) <= 0.51f && Mathf.Abs(hv.xMax - edge) <= 0.51f
+                    && Mathf.Abs(right - hiveRight) <= 0.51f
+                    && Mathf.Abs(right - CornerAnchor.InsetRef * sc) <= 0.51f
+                    && Mathf.Abs(topIn - pad) <= pt
+                    && Mathf.Abs(rs.height - rs.width) <= 0.01f
+                    && rs.xMin + 0.51f >= feeder && rs.yMax <= limit + pad + 0.01f
+                    && rs.width + 0.51f >= floor && rs.width <= clear + 0.51f
                     && !rs.Overlaps(hv) && feedersClear
                     && Mathf.Abs(hiveRight - CornerAnchor.InsetRef * sc) <= pt && hv.width > 8f;
-                return "right=" + right.ToString("0.0") + " top=" + topIn.ToString("0.0") + " pad=" + pad.ToString("0.0")
-                    + " size=" + rs.width.ToString("0.0") + "/" + wantSize.ToString("0.0") + " yMax=" + rs.yMax.ToString("0.0") + "/" + (limit + pad).ToString("0.0")
+                return "right=" + right.ToString("0.0") + " top=" + topIn.ToString("0.0") + " inset=" + (CornerAnchor.InsetRef * sc).ToString("0.0")
+                    + " size=" + rs.width.ToString("0.0") + " clear=" + clear.ToString("0.0") + " yMax=" + rs.yMax.ToString("0.0") + "/" + (limit + pad).ToString("0.0")
                     + " hiveRight=" + hiveRight.ToString("0.0") + " feeders=" + feedersClear;
             }
             string d1 = TopRight(safe, restart, hive, out bool ok1);
