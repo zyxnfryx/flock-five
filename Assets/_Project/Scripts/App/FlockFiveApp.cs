@@ -6445,8 +6445,8 @@ namespace FlockFive
             if (_splash || _garden.Hive == null) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
-            HudShaken(out _, out var hive);
-            _garden.Hive.TrackHud(cam, hive);
+            HudShaken(out var restart, out var hive);
+            _garden.Hive.TrackHud(cam, CornerAnchor.HiveAlignedDraw(hive, restart));
         }
 
         // The wood skep is the OnGUI button. This glow sits under it, so it follows the same gate.
@@ -6558,7 +6558,8 @@ namespace FlockFive
         bool HitHud(Vector2 screen)
         {
             if (LessonTapBlocked()) return false;
-            HudShaken(out var restart, out var hive);
+            HudShaken(out var restart, out var hivePlate);
+            var hive = CornerAnchor.HiveStrawHit(CornerAnchor.HiveAlignedDraw(hivePlate, restart));
             HudLayout(out _, out float top, out _, out _, out _);
             float gy = PhoneArea.H - screen.y;
             var gui = new Vector2(screen.x, gy);
@@ -6772,7 +6773,7 @@ namespace FlockFive
             else
                 GUI.Box(restart, "↩");
             if (HiveReachable())
-                DrawHiveButton(hive, s, orbit: true, pop: true);
+                DrawHiveButton(CornerAnchor.HiveAlignedDraw(hive, restart), s, orbit: true, pop: true);
             else
             {
                 if (_levelHive) CloseLevelHive();
@@ -7100,6 +7101,14 @@ namespace FlockFive
             hive = HivePopRect(hive, pop);
             if (held)
                 hive.y += hive.height * 0.04f;
+            // Clip to the straw texels. Glow, shadow, and sparkles cannot paint
+            // into the clear pad, which is what the straw/orange mask was counting.
+            var clip = CornerAnchor.HiveStrawHit(hive);
+            GUI.BeginGroup(clip);
+            hive.x -= clip.x;
+            hive.y -= clip.y;
+            try
+            {
             float pulse = quiet || (pop && _hivePopping) ? 0f : HiveView.GuiPulse;
             bool freshCue = _home == HomeFace.Splash && _hiveFreshSlots.Count > 0 && !quiet && !(pop && _hivePopping);
             if (freshCue)
@@ -7118,7 +7127,8 @@ namespace FlockFive
             if (spr != null && spr.texture != null)
             {
                 GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.32f);
-                GUI.DrawTexture(new Rect(draw.x + 3f, draw.y + 6f, draw.width, draw.height), spr.texture, ScaleMode.ScaleToFit, true);
+                // No +x shadow: that straw column sat past the skep and widened the mask and the hit.
+                GUI.DrawTexture(new Rect(draw.x, draw.y + 6f, draw.width, draw.height), spr.texture, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
                 GUI.DrawTexture(draw, spr.texture, ScaleMode.ScaleToFit, true);
             }
@@ -7127,6 +7137,11 @@ namespace FlockFive
             DrawHiveSparkles(draw);
             if (!HiveOpenedSeen()) DrawHiveNewDot(draw);
             if (orbit) DrawHiveHalo(draw, s, false);
+            }
+            finally
+            {
+                GUI.EndGroup();
+            }
         }
 
         static readonly float[] HiveGlintX = { -0.22f, 0.26f, 0.04f, -0.28f, 0.18f };
@@ -7137,7 +7152,7 @@ namespace FlockFive
         {
             var glow = GlowTex();
             if (glow == null || alpha < 0.02f) return;
-            float g = hive.width * 0.18f;
+            float g = CornerAnchor.HiveGlowOutset(hive.width);
             GUI.color = new Color(1f, 0.78f, 0.28f, alpha);
             GUI.DrawTexture(
                 new Rect(hive.center.x - hive.width * 0.5f - g, hive.center.y - hive.height * 0.5f - g, hive.width + g * 2f, hive.height + g * 2f),
