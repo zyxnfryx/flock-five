@@ -346,10 +346,14 @@ namespace FlockFive.Editor
             var nap = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forceNap=1", 50);
             Check("plan-force-nap", nap.Index == 1 && nap.SkipOnboarding && nap.ForceNap && !nap.KeepTips
                 && !nap.ForceFeeder && !nap.OpenPoker, "index " + nap.Index);
-            Check("nap-plate-not-before-zzz", !DevLevelSkip.NapPlateReady(false, false, 2), "asleep only");
-            Check("nap-plate-not-under-curtain", !DevLevelSkip.NapPlateReady(true, true, 2), "held");
-            Check("nap-plate-needs-a-frame", !DevLevelSkip.NapPlateReady(true, false, 0), "same frame");
-            Check("nap-plate-after-visible-zzz", DevLevelSkip.NapPlateReady(true, false, 1), "open");
+            Check("nap-plate-not-before-zzz", !DevLevelSkip.NapPlateReady(false, false, 1f), "asleep only");
+            Check("nap-plate-not-under-curtain", !DevLevelSkip.NapPlateReady(true, true, 1f), "held");
+            Check("nap-plate-needs-a-frame", !DevLevelSkip.NapPlateReady(true, false, 0f), "same frame");
+            Check("nap-plate-beat-short", !DevLevelSkip.NapPlateReady(true, false, DevLevelSkip.NapPlateOpenSeconds - 0.05f), "short");
+            Check("nap-plate-after-visible-zzz", DevLevelSkip.NapPlateReady(true, false, DevLevelSkip.NapPlateOpenSeconds), "open");
+            Check("nap-wipe-still-painting", DevLevelSkip.NapWipeCovers(true, false)
+                && !DevLevelSkip.NapPlateReady(true, DevLevelSkip.NapWipeCovers(true, false), 1f), "live");
+            Check("nap-wipe-open", !DevLevelSkip.NapWipeCovers(false, false), "open");
             var poker = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&openPoker=1", 50);
             Check("plan-open-poker", poker.Index == 1 && poker.SkipOnboarding && poker.OpenPoker
                 && !poker.ForceFeeder && !poker.ForceNap && !poker.KeepTips, "index " + poker.Index);
@@ -473,6 +477,7 @@ namespace FlockFive.Editor
                 && raiseSleep > loadCall
                 && gated.IndexOf("ShowRuleTip(RuleTip.Sleep)") < 0
                 && gated.IndexOf("_devNapHold = true") >= 0
+                && gated.IndexOf("PressRainbow.Live()") > gated.IndexOf("_devNapHold = true")
                 && gated.IndexOf("NapPlateReady") > gated.IndexOf("_devNapHold = true")
                 && gated.IndexOf("RaiseRuleSleepTip()") > gated.IndexOf("NapPlateReady")
                 && gated.IndexOf("DeleteKey(CoachPokerBackKey)") > pokerIf

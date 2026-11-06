@@ -777,27 +777,28 @@ namespace FlockFive
             return _board.IsSleeping(branch) ? branch : -1;
         }
 
-        // Seats are asleep. Hold the plate until LateUpdate has drawn Zzz and
-        // that pose has been presented with the stage open (the level rainbow
-        // covers the first frames). Then the live raise, which still requires
-        // NapBegun. This does not call ShowRuleTip for sleep.
+        // Seats are asleep. The plate stays down through the star wipe. Counting
+        // starts only once that wipe is gone and the garden is the picture, and
+        // Zzz has to stay up for a beat before the raise. The raise still
+        // requires NapBegun. This does not call ShowRuleTip for sleep.
         IEnumerator DevRaiseForcedNap(int branch)
         {
             _devNapHold = true;
             float waited = 0f;
-            int openFrames = 0;
-            while (waited < 5f)
+            float open = 0f;
+            while (waited < 6f)
             {
                 bool begun = BranchNapBegun(branch);
-                bool stageHeld = PressRainbow.StageHeld();
-                if (DevLevelSkip.NapPlateReady(begun, stageHeld, openFrames)) break;
-                if (begun && !stageHeld) openFrames++;
-                else openFrames = 0;
+                bool wipe = DevLevelSkip.NapWipeCovers(PressRainbow.Live(), PressRainbow.StageHeld());
+                if (DevLevelSkip.NapPlateReady(begun, wipe, open)) break;
+                if (begun && !wipe) open += Mathf.Max(Time.unscaledDeltaTime, 0.01f);
+                else open = 0f;
                 waited += Mathf.Max(Time.unscaledDeltaTime, 0.01f);
                 yield return null;
             }
             _devNapHold = false;
-            if (BranchNapBegun(branch)) RaiseRuleSleepTip();
+            bool garden = !DevLevelSkip.NapWipeCovers(PressRainbow.Live(), PressRainbow.StageHeld());
+            if (garden && BranchNapBegun(branch)) RaiseRuleSleepTip();
             Debug.Log("FF_DEV_FORCE nap=1 tip=" + (_ruleTip == RuleTip.Sleep ? 1 : 0));
         }
 
