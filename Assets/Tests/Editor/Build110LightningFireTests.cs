@@ -325,14 +325,35 @@ namespace FlockFive.Editor
                 && !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=true")
                 && !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=2"), "junk");
             var garden2 = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1", 50);
-            Check("plan-onboard-garden-2", garden2.Index == 1 && garden2.SkipOnboarding && !garden2.KeepBee && !garden2.KeepFire,
-                "index " + garden2.Index);
+            Check("plan-onboard-garden-2", garden2.Index == 1 && garden2.SkipOnboarding && !garden2.KeepBee && !garden2.KeepFire
+                && !garden2.KeepTips, "index " + garden2.Index);
+            Check("keeptips-absent", !DevLevelSkip.KeepTipsFromUrl("http://h/index.html")
+                && !DevLevelSkip.KeepTipsFromUrl(null) && !DevLevelSkip.KeepTipsFromUrl(""), "none");
+            Check("keeptips-1", DevLevelSkip.KeepTipsFromUrl(
+                "http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1"), "1");
+            Check("keeptips-among", DevLevelSkip.KeepTipsFromUrl("http://h/?fflevel=5&skipOnboarding=1&keepTips=1#x")
+                && DevLevelSkip.KeepTipsFromUrl("http://h/?keepTips=1&skipOnboarding=1"), "both");
+            Check("keeptips-junk", !DevLevelSkip.KeepTipsFromUrl("http://h/?keepTips=0")
+                && !DevLevelSkip.KeepTipsFromUrl("http://h/?keepTips=")
+                && !DevLevelSkip.KeepTipsFromUrl("http://h/?keepTips=true")
+                && !DevLevelSkip.KeepTipsFromUrl("http://h/?keepTips=2"), "junk");
+            var kept = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1", 50);
+            Check("plan-keeptips-garden-2", kept.Index == 1 && kept.SkipOnboarding && kept.KeepTips
+                && !kept.KeepBee && !kept.KeepFire, "index " + kept.Index);
+            var kept5 = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=5&keepTips=1", 50);
+            Check("plan-keeptips-keeps-fflevel", kept5.Index == 4 && kept5.SkipOnboarding && kept5.KeepTips
+                && kept5.KeepBee && !kept5.KeepFire, "index " + kept5.Index);
+            var tipsOnly = DevLevelSkip.Plan("http://h/?fflevel=4&keepTips=1", 50);
+            Check("plan-keeptips-needs-skip", tipsOnly.Index == 3 && !tipsOnly.SkipOnboarding && !tipsOnly.KeepTips
+                && !tipsOnly.KeepBee && !tipsOnly.KeepFire, "index " + tipsOnly.Index);
             var with5 = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=5", 50);
             Check("plan-onboard-keeps-fflevel", with5.Index == 4 && with5.SkipOnboarding && with5.KeepBee && !with5.KeepFire,
                 "index " + with5.Index);
             var with3 = DevLevelSkip.Plan("http://h/?fflevel=3&skipOnboarding=1", 50);
-            Check("plan-onboard-keeps-fire", with3.Index == 2 && with3.SkipOnboarding && with3.KeepFire && !with3.KeepBee,
-                "index " + with3.Index);
+            Check("plan-onboard-keeps-fire", with3.Index == 2 && with3.SkipOnboarding && with3.KeepFire && !with3.KeepBee
+                && !with3.KeepTips, "index " + with3.Index);
+            Check("plan-default-does-not-keep-tips",
+                !l3.KeepTips && !l5.KeepTips && !other.KeepTips && !with5.KeepTips && !with3.KeepTips, "off");
             var skipBad = DevLevelSkip.Plan("http://h/?fflevel=99&skipOnboarding=1", 50);
             Check("plan-onboard-bad-fflevel", skipBad.Index < 0
                 && DevLevelSkip.Plan("http://h/?skipOnboarding=1", 1).Index < 0, "index " + skipBad.Index);
@@ -388,6 +409,27 @@ namespace FlockFive.Editor
                 && settings.IndexOf("FF_DEV_SKIP_ONBOARDING", end) < 0
                 && settings.IndexOf("StampDevOnboardingSeen", end) < 0,
                 "stamps");
+            int keepIf = gated.IndexOf("if (plan.KeepTips)");
+            int keepElse = keepIf >= 0 ? gated.IndexOf("\n            else", keepIf) : -1;
+            string keepBody = keepIf >= 0 && keepElse > keepIf ? gated.Substring(keepIf, keepElse - keepIf) : "";
+            int leafSet = gated.IndexOf("SetInt(CoachLeafKey, 1)");
+            int coachSet = gated.IndexOf("SetInt(CoachKey, 1)");
+            Check("keeptips-owes-rule-plates",
+                keepIf >= 0 && keepElse > keepIf && keepElse < stamp
+                && keepBody.IndexOf("DeleteKey(RuleTips.KitKey)") >= 0
+                && keepBody.IndexOf("DeleteKey(RuleTips.FeederKey)") >= 0
+                && keepBody.IndexOf("DeleteKey(RuleTips.SleepKey)") >= 0
+                && keepBody.IndexOf("SetInt(RuleTips") < 0
+                && gated.IndexOf("SetInt(RuleTips.KitKey, 1)") > keepElse
+                && gated.IndexOf("SetInt(RuleTips.FeederKey, 1)") > keepElse
+                && gated.IndexOf("if (plan.SkipOnboarding) PlayerPrefs.DeleteKey(RuleTips.SleepKey);") > keepElse
+                && coachSet >= 0 && coachSet < keepIf
+                && leafSet >= 0 && leafSet < keepIf
+                && gated.IndexOf("keepTips=\" +") > keepElse && gated.IndexOf("keepTips=\" +") < stamp
+                && settings.IndexOf("keepTips=\" +", end) < 0
+                && gated.IndexOf("Purse.Credit", stamp) > 0
+                && gated.IndexOf("AdConsent.AttAskKey", stamp) > 0,
+                "owed");
         }
     }
 }
