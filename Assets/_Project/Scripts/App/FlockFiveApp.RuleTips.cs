@@ -15,6 +15,9 @@ namespace FlockFive
         Board _ruleBoardRef;
         BirdColor?[] _ruleLive;
         bool _ruleTurned;
+        // WebGL forceNap only. Zzz may draw, but the plate stays down until that
+        // pose has been on an open stage. Normal play leaves this false.
+        bool _devNapHold;
 
         static bool RuleSeen(RuleTip t) => PlayerPrefs.GetInt(RuleTips.Key(t), 0) != 0;
 
@@ -43,7 +46,7 @@ namespace FlockFive
                 if (asleep)
                 {
                     b.AnySleeping = true;
-                    if (!b.NapBegun && BranchNapBegun(i)) b.NapBegun = true;
+                    if (!b.NapBegun && !_devNapHold && BranchNapBegun(i)) b.NapBegun = true;
                 }
                 if (!b.HasKit)
                     for (int k = 0; k < br.Count; k++)

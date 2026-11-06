@@ -119,7 +119,7 @@ namespace FlockFive.Editor
                 Check(block.Contains("StartCoroutine(RaiseSleepTipWhenNapping(to, gen))")
                     && block.Contains("else if (kicked == 0)")
                     && !block.Contains("RaiseRuleSleepTip()"), "move waits for the nap pose");
-                Check(rules.Contains("if (!b.NapBegun && BranchNapBegun(i)) b.NapBegun = true"), "rule board reads the nap pose");
+                Check(rules.Contains("if (!b.NapBegun && !_devNapHold && BranchNapBegun(i)) b.NapBegun = true"), "rule board reads the nap pose");
                 Check(rules.Contains("SleepReady(sleeping, napBegun,"), "raise gates on the nap pose");
                 Check(rules.Contains("while (gen == _motionGen && !BranchNapBegun(branch)"), "waiter yields until zzz");
             }
