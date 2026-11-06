@@ -6524,7 +6524,8 @@ namespace FlockFive
             }
             if (_hiveLevelLive)
             {
-                HudLayout(out _, out _, out _, out _, out var hive);
+                HudLayout(out _, out _, out _, out var restart, out var hive);
+                hive = CornerAnchor.HiveStrawHit(CornerAnchor.HiveAlignedDraw(hive, restart));
                 var gui = new Vector2(screen.x, PhoneArea.H - screen.y);
                 if (hive.Contains(gui)) OpenLevelHive();
             }
