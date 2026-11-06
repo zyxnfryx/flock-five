@@ -5,8 +5,7 @@ using UnityEngine;
 namespace FlockFive.Editor
 {
     // b120: the poker Back glove rode in from mid-right and crossed the whole screen. Angled starts stay snug.
-    // Brandon: the Back tip sits on the bottom (it may cover WIN and the bet controls), draws above the glove,
-    // and the glove hop stays in the top corner so the flight does not cross that tip.
+    // The Back tip starts above the hand, to the right of the medal. The settled fingertip is the medal center.
     static class GloveSnugTests
     {
         public static void Run()
@@ -56,10 +55,11 @@ namespace FlockFive.Editor
             int tickEnd = tick >= 0 ? app.IndexOf("bool PokerBackHintLive(", tick) : -1;
             string tickBody = tick > 0 && tickEnd > tick ? app.Substring(tick, tickEnd - tick) : "";
             Check("back-glove-uses-snug-hop", tickBody.Contains("PokerBackGloveStart(") && !tickBody.Contains("GloveMiddleRightEntry("), "");
-            Check("back-tip-band-is-bottom-seat",
-                coach.Contains("return PokerBackBottomBand(band, h, safe);")
+            Check("back-tip-band-clears-glove-lane",
+                coach.Contains("return PokerBackTipBand(width, h, safe, s, band.height, back, aim);")
                 && coach.Contains("band = PokerBackBand(band, screenH, safe, s);")
-                && coach.Contains("if (!bee && !adHand && !bottomSeat)"), "");
+                && coach.Contains("if (!bee && !adHand && !bottomSeat)")
+                && coach.Contains("_pokerBackGloveHeld"), "");
 
             Debug.Log("[glove-snug] " + (fail == 0 ? "PASS" : "FAIL " + fail));
         }
@@ -78,19 +78,17 @@ namespace FlockFive.Editor
             if (chrome.Back.width < 2f || aim.y > h * 0.35f || aim.x > w * 0.4f)
                 aim = new Vector2(64f, Mathf.Min(72f, h * 0.12f));
 
+            check("back-settle-inside-hit-" + tag, chrome.Back.width > 2f && chrome.Back.Contains(aim), chrome.Back + " aim " + aim);
+
             int px = CaptionLayout.BannerFont(w, h);
             float bandH = CaptionLayout.BannerBandHeight(px * 2.2f, px);
-            var band = FlockFiveApp.PokerBackBottomBand(new Rect(0f, 0f, w, bandH), h, screenSafe);
-            float floor = h - 34f - 4f;
-            check("back-tip-bottom-" + tag, band.y > h * 0.5f && Mathf.Abs(band.yMax - floor) < 1.5f && band.width >= w - 1f,
-                band.ToString());
-
-            float btn = FlockFiveApp.PokerActSize(w, s);
-            var bet = new Rect(16f, h - 12f - btn, w * 0.55f, btn);
-            check("back-tip-may-cover-bet-" + tag, band.Overlaps(bet), "band " + band + " bet " + bet);
-            var pinned = band;
-            FlockFiveApp.ClampGardenBand(ref band, w, h, screenSafe);
-            check("back-tip-not-lifted-off-bet-" + tag, Mathf.Abs(band.y - pinned.y) < 0.5f, band.ToString());
+            var lane = FlockFiveApp.PokerBackGloveLane(aim, s);
+            var band = FlockFiveApp.PokerBackTipBand(w, h, screenSafe, s, bandH, chrome.Back, aim);
+            bool above = band.yMin < lane.yMin && band.yMin < aim.y;
+            bool clear = !band.Overlaps(lane) && !band.Overlaps(chrome.Back);
+            bool readable = band.width >= 140f && band.height >= 48f && band.xMax <= w + 0.5f && band.yMin >= 0f;
+            check("back-tip-above-glove-" + tag, above && clear && readable,
+                "band " + band + " lane " + lane + " aim " + aim);
 
             var start = FlockFiveApp.PokerBackGloveStart(aim, s, safe, w, h);
             var old = FlockFiveApp.AngledStartSnug(FlockFiveApp.GloveMiddleRightEntry(safe), aim, s, safe);
@@ -98,36 +96,18 @@ namespace FlockFive.Editor
             float newD = Vector2.Distance(start, aim);
             float oldD = Vector2.Distance(old, aim);
             float ang = FlockFiveApp.GloveApproachDeg(start, aim);
-            float lean = Mathf.Abs(Mathf.DeltaAngle(ang, -90f));
+            float lean = Mathf.Abs(Mathf.DeltaAngle(ang, 0f));
             float over = FlockFiveApp.GloveQuadOverflow(start, ang, false, FlockFiveApp.GloveAuditDw(dh), dh, w, h);
-            // Level with Back (the old middle-right line was ~40° off horizontal). On the glass,
-            // so the face lock does not walk the hop back across the page.
-            bool snug = start.x > aim.x && newD < oldD - 0.5f && newD >= FlockFiveApp.GloveMinStartHands * dh - 0.5f
-                && lean <= 32f && over <= 0.5f;
+            // Straight up onto the medal, shorter than the old middle-right diagonal.
+            bool snug = Mathf.Abs(start.x - aim.x) < 1.5f && start.y > aim.y
+                && newD < oldD - 0.5f && newD >= FlockFiveApp.GloveMinStartHands * dh - 0.5f
+                && lean <= 18f && over <= 0.5f;
             check("back-glove-hop-snug-" + tag, snug, "new " + newD.ToString("0.0") + " old " + oldD.ToString("0.0")
-                + " ang " + ang.ToString("0.0") + " over " + over.ToString("0.0"));
+                + " ang " + ang.ToString("0.0") + " over " + over.ToString("0.0") + " start " + start);
 
-            float newLow = FlightBottom(start, aim, s);
-            float oldLow = FlightBottom(old, aim, s);
-            bool clears = FlockFiveApp.PokerBackFlightClears(start, aim, s, band) && newLow < band.y - CaptionLayout.GloveBannerGap * s && newLow < oldLow - 1f;
-            check("back-glove-flight-clears-tip-" + tag, clears, "newLow " + newLow.ToString("0.0") + " oldLow " + oldLow.ToString("0.0") + " bandY " + band.y.ToString("0.0"));
-        }
-
-        // Lowest glove edge along the locked straight hop, dip up and down. GUI y grows downward.
-        static float FlightBottom(Vector2 start, Vector2 aim, float s)
-        {
-            float dh = FlockFiveApp.GloveDh(s);
-            float ang = FlockFiveApp.GloveApproachDeg(start, aim);
-            float low = 0f;
-            for (int i = 0; i <= 4; i++)
-            {
-                var p = Vector2.Lerp(start, aim, i / 4f);
-                float a = FlockFiveApp.GloveAuditBox(p, ang, dh, 0f).yMax;
-                float b = FlockFiveApp.GloveAuditBox(p, ang, dh, 1f).yMax;
-                if (a > low) low = a;
-                if (b > low) low = b;
-            }
-            return low;
+            bool flight = FlockFiveApp.PokerBackFlightClears(start, aim, s, band)
+                && FlockFiveApp.PokerBackFlightClears(aim, aim, s, band);
+            check("back-glove-flight-clears-tip-" + tag, flight, "band " + band);
         }
     }
 }
