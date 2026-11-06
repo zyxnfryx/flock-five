@@ -65,12 +65,20 @@ namespace FlockFive.Editor
                     float inset = safe.xMax - rs.xMax;
                     float glass = d.W - rs.xMax;
                     float oldPad = 6f * sc;
-                    // Plate stays on RightEdge. Restart's right edge is the halo past that plate.
+                    float restartGlyph = CornerAnchor.RestartGlyphRight(rs);
+                    float hiveGlyph = CornerAnchor.HiveGlyphRight(hv);
+                    // Plate stays on RightEdge. Restart's rect is the full halo quad.
+                    // When that quad is wider than the glyph pull, the counted edges
+                    // (restart rim inside the rect, hive glow drawn with the pull)
+                    // agree within 2px.
+                    bool glyphs = halo + 0.01f < CornerAnchor.HiveGlowGlyphPull
+                        || Mathf.Abs(restartGlyph - hiveGlyph) <= 2f;
                     bool aligned = Mathf.Abs(rs.xMax - art) <= 0.51f
                         && Mathf.Abs(hv.xMax - edge) <= 0.51f
                         && Mathf.Abs(art - (hv.xMax + halo)) <= 0.51f
                         && halo > 4f
-                        && Mathf.Abs(inset - (CornerAnchor.InsetRef * sc - halo)) <= 0.51f;
+                        && Mathf.Abs(inset - (CornerAnchor.InsetRef * sc - halo)) <= 0.51f
+                        && glyphs;
                     bool sameWhenHidden = Mathf.Abs(alone.xMax - rs.xMax) <= 0.51f
                         && Mathf.Abs(alone.x - rs.x) <= 0.51f
                         && Mathf.Abs(alone.width - rs.width) <= 0.51f
@@ -80,6 +88,8 @@ namespace FlockFive.Editor
                     Check("right edge matches hive halo " + d.Name, aligned && sameWhenHidden && notFlush,
                         "restartX " + rs.xMax.ToString("0.0") + " hivePlate " + hv.xMax.ToString("0.0")
                         + " halo " + art.ToString("0.0") + " pad " + halo.ToString("0.0")
+                        + " glyphs " + restartGlyph.ToString("0.0") + "/" + hiveGlyph.ToString("0.0")
+                        + " d " + (restartGlyph - hiveGlyph).ToString("0.0")
                         + " inset " + inset.ToString("0.0") + " glass " + glass.ToString("0.0")
                         + " oldPad " + oldPad.ToString("0.0") + " hiddenX " + alone.xMax.ToString("0.0"));
 
@@ -136,14 +146,20 @@ namespace FlockFive.Editor
                     CornerAnchor.Garden(col, screenH, full, out _, out _, out _, out var rs, out var hv);
                     float art = CornerAnchor.HiveArtRight(hv);
                     float pad = art - hv.xMax;
+                    float restartGlyph = off + CornerAnchor.RestartGlyphRight(rs);
+                    float hiveGlyph = off + CornerAnchor.HiveGlyphRight(hv);
+                    float glyphDelta = restartGlyph - hiveGlyph;
                     bool ok = Mathf.Abs(rs.xMax - art) <= 0.51f
                         && pad > 8f
                         && Mathf.Abs(pad - hv.width * CornerAnchor.HiveGlowPadFrac) <= 0.51f
                         && rs.xMax <= col + 0.01f
-                        && rs.xMax <= full.xMax - 16f;
+                        && Mathf.Abs(glyphDelta) <= 2f
+                        && Mathf.Abs(CornerAnchor.HiveGlowGlyphPull - 12f) <= 0.01f;
                     Check("inspector halo " + name, ok,
                         "screenRestart " + (off + rs.xMax).ToString("0.0")
                         + " screenPlate " + (off + hv.xMax).ToString("0.0")
+                        + " glyphs " + restartGlyph.ToString("0.0") + "/" + hiveGlyph.ToString("0.0")
+                        + " d " + glyphDelta.ToString("0.0")
                         + " pad " + pad.ToString("0.0")
                         + " col " + col.ToString("0") + " off " + off.ToString("0"));
                 }
@@ -159,9 +175,10 @@ namespace FlockFive.Editor
             string app = System.IO.File.ReadAllText(System.IO.Path.Combine(
                 System.IO.Path.GetDirectoryName(Application.dataPath),
                 "Assets/_Project/Scripts/App/FlockFiveApp.cs"));
-            Check("glow pad is the shared fraction",
-                app.IndexOf("CornerAnchor.HiveGlowPadFrac", System.StringComparison.Ordinal) >= 0
-                && app.IndexOf("hive.width * 0.18f", System.StringComparison.Ordinal) < 0,
+            Check("glow pull is the drawn outset",
+                app.IndexOf("CornerAnchor.HiveGlowOutset", System.StringComparison.Ordinal) >= 0
+                && app.IndexOf("hive.width * 0.18f", System.StringComparison.Ordinal) < 0
+                && app.IndexOf("hive.width * CornerAnchor.HiveGlowPadFrac", System.StringComparison.Ordinal) < 0,
                 "DrawHiveGlow");
 
             Debug.Log("[restart-inset] " + (fail == 0 ? "ALL OK " + pass : "FAILED " + fail + " passed " + pass));
