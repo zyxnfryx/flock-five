@@ -133,6 +133,33 @@ namespace FlockFive
         // GloveRise and _gloveKeepOff, keeps the palm off the button.
         static Vector2 GloveTarget(Rect r) => r.center;
 
+        // Fingertip for a Claim or Upgrade label. On the plate, just off the word,
+        // on the side the hand approaches from, so the palm and the tip leave the glyphs readable.
+        // fromLeft: the hand comes from the left (palm trails left); the tip sits just left of the label.
+        public static Vector2 ButtonLabelAim(Rect button, Rect label, bool fromLeft)
+        {
+            if (button.width < 4f || button.height < 4f) return button.center;
+            if (label.width < 4f || label.height < 4f)
+            {
+                float ix = button.width * 0.16f;
+                float iy = button.height * 0.22f;
+                label = new Rect(button.x + ix, button.y + iy, Mathf.Max(4f, button.width - ix * 2f), Mathf.Max(4f, button.height - iy * 2f));
+            }
+            float gap = Mathf.Max(4f, label.height * 0.12f);
+            float x = fromLeft ? label.xMin - gap : label.xMax + gap;
+            float y = label.center.y;
+            float inset = Mathf.Max(4f, button.height * 0.10f);
+            float x0 = button.xMin + inset;
+            float x1 = button.xMax - inset;
+            float y0 = button.yMin + inset;
+            float y1 = button.yMax - inset;
+            if (x1 < x0) x = button.center.x;
+            else x = Mathf.Clamp(x, x0, x1);
+            if (y1 < y0) y = button.center.y;
+            else y = Mathf.Clamp(y, y0, y1);
+            return new Vector2(x, y);
+        }
+
         // A point inside the real control at fractions of its rect (0,0 = top-left). For a
         // button whose art body is not centred in its square. The fingertip lands here.
         static Vector2 GloveTargetAt(Rect r, float u, float v) => new Vector2(r.x + r.width * u, r.y + r.height * v);
@@ -1902,9 +1929,10 @@ namespace FlockFive
             CommitApproachFace(ref facePerch, aimGui, faceDh, faceDw, PhoneArea.W, PhoneArea.H, _gloveMirror,
                 out float faceAng, out bool faceMirror);
             _gloveTip = facePerch;
-            // Claim only: keep a start the player can see leave, then bow onto the word.
+            // Claim and Upgrade: the shared near-start sits on the button. Push the
+            // perch out so the hand is seen to leave, then bow onto the label.
             // Other lessons keep the shared near-start.
-            if (string.Equals(_cueLine, DailyClaimLine))
+            if (string.Equals(_cueLine, DailyClaimLine) || string.Equals(_cueLine, AlbumUpgradeLine))
                 _gloveTip = ClaimGloveStart(_gloveTip, aimGui, faceDh, CoachSafeGui(8f * s));
             _gloveShown = _gloveTip;
             _gloveFaceOn = true;
@@ -2180,11 +2208,14 @@ namespace FlockFive
             bool angled = !float.IsNaN(_gloveApproach);
             Vector2 aim = _gloveLockOn ? _gloveLockAim : aimGui;
             bool claimTravel = string.Equals(_gloveStepLine, DailyClaimLine) && !_claimGloveArrived;
+            // Upgrade loops this same bow (travel returns to the start). Claim pins
+            // once it lands, so it is not in the loop.
+            bool buttonArc = claimTravel || string.Equals(_gloveStepLine, AlbumUpgradeLine);
             Vector2 arcPos;
-            // Claim bows from its start onto the word. A locked face otherwise
-            // travels on the approach line. The old arc re-aimed at draw time
-            // whenever the perch or the bow left the glass.
-            if (claimTravel)
+            // Claim and Upgrade bow from the start onto the button. A locked face
+            // otherwise travels on the approach line. The old arc re-aimed at draw
+            // time whenever the perch or the bow left the glass.
+            if (buttonArc)
                 arcPos = ClaimGloveArc(_gloveTip, aim, travel, GloveDh(s) * 0.55f);
             else if (_gloveFaceOn || angled)
                 arcPos = Vector2.Lerp(_gloveTip, aim, Mathf.Clamp01(travel));
