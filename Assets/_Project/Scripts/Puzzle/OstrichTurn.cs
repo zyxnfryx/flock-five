@@ -137,6 +137,22 @@ namespace FlockFive
         public static float HitSec(int birds) => birds <= 0 ? 0f : LandAt(birds, birds - 1);
         public static float HitStride(int birds) => HitSec(birds) + BetweenHitsSec;
 
+        // The flurry counts one, two, three, four, then the last bird is the bat.
+        // A short set still pays the whack on its last bird.
+        public const float WhackSec = 0.42f;
+        public static bool IsWhackBird(int index, int count) => count > 0 && index == count - 1;
+        public static float WhackAt(int birds) => birds <= 0 ? 0f : ArriveAt(birds - 1);
+
+        // 0 at the hit, 1 at the squash, 0 again when the body has sprung back.
+        public static float WhackSquash(float since)
+        {
+            if (since < 0f || since >= WhackSec) return 0f;
+            float u = since / WhackSec;
+            const float peak = 0.22f;
+            if (u < peak) return Mathf.Sin(u / peak * Mathf.PI * 0.5f);
+            return Mathf.Cos((u - peak) / (1f - peak) * Mathf.PI * 0.5f);
+        }
+
         // Bird position `t` seconds into one hit. home = its seat, target = the ostrich.
         // Before launch: home. Up: eased hop to the target. Hold: on the target. Back: eased hop home.
         public static Vector3 BirdAt(int birds, int bird, float t, Vector3 home, Vector3 target)
