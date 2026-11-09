@@ -800,6 +800,14 @@ namespace FlockFive
             StopPests();
             PestSchedule.Watch(null, null);
             _lessonGuardUntil = 0f;
+            // The dismiss that closed a garden tip arms an eat with no timer. It used to
+            // still be set when this card appeared, so the first taps on it did nothing.
+            bool ruleTipUp = _ruleTip != RuleTip.None;
+            _ruleEatGesture = false;
+            _ruleTip = RuleTip.None;
+            _ruleHeld = 0f;
+            _ostrichFight = false;
+            if (ruleTipUp) ReleaseTutorPause();
             // Destroy lands at frame end. Hide now so the old painting cannot flash over home.
             if (_garden.Root != null)
             {
@@ -6687,6 +6695,9 @@ namespace FlockFive
 
         void OnGUIBody()
         {
+            // Before the swallows. A finished ostrich (or any clear) must not leave a
+            // rule-eat, pest hold, fight lock or dismiss guard over the reward buttons.
+            ReleaseRewardChoiceGates();
             SwallowLessonGuard();
             SwallowRuleTipPointer();
             SwallowResumePointer();
@@ -10498,6 +10509,9 @@ namespace FlockFive
                 hit.Rect = Rect.MinMaxRect(Mathf.Min(rest.xMin, body.xMin), top, Mathf.Max(rest.xMax, body.xMax), rest.yMax);
             }
             var gates = HomePressGates(-1);
+            // The reward buttons sit on this flower. While they are up it stays blocked
+            // so a tap on Collect or Watch Ad is not rejected as a LEVEL press.
+            if (RewardChoiceButtonsDue()) gates.SoftModal = true;
             gates.Consent = VeilBlocks(rest);
             gates.AdoptQueue = AdoptHoldsQueue();
             gates.HomeTaken = _homeTapTaken;
