@@ -6039,6 +6039,9 @@ namespace FlockFive
             if (e == null) return;
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            // The name plate's chips, colors, and Done sit under this gate. A lesson
+            // that eats every other press must leave the plate alone.
+            if (RenamePlateOwns(_avatarRename, _avatarRenameR, e.mousePosition, PhoneArea.OffX)) return;
             // A press already advanced an informational step this frame (IMGUI or the
             // Input System). Eat the rest of it, including the mouse-up, so the next
             // step does not take the same tap and a button underneath does not fire.
