@@ -615,7 +615,8 @@ namespace FlockFive
             if (tutorial) DismissDailyIntro();
         }
 
-        // Pin the fingertip on the Claim aim and fade it there. False when there
+        // Press fade only. The idle cue keeps looping. This pins the fingertip
+        // on the seat (beside the word) and fades it there. False when there
         // is no hand to hold, so the caller starts the spin immediately.
         bool HoldGloveOnClaimTap()
         {
@@ -1020,8 +1021,7 @@ namespace FlockFive
             return aim;
         }
 
-        // Centroid of the "Claim" word. Same seat DrawDailyClaim paints. The glove
-        // fingertip lands here, on the button face, not on the empty rim beside it.
+        // Centroid of the "Claim" word. Same seat DrawDailyClaim paints.
         public static Vector2 DailyClaimWordCenter(Rect disc)
         {
             float y = disc.y + disc.height * 0.22f;
@@ -1029,16 +1029,36 @@ namespace FlockFive
             return new Vector2(disc.center.x, y + h * 0.5f);
         }
 
-        // Claim step. Fingertip is the Claim word's center (the pedestal face).
-        // The hand still comes from the left so the palm is not the thing covering
-        // the word. Never a reward box. _gloveKeepOff holds the wind-up off the face.
+        // "Claimed" is what the fitter sizes into this fraction of the cap.
+        // "Claim" is five of those seven letters, so this is the widest half
+        // the drawn word can reach on either side of DailyClaimWordCenter.
+        public const float DailyClaimWordFit = 0.72f;
+        public const float DailyClaimWordHalfFrac = DailyClaimWordFit * (5f / 7f) * 0.5f;
+
+        // Left of the word center, in cap-widths. The hand comes from the left
+        // and the finger trails back that way, so the tip has to clear the
+        // glyphs or it covers "Cl". 0.36 is past DailyClaimWordHalfFrac and
+        // still on the face (0.14 in from the cap's left edge).
+        public const float DailyClaimGloveBeside = 0.36f;
+
+        // Fingertip seat while the Claim cue is up. Same height as the word,
+        // far enough left that the finger sits beside the label.
+        public static Vector2 DailyClaimGloveSeat(Rect disc)
+        {
+            var word = DailyClaimWordCenter(disc);
+            return new Vector2(word.x - disc.width * DailyClaimGloveBeside, word.y);
+        }
+
+        // Claim step. Fingertip is beside the word, on the pedestal face.
+        // The hand still comes from the left. Never a reward box.
+        // _gloveKeepOff holds the wind-up off the face.
         void DailyClaimGlove(float s, out Vector2 aim, out float perchLift, out bool fromLeft)
         {
             DailyLayout(s, out var card, out var flower, out _, out _);
             float k = 1f; // b86: no pop scale (the wheel appears assembled)
             var pivot = DailyPivot(card, flower);
             var disc = DailyScaleRect(FlowerDisc(flower, 0f), pivot, k);
-            aim = DailyClaimWordCenter(disc);
+            aim = DailyClaimGloveSeat(disc);
             perchLift = float.NaN;
             fromLeft = true;
             _gloveKeepOff = disc;
