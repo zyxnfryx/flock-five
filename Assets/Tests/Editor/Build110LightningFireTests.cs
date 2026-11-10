@@ -571,6 +571,34 @@ namespace FlockFive.Editor
                 && settings.IndexOf("FF_DEV_FORCE rewards=1", end) < 0
                 && gated.IndexOf("WebGL Development inspect hook only") >= 0,
                 "rewards");
+            int begin = ads.IndexOf("RewardedGrant.Begin(PlaceFor(ActivePlacement)");
+            int stubIf = ads.IndexOf("InspectRewardStubArmed && ActivePlacement == PlacementRewardRepeat");
+            int stubEnd = stubIf >= 0 ? ads.IndexOf("#endif", stubIf) : -1;
+            int stubGate = stubIf >= 0 ? ads.LastIndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD", stubIf) : -1;
+            string stub = stubGate >= 0 && stubEnd > stubIf ? ads.Substring(stubGate, stubEnd - stubGate) : "";
+            int shown = stub.IndexOf("DeliverDisplayedCallback()");
+            int earned = stub.IndexOf("DeliverRewardedCallback()");
+            int closed = stub.IndexOf("DeliverClosedCallback()");
+            int flush = stub.IndexOf("RewardedGrant.Flush()");
+            int run = ads.IndexOf("_host.RunRewarded()", stubEnd >= 0 ? stubEnd : 0);
+            Check("force-rewards-stub-grant",
+                begin >= 0 && stubIf > begin && stubEnd > stubIf && stubGate > adsEnd
+                && shown >= 0 && earned > shown && closed > earned && flush > closed
+                && stub.IndexOf("FF_DEV_FORCE rewardStub=1") > flush
+                && stub.IndexOf("yield break;") > flush
+                && run > stubEnd
+                && ads.IndexOf("sdk init timed out (5s)") > stubEnd
+                && stub.IndexOf("NoAds.Grant") < 0
+                && stub.IndexOf("flockfive.noads") < 0
+                && adsBody.IndexOf("InspectRewardStubArmed = true") >= 0
+                && stub.IndexOf("WebGL Development inspect hook only") >= 0,
+                "stub");
+            Check("inspect-repeat-total",
+                DevLevelSkip.InspectRepeatTotal(180, 180, true) == 360
+                && DevLevelSkip.InspectRepeatTotal(180, 180, false) == 180
+                && DevLevelSkip.InspectRepeatTotal(1000, 0, true) == 1000
+                && DevLevelSkip.InspectRepeatTotal(-5, 180, true) == 180,
+                "2x");
         }
     }
 }

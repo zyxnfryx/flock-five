@@ -647,7 +647,9 @@ namespace FlockFive
         // shipping-path change. It is honored only with skipOnboarding=1 and
         // does nothing to entrance timing. After the forceClear wait it makes
         // Watch Ad / 2X offerable, grants one album card, and unlocks the
-        // album Upgrade glove. It does not grant No Ads.
+        // album Upgrade glove. A tap on that button completes through the
+        // real RewardedGrant path (displayed, rewarded, flush) instead of
+        // waiting on LevelPlay. It does not grant No Ads.
         void MaybeDevLevelSkip()
         {
             if (_devLevelSkipDone) return;
