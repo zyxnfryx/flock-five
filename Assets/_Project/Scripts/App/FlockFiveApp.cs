@@ -6438,12 +6438,24 @@ namespace FlockFive
         static float TopHud(float extra = 0f) => TopHudBox(PhoneArea.H, PhoneArea.Safe, extra);
 
         // Screen-explicit so the album grid test uses the same top inset as play.
+        // GUI y of the top unsafe band. safeArea is bottom-up, so the inset is
+        // the distance from the screen top down to safe.yMax. iPad with no inset stays 0.
+        public static float GuiTopInset(float screenH, Rect safe)
+        {
+            if (screenH < 2f || safe.width < 2f || safe.height < 2f) return 0f;
+            return Mathf.Max(0f, screenH - safe.yMax);
+        }
+
+        public static float TopControlY(float screenH, Rect safe, float y)
+        {
+            float inset = GuiTopInset(screenH, safe);
+            return y < inset ? inset : y;
+        }
+
         public static float TopHudBox(float screenH, Rect safe, float extra)
         {
             float s = DeviceFit.UiH(screenH);
-            float inset = (safe.width < 2f || safe.height < 2f)
-                ? 0f
-                : Mathf.Max(0f, screenH - safe.yMax);
+            float inset = GuiTopInset(screenH, safe);
             return Mathf.Max(12f, inset + 10f * s + extra);
         }
 
@@ -7054,7 +7066,7 @@ namespace FlockFive
         }
 
         // "No Ads" nameplate just under the disc. Narrower than the medallion.
-        static Rect SplashNoAdsRibbon(Rect medal)
+        public static Rect SplashNoAdsRibbon(Rect medal)
         {
             float d = medal.width;
             float w = d * 0.92f;
@@ -10457,7 +10469,13 @@ namespace FlockFive
             bool hiveOpening = hiveDraw && !RailSettled(RailHive);
             bool hivePop = _hivePopping && !hiveOpening;
             var hiveHit = HivePopRect(hiveR, hivePop);
-            SplashPress.Layout(SplashPress.Id.Hive, hiveHit);
+            var pokerArtEarly = SplashPokerRect();
+            var pokerPadEarly = RailTapRect(RailPoker);
+            var hivePad = hiveHit;
+            var flowerEarly = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            bool phoneRail = PhoneArea.W / Mathf.Max(1f, PhoneArea.H) <= DeviceFit.PhoneAspect + 0.04f;
+            CloseHomeRailGaps(hiveR, pokerArtEarly, ref hivePad, ref pokerPadEarly, flowerEarly, phoneRail);
+            SplashPress.Layout(SplashPress.Id.Hive, hivePad);
             var hiveGates = HomePressGates(RailHive);
             hiveGates.Consent = VeilBlocks(hiveHit);
             hiveGates.Hidden = !hiveDraw;
@@ -10494,8 +10512,8 @@ namespace FlockFive
             // just past the icon, off the flower, still opens poker.
             bool pokerDraw = RailLive(RailPoker);
             var pokerR = SplashPokerRect();
-            var pokerTap = RailTapRect(RailPoker);
-            var flower = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            var pokerTap = pokerPadEarly;
+            var flower = flowerEarly;
             // LEVEL keeps flower padding only when it can start. A blocked flower
             // gives that padding back to the rail, which can still open.
             bool carveFlower = LevelCanTakeTap(flower);
@@ -10655,6 +10673,23 @@ namespace FlockFive
         // True when this point would open the rail, so LEVEL must not start.
         // The padded tap counts. Padding on the flower is LEVEL's only when
         // LEVEL can start. A blocked icon keeps nothing.
+        // Hive and cards taps meet halfway between the two icons. On a phone the
+        // cards pad continues down until it touches the LEVEL square, and stops
+        // there so it does not take a flower tap LEVEL can start.
+        public static void CloseHomeRailGaps(Rect hiveArt, Rect pokerArt, ref Rect hiveTap, ref Rect pokerTap, Rect level, bool phone)
+        {
+            if (hiveArt.height > 2f && pokerArt.height > 2f && pokerArt.yMin > hiveArt.yMax + 1f)
+            {
+                float mid = (hiveArt.yMax + pokerArt.yMin) * 0.5f;
+                if (hiveTap.height > 2f && hiveTap.yMax < mid)
+                    hiveTap = Rect.MinMaxRect(hiveTap.xMin, hiveTap.yMin, hiveTap.xMax, mid);
+                if (pokerTap.height > 2f && pokerTap.yMin > mid)
+                    pokerTap = Rect.MinMaxRect(pokerTap.xMin, mid, pokerTap.xMax, pokerTap.yMax);
+            }
+            if (phone && level.height > 2f && pokerTap.height > 2f && pokerArt.yMax <= level.yMin + 0.5f && pokerTap.yMax < level.yMin)
+                pokerTap = Rect.MinMaxRect(pokerTap.xMin, pokerTap.yMin, pokerTap.xMax, level.yMin);
+        }
+
         public static bool RailKeepsLevelTap(Rect art, Rect padded, Rect level, bool canAct, Vector2 point)
         {
             return RailKeepsLevelTap(art, padded, level, canAct, point, true);
@@ -12773,6 +12808,7 @@ namespace FlockFive
             spot = p;
             if (AvatarHits(p, icon, blocks, pad)) return false;
             if (rails && AvatarHitsRails(p, icon, s)) return false;
+            if (AvatarHitsVip(p, icon)) return false;
             return true;
         }
 
@@ -12823,7 +12859,30 @@ namespace FlockFive
             return false;
         }
 
+        bool AvatarHitsVip(Vector2 p, float icon)
+        {
+            var vip = SplashNoAdsRect();
+            return !BirdPerchClearsVip(p, icon, 4f, _avatarTail, vip);
+        }
+
         bool AvatarHitsRails(Vector2 p, float icon, float s) => AvatarRectHitsRails(AvatarBody(p, icon, 4f * s), s);
+
+        // Goldie's plate, name tail included. The VIP medal and its ribbon are never a perch.
+        public static bool BirdPerchClearsVip(Vector2 perch, float icon, float pad, float tail, Rect medal)
+        {
+            if (medal.width < 2f || medal.height < 2f) return true;
+            var body = HomeBirdPlate(perch, icon, pad, tail);
+            if (body.Overlaps(medal)) return false;
+            var ribbon = SplashNoAdsRibbon(medal);
+            return ribbon.width < 2f || !body.Overlaps(ribbon);
+        }
+
+        public static Rect HomeBirdPlate(Vector2 c, float icon, float pad, float tail)
+        {
+            float w = icon + pad * 2f;
+            float h = icon + pad * 2f + Mathf.Max(0f, tail);
+            return new Rect(c.x - w * 0.5f, c.y - icon * 0.5f - pad, w, h);
+        }
 
         bool AvatarRectHitsRails(Rect body, float s)
         {
@@ -13611,6 +13670,19 @@ namespace FlockFive
         public static bool PokerLessonHolds(bool splash, bool onPoker, bool backDone, bool backGateLive, bool broke, bool lessonActive = true)
             => splash && onPoker && !backDone && !backGateLive && !broke && lessonActive;
 
+        // 'Pick your bet, then tap Deal.' The hand has not started, so Back may leave.
+        public static bool PokerBetCoachOpen(bool coachUp, bool idle, bool motionClear)
+            => coachUp && idle && motionClear;
+
+        // Back answers unless a dealt hand is unresolved, or the lesson is holding
+        // it and this is not the bet coach.
+        public static bool PokerBackAccepts(bool betCoach, bool handDealt, bool lessonHolds)
+        {
+            if (handDealt) return false;
+            if (betCoach) return true;
+            return !lessonHolds;
+        }
+
         // b119 (Brandon): the first-hand tutorial flag is the ONLY thing that hides the bet controls and holds Back.
         // Active from the armed lesson until Back, only in the visit that dealt the first-ever hand. A later visit
         // (Back never tapped, app closed), a skipped lesson or a finished tutorial play with normal controls.
@@ -13782,7 +13854,7 @@ namespace FlockFive
         {
             if (safe.width < 2f || safe.height < 2f)
                 safe = new Rect(0f, 0f, w, h);
-            float top = TopHudBox(h, safe, 0f);
+            float top = TopControlY(h, safe, TopHudBox(h, safe, 0f));
             var back = BackMedalBox(s, top, safe);
             float right = w - Mathf.Max(12f, w - safe.xMax + 10f);
             float icon = CoinBalanceIcon(w, s);
@@ -13820,7 +13892,11 @@ namespace FlockFive
             var back = chrome.Back;
             bool backFire = DrawBackMedal(back);
             // b103 (Brandon): the poker lesson forces the one hand. Back is dead until the result step (glove on it).
-            if (backFire && (PokerLessonHoldsBack() || PokerHandHoldsBack(BirdPoker.PhaseNow))) backFire = false;
+            // The bet coach used to swallow Back, so a new player could not leave.
+            // Back goes home during that coach. A dealt hand still holds it.
+            bool betCoach = PokerBetCoachOpen(_pokerPageOn || _pokerDealHint, BirdPoker.PhaseNow == BirdPoker.Phase.Idle, !PokerMotionBusy());
+            if (backFire && !PokerBackAccepts(betCoach, PokerHandHoldsBack(BirdPoker.PhaseNow), PokerLessonHoldsBack()))
+                backFire = false;
             if (backFire)
             {
                 if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn || _pokerShowPay)
@@ -13840,6 +13916,8 @@ namespace FlockFive
                 _pokerKeepHint = false;
                 _pokerDealHint = false;
                 _pokerDealAimOk = false;
+                _gloveVis = false;
+                _gloveReady = false;
                 _pokerHover = -1;
                 _home = HomeFace.Splash;
             }
@@ -17678,7 +17756,7 @@ namespace FlockFive
             float s = DeviceFit.Ui();
             DrawHomeWash(0.28f);
 
-            float top = TopHud();
+            float top = TopControlY(PhoneArea.H, PhoneArea.Safe, TopHud());
             var back = BackMedalRect(s, top);
             PageSwipeAte = false;
             NoteAlbumOpen();
@@ -17962,7 +18040,7 @@ namespace FlockFive
             if (t > 0.4f)
                 DrawFlipArrows(big, s, Mathf.Clamp01(t));
             float hintTop = big.yMax + 12f * s;
-            if (t > 0.4f && !_albumTutorOn)
+            if (t > 0.4f && ShowFlipHints(!_albumTutorOn, !_upgradeTutorOn))
                 DrawFlipHint(hintTop, s, Mathf.Clamp01(t));
             bool upgradeHit = false;
             // Upgrade lives in the hive (album) only: never on the round popup or any other inspect.
@@ -18428,6 +18506,11 @@ namespace FlockFive
             }
             GUI.color = Color.white;
         }
+
+        // The upgrade coach bubble sits on this card. The flip lines would show
+        // as clipped scraps around it, so they stay hidden while that coach is up.
+        public static bool ShowFlipHints(bool albumCoachClear, bool upgradeCoachClear)
+            => albumCoachClear && upgradeCoachClear;
 
         void DrawFlipHint(float y, float s, float alpha)
         {
