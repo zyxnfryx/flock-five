@@ -237,6 +237,33 @@ namespace FlockFive
             }
         }
 
+        // Game pause. Speaking voices stop with the listener. A voice that ignores
+        // the listener (none of these) is left alone. Resume is the matching unpause.
+        public static void PauseForGame()
+        {
+            HoldForGame(_planeSrc);
+            if (_voices == null) return;
+            for (int i = 0; i < _voices.Length; i++) HoldForGame(_voices[i]);
+        }
+
+        public static void ResumeForGame()
+        {
+            LiftForGame(_planeSrc);
+            if (_voices == null) return;
+            for (int i = 0; i < _voices.Length; i++) LiftForGame(_voices[i]);
+        }
+
+        static void HoldForGame(AudioSource a)
+        {
+            if (a == null || !a.isPlaying || a.ignoreListenerPause) return;
+            AudioGuard.Pause(a);
+        }
+
+        static void LiftForGame(AudioSource a)
+        {
+            if (a != null && AudioGuard.IsPaused(a)) AudioGuard.Resume(a);
+        }
+
         // GamePause mutes with AudioListener.pause. MasterLoudness is the listener gain.
         static void ShareListener(AudioSource a)
         {

@@ -46,6 +46,9 @@ namespace FlockFive
 
         public static int PlaybackWarnings { get; private set; }
         public static int RetryPlayCount { get; private set; }
+        public static int PauseRoutes { get; private set; }
+        public static int ResumeRoutes { get; private set; }
+        public static bool RetryDeferred => _retryDeferred;
         public static int SkippedCount => _skipped.Count;
 
         // Test seam: the next PlayScheduled on this source returns false once.
@@ -55,6 +58,8 @@ namespace FlockFive
         static readonly List<int> _paused = new List<int>(8);
         static readonly List<int> _retried = new List<int>(8);
         static readonly List<string> _logged = new List<string>(8);
+        static bool _retryDeferred;
+        static bool _reassertPending;
 
         // Playback after a failed output init. Never throws: a destroyed source
         // or a clip error logs once and returns false so Update keeps going.
@@ -127,7 +132,37 @@ namespace FlockFive
             }
         }
 
-        // Pause keeps its place in the clip. Recovery must not Play() it back to 0.
+        // Game pause. One path: mark the sources that are actually speaking, then
+        // GamePause freezes the listener. A tutor bed that ignores the listener stays up.
+        public static void Pause()
+        {
+            PauseRoutes++;
+            if (MixDesk.Live != null) MixDesk.Live.PauseForGame();
+            Sfx.PauseForGame();
+        }
+
+        // Resume clears the pause set and plays a retry that waited out the pause.
+        public static void Resume()
+        {
+            ResumeRoutes++;
+            if (MixDesk.Live != null) MixDesk.Live.ResumeForGame();
+            Sfx.ResumeForGame();
+            _paused.Clear();
+            if (_reassertPending && !Muted && !GamePause.Paused)
+            {
+                _reassertPending = false;
+                if (MixDesk.Live != null) MixDesk.Live.ReassertBed();
+            }
+            if (_retryDeferred && !Muted && !GamePause.Paused)
+            {
+                _retryDeferred = false;
+                RetrySkipped();
+            }
+        }
+
+        public static bool IsPaused(AudioSource source) => HeldPaused(source);
+
+        // A single source, paused on purpose. Recovery must not Play() it back to 0.
         public static void Pause(AudioSource source)
         {
             if (!Alive(source)) return;
@@ -141,6 +176,19 @@ namespace FlockFive
             }
             Release(source);
             try { source.Pause(); }
+            catch (Exception ex) { NotePlayback(source, ex); }
+        }
+
+        public static void Resume(AudioSource source)
+        {
+            if (!Alive(source)) return;
+            int id = Identity(source);
+            if (id != 0)
+            {
+                for (int i = _paused.Count - 1; i >= 0; i--)
+                    if (_paused[i] == id) _paused.RemoveAt(i);
+            }
+            try { source.UnPause(); }
             catch (Exception ex) { NotePlayback(source, ex); }
         }
 
@@ -332,17 +380,19 @@ namespace FlockFive
         static void RetrySkipped()
         {
             _retried.Clear();
-            if (Muted)
+            if (GamePause.Paused || Muted)
             {
-                _skipped.Clear();
+                _retryDeferred = true;
                 return;
             }
+            _retryDeferred = false;
             var batch = new List<AudioSource>(_skipped);
             _skipped.Clear();
             for (int i = 0; i < batch.Count; i++)
             {
                 var s = batch[i];
                 if (!Alive(s)) continue;
+                if (s.isPlaying) continue;
                 if (HeldPaused(s)) continue;
                 if (MixDesk.Live != null && MixDesk.Live.BlocksSkippedRetry(s)) continue;
                 try
@@ -432,6 +482,10 @@ namespace FlockFive
             RejectScheduled = null;
             PlaybackWarnings = 0;
             RetryPlayCount = 0;
+            PauseRoutes = 0;
+            ResumeRoutes = 0;
+            _retryDeferred = false;
+            _reassertPending = false;
         }
 
         public static void SettleDevConsole()
@@ -500,6 +554,19 @@ namespace FlockFive
             MusicEnabled = !m;
             SfxEnabled = !m;
             if (persist) { PlayerPrefs.SetInt(MuteKey, m ? 1 : 0); PlayerPrefs.Save(); }
+            if (was && !m)
+            {
+                if (GamePause.Paused) _reassertPending = true;
+                else
+                {
+                    if (MixDesk.Live != null) MixDesk.Live.ReassertBed();
+                    if (_retryDeferred)
+                    {
+                        _retryDeferred = false;
+                        RetrySkipped();
+                    }
+                }
+            }
             if (was != m) MutedChanged?.Invoke(m);
         }
 

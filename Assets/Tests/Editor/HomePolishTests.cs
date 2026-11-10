@@ -64,6 +64,7 @@ namespace FlockFive.Editor
             CheckFmod(Check);
             CheckPlayScheduled(Check);
             CheckAudioRetry(Check);
+            CheckPauseAndUnmute(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -393,6 +394,83 @@ namespace FlockFive.Editor
                 UnityEngine.Object.DestroyImmediate(skippedGo);
                 UnityEngine.Object.DestroyImmediate(otherGo);
                 UnityEngine.Object.DestroyImmediate(deskGo);
+            }
+        }
+
+        static void CheckPauseAndUnmute(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            GamePause.Reset();
+            var go = new UnityEngine.GameObject("pause-bed");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("garden-bed");
+                bed.playOnAwake = false;
+
+                int routes = AudioGuard.PauseRoutes;
+                GamePause.Push();
+                bool entered = AudioGuard.PauseRoutes == routes + 1 && GamePause.Paused;
+                GamePause.Push();
+                bool once = AudioGuard.PauseRoutes == routes + 1;
+                AudioGuard.Pause(bed);
+                bool marked = AudioGuard.IsPaused(bed);
+                GamePause.Pop();
+                bool still = GamePause.Paused && AudioGuard.IsPaused(bed);
+                GamePause.Pop();
+                bool cleared = !GamePause.Paused && !AudioGuard.IsPaused(bed) && AudioGuard.ResumeRoutes >= 1;
+
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                bool missed = !AudioGuard.Play(bed) && AudioGuard.SkippedCount >= 1;
+                GamePause.Push();
+                int held = AudioGuard.RetryPlayCount;
+                AudioGuard.OnApplicationFocus(true);
+                bool deferred = AudioGuard.RetryDeferred && AudioGuard.RetryPlayCount == held && AudioGuard.SkippedCount >= 1;
+                GamePause.Pop();
+                bool resumed = !AudioGuard.RetryDeferred && AudioGuard.WasRetried(bed) && AudioGuard.RetryPlayCount == held + 1;
+
+                AudioGuard.NoteFmodFailure("error code 36");
+                desk.PlantStemForTests(0.24f);
+                bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("garden-bed");
+                AudioGuard.Play(bed);
+                int beforeMute = AudioGuard.RetryPlayCount;
+                int skipped = AudioGuard.SkippedCount;
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
+                bool kept = AudioGuard.RetryDeferred && AudioGuard.SkippedCount >= skipped && AudioGuard.RetryPlayCount == beforeMute;
+                AudioGuard.SetMuted(false, false);
+                bool brought = bed.isPlaying || desk.ReassertBed() >= 1;
+                if (bed.isPlaying)
+                    brought = brought && desk.ReassertBed() == 0;
+                AudioGuard.Pause(bed);
+                bool pausedStays = desk.ReassertBed() == 0 && AudioGuard.IsPaused(bed);
+                desk.PlantStemForTests(0f);
+                var quiet = desk.StemForTests(0);
+                quiet.clip = ProbeClip("silent-bed");
+                bool silent = desk.ReassertBed() == 0;
+
+                Check("game-pause-routes-through-audioguard",
+                    entered && once && marked && still && cleared,
+                    "entered " + entered + " once " + once + " marked " + marked + " cleared " + cleared);
+                Check("retry-waits-until-game-resume",
+                    missed && deferred && resumed,
+                    "missed " + missed + " deferred " + deferred + " resumed " + resumed);
+                Check("unmute-reasserts-the-bed",
+                    kept && brought && pausedStays && silent,
+                    "kept " + kept + " brought " + brought + " paused " + pausedStays + " silent " + silent);
+            }
+            finally
+            {
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.ResetForTests();
+                GamePause.Reset();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
             }
         }
     }
