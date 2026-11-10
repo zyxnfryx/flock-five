@@ -843,6 +843,7 @@ namespace FlockFive.Editor
         {
             AudioGuard.ResetForTests();
             var go = new UnityEngine.GameObject("reboot-bed");
+            var strayGo = new UnityEngine.GameObject("stray-loop");
             MixDesk desk = null;
             try
             {
@@ -855,17 +856,26 @@ namespace FlockFive.Editor
                 AudioGuard.Play(bed);
                 AudioGuard.ScheduleStemsTogether(new AudioSource[] { bed });
                 bed.timeSamples = 20000;
+                var stray = strayGo.AddComponent<AudioSource>();
+                stray.playOnAwake = false;
+                stray.loop = true;
+                stray.clip = ProbeClip("stray-loop");
+                stray.volume = 0.5f;
+                AudioGuard.Play(stray);
                 int plays = AudioGuard.PlayCalls;
                 int stops = AudioGuard.StopCalls;
                 MixDesk.Boot(go);
-                bool held = bed.timeSamples == 20000 && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops;
-                Check("second-boot-keeps-the-bed", held,
-                    "samples " + bed.timeSamples + " plays " + AudioGuard.PlayCalls + " stops " + AudioGuard.StopCalls);
+                bool bedHeld = bed.timeSamples == 20000 && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops + 1;
+                bool strayDown = !stray.isPlaying && stray.volume == 0f;
+                Check("second-boot-keeps-the-bed", bedHeld && strayDown,
+                    "samples " + bed.timeSamples + " plays " + AudioGuard.PlayCalls
+                    + " stops " + AudioGuard.StopCalls + " stray " + stray.volume);
             }
             finally
             {
                 AudioGuard.ResetForTests();
                 if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(strayGo);
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
