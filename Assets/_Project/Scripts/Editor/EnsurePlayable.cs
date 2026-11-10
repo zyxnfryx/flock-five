@@ -100,6 +100,7 @@ namespace FlockFive.Editor
             Suite("storm-glass", StormGlassTests.Run);
             Suite("sky", SkyCycleTests.Run);
             Suite("bee-cards", BeeCardQueueTests.Run);
+            Suite("build121-bee-cards", Build121BeeCardTests.Run);
             Suite("build110-lightning-fire", Build110LightningFireTests.Run);
             Suite("build126-tap-cue", Build126TapCueTests.Run);
             Suite("build126-clear-garden-1", Build126ClearGardenOneTests.Run);

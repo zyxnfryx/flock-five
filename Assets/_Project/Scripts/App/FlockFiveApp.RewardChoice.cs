@@ -10,6 +10,16 @@ namespace FlockFive
         // No ad available (not loaded, cooldown, grace): one green Collect only.
         public const string RewardDoubleWord = "2X";
         public const string RewardCollectWord = "Collect";
+        // Stage-clear 2X pays the coin prize again. Cards on that board are not doubled.
+        public const string RewardCoinsDoubleWord = "2X COINS";
+
+        public static bool DoublesCoinsOnly(string word)
+        {
+            if (string.IsNullOrEmpty(word)) return false;
+            bool coins = word.IndexOf("COIN", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            bool cards = word.IndexOf("CARD", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            return coins && !cards;
+        }
 
         // 0 waiting, 1 ad running, 2 chosen.
         int _rewardChoice;
@@ -158,7 +168,7 @@ namespace FlockFive
             bool secHit = hasAd && HitPad(lay.Secondary, out secHeld);
             var keep = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, a);
-            DrawOfferChoice(lay, hasAd, priHeld, secHeld, a, s, RewardCollectWord);
+            DrawOfferChoice(lay, hasAd, priHeld, secHeld, a, s, RewardCollectWord, RewardCoinsDoubleWord);
             GUI.color = keep;
             if (a < 0.5f) return;
             if (hasAd && priHit) StartCoroutine(WatchRewardRepeat());
@@ -169,8 +179,9 @@ namespace FlockFive
         // popup so both have the same buttons, icon+label group, pulse, sheen and popup style.
         // Primary = green WATCH AD 2X (or lone green Collect when no ad); Secondary = wood Collect.
         // Caller owns hit testing and alpha (GUI.color); `a` only scales the sheen.
-        void DrawOfferChoice(OfferButtonsLayout lay, bool hasAd, bool priHeld, bool secHeld, float a, float s, string collectWord)
+        void DrawOfferChoice(OfferButtonsLayout lay, bool hasAd, bool priHeld, bool secHeld, float a, float s, string collectWord, string doubleWord = null)
         {
+            if (string.IsNullOrEmpty(doubleWord)) doubleWord = RewardDoubleWord;
             if (_choiceWord == null)
                 _choiceWord = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
             // b87: the 2X button reads as "Watch Ad": video icon, "WATCH AD" over a big 2X,
@@ -197,13 +208,13 @@ namespace FlockFive
                 float padX = face.width * PopupWordPadX;
                 float slotW = Mathf.Max(8f, face.width - 2f * padX - ic - gap);
                 var slotLab = new Rect(0f, face.y + face.height * PopupWordPadY * 0.5f, slotW, face.height * (1f - PopupWordPadY));
-                float textW = MeasureWatchAdWords(slotLab, s);
+                float textW = MeasureWatchAdWords(slotLab, s, doubleWord);
                 float groupW = ic + gap + textW;
                 float gx = face.center.x - groupW * 0.5f;
                 var icR = new Rect(gx, face.center.y - ic * 0.5f, ic, ic);
                 DrawPlayAdIcon(icR);
                 var txt = new Rect(icR.xMax + gap, slotLab.y, textW, slotLab.height);
-                DrawWatchAdWords(txt, s);
+                DrawWatchAdWords(txt, s, doubleWord);
                 PushButton.EndPulse(m0);
                 var sf = DrawPopupButton(lay.Secondary, secHeld, PopupTint.Wood);
                 DrawPopupWord(sf, collectWord, _choiceWord, s);
@@ -218,18 +229,19 @@ namespace FlockFive
 
         // Fits both lines to the slot (same FitFont/outline rule as DrawPopupWord) and returns the widest line,
         // so the icon + words group can be centered on the button.
-        float MeasureWatchAdWords(Rect slot, float s)
+        float MeasureWatchAdWords(Rect slot, float s, string doubleWord)
         {
-            FitWatchAdWords(slot, s, out _, out _);
+            FitWatchAdWords(slot, s, doubleWord, out _, out _);
             var c1 = new GUIContent(WatchAdWord);
-            var c2 = new GUIContent(RewardDoubleWord);
+            var c2 = new GUIContent(doubleWord);
             float w1 = _watchSmall.CalcSize(c1).x;
             float w2 = _choiceWord.CalcSize(c2).x;
             return Mathf.Min(slot.width, Mathf.Max(w1, w2));
         }
 
-        void FitWatchAdWords(Rect r, float s, out Rect top, out Rect big)
+        void FitWatchAdWords(Rect r, float s, string doubleWord, out Rect top, out Rect big)
         {
+            if (string.IsNullOrEmpty(doubleWord)) doubleWord = RewardDoubleWord;
             if (_watchSmall == null)
                 _watchSmall = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
             top = new Rect(r.x, r.y, r.width, r.height * 0.36f);
@@ -237,15 +249,16 @@ namespace FlockFive
             _watchSmall.wordWrap = false; _watchSmall.alignment = TextAnchor.MiddleCenter; _watchSmall.fontStyle = FontStyle.Bold;
             _watchSmall.fontSize = FitFont(_watchSmall, WatchAdWord, top.width, top.height, 9, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
             _choiceWord.wordWrap = false; _choiceWord.alignment = TextAnchor.MiddleCenter; _choiceWord.fontStyle = FontStyle.Bold;
-            _choiceWord.fontSize = FitFont(_choiceWord, RewardDoubleWord, big.width, big.height, 14, Mathf.Max(18, Mathf.RoundToInt(34f * s)));
+            _choiceWord.fontSize = FitFont(_choiceWord, doubleWord, big.width, big.height, 14, Mathf.Max(18, Mathf.RoundToInt(34f * s)));
         }
 
         // White fill, dark outline: same stamp as DrawPopupWord on Collect / Pay Double.
-        void DrawWatchAdWords(Rect r, float s)
+        void DrawWatchAdWords(Rect r, float s, string doubleWord)
         {
-            FitWatchAdWords(r, s, out var top, out var big);
+            if (string.IsNullOrEmpty(doubleWord)) doubleWord = RewardDoubleWord;
+            FitWatchAdWords(r, s, doubleWord, out var top, out var big);
             StampOutlined(top, WatchAdWord, _watchSmall, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(_watchSmall.fontSize * 0.16f), 2, 8));
-            StampOutlined(big, RewardDoubleWord, _choiceWord, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(_choiceWord.fontSize * 0.16f), 2, 8));
+            StampOutlined(big, doubleWord, _choiceWord, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(_choiceWord.fontSize * 0.16f), 2, 8));
         }
 
         IEnumerator WatchRewardRepeat()

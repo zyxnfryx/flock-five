@@ -209,7 +209,7 @@ namespace FlockFive
             if (honey < 0) honey = step == 3 ? 5 : 0;
             bool inspect = step >= 2;
             bool honeyOn = step == 3;
-            CardText.LessonBands(focus, inspect, honeyOn, honeyOn, out var title, out var body, out var flavor, out var icons);
+            CardText.LessonBands(focus, inspect, honeyOn, honeyOn, out var title, out var body, out var flavor, out var icons, honey);
             var text = new CoachSeat.FocusText { Title = title, Body = body, Flavor = flavor };
             float s = DeviceFit.UiH(screenH);
             var hang = CaptionLayout.BoxPad(screenH);
@@ -237,7 +237,7 @@ namespace FlockFive
             int cellN = 0;
             if (honeyOn && honey > 0 && icons.width > 2f)
             {
-                cells = new Rect[5];
+                cells = new Rect[HoneyPoke.Cap];
                 cellN = CardText.HoneyCells(icons, honey, inspect, cells);
             }
             ResolveLessonGlove(focus, icons, plate, text, s, screenW, screenH, cells, cellN, out var aim, out float approach, out var glove, step);

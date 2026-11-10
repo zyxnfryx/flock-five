@@ -62,6 +62,8 @@ namespace FlockFive
         bool _clearReward;
         // Clear is saved and unspent. The homepage sign still owes the coin flight.
         bool _streakHomeDue;
+        // Album cards earned on the clear this sign is paying. 0 hides the line.
+        int _rewardCards;
         // RewardGap after that board tucks. Lessons wait. The sign is already gone.
         bool _rewardGap;
         int _rewardGapGen;
@@ -292,7 +294,7 @@ namespace FlockFive
         const string CoachHiveAlbumKey = "flockfive.coach.hivealbum";
         const string AlbumTapLine = "Tap a card you have\nto enlarge it.";
         const string AlbumFlipLine = "Tap again to flip.";
-        // After flip: honeycombs by rarity (shared CardText / HoneyOfFinish floor).
+        // After flip: honeycombs on the back (rarity floor plus one per upgrade).
         const string AlbumHoneyLine = CaptionLayout.AlbumHoneyBlock;
         // Separate post-badger step (CoachHiveUpgradeKey).
         const string AlbumUpgradeLine = CaptionLayout.AlbumUpgradeLine;
@@ -320,6 +322,7 @@ namespace FlockFive
         bool _upgradeTutorAimOk;
         Vector2 _upgradeTutorAim;
         Rect _upgradeBtnR;
+        Rect _upgradeLabelR;
         float _albumOpenAt = -1f;
         int _albumOpenFrames;
         int _albumAgeFrame = -1;
@@ -5227,12 +5230,15 @@ namespace FlockFive
         void PlayClearReward()
         {
             _clearReward = false;
+            int cards = _levelBees.Count;
             if (_restarting || _splash)
             {
                 _streakHomeDue = false;
+                _rewardCards = 0;
                 return;
             }
             _streakHomeDue = Purse.Streak > 0 && Purse.Pending > 0;
+            _rewardCards = _streakHomeDue ? cards : 0;
         }
 
         bool TipLocked(int i)
@@ -8489,6 +8495,7 @@ namespace FlockFive
             bool finished = _streakSlide >= 1f;
             _streakSlide = -1f;
             if (!live) return;
+            _rewardCards = 0;
             // Leaving early still pays once. The pay step already cleared Owed if it ran.
             PayStreakStep();
             Purse.Pending = 0;
@@ -9001,6 +9008,40 @@ namespace FlockFive
         public const float RewardButtonsReserve = 190f;
         public static readonly Color RewardCream = new Color(1f, 0.93f, 0.74f, 1f);
         public static readonly Color RewardGold = new Color(1f, 0.84f, 0.40f, 1f);
+
+        // Generic count for the stage-clear board. Names stay off this popup.
+        // Null when this clear earned no cards, so the coin line keeps the hero band.
+        public static string CardsCollectedLine(int count)
+        {
+            if (count < 1) return null;
+            if (count == 1) return "1 card collected";
+            return count + " cards collected";
+        }
+
+        public struct RewardCardsSeat
+        {
+            public Rect Amount;
+            public Rect Cards;
+            public bool Shown;
+        }
+
+        // Amount keeps the top of the hero. The count sits under it, inside the same band.
+        public static RewardCardsSeat LayoutRewardCards(Rect hero, int count, float s)
+        {
+            var seat = new RewardCardsSeat { Amount = hero };
+            if (string.IsNullOrEmpty(CardsCollectedLine(count))) return seat;
+            if (hero.width < 40f || hero.height < 36f) return seat;
+            if (s < 0.5f) s = 0.5f;
+            float h = hero.height * 0.30f;
+            float floor = 16f * Mathf.Min(s, 1.35f);
+            if (h < floor) h = floor;
+            if (h > hero.height * 0.38f) h = hero.height * 0.38f;
+            if (hero.height - h < 20f) return seat;
+            seat.Shown = true;
+            seat.Cards = new Rect(hero.x, hero.yMax - h, hero.width, h);
+            seat.Amount = new Rect(hero.x, hero.y, hero.width, hero.height - h);
+            return seat;
+        }
         void DrawRewardRow(Rect rest, float appear, float alpha, GUIStyle labelSt, int labelHi, float openK, Vector2 pivot)
         {
             appear = Mathf.Clamp01(appear);
@@ -9674,7 +9715,9 @@ namespace FlockFive
             float heroA = alpha * amtAppear;
             if (heroA > 0.02f)
             {
-                var hero = new Rect(inner.x, linesTop + metaH, inner.width, heroH);
+                var heroFull = new Rect(inner.x, linesTop + metaH, inner.width, heroH);
+                var cardsSeat = LayoutRewardCards(heroFull, _rewardCards, s);
+                var hero = cardsSeat.Amount;
                 string amt = Money.Format(shown);
                 float punch = 1f + 0.08f * Mathf.Sin(Mathf.Clamp01((roll - 0.85f) / 0.15f) * Mathf.PI);
                 var prevM = GUI.matrix;
@@ -9685,6 +9728,11 @@ namespace FlockFive
                 GUI.color = Color.white;
                 StampFit(hero, amt, heroSt, heroInk, heroHi, 0.66f, heroA);
                 GUI.matrix = prevM;
+                if (cardsSeat.Shown)
+                {
+                    int cardsHi = Mathf.Max(14, Mathf.RoundToInt(22f * restScale * s));
+                    StampFit(cardsSeat.Cards, CardsCollectedLine(_rewardCards), heroSt, RewardCream, cardsHi, 0.92f, heroA);
+                }
             }
             if (stampLive)
                 DrawRewardStamp(RewardStampRect(board, streak), streak, alpha, stampAge);
@@ -17038,14 +17086,14 @@ namespace FlockFive
             return Hive.Found <= 0 ? AlbumEmptyLine : AlbumTapLine;
         }
 
-        // Combs on the open card. Same count DrawBack paints. Five is the wide row.
+        // Combs on the open card. Same count DrawBack paints, upgrades included.
         int AlbumHoneyCount()
         {
             if (_albumTutorStep != 3) return 0;
             int slot = _hiveInspect >= 0 ? _hiveInspect : 0;
             int honey = Hive.HoneyOfSlot(slot);
-            if (honey < 1) honey = 5;
-            if (honey > 5) honey = 5;
+            if (honey < 1) honey = Hive.HoneyOfFinish(BeeFinish.InverseRainbow);
+            if (honey > HoneyPoke.Cap) honey = HoneyPoke.Cap;
             return honey;
         }
 
@@ -17149,6 +17197,7 @@ namespace FlockFive
             _gloveVis = false;
             _gloveReady = false;
             if (was) GloveVeilReset();
+            _upgradeLabelR = default;
             if (_cueLine == AlbumUpgradeLine) _cueLine = null;
             _cueSpoken = null;
             if (was) NoteLessonDismiss(CoachStep.AlbumUpgrade);
@@ -17360,11 +17409,14 @@ namespace FlockFive
             if (dt < 0f) dt = 0f;
             CueLine(AlbumUpgradeLine);
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-            var aim = GloveTarget(_upgradeBtnR);
+            // From the left, so the palm stays off the word. The tip lands in the
+            // padding beside "Upgrade", and the shared arc loops in from off the button.
+            _gloveKeepOff = _upgradeBtnR;
+            var aim = ButtonLabelAim(_upgradeBtnR, _upgradeLabelR, true);
             _upgradeTutorAim = aim;
             _upgradeTutorAimOk = true;
             float handS = DeviceFit.Ui();
-            CoachGloveAt(aim, dt, handS, float.NaN, false, float.NaN, _upgradeBtnR);
+            CoachGloveAt(aim, dt, handS, float.NaN, true, float.NaN, _upgradeBtnR);
             return true;
         }
 
@@ -17910,6 +17962,7 @@ namespace FlockFive
         bool DrawHiveUpgrade(int slot, float hintTop, float s, float alpha)
         {
             _upgradeBtnR = default;
+            _upgradeLabelR = default;
             if (alpha < 0.04f || (uint)slot >= (uint)Hive.AlbumSlots) return false;
             if (!Hive.UpgradesUnlocked || Hive.CountOfSlot(slot) <= 0) return false;
             var pill = FlipHintRect(hintTop, s);
@@ -17993,6 +18046,7 @@ namespace FlockFive
             st.alignment = TextAnchor.MiddleCenter;
             st.fontStyle = FontStyle.Bold;
             var lab = new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.10f, face.width * 0.88f, face.height * 0.80f);
+            _upgradeLabelR = lab;
             if (maxxed)
             {
                 // MAXXED stays centered; the gem sits out in the left margin, centered between
@@ -18612,7 +18666,7 @@ namespace FlockFive
         // stays above 4.5:1; every themed card gets a glow behind the comb row.
         void DrawThemedBackdrop(Rect face, in FaceStyle st, bool showBack, int honey, bool inspectView)
         {
-            CardText.FaceBands(face, inspectView, showBack, showBack && honey > 0, out var titleR, out var flavorR);
+            CardText.FaceBands(face, inspectView, showBack, showBack && honey > 0, out var titleR, out var flavorR, honey);
             if (st.Night)
             {
                 float padX = face.width * 0.04f;
@@ -18665,6 +18719,7 @@ namespace FlockFive
                 Full = true,
                 Back = showBack,
                 Honey = showBack && honey > 0,
+                HoneyCount = showBack ? honey : 0,
                 Ink = themed ? fstyle.Ink : new Color(0.16f, 0.07f, 0.02f, 1f),
                 FinishInk = FinishInk.Tag(finish),
                 Themed = themed,
