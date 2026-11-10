@@ -50,6 +50,9 @@ namespace FlockFive
         public static int ResumeRoutes { get; private set; }
         public static bool RetryDeferred => _retryDeferred;
         public static int SkippedCount => _skipped.Count;
+        public static int RestoreCount => _restore.Count;
+        public static int PlayCalls { get; private set; }
+        public static int StopCalls { get; private set; }
 
         // Test seam: the next PlayScheduled on this source returns false once.
         public static AudioSource RejectScheduled;
@@ -80,6 +83,7 @@ namespace FlockFive
             }
             try
             {
+                PlayCalls++;
                 source.Play();
                 Release(source);
                 if (source.loop) NoteStarted(source);
@@ -113,6 +117,7 @@ namespace FlockFive
             }
             try
             {
+                PlayCalls++;
                 source.PlayScheduled(time);
                 Release(source);
                 if (source.loop) NoteStarted(source);
@@ -163,6 +168,11 @@ namespace FlockFive
         {
             if (ReferenceEquals(source, null)) return;
             DropFrom(_started, source, Identity(source));
+        }
+
+        public static void NoteStopped()
+        {
+            StopCalls++;
         }
 
         // Game pause. One path: mark the sources that are actually speaking, then
@@ -533,6 +543,8 @@ namespace FlockFive
             RejectScheduled = null;
             PlaybackWarnings = 0;
             RetryPlayCount = 0;
+            PlayCalls = 0;
+            StopCalls = 0;
             PauseRoutes = 0;
             ResumeRoutes = 0;
             _retryDeferred = false;
@@ -605,7 +617,8 @@ namespace FlockFive
             MusicEnabled = !m;
             SfxEnabled = !m;
             if (persist) { PlayerPrefs.SetInt(MuteKey, m ? 1 : 0); PlayerPrefs.Save(); }
-            if (!was && m && MixDesk.Live != null) MixDesk.Live.SilenceForMute();
+            // Volume only. MusicScale is already 0 while MusicEnabled is off, so a
+            // playing bed keeps its place in the loop. Nothing is stopped.
             if (was && !m)
             {
                 if (GamePause.Paused) _reassertPending = true;

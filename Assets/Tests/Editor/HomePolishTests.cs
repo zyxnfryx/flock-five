@@ -439,16 +439,17 @@ namespace FlockFive.Editor
                 desk.PlantStemForTests(0.24f);
                 bed = desk.StemForTests(0);
                 bed.clip = ProbeClip("garden-bed");
-                AudioGuard.Play(bed);
-                int beforeMute = AudioGuard.RetryPlayCount;
-                int skipped = AudioGuard.SkippedCount;
+                bed.loop = true;
+                bool heldDead = !AudioGuard.Play(bed) && AudioGuard.NeedsRestore(bed);
+                int plays = AudioGuard.PlayCalls;
+                int stops = AudioGuard.StopCalls;
+                bed.timeSamples = 32000;
                 AudioGuard.SetMuted(true, false);
                 AudioGuard.OnAudioConfigurationChanged(true);
-                bool kept = AudioGuard.RetryDeferred && AudioGuard.SkippedCount >= skipped && AudioGuard.RetryPlayCount == beforeMute;
+                bool muteLeftIt = AudioGuard.StopCalls == stops && AudioGuard.PlayCalls == plays
+                    && bed.timeSamples == 32000 && AudioGuard.NeedsRestore(bed);
                 AudioGuard.SetMuted(false, false);
-                bool brought = bed.isPlaying || desk.ReassertBed() >= 1;
-                if (bed.isPlaying)
-                    brought = brought && desk.ReassertBed() == 0;
+                bool brought = heldDead && muteLeftIt && desk.LastReassert == 1;
                 AudioGuard.Pause(bed);
                 bool pausedStays = desk.ReassertBed() == 0 && AudioGuard.IsPaused(bed);
                 desk.PlantStemForTests(0f);
@@ -486,38 +487,61 @@ namespace FlockFive.Editor
             {
                 desk = go.AddComponent<MixDesk>();
                 desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var mid = desk.StemForTests(0);
+                mid.clip = ProbeClip("mid-bed");
+                mid.loop = true;
+                AudioGuard.Play(mid);
+                mid.timeSamples = 44100;
+                int plays = AudioGuard.PlayCalls;
+                int stops = AudioGuard.StopCalls;
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.SetMuted(false, false);
+                bool place = AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops
+                    && mid.timeSamples == 44100 && AudioGuard.RestoreCount == 0 && !AudioGuard.NeedsRestore(mid);
+
+                AudioGuard.ResetForTests();
                 desk.PlantBadgerVoicesForTests(out var loop, out var cue, out var sting);
                 loop.clip = ProbeClip("badger-loop");
                 cue.clip = ProbeClip("badger-cue");
                 sting.clip = ProbeClip("badger-sting");
                 cue.loop = false;
                 sting.loop = false;
+                loop.loop = true;
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
                 AudioGuard.Play(loop);
                 AudioGuard.Play(sting);
-                AudioGuard.SetMuted(true, false);
                 desk.ArmCutForTests();
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
                 AudioGuard.SetMuted(false, false);
                 bool cut = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(loop) && !AudioGuard.NeedsRestore(sting);
 
                 AudioGuard.ResetForTests();
+                AudioGuard.NoteFmodFailure("error code 36");
                 AudioGuard.Play(loop);
                 AudioGuard.Play(sting);
                 desk.ArmResultForTests();
                 desk.BadgerResult(true);
                 AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
                 AudioGuard.SetMuted(false, false);
                 bool result = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(loop) && !AudioGuard.NeedsRestore(sting);
 
                 AudioGuard.ResetForTests();
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
                 desk.PlantSplashStemForTests(false);
                 var splash = desk.StemForTests(4);
                 splash.clip = ProbeClip("splash-early");
+                splash.loop = true;
                 AudioGuard.Play(splash);
                 AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
                 AudioGuard.SetMuted(false, false);
                 bool early = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(splash);
 
                 AudioGuard.ResetForTests();
+                AudioGuard.NoteFmodFailure("error code 36");
                 desk.PlantStemForTests(0.24f);
                 var kept = desk.StemForTests(0);
                 kept.clip = ProbeClip("kept-bed");
@@ -529,9 +553,11 @@ namespace FlockFive.Editor
                 AudioGuard.Play(kept);
                 AudioGuard.Play(oneShot);
                 AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
                 AudioGuard.SetMuted(false, false);
                 bool only = desk.LastReassert == 1 && AudioGuard.WasStarted(kept) && !AudioGuard.WasStarted(other) && !AudioGuard.NeedsRestore(oneShot);
 
+                Check("mute-unmute-mid-bed-keeps-position", place, "place " + place + " samples " + mid.timeSamples);
                 Check("unmute-during-cut-starts-nothing", cut, "cut " + cut);
                 Check("unmute-after-result-starts-nothing", result, "result " + result);
                 Check("unmute-before-splash-welcome-starts-nothing", early, "early " + early);
