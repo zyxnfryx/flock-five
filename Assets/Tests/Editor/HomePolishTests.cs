@@ -62,6 +62,7 @@ namespace FlockFive.Editor
                 CardStage.MustDeferRender(true) && !CardStage.MustDeferRender(false), "nested");
             CheckCardRender(Check);
             CheckFmod(Check);
+            CheckPlayScheduled(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -214,17 +215,74 @@ namespace FlockFive.Editor
         static void CheckFmod(System.Action<string, bool, string> Check)
         {
             AudioGuard.ResetForTests();
-            bool known = AudioGuard.IsFmodFailure("FMOD failed to initialize the output device: error code 36");
-            bool plain = !AudioGuard.IsFmodFailure("NullReferenceException: Object reference not set");
-            bool once = AudioGuard.NoteFmodFailure("FMOD error code 36");
-            int n = AudioGuard.FmodWarnings;
-            bool again = AudioGuard.NoteFmodFailure("FMOD error code 36");
-            bool stayed = AudioGuard.FmodWarnings == 1 && AudioGuard.OutputFailed;
-            bool ignored = !AudioGuard.NoteFmodFailure("InvalidOperationException: already created");
-            Check("fmod-output-init-warns-once",
-                known && plain && once && again && stayed && ignored && n == 1,
-                "warnings " + AudioGuard.FmodWarnings);
+            bool load = !AudioGuard.IsFmodFailure("FMOD error: failed to load clip")
+                && !AudioGuard.NoteFmodFailure("FMOD error: failed to load clip");
+            bool decode = !AudioGuard.IsFmodFailure("FMOD_ERR_FORMAT decode error")
+                && !AudioGuard.NoteFmodFailure("FMOD failed to decode the sample, error code 25");
+            bool otherCode = !AudioGuard.IsFmodFailure("FMOD error code 360");
+            bool quiet = !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0;
+            bool named = AudioGuard.IsFmodFailure("FMOD_ERR_OUTPUT_INIT")
+                && AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+            bool latched = AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+            bool again = AudioGuard.NoteFmodFailure("FMOD failed to initialize the output device: error code 36");
+            bool once = latched && again && AudioGuard.FmodWarnings == 1;
+            AudioGuard.OnAudioConfigurationChanged(true);
+            bool config = !AudioGuard.OutputFailed;
+            bool rewarn = AudioGuard.NoteFmodFailure("error code 36") && AudioGuard.FmodWarnings == 2 && AudioGuard.OutputFailed;
+            AudioGuard.OnApplicationFocus(true);
+            bool focus = !AudioGuard.OutputFailed;
+            AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+            AudioGuard.OnApplicationFocus(false);
+            AudioGuard.OnApplicationPause(true);
+            bool held = AudioGuard.OutputFailed;
+            AudioGuard.OnApplicationPause(false);
+            bool resume = !AudioGuard.OutputFailed;
+            bool plain = !AudioGuard.NoteFmodFailure("InvalidOperationException: already created");
+            Check("fmod-output-init-only",
+                load && decode && otherCode && quiet && named && once && plain,
+                "warnings " + AudioGuard.FmodWarnings + " failed " + AudioGuard.OutputFailed);
+            Check("fmod-output-recovers",
+                config && rewarn && focus && held && resume && !AudioGuard.OutputFailed,
+                "config " + config + " focus " + focus + " held " + held + " resume " + resume);
             AudioGuard.ResetForTests();
+        }
+
+        static void CheckPlayScheduled(System.Action<string, bool, string> Check)
+        {
+            string root = System.IO.Path.Combine(UnityEngine.Application.dataPath, "_Project/Scripts");
+            var bypass = new System.Collections.Generic.List<string>();
+            int routed = 0;
+            int impl = 0;
+            if (System.IO.Directory.Exists(root))
+            {
+                var files = System.IO.Directory.GetFiles(root, "*.cs", System.IO.SearchOption.AllDirectories);
+                for (int f = 0; f < files.Length; f++)
+                {
+                    var lines = System.IO.File.ReadAllLines(files[f]);
+                    bool guard = files[f].EndsWith("AudioGuard.cs");
+                    for (int i = 0; i < lines.Length; i++)
+                    {
+                        if (lines[i].IndexOf(".PlayScheduled(", System.StringComparison.Ordinal) < 0) continue;
+                        string trimmed = lines[i].TrimStart();
+                        if (trimmed.StartsWith("//")) continue;
+                        if (lines[i].IndexOf("AudioGuard.PlayScheduled(", System.StringComparison.Ordinal) >= 0)
+                        {
+                            routed++;
+                            continue;
+                        }
+                        if (guard && lines[i].IndexOf("source.PlayScheduled(", System.StringComparison.Ordinal) >= 0)
+                        {
+                            impl++;
+                            continue;
+                        }
+                        bypass.Add(System.IO.Path.GetFileName(files[f]) + ":" + (i + 1));
+                    }
+                }
+            }
+            else bypass.Add("missing " + root);
+            bool ok = bypass.Count == 0 && routed >= 3 && impl == 1;
+            Check("play-scheduled-goes-through-guard", ok,
+                ok ? "routed " + routed : "routed " + routed + " impl " + impl + " " + string.Join(" ", bypass.ToArray()));
         }
     }
 }

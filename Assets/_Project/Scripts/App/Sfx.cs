@@ -261,7 +261,7 @@ namespace FlockFive
             if (a == null) return;
             a.pitch = pitch;
             try { a.PlayOneShot(clip, vol); }
-            catch (System.Exception ex) { AudioGuard.NoteFmodFailure(ex.Message); }
+            catch (System.Exception ex) { if (!AudioGuard.NoteFmodFailure(ex.Message)) throw; }
         }
 
         static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer, float leadDuck = MixDesk.DuckChirp)
