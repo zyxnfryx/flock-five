@@ -633,6 +633,11 @@ namespace FlockFive
         // raise waits until a bird has drawn Zzz.
         // ?openPoker=1 stays on the home shell, deals one hand, and draws it
         // so the Back tip is the plate on screen. The Back pref stays owed.
+        // ?forceClear=1 waits until the star wipe is down and the garden is
+        // playable, and on an ostrich garden until the entrance (honk, stride,
+        // plant) has returned him to idle. Then it empties the board and calls
+        // TryScoreGarden, the same win latch a StageClearingCollect reaches,
+        // so the real Collect / Watch Ad card opens. Default off.
         void MaybeDevLevelSkip()
         {
             if (_devLevelSkipDone) return;
@@ -705,7 +710,8 @@ namespace FlockFive
                     + " keepTips=" + (plan.KeepTips ? 1 : 0)
                     + " forceFeeder=" + (plan.ForceFeeder ? 1 : 0)
                     + " forceNap=" + (plan.ForceNap ? 1 : 0)
-                    + " openPoker=" + (plan.OpenPoker ? 1 : 0));
+                    + " openPoker=" + (plan.OpenPoker ? 1 : 0)
+                    + " forceClear=" + (plan.ForceClear ? 1 : 0));
             if (plan.OpenPoker)
             {
                 DevOpenPokerTable();
@@ -725,6 +731,7 @@ namespace FlockFive
             if (plan.ForceNap && DevForceSleepingFlock(plan.ForceFeeder))
                 StartCoroutine(DevRaiseForcedNap());
             if (plan.ForceFeeder) DevForceFeederPlate();
+            if (plan.ForceClear) StartCoroutine(DevForceStageClear());
         }
 
         // One limb becomes five of a color no feeder wants, then Sync seats them
@@ -850,6 +857,55 @@ namespace FlockFive
                 + " drawn=" + (drawn ? 1 : 0)
                 + " coins=" + Purse.Coins
                 + " backOwed=" + (PokerBackDone() ? 0 : 1));
+        }
+
+        // After the garden is on screen. The star wipe is LevelCurtain (armed
+        // until the bloom finishes). An ostrich entrance is the non-idle act:
+        // today's chain is strut, honk, then shake, and the arrival keeps the
+        // stride act through the plant until EndEntrance sets idle. The first
+        // idle frame, before that movement, is not the end. Then the board is
+        // emptied and TryScoreGarden runs. That is the latch Collect calls
+        // after StageClearingCollect, and it is what opens the real Collect /
+        // Watch Ad card. No second overlay.
+        IEnumerator DevForceStageClear()
+        {
+            float waited = 0f;
+            bool saw = false;
+            while (true)
+            {
+                if (_splash || _board == null || _restarting || _won) yield break;
+                bool ostrich = _board.Ostrich != null && _board.Ostrich.Alive && _garden.Ostrich != null;
+                bool moving = false;
+                bool idle = true;
+                if (ostrich)
+                {
+                    var act = _garden.Ostrich.Act;
+                    idle = act == OstrichAct.Idle;
+                    moving = !idle;
+                    if (moving) saw = true;
+                }
+                bool presented = !LevelCurtain.Armed && !GardenFit.Busy;
+                if (DevLevelSkip.ForceClearReady(presented, ostrich, moving, idle, saw, waited))
+                    break;
+                waited += Mathf.Max(Time.unscaledDeltaTime, 0.01f);
+                yield return null;
+            }
+            if (_splash || _board == null || _restarting || _won) yield break;
+            var list = _board.Branches;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var br = list[i];
+                if (br == null) continue;
+                br.Birds.Clear();
+                br.Shrouded.Clear();
+            }
+            _board.Displaced.Clear();
+            SyncAll();
+            bool scored = TryScoreGarden();
+            Debug.Log("FF_DEV_FORCE clear=1 display=" + LevelData.DisplayNumber
+                + " scored=" + (scored ? 1 : 0)
+                + " saw=" + (saw ? 1 : 0)
+                + " waited=" + waited.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
         }
 
         // Home cascade the inspector otherwise has to tap through before a garden
