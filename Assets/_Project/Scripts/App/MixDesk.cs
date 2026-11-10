@@ -280,9 +280,9 @@ namespace FlockFive
             return extra;
         }
 
-        // Unmute brings back only the looping beds mute or a dead output stopped.
+        // Unmute brings back only looping beds that a dead output failed to start.
         // A cue, a stinger, a bed under the cut or the result, and splash before
-        // its welcome stay silent. Anything already playing stays put.
+        // its welcome stay silent. A bed that is already playing is not restarted.
         public int ReassertBed()
         {
             if (_stems == null) return 0;
@@ -309,30 +309,6 @@ namespace FlockFive
         }
 
         public int LastReassert { get; private set; }
-
-        // Mute stops the beds that are actually running and remembers those alone.
-        public int SilenceForMute()
-        {
-            if (_stems == null) return 0;
-            int n = 0;
-            for (int i = 0; i < _stems.Length; i++)
-            {
-                var a = _stems[i];
-                if (a == null || !a.loop) continue;
-                if (BlocksSkippedRetry(a) || SplashStemBlocked(a))
-                {
-                    AudioGuard.DropRestore(a);
-                    continue;
-                }
-                if (!a.isPlaying && !AudioGuard.WasStarted(a)) continue;
-                AudioGuard.HoldRestore(a);
-                AudioGuard.ForgetStarted(a);
-                try { a.Stop(); }
-                catch (System.Exception ex) { AudioGuard.NoteClipFailure(a.clip, ex); }
-                n++;
-            }
-            return n;
-        }
 
         public bool SplashStemBlocked(AudioSource source)
         {
@@ -852,6 +828,7 @@ namespace FlockFive
             if (s == null) return;
             AudioGuard.Release(s);
             AudioGuard.DropRestore(s);
+            AudioGuard.NoteStopped();
             s.Stop();
         }
 
