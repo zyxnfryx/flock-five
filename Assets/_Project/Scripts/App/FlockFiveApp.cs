@@ -8603,6 +8603,9 @@ namespace FlockFive
             _rewardChoice = 0;
             _rewardRepeatAmt = 0;
             _rewardHasAd = -1;
+            _rewardAdMiss = false;
+            _rewardWatchBusy = false;
+            _rewardWatchGen++;
         }
 
         void StepStreakReward()

@@ -58,6 +58,7 @@ namespace FlockFive.Editor
             CheckCard("ipad-820", 820f, 1180f, Check);
             CheckCard("phone-402", 402f, 874f, Check);
             CheckCard("phone-412", 412f, 892f, Check);
+            CheckWatchFail(Check);
 
             string choice = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.RewardChoice.cs"));
             string app = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs"));
@@ -67,8 +68,75 @@ namespace FlockFive.Editor
             int swallow = app.IndexOf("SwallowRuleTipPointer()", System.StringComparison.Ordinal);
             Check("gates-drop-before-swallows", release >= 0 && swallow > release, "release " + release + " swallow " + swallow);
 
+            int watchAt = choice.IndexOf("IEnumerator WatchRewardRepeat()", System.StringComparison.Ordinal);
+            int yieldAt = watchAt < 0 ? -1 : choice.IndexOf("yield return Ads.Rewarded(", watchAt, System.StringComparison.Ordinal);
+            string beforeYield = watchAt >= 0 && yieldAt > watchAt ? choice.Substring(watchAt, yieldAt - watchAt) : "";
+            Check("watch-does-not-mark-2x-before-show",
+                beforeYield.Contains("_rewardTookDouble = false") && beforeYield.IndexOf("_rewardTookDouble = true", System.StringComparison.Ordinal) < 0,
+                "flag stays clear until the show earns");
+            int dogAt = choice.IndexOf("void RewardAdWatchdog()", System.StringComparison.Ordinal);
+            int dogEnd = dogAt < 0 ? -1 : choice.IndexOf("void ApplyWatchEnd(", dogAt, System.StringComparison.Ordinal);
+            string dog = dogAt >= 0 && dogEnd > dogAt ? choice.Substring(dogAt, dogEnd - dogAt) : "";
+            Check("watchdog-does-not-auto-collect",
+                dog.Contains("RewardChoiceInput.Watchdog(") && dog.IndexOf("_rewardChoice = 2", System.StringComparison.Ordinal) < 0,
+                "idle miss returns to the card");
+            Check("miss-line-is-on-the-card",
+                choice.Contains("DrawRewardAdMiss(") && choice.Contains("RewardChoiceInput.AdUnavailableLine"),
+                "no second dialog");
+
             Debug.Log("[reward-choice-input] done pass=" + pass + " fail=" + fail);
             if (fail > 0) throw new System.Exception("reward choice input tests failed: " + fail);
+        }
+
+        static void CheckWatchFail(System.Action<string, bool, string> check)
+        {
+            string line = RewardChoiceInput.AdUnavailableLine;
+            check("ad-unavailable-words", line == "Ad not available", line);
+            check("ad-unavailable-not-a-prompt",
+                line.IndexOf("tap", System.StringComparison.OrdinalIgnoreCase) < 0
+                && line.IndexOf("continue", System.StringComparison.OrdinalIgnoreCase) < 0,
+                line);
+
+            var miss = RewardChoiceInput.FinishWatch(false);
+            check("no-fill-stays-on-card",
+                miss.Stay && miss.Unavailable && !miss.PayDouble && !miss.SkipInterstitial && !miss.Waiting,
+                "1x is not collected, interstitial is not skipped");
+            var skipped = RewardChoiceInput.FinishWatch(false);
+            check("cancelled-show-stays-on-card",
+                skipped.Stay && !skipped.SkipInterstitial && !skipped.PayDouble, "same as no fill");
+            var earned = RewardChoiceInput.FinishWatch(true);
+            check("earned-pays-2x",
+                earned.PayDouble && earned.SkipInterstitial && !earned.Stay && !earned.Unavailable,
+                "grant and interstitial skip");
+            check("later-success-still-pays-2x",
+                RewardChoiceInput.FinishWatch(true).PayDouble && RewardChoiceInput.FinishWatch(true).SkipInterstitial,
+                "a second show that earns");
+
+            var showing = RewardChoiceInput.Watchdog(true, 9f, 9f, false);
+            check("watchdog-waits-while-ad-is-up", showing.Waiting && !showing.Stay && !showing.PayDouble, "showing");
+            var early = RewardChoiceInput.Watchdog(false, 0.4f, 1f, false);
+            check("watchdog-waits-inside-the-window", early.Waiting && !early.Stay, "idle");
+            var timed = RewardChoiceInput.Watchdog(false, RewardChoiceInput.WatchIdleSec, RewardChoiceInput.WatchMinSec, false);
+            check("watchdog-timeout-is-a-miss",
+                !timed.Waiting && timed.Stay && timed.Unavailable && !timed.PayDouble && !timed.SkipInterstitial,
+                "does not collect");
+            var timedEarn = RewardChoiceInput.Watchdog(false, RewardChoiceInput.WatchIdleSec, RewardChoiceInput.WatchMinSec, true);
+            check("watchdog-timeout-with-earn-pays",
+                timedEarn.PayDouble && timedEarn.SkipInterstitial && !timedEarn.Stay, "earned during the wait");
+
+            foreach (var size in new[] { new Vector2(820f, 1180f), new Vector2(402f, 874f), new Vector2(412f, 892f) })
+            {
+                var face = new Rect(size.x * 0.12f, size.y * 0.22f, size.x * 0.76f, size.y * 0.22f);
+                var lay = FlockFiveApp.LayoutRewardChoice(face, size.x, size.y, true);
+                var band = RewardChoiceInput.UnavailableLine(face);
+                string tag = "status-" + Mathf.RoundToInt(size.x);
+                bool inside = band.xMin >= face.xMin - 0.1f && band.yMin >= face.yMin - 0.1f
+                    && band.xMax <= face.xMax + 0.1f && band.yMax <= face.yMax + 0.1f;
+                check(tag + "-on-card", inside && band.height >= 18f, band.ToString());
+                check(tag + "-clear-of-buttons",
+                    !band.Overlaps(lay.Primary) && !band.Overlaps(lay.Secondary),
+                    "line " + band.yMax.ToString("0") + " button " + lay.Primary.y.ToString("0"));
+            }
         }
 
         static void CheckCard(string tag, float w, float h, System.Action<string, bool, string> check)

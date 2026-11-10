@@ -83,5 +83,50 @@ namespace FlockFive
         {
             g.Apply(new SplashPress.Hit(), true, null, false, false, frame);
         }
+
+        // One line on the reward card. Not a dialog, and not a tap-to-continue.
+        public const string AdUnavailableLine = "Ad not available";
+
+        // How long a watch may sit with no ad on screen before it counts as a miss.
+        public const float WatchIdleSec = 1.5f;
+        public const float WatchMinSec = 2f;
+
+        public struct WatchEnd
+        {
+            public bool Waiting;
+            public bool PayDouble;
+            public bool SkipInterstitial;
+            public bool Stay;
+            public bool Unavailable;
+        }
+
+        // The show finished. Earned pays 2x and may skip this clear's interstitial.
+        // Anything else stays on the card. It does not collect the 1x and does not
+        // count as a watched 2x.
+        public static WatchEnd FinishWatch(bool earned)
+        {
+            if (earned)
+                return new WatchEnd { PayDouble = true, SkipInterstitial = true };
+            return new WatchEnd { Stay = true, Unavailable = true };
+        }
+
+        // Backup for a show that never calls back. Still showing, or still inside
+        // the wait: keep holding. After that, the same earned / not-earned rule.
+        public static WatchEnd Watchdog(bool adShowing, float idleSec, float sinceStart, bool earned)
+        {
+            if (adShowing || idleSec < WatchIdleSec || sinceStart < WatchMinSec)
+                return new WatchEnd { Waiting = true };
+            return FinishWatch(earned);
+        }
+
+        // Bottom band inside the card face, clear of the buttons that sit under it.
+        public static Rect UnavailableLine(Rect face)
+        {
+            if (face.width < 8f || face.height < 8f) return default;
+            float h = Mathf.Clamp(face.height * 0.16f, 18f, 34f);
+            float insetX = face.width * 0.08f;
+            float insetB = Mathf.Max(6f, face.height * 0.045f);
+            return new Rect(face.x + insetX, face.yMax - insetB - h, Mathf.Max(8f, face.width - insetX * 2f), h);
+        }
     }
 }

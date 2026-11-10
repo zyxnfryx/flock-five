@@ -67,19 +67,56 @@ namespace FlockFive
 
         float _rewardAdT0 = -1f;
         float _rewardAdIdle = -1f;
+        int _rewardWatchGen;
+        bool _rewardWatchBusy;
+        bool _rewardAdMiss;
+        GUIStyle _rewardMissWord;
 
-        // RewardAdWatchdog: if the ad never comes back (app paused/killed mid-ad, SDK drops
-        // the callback, the coroutine host goes away) the popup must not hang. Once no ad is
-        // showing for 1.5s after it started, pay what was earned and treat it as Collect.
+        // If the show never calls back, do not hang and do not collect the 1x.
+        // An earn still pays 2x. A miss returns to this card.
         void RewardAdWatchdog()
         {
             if (_rewardChoice != 1) { _rewardAdIdle = -1f; return; }
             float now = AdPause.Unscaled;
             if (Ads.IsShowing) { _rewardAdIdle = -1f; return; }
             if (_rewardAdIdle < 0f) _rewardAdIdle = now;
-            if (now - _rewardAdIdle < 1.5f || now - _rewardAdT0 < 2f) return;
-            if (RewardedGrant.Earned) RewardedGrant.Flush();
-            _rewardChoice = 2;
+            float since = _rewardAdT0 < 0f ? 0f : now - _rewardAdT0;
+            var end = RewardChoiceInput.Watchdog(false, now - _rewardAdIdle, since, RewardedGrant.Earned);
+            if (end.Waiting) return;
+            ApplyWatchEnd(_rewardWatchGen, end);
+        }
+
+        // gen is the attempt that finished. A newer tap wins over a late miss.
+        // A late earn still pays, unless that newer tap is already in flight.
+        void ApplyWatchEnd(int gen, RewardChoiceInput.WatchEnd end)
+        {
+            if (end.Waiting) return;
+            if (gen != _rewardWatchGen)
+            {
+                if (end.PayDouble && _rewardChoice == 0 && RewardedGrant.Earned)
+                {
+                    RewardedGrant.Flush();
+                    _rewardTookDouble = true;
+                    _rewardAdMiss = false;
+                    _rewardChoice = 2;
+                }
+                return;
+            }
+            if (end.PayDouble)
+            {
+                if (RewardedGrant.Earned) RewardedGrant.Flush();
+                _rewardTookDouble = end.SkipInterstitial;
+                _rewardAdMiss = false;
+                _rewardChoice = 2;
+            }
+            else
+            {
+                _rewardTookDouble = false;
+                _rewardAdMiss = end.Unavailable;
+                _rewardChoice = 0;
+                IdleRewardPress();
+            }
+            _rewardWatchGen++;
         }
 
         bool RewardChoicePending()
@@ -225,6 +262,7 @@ namespace FlockFive
                     DrawRewardStamp(_stampR, _stampMul, _stampA, _stampAge, _stampSpark, false);
                     _stampRepaint = false;
                 }
+                DrawRewardAdMiss(_rewardFace, a);
             }
             // As soon as the buttons are drawn. The old half-fade discard threw away
             // the tap that landed while they were already visibly on screen, and
@@ -244,7 +282,7 @@ namespace FlockFive
             GUI.color = new Color(1f, 1f, 1f, a);
             DrawOfferChoice(lay, hasAd, press.PrimaryHeld, press.SecondaryHeld, a, s, RewardCollectWord);
             GUI.color = keep;
-            if (press.Action == RewardChoiceInput.Tap.Watch) StartCoroutine(WatchRewardRepeat());
+            if (press.Action == RewardChoiceInput.Tap.Watch && !_rewardWatchBusy) StartCoroutine(WatchRewardRepeat());
             else if (press.Action == RewardChoiceInput.Tap.Collect) _rewardChoice = 2;
         }
 
@@ -331,16 +369,45 @@ namespace FlockFive
             StampOutlined(big, RewardDoubleWord, _choiceWord, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(_choiceWord.fontSize * 0.16f), 2, 8));
         }
 
+        // One line of type on the card. No plate, no finger, no second popup.
+        void DrawRewardAdMiss(Rect face, float a)
+        {
+            if (!_rewardAdMiss || a < 0.35f) return;
+            var line = RewardChoiceInput.UnavailableLine(face);
+            if (line.width < 8f || line.height < 8f) return;
+            if (_rewardMissWord == null)
+                _rewardMissWord = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false
+                };
+            string words = RewardChoiceInput.AdUnavailableLine;
+            _rewardMissWord.alignment = TextAnchor.MiddleCenter;
+            _rewardMissWord.fontStyle = FontStyle.Bold;
+            _rewardMissWord.wordWrap = false;
+            _rewardMissWord.fontSize = FitFont(_rewardMissWord, words, line.width, line.height * 0.86f, 11, 22);
+            var ink = RewardCream;
+            ink.a = a;
+            int dark = Mathf.Clamp(Mathf.RoundToInt(_rewardMissWord.fontSize * 0.14f), 2, 6);
+            StampOutlined(line, words, _rewardMissWord, ink, 0, dark);
+        }
+
         IEnumerator WatchRewardRepeat()
         {
+            if (_rewardWatchBusy || _rewardChoice == 1) yield break;
+            _rewardWatchBusy = true;
+            int gen = ++_rewardWatchGen;
             _rewardChoice = 1;
-            // Chosen ad: it stands in for this stage's interstitial.
-            _rewardTookDouble = true;
+            // Not watched until the show actually earns. A miss must not skip the interstitial.
+            _rewardTookDouble = false;
+            _rewardAdMiss = false;
             _rewardAdT0 = AdPause.Unscaled;
+            _rewardAdIdle = -1f;
             int amt = _rewardRepeatAmt;
             yield return Ads.Rewarded(Ads.PlacementRewardRepeat, amt, false);
-            if (RewardedGrant.Earned) RewardedGrant.Flush();
-            _rewardChoice = 2;
+            _rewardWatchBusy = false;
+            ApplyWatchEnd(gen, RewardChoiceInput.FinishWatch(RewardedGrant.Earned));
         }
     }
 }
