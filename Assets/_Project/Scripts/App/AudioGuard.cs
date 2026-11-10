@@ -424,13 +424,15 @@ namespace FlockFive
             }
         }
 
-        // Only FMOD_ERR_OUTPUT_INIT (code 36). A clip load, a decode error, or any
-        // other FMOD code must not silence the session.
+        // Only FMOD_ERR_OUTPUT_INIT (code 60). Code 36 is FMOD_ERR_INVALID_HANDLE.
+        // A bad handle, a clip load, a decode error, or any other FMOD code must
+        // not silence the session. The number has to be the whole code, so 600
+        // does not count as 60.
         public static bool IsFmodFailure(string message)
         {
             if (string.IsNullOrEmpty(message)) return false;
             if (message.IndexOf("FMOD_ERR_OUTPUT_INIT", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            return ErrorCodeIs(message, "36");
+            return ErrorCodeIs(message, "60");
         }
 
         static bool ErrorCodeIs(string message, string code)
@@ -626,7 +628,7 @@ namespace FlockFive
 
         static string FmodCode(string message)
         {
-            if (message.IndexOf("FMOD_ERR_OUTPUT_INIT", StringComparison.OrdinalIgnoreCase) >= 0) return "36";
+            if (message.IndexOf("FMOD_ERR_OUTPUT_INIT", StringComparison.OrdinalIgnoreCase) >= 0) return "60";
             const string key = "error code ";
             int i = message.IndexOf(key, StringComparison.OrdinalIgnoreCase);
             if (i >= 0)
@@ -636,7 +638,7 @@ namespace FlockFive
                 while (e < message.Length && char.IsDigit(message[e])) e++;
                 if (e > s) return message.Substring(s, e - s);
             }
-            return "36";
+            return "60";
         }
 
         static void OnAudioLog(string condition, string stackTrace, LogType type)
