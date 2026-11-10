@@ -59,6 +59,7 @@ namespace FlockFive
         float _badgerPitchTo = 1f;
         float _badgerPitchSlew = 1f;
         bool _bgCueLive;
+        bool _orphanCueStopped;
         // dspTime when the entrance cue hands the seat to the loop. Pitch stays at 1 until then.
         double _bgHandoffDsp = -1;
         bool _bgWasPaused;
@@ -144,7 +145,7 @@ namespace FlockFive
             {
                 var a = _stems[i];
                 if (a == null) continue;
-                a.Stop();
+                Halt(a);
                 a.volume = 0f;
             }
         }
@@ -165,7 +166,7 @@ namespace FlockFive
                     }
                 }
                 if (ours) continue;
-                s.Stop();
+                Halt(s);
                 s.volume = 0f;
                 Object.Destroy(s);
             }
@@ -187,7 +188,7 @@ namespace FlockFive
                     }
                 }
                 if (ours) continue;
-                s.Stop();
+                Halt(s);
                 s.volume = 0f;
             }
         }
@@ -300,7 +301,7 @@ namespace FlockFive
             s.clip = clip;
             s.volume = 0.4f;
             s.ignoreListenerPause = true;
-            if (s.isPlaying) s.Stop();
+            if (s.isPlaying) Halt(s);
             AudioGuard.Play(s);
             _stems[i] = s;
             return s;
@@ -382,7 +383,7 @@ namespace FlockFive
             _splashLoopOn = false;
             if (_stems != null && _stems.Length > 4 && _stems[4] != null)
             {
-                _stems[4].Stop();
+                Halt(_stems[4]);
                 _stems[4].time = 0f;
             }
         }
@@ -393,7 +394,7 @@ namespace FlockFive
             _splashLoopOn = false;
             if (_stems != null && _stems.Length > 4 && _stems[4] != null)
             {
-                _stems[4].Stop();
+                Halt(_stems[4]);
                 _stems[4].time = 0f;
             }
         }
@@ -425,7 +426,7 @@ namespace FlockFive
             SwapClip(4, theme, false);
             if (_stems[4] != null)
             {
-                _stems[4].Stop();
+                Halt(_stems[4]);
                 _stems[4].time = 0f;
                 _stems[4].volume = 0f;
             }
@@ -495,8 +496,17 @@ namespace FlockFive
             cue.volume = BadgerCap * BedDuck;
             RestLoopPitch(loop);
             loop.timeSamples = BadgerBarSamples(loop.clip);
+            _orphanCueStopped = false;
             bool cueOk = AudioGuard.PlayScheduled(cue, t0);
             bool loopOk = AudioGuard.PlayScheduled(loop, handoff);
+            if (cueOk && !loopOk)
+            {
+                Halt(cue);
+                _orphanCueStopped = true;
+                _bgHandoffDsp = -1;
+                _bgCueLive = false;
+                return;
+            }
             if (!cueOk || !loopOk)
             {
                 _bgHandoffDsp = -1;
@@ -513,6 +523,7 @@ namespace FlockFive
         // Returns on this frame so the sharp hit can fire beside the cut.
         public void BadgerCut()
         {
+            ReleaseBadger();
             _badger = true;
             _badgerMix = 1f;
             _badgerFade = 0f;
@@ -555,15 +566,17 @@ namespace FlockFive
         // when the clip is missing so the caller keeps its old one-shot (fanfare / Deny).
         public bool BadgerResult(bool won)
         {
+            // The loop must not come back over the stinger. Drop it before any retry.
+            ReleaseBadger();
             // The win stinger follows the cut by a beat. If a ramp is still open, finish it
             // before this Play, or the next tick would Stop the new stinger.
             if (_bgCutT >= 0f) FinishBadgerCut();
             var clip = won ? _bgWinClip : _bgLoseClip;
-            if (!BadgerReady || clip == null) return false;
+            if (!BadgerReady || clip == null || AudioGuard.OutputFailed) return false;
             _badgerFadeTarget = 0f;
             var s = _stems[BadgerStingStem];
             if (s == null) return false;
-            s.Stop();
+            Halt(s);
             s.loop = false;
             s.clip = clip;
             s.timeSamples = 0;
@@ -595,8 +608,8 @@ namespace FlockFive
             if (_stems == null || _stems.Length <= BadgerCueStem) return;
             var loop = _stems[BadgerLoopStem];
             var cue = _stems[BadgerCueStem];
-            if (loop != null) loop.Stop();
-            if (cue != null) cue.Stop();
+            if (loop != null) Halt(loop);
+            if (cue != null) Halt(cue);
             _bgCueLive = false;
             _bgHandoffDsp = -1;
             RestLoopPitch(loop);
@@ -696,11 +709,26 @@ namespace FlockFive
             RestLoopPitch(loop);
         }
 
+        static void Halt(AudioSource s)
+        {
+            if (s == null) return;
+            AudioGuard.Release(s);
+            s.Stop();
+        }
+
+        void ReleaseBadger()
+        {
+            if (_stems == null) return;
+            AudioGuard.Release(BadgerStem(BadgerLoopStem));
+            AudioGuard.Release(BadgerStem(BadgerCueStem));
+            AudioGuard.Release(BadgerStem(BadgerStingStem));
+        }
+
         static void SilenceStem(AudioSource s)
         {
             if (s == null) return;
             s.volume = 0f;
-            s.Stop();
+            Halt(s);
         }
 
         bool CueOwnsPitch(AudioSource cue)
@@ -749,27 +777,32 @@ namespace FlockFive
             double left = (_bgEntranceClip.samples - cue.timeSamples) / (double)_bgEntranceClip.frequency;
             if (left <= 0.02) return;
             if (AudioGuard.OutputFailed) return;
-            loop.Stop();
+            Halt(loop);
             loop.timeSamples = BadgerBarSamples(loop.clip);
             double at = AudioSettings.dspTime + left;
             if (!AudioGuard.PlayScheduled(loop, at)) return;
             _bgHandoffDsp = at;
         }
 
-        // Beds that missed Play while the output was down. One-shots and a live
-        // scheduled hand-off are left for their next call.
-        public void RetrySkippedPlayback()
+        // Cut and the result own the badger voices. Recovery must not start them again.
+        public bool BlocksSkippedRetry(AudioSource source)
         {
-            if (AudioGuard.OutputFailed || _stems == null) return;
-            for (int i = 0; i < _stems.Length; i++)
-            {
-                if (_bgCueLive && (i == BadgerLoopStem || i == BadgerCueStem)) continue;
-                var a = _stems[i];
-                if (a == null || a.clip == null || !a.loop || a.isPlaying) continue;
-                float want = _stemBase != null && i < _stemBase.Length ? _stemBase[i] : 0f;
-                if (want <= 0.0001f) continue;
-                AudioGuard.Play(a);
-            }
+            if (source == null || _stems == null) return false;
+            if (source != BadgerStem(BadgerLoopStem) && source != BadgerStem(BadgerCueStem) && source != BadgerStem(BadgerStingStem))
+                return false;
+            if (_bgCutT >= 0f) return true;
+            if (_bgHandBackAt > 0f) return true;
+            return false;
+        }
+
+        public bool OrphanCueStoppedForTests => _orphanCueStopped;
+
+        public void ArmEntranceForTests(AudioClip entrance)
+        {
+            if (_stems != null && _stems.Length > BadgerLoopStem && _stems[BadgerLoopStem] != null)
+                _bgLoopClip = _stems[BadgerLoopStem].clip;
+            _bgEntranceClip = entrance;
+            _orphanCueStopped = false;
         }
 
         // Returns the share of the place seat the badger holds (0..1) and drives its stems.
@@ -818,7 +851,7 @@ namespace FlockFive
             }
             if (a.clip != clip)
             {
-                a.Stop();
+                Halt(a);
                 a.clip = clip;
             }
             if (start)
@@ -826,7 +859,7 @@ namespace FlockFive
                 if (!a.isPlaying) AudioGuard.Play(a);
             }
             else if (a.isPlaying)
-                a.Stop();
+                Halt(a);
         }
 
         static AudioClip LoadBed(string path, System.Func<AudioClip> make)
@@ -873,7 +906,7 @@ namespace FlockFive
             a.volume = 0f;
             if (a.clip != clip)
             {
-                if (a.isPlaying) a.Stop();
+                if (a.isPlaying) Halt(a);
                 a.clip = clip;
             }
             if (start)
@@ -881,7 +914,7 @@ namespace FlockFive
                 if (!a.isPlaying) AudioGuard.Play(a);
             }
             else if (a.isPlaying)
-                a.Stop();
+                Halt(a);
         }
 
         // Call before GamePause.Push for a tutorial freeze: the stems are set to ride through the
