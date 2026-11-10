@@ -2119,15 +2119,24 @@ namespace FlockFive
             if (screenW > 4f)
                 start.x = Mathf.Clamp(start.x, 0f, screenW);
             start.y = Mathf.Clamp(start.y, Mathf.Min(y0, aim.y), y1);
-            for (int i = 0; i < 12; i++)
+            // A downward shove does not pull a hand back in from the left edge,
+            // and it makes this hop longer than the old middle-right run.
+            // Only keep a step that actually reduces overflow.
+            if (screenW > 4f && screenH > 4f && dw > 1f)
             {
-                float ang = GloveApproachDeg(start, aim);
-                if (screenW < 4f || screenH < 4f || dw < 1f
-                    || GloveQuadOverflow(start, ang, false, dw, dh, screenW, screenH) <= 0.5f)
-                    break;
-                float next = start.y + dh * 0.04f;
-                if (next > y1) break;
-                start.y = next;
+                for (int i = 0; i < 12; i++)
+                {
+                    float ang = GloveApproachDeg(start, aim);
+                    float over = GloveQuadOverflow(start, ang, false, dw, dh, screenW, screenH);
+                    if (over <= 0.5f) break;
+                    float next = start.y + dh * 0.04f;
+                    if (next > y1) break;
+                    var trial = start;
+                    trial.y = next;
+                    float trialOver = GloveQuadOverflow(trial, GloveApproachDeg(trial, aim), false, dw, dh, screenW, screenH);
+                    if (trialOver >= over - 0.05f) break;
+                    start.y = next;
+                }
             }
             start.x = aim.x;
             start.y = Mathf.Clamp(start.y, Mathf.Min(y0, aim.y), y1);
