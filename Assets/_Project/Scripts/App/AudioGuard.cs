@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using UnityEngine;
 
@@ -43,37 +44,120 @@ namespace FlockFive
         public static int FmodWarnings { get; private set; }
         public static bool OutputFailed => _fmodNoted;
 
-        // Playback after a failed output init. The first attempt may still log;
-        // later calls stay silent until the output device comes back.
+        public static int PlaybackWarnings { get; private set; }
+        public static int RetryPlayCount { get; private set; }
+        public static int SkippedCount => _skipped.Count;
+
+        // Test seam: the next PlayScheduled on this source returns false once.
+        public static AudioSource RejectScheduled;
+
+        static readonly List<AudioSource> _skipped = new List<AudioSource>(8);
+        static readonly List<int> _paused = new List<int>(8);
+        static readonly List<int> _retried = new List<int>(8);
+        static readonly List<string> _logged = new List<string>(8);
+
+        // Playback after a failed output init. Never throws: a destroyed source
+        // or a clip error logs once and returns false so Update keeps going.
         public static bool Play(AudioSource source)
         {
-            if (OutputFailed || source == null) return false;
+            if (!Alive(source))
+            {
+                NoteDestroyed(source);
+                return false;
+            }
+            if (OutputFailed)
+            {
+                RememberSkip(source);
+                return false;
+            }
             try
             {
                 source.Play();
+                Release(source);
                 return true;
             }
             catch (Exception ex)
             {
-                if (NoteFmodFailure(ex.Message)) return false;
-                throw;
+                NotePlayback(source, ex);
+                return false;
             }
         }
 
-        // Same gate as Play. A failed output skips the schedule; a later reset lets the next one through.
+        // Same gate as Play. A failed output remembers the source; a later reset retries only that set.
         public static bool PlayScheduled(AudioSource source, double time)
         {
-            if (OutputFailed || source == null) return false;
+            if (!Alive(source))
+            {
+                NoteDestroyed(source);
+                return false;
+            }
+            if (!ReferenceEquals(RejectScheduled, null) && RejectScheduled == source)
+            {
+                RejectScheduled = null;
+                return false;
+            }
+            if (OutputFailed)
+            {
+                RememberSkip(source);
+                return false;
+            }
             try
             {
                 source.PlayScheduled(time);
+                Release(source);
                 return true;
             }
             catch (Exception ex)
             {
-                if (NoteFmodFailure(ex.Message)) return false;
-                throw;
+                NotePlayback(source, ex);
+                return false;
             }
+        }
+
+        // Stop, cut, swap, or mute. The source is no longer something recovery should start.
+        public static void Release(AudioSource source)
+        {
+            if (ReferenceEquals(source, null)) return;
+            int id = Identity(source);
+            for (int i = _skipped.Count - 1; i >= 0; i--)
+            {
+                var s = _skipped[i];
+                if (ReferenceEquals(s, null) || s == null || s == source || (id != 0 && Identity(s) == id))
+                    _skipped.RemoveAt(i);
+            }
+        }
+
+        // Pause keeps its place in the clip. Recovery must not Play() it back to 0.
+        public static void Pause(AudioSource source)
+        {
+            if (!Alive(source)) return;
+            int id = Identity(source);
+            if (id != 0)
+            {
+                bool seen = false;
+                for (int i = 0; i < _paused.Count; i++)
+                    if (_paused[i] == id) { seen = true; break; }
+                if (!seen) _paused.Add(id);
+            }
+            Release(source);
+            try { source.Pause(); }
+            catch (Exception ex) { NotePlayback(source, ex); }
+        }
+
+        public static bool WasRetried(AudioSource source)
+        {
+            int id = Identity(source);
+            if (id == 0) return false;
+            for (int i = 0; i < _retried.Count; i++)
+                if (_retried[i] == id) return true;
+            return false;
+        }
+
+        public static void NoteClipFailure(AudioClip clip, Exception ex)
+        {
+            string name = clip != null && !string.IsNullOrEmpty(clip.name) ? clip.name : "clip";
+            if (ex != null && NoteFmodFailure(ex.Message)) return;
+            LogOnce("clip:" + name, "AudioGuard skipped " + name + ".");
         }
 
         struct Tok
@@ -138,6 +222,7 @@ namespace FlockFive
             _fmodFrame = -1;
             _otherErrorFrame = -1;
             _consoleOwnedByError = false;
+            ClearSkipBook();
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -221,8 +306,8 @@ namespace FlockFive
             return true;
         }
 
-        // Headphones, a route change, or coming back to the app. The output may
-        // exist again, so the next Play and PlayScheduled try normally.
+        // Headphones, a route change, or coming back to the app. Retry only when
+        // this run had actually given up on the output, and only the sources that missed.
         public static void OnAudioConfigurationChanged(bool deviceWasChanged) => ClearOutputFailure();
 
         public static void OnApplicationFocus(bool focus)
@@ -237,9 +322,116 @@ namespace FlockFive
 
         public static void ClearOutputFailure()
         {
+            bool wasDown = _fmodNoted;
             _fmodNoted = false;
             _fmodFrame = -1;
-            if (MixDesk.Live != null) MixDesk.Live.RetrySkippedPlayback();
+            if (!wasDown) return;
+            RetrySkipped();
+        }
+
+        static void RetrySkipped()
+        {
+            _retried.Clear();
+            if (Muted)
+            {
+                _skipped.Clear();
+                return;
+            }
+            var batch = new List<AudioSource>(_skipped);
+            _skipped.Clear();
+            for (int i = 0; i < batch.Count; i++)
+            {
+                var s = batch[i];
+                if (!Alive(s)) continue;
+                if (HeldPaused(s)) continue;
+                if (MixDesk.Live != null && MixDesk.Live.BlocksSkippedRetry(s)) continue;
+                try
+                {
+                    s.Play();
+                    int id = Identity(s);
+                    if (id != 0) _retried.Add(id);
+                    RetryPlayCount++;
+                }
+                catch (Exception ex)
+                {
+                    NotePlayback(s, ex);
+                }
+            }
+        }
+
+        static void RememberSkip(AudioSource source)
+        {
+            if (!Alive(source)) return;
+            for (int i = 0; i < _skipped.Count; i++)
+                if (_skipped[i] == source) return;
+            _skipped.Add(source);
+        }
+
+        static bool HeldPaused(AudioSource source)
+        {
+            int id = Identity(source);
+            if (id == 0) return false;
+            for (int i = 0; i < _paused.Count; i++)
+                if (_paused[i] == id) return true;
+            return false;
+        }
+
+        static bool Alive(AudioSource source)
+        {
+            return !ReferenceEquals(source, null) && source != null;
+        }
+
+        static int Identity(AudioSource source)
+        {
+            if (ReferenceEquals(source, null)) return 0;
+            try { return source.GetInstanceID(); }
+            catch (Exception) { return 0; }
+        }
+
+        static void NoteDestroyed(AudioSource source)
+        {
+            if (ReferenceEquals(source, null)) return;
+            int id = Identity(source);
+            string key = id != 0 ? "destroyed:" + id.ToString(CultureInfo.InvariantCulture) : "destroyed";
+            LogOnce(key, "AudioGuard skipped a destroyed source.");
+        }
+
+        static void NotePlayback(AudioSource source, Exception ex)
+        {
+            if (ex != null && NoteFmodFailure(ex.Message)) return;
+            if (!Alive(source))
+            {
+                NoteDestroyed(source);
+                return;
+            }
+            string name = "source";
+            try
+            {
+                if (source.clip != null && !string.IsNullOrEmpty(source.clip.name))
+                    name = source.clip.name;
+            }
+            catch (Exception) { name = "source"; }
+            LogOnce("clip:" + name, "AudioGuard skipped " + name + ".");
+        }
+
+        static void LogOnce(string key, string message)
+        {
+            for (int i = 0; i < _logged.Count; i++)
+                if (_logged[i] == key) return;
+            _logged.Add(key);
+            PlaybackWarnings++;
+            Debug.LogWarning(message);
+        }
+
+        static void ClearSkipBook()
+        {
+            _skipped.Clear();
+            _paused.Clear();
+            _retried.Clear();
+            _logged.Clear();
+            RejectScheduled = null;
+            PlaybackWarnings = 0;
+            RetryPlayCount = 0;
         }
 
         public static void SettleDevConsole()
@@ -341,6 +533,7 @@ namespace FlockFive
             _fmodFrame = -1;
             _otherErrorFrame = -1;
             _consoleOwnedByError = false;
+            ClearSkipBook();
         }
 
         static double Now()

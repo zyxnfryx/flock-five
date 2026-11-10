@@ -63,6 +63,7 @@ namespace FlockFive.Editor
             CheckCardRender(Check);
             CheckFmod(Check);
             CheckPlayScheduled(Check);
+            CheckAudioRetry(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -283,6 +284,116 @@ namespace FlockFive.Editor
             bool ok = bypass.Count == 0 && routed >= 3 && impl == 1;
             Check("play-scheduled-goes-through-guard", ok,
                 ok ? "routed " + routed : "routed " + routed + " impl " + impl + " " + string.Join(" ", bypass.ToArray()));
+        }
+
+        static AudioClip ProbeClip(string name)
+        {
+            var clip = AudioClip.Create(name, 64, 1, 22050, false);
+            clip.SetData(new float[64], 0);
+            return clip;
+        }
+
+        static void CheckAudioRetry(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var idle = new UnityEngine.GameObject("retry-idle");
+            var skippedGo = new UnityEngine.GameObject("retry-skipped");
+            var otherGo = new UnityEngine.GameObject("retry-other");
+            var deskGo = new UnityEngine.GameObject("retry-desk");
+            MixDesk desk = null;
+            try
+            {
+                var idleSrc = idle.AddComponent<AudioSource>();
+                idleSrc.playOnAwake = false;
+                idleSrc.loop = true;
+                idleSrc.clip = ProbeClip("idle-bed");
+                var skipped = skippedGo.AddComponent<AudioSource>();
+                skipped.playOnAwake = false;
+                skipped.loop = true;
+                skipped.clip = ProbeClip("skipped-bed");
+                var other = otherGo.AddComponent<AudioSource>();
+                other.playOnAwake = false;
+                other.loop = true;
+                other.clip = ProbeClip("other-bed");
+                desk = deskGo.AddComponent<MixDesk>();
+                desk.AttachForTests();
+
+                int before = AudioGuard.RetryPlayCount;
+                AudioGuard.OnApplicationFocus(true);
+                AudioGuard.OnApplicationPause(false);
+                AudioGuard.OnAudioConfigurationChanged(true);
+                bool quiet = AudioGuard.RetryPlayCount == before && !AudioGuard.WasRetried(idleSrc);
+
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                bool missed = !AudioGuard.Play(skipped) && AudioGuard.SkippedCount == 1;
+                AudioGuard.OnApplicationFocus(true);
+                bool onlySkipped = AudioGuard.WasRetried(skipped) && !AudioGuard.WasRetried(other) && !AudioGuard.WasRetried(idleSrc);
+
+                AudioGuard.NoteFmodFailure("error code 36");
+                desk.PlantBadgerVoicesForTests(out var loop, out var cue, out var sting);
+                AudioGuard.Play(loop);
+                int cutAt = AudioGuard.RetryPlayCount;
+                desk.BadgerCut();
+                AudioGuard.OnApplicationPause(false);
+                bool cutQuiet = AudioGuard.RetryPlayCount == cutAt && !AudioGuard.WasRetried(loop);
+
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                AudioGuard.Play(loop);
+                int resultAt = AudioGuard.RetryPlayCount;
+                desk.BadgerResult(true);
+                AudioGuard.OnAudioConfigurationChanged(false);
+                bool resultQuiet = AudioGuard.RetryPlayCount == resultAt && !AudioGuard.WasRetried(loop) && !AudioGuard.WasRetried(sting);
+
+                var paused = skipped;
+                AudioGuard.NoteFmodFailure("error code 36");
+                AudioGuard.Pause(paused);
+                AudioGuard.Play(paused);
+                int pauseAt = AudioGuard.RetryPlayCount;
+                int pausedSample = paused.timeSamples;
+                AudioGuard.OnApplicationFocus(true);
+                bool pauseQuiet = AudioGuard.RetryPlayCount == pauseAt && !AudioGuard.WasRetried(paused) && paused.timeSamples == pausedSample;
+
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                AudioGuard.Play(other);
+                AudioGuard.SetMuted(true, false);
+                int muteAt = AudioGuard.RetryPlayCount;
+                AudioGuard.OnApplicationFocus(true);
+                bool muteQuiet = AudioGuard.RetryPlayCount == muteAt && !AudioGuard.WasRetried(other);
+                AudioGuard.SetMuted(false, false);
+
+                var goneGo = new UnityEngine.GameObject("retry-gone");
+                var gone = goneGo.AddComponent<AudioSource>();
+                gone.clip = ProbeClip("gone-clip");
+                UnityEngine.Object.DestroyImmediate(goneGo);
+                int warns = AudioGuard.PlaybackWarnings;
+                bool dead = !AudioGuard.Play(gone) && !AudioGuard.PlayScheduled(gone, 0d);
+                bool once = !AudioGuard.Play(gone) && AudioGuard.PlaybackWarnings == warns + 1;
+
+                var entrance = ProbeClip("entrance-probe");
+                desk.ArmEntranceForTests(entrance);
+                AudioGuard.RejectScheduled = loop;
+                desk.BadgerEntrance();
+                bool orphan = desk.OrphanCueStoppedForTests;
+
+                Check("audio-retry-only-after-a-real-failure", quiet && missed && onlySkipped,
+                    "quiet " + quiet + " missed " + missed + " only " + onlySkipped);
+                Check("audio-retry-skips-cut-result-pause-mute",
+                    cutQuiet && resultQuiet && pauseQuiet && muteQuiet,
+                    "cut " + cutQuiet + " result " + resultQuiet + " pause " + pauseQuiet + " mute " + muteQuiet);
+                Check("destroyed-source-returns-false-once", dead && once, "warnings " + AudioGuard.PlaybackWarnings);
+                Check("entrance-stops-cue-when-loop-misses", orphan, "orphan " + orphan);
+            }
+            finally
+            {
+                AudioGuard.RejectScheduled = null;
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(idle);
+                UnityEngine.Object.DestroyImmediate(skippedGo);
+                UnityEngine.Object.DestroyImmediate(otherGo);
+                UnityEngine.Object.DestroyImmediate(deskGo);
+            }
         }
     }
 }

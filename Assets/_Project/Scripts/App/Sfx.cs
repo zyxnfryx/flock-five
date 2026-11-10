@@ -258,10 +258,15 @@ namespace FlockFive
         {
             if (clip == null || AudioGuard.OutputFailed) return;
             var a = Voice();
-            if (a == null) return;
+            if (object.ReferenceEquals(a, null)) return;
+            if (a == null)
+            {
+                AudioGuard.NoteClipFailure(clip, null);
+                return;
+            }
             a.pitch = pitch;
             try { a.PlayOneShot(clip, vol); }
-            catch (System.Exception ex) { if (!AudioGuard.NoteFmodFailure(ex.Message)) throw; }
+            catch (System.Exception ex) { AudioGuard.NoteClipFailure(clip, ex); }
         }
 
         static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer, float leadDuck = MixDesk.DuckChirp)
@@ -307,7 +312,11 @@ namespace FlockFive
             if (_host == null) return;
             if (MixDesk.Live != null && !MixDesk.Live.AllowMid)
             {
-                if (_planeSrc != null && _planeSrc.isPlaying) _planeSrc.Stop();
+                if (_planeSrc != null && _planeSrc.isPlaying)
+                {
+                    AudioGuard.Release(_planeSrc);
+                    _planeSrc.Stop();
+                }
                 _planeHeld = true;
                 return;
             }
@@ -337,7 +346,11 @@ namespace FlockFive
         public static void PlaneStop()
         {
             _planeHeld = false;
-            if (_planeSrc != null && _planeSrc.isPlaying) _planeSrc.Stop();
+            if (_planeSrc != null && _planeSrc.isPlaying)
+            {
+                AudioGuard.Release(_planeSrc);
+                _planeSrc.Stop();
+            }
         }
 
         public static void PlayProc(AudioClip clip, float pitch, float vol, MixLayer layer)
@@ -1021,6 +1034,7 @@ namespace FlockFive
             for (int i = 0; i < srcs.Length; i++)
             {
                 if (srcs[i] == null) continue;
+                AudioGuard.Release(srcs[i]);
                 srcs[i].Stop();
                 srcs[i].volume = 0f;
             }
