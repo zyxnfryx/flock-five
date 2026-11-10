@@ -212,6 +212,9 @@ namespace FlockFive
         float _pokerRowBottom;
         int _pokerWinHeroFont;
         int _pokerWinRestFont;
+        // Black disc for the celebration amount. Held with the fitted hero size so
+        // Layout and Repaint stamp the same number of samples.
+        int _pokerWinBurstPx;
         bool _pokerPendingStamp;
         int _pokerResultCue;
         bool _pokerStamp;
@@ -11587,6 +11590,8 @@ namespace FlockFive
 
         // Poker chrome. Black disc at 2, white disc at 1, fill on the same snapped origin.
         // Label count is stable across Layout and Repaint (HitPad ids).
+        // The celebration WIN amount does not use this. The white keyline washes into
+        // the gold rays; that word is StampWinBurst.
         static void StampLight(Rect r, string text, GUIStyle st, Color fill)
         {
             float a = Mathf.Clamp01(fill.a);
@@ -15764,9 +15769,12 @@ namespace FlockFive
             var st = PokerWinStyle(TextAnchor.MiddleCenter);
             // Hero must stay inside the safe area even at the punch-in overshoot, outline included
             // (at 0.80 of the raw screen width "WIN $1,000" clipped the left edge at the peak).
+            // The celebration disc is PokerWinBurstInk.OutlineEm of this size. On a short
+            // payout ("WIN $1", about 3.3 em) that is under this 6% pad.
             float safeW = PokerSafeGui().width;
             _pokerWinHeroFont = FitFont(st, text, safeW * 0.90f / WinHeroMaxK / 1.06f, heroH, 24, Mathf.RoundToInt(heroH));
             _pokerWinRestFont = FitFont(st, text, rest.width * 0.96f, rest.height, 16, Mathf.RoundToInt(rest.height * WinRestFontFrac));
+            _pokerWinBurstPx = PokerWinBurstInk.OutlinePx(_pokerWinHeroFont);
         }
 
         static float EaseOutBack(float u)
@@ -15872,8 +15880,11 @@ namespace FlockFive
             if (t >= WinLead)
             {
                 PokerWinPose(t, heroC, restC, restK, out Vector2 c, out float k);
-                DrawPokerWinTrail(g, t, s, Color.Lerp(PokerWinGold, PokerWinRed, whoosh), _pokerRowBottom + 10f * s);
-                DrawPokerWinWord(text, st, c, size, k, Color.Lerp(PokerWinGold, PokerWinRed, whoosh), 1f, true);
+                var fill = Color.Lerp(PokerWinGold, PokerWinRed, whoosh);
+                DrawPokerWinTrail(g, t, s, fill, _pokerRowBottom + 10f * s);
+                // Thick even black disc for the whole flight. Radius is the fitted hero
+                // size, not the punch scale, so the sample count does not change frame to frame.
+                DrawPokerWinWord(text, st, c, size, k, fill, 1f, true, _pokerWinBurstPx);
             }
             if (burst > 0.01f) DrawPokerWinSparkles(heroC, size * burstK, t, burst);
         }
@@ -15924,13 +15935,16 @@ namespace FlockFive
         }
 
         // outline=false paints fill only (ghost trail) — stacked outlines turn to white smears.
-        static void DrawPokerWinWord(string text, GUIStyle st, Vector2 c, Vector2 size, float k, Color fill, float alpha, bool outline)
+        // burstPx > 0 is the celebration amount: one black disc, then the same fill.
+        static void DrawPokerWinWord(string text, GUIStyle st, Vector2 c, Vector2 size, float k, Color fill, float alpha, bool outline, int burstPx = 0)
         {
             var r = new Rect(c.x - size.x * 0.5f, c.y - size.y * 0.5f, size.x, size.y);
             var prev = GUI.matrix;
             GUIUtility.ScaleAroundPivot(new Vector2(k, k), c);
             var tint = new Color(fill.r, fill.g, fill.b, alpha);
-            if (outline)
+            if (burstPx > 0)
+                StampWinBurst(r, text, st, tint, burstPx);
+            else if (outline)
                 StampLight(r, text, st, tint);
             else
             {
@@ -15938,6 +15952,22 @@ namespace FlockFive
                 GUI.Label(r, text, st);
             }
             GUI.matrix = prev;
+        }
+
+        // Celebration amount. Black disc at radiusPx, fill on the same snapped origin.
+        // No white keyline: that ring is what melts into the gold rays.
+        static void StampWinBurst(Rect r, string text, GUIStyle st, Color fill, int radiusPx)
+        {
+            float a = Mathf.Clamp01(fill.a);
+            if (a < 0.04f) return;
+            if (radiusPx < PokerWinBurstInk.MinPx) radiusPx = PokerWinBurstInk.MinPx;
+            radiusPx = LabelRim.Radius(radiusPx);
+            var body = RimContent(text);
+            var seat = LockSeat(r);
+            Paint(st, new Color(0f, 0f, 0f, a));
+            Rim(seat, body, st, radiusPx);
+            Paint(st, fill);
+            LabelAt(seat, 0, 0, body, st);
         }
 
         static void DrawPokerWinRays(Vector2 c, float reach, float t, float alpha, int count)
