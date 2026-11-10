@@ -43,8 +43,24 @@ namespace FlockFive
         public const float BaseRigScale = 0.90f;
         public const float BaseBodyDrop = 3.20f;
         // Toe line below the body pivot (neck root), in body-sprite units at scale 1: hip drop plus
-        // the leg sprite below its own pivot (ostrich_leg_back/front, 140 PPU, toes ~2px above the edge).
+        // the leg sprite below its own pivot (ostrich_leg_back/front, 140 PPU). This is the mesh
+        // edge. The painted claws sit ClawPadPx above that transparent padding.
         public const float FootBelowPivot = 3.11f;
+        public const float ClawPadPx = 4f;
+        public static float ClawLift => ClawPadPx / OstrichPaint.BodyPpu * BodyScale;
+        // A turn never collapses the body to a sliver. 1 is full width.
+        public const float TurnFloor = 0.78f;
+        // A strike whose bird is left of this faces left. Idle peek keeps the older hysteresis.
+        public const float AttackLeftX = -0.45f;
+        public static float AttackFace(float targetX) => targetX < AttackLeftX ? -1f : 1f;
+        // Neck ribbon, as a multiple of the painted 46px neck. Narrower than the old 2.9 tube
+        // so the join tucks under the collar instead of showing a hard pink edge.
+        public const float NeckRootMul = 1.75f;
+        public const float NeckMidMul = 1.45f;
+        public const float NeckTipMul = 1.35f;
+        public const float NeckRootFadeAt = 0.16f;
+        public const float NeckTipFadeAt = 0.82f;
+        public const float CollarOverlap = 1.28f;
         // Whole bird: fits the screen width, legs included; the 160px master head stays near its native size.
         public const float RigScale = BaseRigScale * GrowFactor; // head
         // Build 110: the body is a large background figure (was 0.72, now 1.7 = 2.4x); b115 x GrowFactor.
@@ -129,6 +145,16 @@ namespace FlockFive
         float _tiltLag;
         float _faceS = 1f, _faceGoal = 1f, _faceVel;
         OstrichAct _driveAct = OstrichAct.Idle;
+        // Entrance owns the rig until EndEntrance. InPlay is false for that whole beat, so a
+        // garden tap and Sync cannot start a fight while he is still walking on.
+        public bool Entering { get; private set; }
+        public bool InPlay { get; private set; } = true;
+        bool _lockBody;
+        float _lockedBodyX;
+        float _stompY;
+        float _whackT = OstrichHitTimeline.WhackSec;
+        public bool Whacking => _whackT < OstrichHitTimeline.WhackSec;
+
         public void Drive(OstrichAct act, float x, float y, float dt)
         {
             // Start each requested state once; its own chain (back to idle, daze -> flee) plays out.
@@ -152,7 +178,19 @@ namespace FlockFive
             _strikeT = 0f;
             _strikeTarget = target;
             _queued = OstrichAct.Idle;
+            // Face the bird before the lunge, at full width, so a left peck is not a right-facing
+            // neck dragged across the body.
+            _faceGoal = AttackFace(target.x);
+            _faceS = _faceGoal;
+            _faceVel = 0f;
             Begin(OstrichAct.Peck);
+        }
+
+        // The fifth-bird finish. ShowHit owns the damage pose; this is the squash that sells the bat.
+        public void BeginWhack()
+        {
+            if (_gone || Entering) return;
+            _whackT = 0f;
         }
 
         // The app plays this peck itself; Sync must not queue a second generic Peck for it.
@@ -221,7 +259,8 @@ namespace FlockFive
             var collarGo = new GameObject("Collar");
             _collar = collarGo.transform;
             _collar.SetParent(_body, false);
-            _collar.localPosition = new Vector3(0f, 0f, 0.01f);
+            _collar.localPosition = new Vector3(0f, -0.05f, 0.01f);
+            _collar.localScale = new Vector3(CollarOverlap, CollarOverlap, 1f);
             _collarSr = collarGo.AddComponent<SpriteRenderer>();
             _collarSr.sprite = OstrichPaint.Collar();
             FlockSort.Apply(_collarSr, CollarOrder);
@@ -279,6 +318,7 @@ namespace FlockFive
 
         public void Sync(Board b, bool calm)
         {
+            if (Entering) return;
             _calm = calm;
             if (b == null || b.Ostrich == null)
             {
@@ -387,8 +427,10 @@ namespace FlockFive
 
         public void Tick(float dt)
         {
+            if (Entering) return;
             if (dt < 0f) dt = 0f;
             _dt = dt;
+            if (_whackT < OstrichHitTimeline.WhackSec) _whackT += dt;
             _blend = Mathf.Min(1f, _blend + dt / BlendSec);
             if (_strikeOn)
             {
@@ -458,8 +500,105 @@ namespace FlockFive
 
         void Update()
         {
-            if (!Application.isPlaying) return;
+            if (!Application.isPlaying || Entering) return;
             Tick(Time.deltaTime);
+        }
+
+        // Offstage until the stride. The stand can fade in on its own; taps stay gated
+        // (Entering) and Sync will not put him in play early.
+        public void BeginEntrance()
+        {
+            Entering = true;
+            InPlay = false;
+            Settled = false;
+            _gone = false;
+            _exitFar = false;
+            _strikeOn = false;
+            _whackT = OstrichHitTimeline.WhackSec;
+            _lockBody = false;
+            _stompY = 0f;
+            _queued = OstrichAct.Idle;
+            _fleeAfterDaze = false;
+            _returnChain = false;
+            Hide();
+            if (_ground != null)
+            {
+                _ground.Show(true);
+                _ground.SetWeight(0f);
+            }
+        }
+
+        public void PresentEntrance(float t)
+        {
+            if (!Entering) return;
+            float half = ViewHalfWidth();
+            float aimY = WorldBuilder.FeederY - 0.05f;
+            const float plantHead = 0f;
+            float plantBody = RestBodyX(plantHead + PortX, 1f, half);
+            float bodyX = OstrichEntrance.BodyX(t, plantBody, half, BodyFront);
+            float footY = GroundY(WorldBuilder.FeederY);
+            if (_ground != null)
+            {
+                _ground.Show(true);
+                _ground.SetWeight(OstrichEntrance.LedgeWeight(t));
+            }
+            if (!OstrichEntrance.BirdVisible(t))
+            {
+                SetBirdDrawn(false);
+                if (_ground != null)
+                {
+                    float sneak = Mathf.Lerp(bodyX, plantBody, OstrichEntrance.LedgeWeight(t) * 0.45f);
+                    _ground.Place(sneak, footY, 0.7f);
+                }
+                return;
+            }
+            SetBirdDrawn(true);
+            _act = OstrichAct.Strut;
+            _frame = OstrichEntrance.StrutFrame(t);
+            _frameT = 0f;
+            _calm = false;
+            _faceGoal = 1f;
+            _faceS = 1f;
+            _faceVel = 0f;
+            _blend = 1f;
+            _lastAct = _act;
+            _lockBody = true;
+            _lockedBodyX = bodyX;
+            _stompY = OstrichEntrance.Stomp(t);
+            _dt = 1f / 60f;
+            float walkAim = bodyX + 0.85f - PortX;
+            float aimX = Mathf.Lerp(walkAim, plantHead, OstrichEntrance.PlantU(t));
+            _headX = aimX;
+            _headY = aimY;
+            _drawX = aimX;
+            _drawY = aimY;
+            _placed = true;
+            _snap = false;
+            ApplyAt(aimX, aimY);
+            _lockBody = false;
+            _stompY = 0f;
+        }
+
+        public void EndEntrance()
+        {
+            Entering = false;
+            InPlay = true;
+            _lockBody = false;
+            _stompY = 0f;
+            if (_ground != null) _ground.SetWeight(1f);
+            Settled = true;
+            _snap = true;
+            Preview(OstrichAct.Idle, 2, 0f, WorldBuilder.FeederY - 0.05f, false);
+        }
+
+        void SetBirdDrawn(bool on)
+        {
+            if (_bodySr != null) _bodySr.enabled = on;
+            if (_legBackSr != null) _legBackSr.enabled = on;
+            if (_legFrontSr != null) _legFrontSr.enabled = on;
+            if (_collarSr != null) _collarSr.enabled = on;
+            if (Head != null) Head.enabled = on;
+            if (_line != null) _line.enabled = on;
         }
 
         void PlaceHead(int slot)
@@ -574,31 +713,55 @@ namespace FlockFive
             if (_act == OstrichAct.Strut) sway = Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.28f * SwayScale;
             if (_act == OstrichAct.Daze) sway += Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.36f * SwayScale;
             // Face the side the head reaches to; keep the whole body (tail end) on screen.
+            // A strike faces the bird instead, snapped, so a left peck is a left-facing pose
+            // and the body never squeezes through a broken sliver on the way around.
             float half = ViewHalfWidth();
-            // Turning is eased, not snapped: face swings through 0 over ~0.25s (hysteresis on the side).
-            if (flee || headX > -0.3f) _faceGoal = 1f;
-            else if (headX < -0.5f) _faceGoal = -1f;
-            if (_snap || _dt <= 0f) { _faceS = _faceGoal; _faceVel = 0f; }
+            if (_strikeOn)
+            {
+                _faceGoal = AttackFace(_strikeTarget.x);
+                if (_faceS * _faceGoal < 0f) { _faceS = _faceGoal; _faceVel = 0f; }
+            }
+            else if (!_lockBody)
+            {
+                if (flee || headX > -0.3f) _faceGoal = 1f;
+                else if (headX < -0.5f) _faceGoal = -1f;
+            }
+            if (_snap || _dt <= 0f || _lockBody) { _faceS = _faceGoal; _faceVel = 0f; }
             else _faceS = Mathf.SmoothDamp(_faceS, _faceGoal, ref _faceVel, 0.09f, 40f, _dt);
             float face = _faceS;
             float side = face < 0f ? -1f : 1f;
-            float turn = Mathf.Max(Mathf.Abs(face), 0.18f);
+            float turn = Mathf.Lerp(TurnFloor, 1f, Mathf.Abs(face));
             float bodyR = Mathf.Clamp(headX - 0.9f, -half + BodyBack + 0.12f, half - BodyFront - 0.12f);
             float bodyL = Mathf.Clamp(headX + 0.9f, -half + BodyFront + 0.12f, half - BodyBack - 0.12f);
             float bodyX;
-            if (flee) bodyX = Mathf.Lerp(bodyL, headX - 0.55f, (face + 1f) * 0.5f);
+            if (_lockBody) bodyX = _lockedBodyX;
+            else if (flee) bodyX = Mathf.Lerp(bodyL, headX - 0.55f, (face + 1f) * 0.5f);
             else bodyX = Mathf.Lerp(bodyL, bodyR, (face + 1f) * 0.5f) + sway;
             _body.localScale = new Vector3(BodyScale * turn, BodyScale, 1f);
             _head.localScale = new Vector3(RigScale * turn, RigScale, 1f);
             // b116: the body is planted. It no longer follows the head's bob/wind/strike or rocks with Lean,
             // so the feet stay on the ledge; only a tiny breathing rise (BreathScale) moves it.
-            float bodyY = aimY + PortY - BodyDrop + sample.Bob * BreathScale;
+            float bodyY = aimY + PortY - BodyDrop + sample.Bob * BreathScale + _stompY;
             headX += face * (sample.Strike * 0.50f - sample.Wind * 0.42f);
 
             _bodySr.sprite = OstrichPaint.Body(_act, _frame);
             _bodySr.flipX = side < 0f;
             if (_collarSr != null) { _collarSr.flipX = side < 0f; }
             _body.position = new Vector3(bodyX, bodyY, 0f);
+            float sq = OstrichHitTimeline.WhackSquash(_whackT);
+            if (sq > 0.001f)
+            {
+                float sy = 1f - 0.20f * sq;
+                float sx = 1f + 0.16f * sq;
+                var ls = _body.localScale;
+                _body.localScale = new Vector3(ls.x * sx, ls.y * sy, 1f);
+                // Scale is about the neck root, so a squash would lift the claws. Drop the
+                // pivot by the same amount and the toes stay on the mound.
+                _body.position += Vector3.down * (FootBelowPivot * BodyScale * (1f - sy));
+                if (_bodySr != null) _bodySr.color = Color.Lerp(Color.white, new Color(1f, 0.84f, 0.38f), sq);
+            }
+            else if (_bodySr != null)
+                _bodySr.color = Color.white;
             if (_ground != null) _ground.Place(FootX(bodyX, side, turn), GroundY(WorldBuilder.FeederY), turn);
             _body.localRotation = Quaternion.Euler(0f, 0f, sample.Lean * face * BodyLeanScale);
             // Stride from the timeline: legs swing in opposition around the hips.
@@ -609,7 +772,7 @@ namespace FlockFive
             PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, side);
 
             // b115: peek out from behind the feeder (not while fleeing or between feeders).
-            int slot = flee ? -1 : PeekSlot(aimX, Feeders);
+            int slot = flee || Entering ? -1 : PeekSlot(aimX, Feeders);
             float peekGoal = slot >= 0 ? 1f : 0f;
             if (_snap || _dt <= 0f) _peek = peekGoal;
             else _peek = Mathf.MoveTowards(_peek, peekGoal, _dt / 0.12f);
@@ -643,10 +806,11 @@ namespace FlockFive
             _head.position = headPos;
             _head.localRotation = Quaternion.Euler(0f, 0f, _tiltLag);
 
-            // Start inside the plumage and end inside the chin, so the tube
-            // reads as one neck in every pose.
-            Vector3 neckA = _body.position + _body.rotation * new Vector3(-0.16f * face, -0.32f, 0f) * BodyScale;
-            Vector3 neckB = headPos + _head.rotation * new Vector3(0f, 0.10f * RigScale, 0f);
+            // Neck root stays in the collar on the side he is facing (side, not the eased
+            // face) so a turn does not drag the tube out through the chest. The head end
+            // tucks just under the jaw; the ribbon fades at both joins.
+            Vector3 neckA = _body.position + _body.rotation * new Vector3(-0.16f * side, -0.20f, 0f) * BodyScale;
+            Vector3 neckB = headPos + _head.rotation * new Vector3(0f, 0.02f * RigScale, 0f);
             Vector3 ctrl = (neckA + neckB) * 0.5f;
             ctrl.x += (-sample.Wind * 0.90f + sample.Shake * 0.006f) * face * RigScale;
             ctrl.y += (sample.Wind * 0.42f - sample.Strike * 0.60f) * RigScale;
@@ -698,6 +862,16 @@ namespace FlockFive
             if (FeederArt == null) return;
             for (int i = 0; i < FeederArt.Length; i++)
                 if (FeederArt[i] != null) FeederArt[i].SetFront(i == slot);
+        }
+
+        // Where the neck root sits for a head at headX facing face, kept on screen.
+        // The entrance plants on this same spot, so the stride ends in the idle pose.
+        public static float RestBodyX(float headX, float face, float half)
+        {
+            float bodyR = Mathf.Clamp(headX - 0.9f, -half + BodyBack + 0.12f, half - BodyFront - 0.12f);
+            float bodyL = Mathf.Clamp(headX + 0.9f, -half + BodyFront + 0.12f, half - BodyBack - 0.12f);
+            float sideBlend = (Mathf.Clamp(face, -1f, 1f) + 1f) * 0.5f;
+            return Mathf.Lerp(bodyL, bodyR, sideBlend);
         }
 
         static float Ease(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
@@ -752,9 +926,9 @@ namespace FlockFive
             _line.sortingOrder = NeckOrder;
             _line.widthMultiplier = 1f;
             var curve = new AnimationCurve(
-                new Keyframe(0f, OstrichPaint.NeckWidth * 2.9f * BodyScale),
-                new Keyframe(0.30f, OstrichPaint.NeckWidth * 2.45f * (BodyScale + RigScale) * 0.5f),
-                new Keyframe(1f, OstrichPaint.NeckWidth * 2.30f * RigScale));
+                new Keyframe(0f, OstrichPaint.NeckWidth * NeckRootMul * BodyScale),
+                new Keyframe(0.30f, OstrichPaint.NeckWidth * NeckMidMul * (BodyScale + RigScale) * 0.5f),
+                new Keyframe(1f, OstrichPaint.NeckWidth * NeckTipMul * RigScale));
             _line.widthCurve = curve;
             var grad = new Gradient();
             grad.SetKeys(
@@ -765,8 +939,10 @@ namespace FlockFive
                 },
                 new[]
                 {
-                    new GradientAlphaKey(1f, 0f),
-                    new GradientAlphaKey(1f, 1f)
+                    new GradientAlphaKey(0f, 0f),
+                    new GradientAlphaKey(1f, NeckRootFadeAt),
+                    new GradientAlphaKey(1f, NeckTipFadeAt),
+                    new GradientAlphaKey(0.42f, 1f)
                 });
             _line.colorGradient = grad;
             var shader = Shader.Find("Unlit/Transparent");

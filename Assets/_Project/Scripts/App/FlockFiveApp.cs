@@ -782,6 +782,7 @@ namespace FlockFive
             _gardenStampAt = -1f;
             _collectDepth = 0;
             _turnGate.Reset();
+            StopOstrichEntrance();
             GardenFit.ClearBusy();
             _leafIntro = false;
             PestSchedule.SetTutorialPause(false);
@@ -913,6 +914,8 @@ namespace FlockFive
             SpriteCatalog.ForgetBirds();
             _garden = WorldBuilder.Build(transform);
             AlignBranchViews();
+            if (_garden.Ostrich != null && _board != null && _board.Ostrich != null && _board.Ostrich.Alive)
+                _garden.Ostrich.BeginEntrance();
             SyncAll();
             RewardedGrant.Flush();
             StartCoroutine(GardenFit.Tween(_garden, _board, true));
@@ -927,6 +930,7 @@ namespace FlockFive
             _hawkRun = StartCoroutine(HawkView.Patrol(
                 CanHawkVisit, PestsArmed, LevelData.HawkVisits, _garden.Feeders, _garden.Root));
             ArmGardenStamp();
+            ArmOstrichEntrance();
             // Board is open and the garden is built. The smoke test waits for this line.
             if (_board != null && !_splash)
                 Debug.Log("FF_LEVEL_STARTED");
@@ -3727,6 +3731,7 @@ namespace FlockFive
             // press cannot fall through onto a branch under it.
             if (GardenStampHit(screen)) return;
             if (HitHud(screen)) return;
+            if (OstrichIntroBlocking()) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
             HandleTap(cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f)));
@@ -3741,6 +3746,7 @@ namespace FlockFive
 
         void HandleTap(Vector2 world)
         {
+            if (OstrichIntroBlocking()) return;
             if (_ruleTip != RuleTip.None || _ruleEatGesture) return;
             if (LessonTapBlocked()) return;
             if (_busy || _won || _board == null) return;
@@ -5578,6 +5584,8 @@ namespace FlockFive
             }
             _motionGen++;
             _restarting = true;
+            StopOstrichEntrance();
+            if (_garden.Ostrich != null) _garden.Ostrich.BeginEntrance();
             _solvedMerging = false;
             SetAutoResolveSpeed(1f);
             GardenFit.ClearBusy();
@@ -5657,6 +5665,7 @@ namespace FlockFive
             StillBirds(false);
             _busy = false;
             ArmGardenStamp();
+            ArmOstrichEntrance();
         }
 
         void RefreshBonusSigns()
