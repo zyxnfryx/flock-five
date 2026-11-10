@@ -44,7 +44,7 @@ namespace FlockFive
         public static bool OutputFailed => _fmodNoted;
 
         // Playback after a failed output init. The first attempt may still log;
-        // later calls stay silent so the Development Console is not reopened.
+        // later calls stay silent until the output device comes back.
         public static bool Play(AudioSource source)
         {
             if (OutputFailed || source == null) return false;
@@ -55,8 +55,24 @@ namespace FlockFive
             }
             catch (Exception ex)
             {
-                NoteFmodFailure(ex.Message);
-                return false;
+                if (NoteFmodFailure(ex.Message)) return false;
+                throw;
+            }
+        }
+
+        // Same gate as Play. A failed output skips the schedule; a later reset lets the next one through.
+        public static bool PlayScheduled(AudioSource source, double time)
+        {
+            if (OutputFailed || source == null) return false;
+            try
+            {
+                source.PlayScheduled(time);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (NoteFmodFailure(ex.Message)) return false;
+                throw;
             }
         }
 
@@ -74,6 +90,7 @@ namespace FlockFive
         static int _seq;
         static bool _fmodNoted;
         static bool _fmodHooked;
+        static bool _configHooked;
         static int _fmodFrame = -1;
         static int _otherErrorFrame = -1;
         static bool _consoleOwnedByError;
@@ -106,6 +123,7 @@ namespace FlockFive
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
         {
+            UnhookOutputRecovery();
             _n = 0;
             _seq = 0;
             MusicEnabled = true;
@@ -129,22 +147,63 @@ namespace FlockFive
             LoadVolume();
             EnsureHost();
             InstallNative();
+            HookOutputRecovery();
+        }
+
+        // Log hook plus the route-change callback. Idempotent. OnDisable and domain
+        // reload both call Unhook so a destroyed host does not keep the delegate.
+        public static void HookOutputRecovery()
+        {
             if (!_fmodHooked)
             {
                 Application.logMessageReceived += OnAudioLog;
                 _fmodHooked = true;
             }
+            if (!_configHooked)
+            {
+                AudioSettings.OnAudioConfigurationChanged += OnAudioConfigurationChanged;
+                _configHooked = true;
+            }
         }
 
-        // Unity's audio engine logs FMOD_ERR_OUTPUT_INIT (code 36) as an error when
-        // a Development player has no device. That opens the Development Console.
-        // The failure is non-fatal: warn once, skip later playback, and leave the
-        // console for real exceptions.
+        public static void UnhookOutputRecovery()
+        {
+            if (_fmodHooked)
+            {
+                Application.logMessageReceived -= OnAudioLog;
+                _fmodHooked = false;
+            }
+            if (_configHooked)
+            {
+                AudioSettings.OnAudioConfigurationChanged -= OnAudioConfigurationChanged;
+                _configHooked = false;
+            }
+        }
+
+        // Only FMOD_ERR_OUTPUT_INIT (code 36). A clip load, a decode error, or any
+        // other FMOD code must not silence the session.
         public static bool IsFmodFailure(string message)
         {
             if (string.IsNullOrEmpty(message)) return false;
-            if (message.IndexOf("FMOD", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (message.IndexOf("error code 36", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (message.IndexOf("FMOD_ERR_OUTPUT_INIT", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return ErrorCodeIs(message, "36");
+        }
+
+        static bool ErrorCodeIs(string message, string code)
+        {
+            const string key = "error code ";
+            int from = 0;
+            while (from < message.Length)
+            {
+                int i = message.IndexOf(key, from, StringComparison.OrdinalIgnoreCase);
+                if (i < 0) return false;
+                int s = i + key.Length;
+                int e = s;
+                while (e < message.Length && char.IsDigit(message[e])) e++;
+                if (e - s == code.Length && string.CompareOrdinal(message, s, code, 0, code.Length) == 0)
+                    return true;
+                from = i + key.Length;
+            }
             return false;
         }
 
@@ -156,10 +215,31 @@ namespace FlockFive
             {
                 _fmodNoted = true;
                 FmodWarnings++;
-                Debug.LogWarning("FMOD audio failed (error code " + FmodCode(message) + "). Sound stays off for this run.");
+                Debug.LogWarning("FMOD audio failed (error code " + FmodCode(message) + "). Sound stays off until the output returns.");
             }
             SettleDevConsole();
             return true;
+        }
+
+        // Headphones, a route change, or coming back to the app. The output may
+        // exist again, so the next Play and PlayScheduled try normally.
+        public static void OnAudioConfigurationChanged(bool deviceWasChanged) => ClearOutputFailure();
+
+        public static void OnApplicationFocus(bool focus)
+        {
+            if (focus) ClearOutputFailure();
+        }
+
+        public static void OnApplicationPause(bool paused)
+        {
+            if (!paused) ClearOutputFailure();
+        }
+
+        public static void ClearOutputFailure()
+        {
+            _fmodNoted = false;
+            _fmodFrame = -1;
+            if (MixDesk.Live != null) MixDesk.Live.RetrySkippedPlayback();
         }
 
         public static void SettleDevConsole()
@@ -175,6 +255,7 @@ namespace FlockFive
 
         static string FmodCode(string message)
         {
+            if (message.IndexOf("FMOD_ERR_OUTPUT_INIT", StringComparison.OrdinalIgnoreCase) >= 0) return "36";
             const string key = "error code ";
             int i = message.IndexOf(key, StringComparison.OrdinalIgnoreCase);
             if (i >= 0)
@@ -184,9 +265,7 @@ namespace FlockFive
                 while (e < message.Length && char.IsDigit(message[e])) e++;
                 if (e > s) return message.Substring(s, e - s);
             }
-            int paren = message.IndexOf("(36)", StringComparison.Ordinal);
-            if (paren >= 0) return "36";
-            return "FMOD";
+            return "36";
         }
 
         static void OnAudioLog(string condition, string stackTrace, LogType type)
@@ -533,7 +612,27 @@ namespace FlockFive
     // UnitySendMessage target. The GameObject name is AudioGuard.
     public sealed class AudioGuardHost : MonoBehaviour
     {
+        static AudioGuardHost _alive;
+
         public void OnAudioInterruption(string kind) => AudioGuard.OnAudioInterruption(kind);
+
+        void OnEnable()
+        {
+            if (_alive != null && _alive != this) return;
+            _alive = this;
+            AudioGuard.HookOutputRecovery();
+        }
+
+        void OnDisable()
+        {
+            if (_alive != this) return;
+            _alive = null;
+            AudioGuard.UnhookOutputRecovery();
+        }
+
+        void OnApplicationFocus(bool focus) => AudioGuard.OnApplicationFocus(focus);
+
+        void OnApplicationPause(bool paused) => AudioGuard.OnApplicationPause(paused);
 
         void Update() => AudioGuard.Tick();
     }

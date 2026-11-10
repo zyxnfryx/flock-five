@@ -493,10 +493,16 @@ namespace FlockFive
             cue.clip = _bgEntranceClip;
             cue.timeSamples = 0;
             cue.volume = BadgerCap * BedDuck;
-            cue.PlayScheduled(t0);
             RestLoopPitch(loop);
             loop.timeSamples = BadgerBarSamples(loop.clip);
-            loop.PlayScheduled(handoff);
+            bool cueOk = AudioGuard.PlayScheduled(cue, t0);
+            bool loopOk = AudioGuard.PlayScheduled(loop, handoff);
+            if (!cueOk || !loopOk)
+            {
+                _bgHandoffDsp = -1;
+                _bgCueLive = false;
+                return;
+            }
             _bgHandoffDsp = handoff;
             _bgCueLive = true;
         }
@@ -742,11 +748,28 @@ namespace FlockFive
             if (cue == null || loop == null || !cue.isPlaying) return;
             double left = (_bgEntranceClip.samples - cue.timeSamples) / (double)_bgEntranceClip.frequency;
             if (left <= 0.02) return;
+            if (AudioGuard.OutputFailed) return;
             loop.Stop();
             loop.timeSamples = BadgerBarSamples(loop.clip);
             double at = AudioSettings.dspTime + left;
-            loop.PlayScheduled(at);
+            if (!AudioGuard.PlayScheduled(loop, at)) return;
             _bgHandoffDsp = at;
+        }
+
+        // Beds that missed Play while the output was down. One-shots and a live
+        // scheduled hand-off are left for their next call.
+        public void RetrySkippedPlayback()
+        {
+            if (AudioGuard.OutputFailed || _stems == null) return;
+            for (int i = 0; i < _stems.Length; i++)
+            {
+                if (_bgCueLive && (i == BadgerLoopStem || i == BadgerCueStem)) continue;
+                var a = _stems[i];
+                if (a == null || a.clip == null || !a.loop || a.isPlaying) continue;
+                float want = _stemBase != null && i < _stemBase.Length ? _stemBase[i] : 0f;
+                if (want <= 0.0001f) continue;
+                AudioGuard.Play(a);
+            }
         }
 
         // Returns the share of the place seat the badger holds (0..1) and drives its stems.
