@@ -613,30 +613,70 @@ namespace FlockFive
 
 #if UNITY_WEBGL && DEVELOPMENT_BUILD
         bool _devLevelSkipDone;
+        bool _devOnboardingStamped;
 
         // Temporary inspector hook. Compiled only for WebGL development builds.
         // Release player builds do not contain it. Open the page with ?fflevel=3
         // (lightning still owed) or ?fflevel=5 (bee still owed). Other gardens
         // load too, with both of those lessons stamped seen.
+        // ?skipOnboarding=1 (alone, or with ?fflevel=) also stamps the home
+        // cascade seen, seeds the purse, and, with no fflevel, loads garden 2.
+        // Garden 2 can nap: a finished flock whose color is not on a feeder sleeps.
+        // The nap rule tip is left unseen so that first Zzz can still raise it.
+        // ?keepTips=1 on that skip also leaves the kit and feeder plates owed.
+        // Those three prefs are what hide FeederLine and SleepLine ("color")
+        // and the kit line. Leaf, the first-garden coach, and the pest lessons
+        // stay stamped: a live leaf or coach blocks the feeder plate.
         void MaybeDevLevelSkip()
         {
             if (_devLevelSkipDone) return;
-            if (!AdConsent.FirstFrameReady || StartupInputHeld) return;
+            if (StartupInputHeld) return;
             if (!_splash || _home != HomeFace.Splash) return;
             string url = Application.absoluteURL;
             if (string.IsNullOrEmpty(url)) return;
             var plan = DevLevelSkip.Plan(url, LevelData.Count);
+            if (plan.Index < 0)
+            {
+                if (!AdConsent.FirstFrameReady) return;
+                _devLevelSkipDone = true;
+                return;
+            }
+            // AdConsent opens its card at the end of the first frame. WebGL is
+            // not iOS, so Tracking.Undecided() stays true and the ATT sheet is
+            // the in-game pre-prompt. Stamp the ask (and drop a held pre-prompt)
+            // and dismiss the in-session card before that paint. The garden load
+            // still waits for the first frame, same as ?fflevel= alone.
+            if (plan.SkipOnboarding && !_devOnboardingStamped)
+            {
+                _devOnboardingStamped = true;
+                StampDevOnboardingSeen();
+                AdConsent.DismissTransient();
+            }
+            if (!AdConsent.FirstFrameReady) return;
             _devLevelSkipDone = true;
-            if (plan.Index < 0) return;
             PlayerPrefs.SetInt("flockfive.next", plan.Index);
             PlayerPrefs.SetInt(CoachKey, 1);
             PlayerPrefs.SetInt(CoachLeafKey, 1);
             PlayerPrefs.SetInt(CoachSparrowKey, 1);
             PlayerPrefs.SetInt(CoachHawkKey, 1);
             PlayerPrefs.SetInt(CoachOstrichKey, 1);
-            PlayerPrefs.SetInt(RuleTips.KitKey, 1);
-            PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
-            PlayerPrefs.SetInt(RuleTips.SleepKey, 1);
+            // keepTips=1 leaves the rule plates owed, including a stamp left by an
+            // earlier skip in this browser profile. Leaf and the other coach keys
+            // above stay seen so their plates do not cover FeederLine.
+            if (plan.KeepTips)
+            {
+                PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                PlayerPrefs.DeleteKey(RuleTips.SleepKey);
+            }
+            else
+            {
+                PlayerPrefs.SetInt(RuleTips.KitKey, 1);
+                PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
+                // Nap tip stays owed on the skip path. A plain ?fflevel= still marks it seen.
+                if (plan.SkipOnboarding) PlayerPrefs.DeleteKey(RuleTips.SleepKey);
+                else PlayerPrefs.SetInt(RuleTips.SleepKey, 1);
+            }
             if (plan.KeepBee) PlayerPrefs.DeleteKey(CoachBeeKey);
             else PlayerPrefs.SetInt(CoachBeeKey, 1);
             if (plan.KeepFire)
@@ -649,8 +689,12 @@ namespace FlockFive
                 PlayerPrefs.SetInt(CoachFireKey, 1);
                 PlayerPrefs.SetInt(LightningStrike.StruckKey, 1);
             }
+            if (plan.SkipOnboarding) StampDevOnboardingSeen();
             PlayerPrefs.Save();
             AdConsent.DismissTransient();
+            if (plan.SkipOnboarding)
+                Debug.Log("FF_DEV_SKIP_ONBOARDING display=" + (plan.Index + 1) + " coins=" + Purse.Coins
+                    + " keepTips=" + (plan.KeepTips ? 1 : 0));
             Debug.Log("FF_DEV_LEVEL display=" + (plan.Index + 1) + " keepBee=" + (plan.KeepBee ? 1 : 0)
                 + " keepFire=" + (plan.KeepFire ? 1 : 0));
             if (!LevelCurtain.Armed) LevelCurtain.Arm(AdPause.Unscaled);
@@ -662,6 +706,44 @@ namespace FlockFive
                 LevelCurtain.MarkReady();
                 LevelCurtain.Fire(AdPause.Unscaled);
             }
+        }
+
+        // Home cascade the inspector otherwise has to tap through before a garden
+        // with both restart and the hive can show. Keys are the live gates:
+        // ATT ask finished (AdConsent.Consider returns none once ask >= 2; WebGL
+        // never gets a system dialog, and EditorHoldAtt would paint the sheet
+        // without reading that key), avatar adopted and named (AdoptResume stays
+        // off; Goldie is the Gold suggestion BeginAdopt writes), Daily and poker
+        // intros, and the collection lesson. CoachPokerKey is only the home
+        // intro. It does not stamp the in-table page lesson or the Back tip.
+        // CoachHiveKey is also what draws the garden hive. The in-garden hive
+        // callout and the album tutor are the collection follow-ups, so they are
+        // stamped too. The bee-card plate is CoachBeeKey, already stamped above
+        // unless this garden asked to keep it. The nap rule tip is cleared, not
+        // stamped: Garden 2 can sleep a flock that has no feeder, and the tip
+        // has to be able to open on that first Zzz. Kit and feeder are cleared
+        // only when the URL also says keepTips=1, and that happens in
+        // MaybeDevLevelSkip so this home cascade is the same either way. Coins
+        // go through Purse.Credit so flockfive.coins and its PrefGuard checksum
+        // match what the rail and the poker deal read back (including the Boot
+        // on the next home).
+        void StampDevOnboardingSeen()
+        {
+            PlayerPrefs.SetInt(AdConsent.AttAskKey, 2);
+            AdConsent.EditorHoldAtt = false;
+            PlayerPrefs.DeleteKey(RuleTips.SleepKey);
+            int seed = DevLevelSkip.CoinsToSeed(Purse.Coins);
+            if (seed > 0) Purse.Credit(seed);
+            PlayerPrefs.SetInt(AvatarPref, (int)BirdColor.Gold);
+            PlayerPrefs.SetString(AvatarNamePref, "Goldie");
+            PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
+            PlayerPrefs.SetInt(AvatarNamedPref, 1);
+            PlayerPrefs.SetInt(CoachDailyKey, 1);
+            PlayerPrefs.SetInt(CoachPokerKey, 1);
+            PlayerPrefs.SetInt(CoachHiveKey, 1);
+            PlayerPrefs.SetInt(CoachHiveGardenKey, 1);
+            PlayerPrefs.SetInt(CoachHiveAlbumKey, 1);
+            PlayerPrefs.Save();
         }
 #endif
 

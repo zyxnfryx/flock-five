@@ -2,10 +2,13 @@ using UnityEngine;
 
 namespace FlockFive
 {
-    // One seat for the garden's two bottom corners. Restart is the left button,
-    // hive is the right. Both rects are at rest. Draw them inside the HUD shake
-    // matrix as-is. A world pin or a hit test applies Shake once, with the same
-    // offset the matrix uses, so the hive moves with the restart.
+    // Garden HUD seats. The hive plate stays bottom-right. Restart sits in the top
+    // bar on the full halo quad (HiveArtRight). The garden skep is drawn so its
+    // straw column shares the restart spiral's right edge, and the glow stops
+    // on that column. Both rects are at rest (the welcome pulse is not part of
+    // the seat). Draw them inside the HUD
+    // shake matrix as-is. A world pin or a hit test applies Shake once, with the
+    // same offset the matrix uses, so the hive moves with the restart.
     public static class CornerAnchor
     {
         public const float SizeRef = 72f;
@@ -31,7 +34,7 @@ namespace FlockFive
             out float scale, out float top, out float bot, out Rect restart, out Rect hive)
         {
             GardenCore(screenW, screenH, safe, out scale, out top, out bot, out var seat, out hive);
-            restart = TopBarRestart(screenW, screenH, safe, scale, top);
+            restart = TopBarRestart(screenW, screenH, safe, scale, top, hive);
         }
 
         // The old bottom-left restart seat. Garden lesson banners still centre on it (b102).
@@ -56,19 +59,103 @@ namespace FlockFive
         public const float FeederRightWorld = FeederRow.Triple + FeederRow.BulbHalf + 0.12f;
         public static float FeederRightGui(float w, float h) => WorldToGui(w, h, FeederRightWorld, 0f).x;
 
+        // Right edge of the hive hit plate: InsetRef inside safe.xMax, clamped to the
+        // screen. The plate is the tap target. The halo drawn around it is wider.
+        public static float RightEdge(float screenW, Rect safe, float scale)
+        {
+            float edge = safe.xMax - InsetRef * scale;
+            if (edge > screenW) edge = screenW;
+            if (edge < 0f) edge = 0f;
+            return edge;
+        }
+
+        // DrawHiveGlow's old pad. The restart rect still sits on this quad.
+        public const float HiveGlowPadFrac = 0.18f;
+
+        // HSV straw/orange columns of the button textures (right edge is exclusive).
+        // fx_restart.png 751 wide, last straw column 739. fx_hive.png 1024, straw x 113..910.
+        public const float RestartArtFrac = 740f / 751f;
+        public const float HiveArtFrac = 911f / 1024f;
+        public const float HiveArtLeftFrac = 113f / 1024f;
+
+        // Right edge of the restart spiral the straw mask counts.
+        public static float RestartGlyphRight(Rect restart)
+        {
+            return restart.xMin + restart.width * RestartArtFrac;
+        }
+
+        // Square the hive texture is drawn in so its straw column lands on the restart glyph.
+        public static Rect HiveAlignedDraw(Rect hive, Rect restart)
+        {
+            float w = hive.width;
+            float target = RestartGlyphRight(restart);
+            float x = target - HiveArtFrac * w;
+            return new Rect(x, hive.y, w, hive.height);
+        }
+
+        // Straw texels only. Right edge is the painted mask; the clear pad to the
+        // right of the skep is not a hit.
+        public static Rect HiveStrawHit(Rect draw)
+        {
+            if (draw.width < 2f) return draw;
+            float x0 = draw.xMin + draw.width * HiveArtLeftFrac;
+            float x1 = draw.xMin + draw.width * HiveArtFrac;
+            return Rect.MinMaxRect(x0, draw.yMin, x1, draw.yMax);
+        }
+
+        // Glow disc ends on the straw's right texel, so the orange mask cannot
+        // stick out past the skep.
+        public static float HiveGlowOutset(float width)
+        {
+            return -width * (1f - HiveArtFrac);
+        }
+
+        // Resting halo quad's right edge (before the glyph pull). The welcome
+        // pulse scales the halo for a fraction of a second; the seat stays on
+        // this quad so Restart does not breathe, and does not jump when the
+        // hive is hidden.
+        public static float HiveArtRight(Rect hive)
+        {
+            if (hive.width < 2f) return hive.xMax;
+            return hive.xMax + hive.width * HiveGlowPadFrac;
+        }
+
+        // Counted hive straw right edge for a texture drawn in `draw`.
+        public static float HiveGlyphRight(Rect draw)
+        {
+            if (draw.width < 2f) return draw.xMax;
+            return draw.xMin + draw.width * HiveArtFrac;
+        }
+
         // Top-right gutter of the top bar: right of every feeder bulb, above every branch / bird /
-        // perch reach, inside the safe area.
-        public static Rect TopBarRestart(float w, float h, Rect safe, float scale, float top)
+        // perch reach, inside the safe area. The rect's right edge is the full halo quad
+        // (HiveArtRight). The counted glyph is RestartGlyphRight, which meets the pulled
+        // glow. The seat does not jump when the hive appears.
+        public static Rect TopBarRestart(float w, float h, Rect safe, float scale, float top, Rect hive)
         {
             if (safe.width < 2f || safe.height < 2f) safe = new Rect(0f, 0f, w, h);
             float safeTop = Mathf.Max(0f, h - safe.yMax);
             float pad = 6f * scale;
             float limit = Mathf.Min(top, PlayfieldTopGui(w, h)) - pad;
             float y = safeTop + pad;
-            float left = FeederRightGui(w, h) + pad;
-            float right = Mathf.Min(safe.xMax, w) - pad;
-            float size = Mathf.Min(SizeRef * scale, Mathf.Min(limit - y, right - left));
-            size = Mathf.Max(size, MinTapPx(Screen.dpi));
+            float right = HiveArtRight(hive);
+            if (right > w) right = w;
+            if (right < 0f) right = 0f;
+            float feeder = FeederRightGui(w, h);
+            float vert = limit - y;
+            if (vert < 0f) vert = 0f;
+            float size = Mathf.Min(SizeRef * scale, vert);
+            float gutter = right - (feeder + pad);
+            if (size > gutter) size = gutter;
+            // At least 44px, and the dpi tap target when the feeder air can hold it.
+            // Growth stops at FeederRightGui (already 0.12 world clear of the widest
+            // bulb) and never slides the right edge past the hive halo.
+            float clear = right - feeder;
+            if (clear < 0f) clear = 0f;
+            float tap = Mathf.Max(MinTapPx(0f), MinTapPx(Screen.dpi));
+            if (size < tap) size = tap < clear ? tap : clear;
+            if (size > vert) size = vert;
+            if (size < 0f) size = 0f;
             return new Rect(right - size, y, size, size);
         }
 
@@ -92,9 +179,8 @@ namespace FlockFive
             if (y < 0f) y = 0f;
             bot = screenH - y;
             float left = safe.xMin + inset;
-            float right = safe.xMax - inset - size;
+            float right = RightEdge(screenW, safe, scale) - size;
             if (left < 0f) left = 0f;
-            if (right + size > screenW) right = screenW - size;
             if (right < 0f) right = 0f;
             // b105 (Brandon): the corner buttons must never sit on the bottom ad (gift) branch or its
             // arrow sign. This is the base layout for every window, not a tablet path: phones and the
@@ -120,8 +206,7 @@ namespace FlockFive
                     y = Mathf.Max(0f, adTop - 6f * scale - size);
                 }
                 bot = screenH - y;
-                right = safe.xMax - inset - size;
-                if (right + size > screenW) right = screenW - size;
+                right = RightEdge(screenW, safe, scale) - size;
                 if (right < 0f) right = 0f;
             }
             restart = new Rect(left, y, size, size);
