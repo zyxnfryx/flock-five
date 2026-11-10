@@ -67,6 +67,7 @@ namespace FlockFive.Editor
             CheckPauseAndUnmute(Check);
             CheckUnmuteScope(Check);
             CheckScheduledRestore(Check);
+            CheckScheduleHousekeeping(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -615,6 +616,67 @@ namespace FlockFive.Editor
 
                 Check("restored-stems-share-one-scheduled-start", unmute && retry,
                     "unmute " + unmute + " retry " + retry);
+            }
+            finally
+            {
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.ResetForTests();
+                GamePause.Reset();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckScheduleHousekeeping(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            GamePause.Reset();
+            var go = new UnityEngine.GameObject("schedule-housekeeping");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var stale = desk.StemForTests(0);
+                stale.clip = ProbeClip("stale-bed");
+                stale.loop = true;
+                stale.timeSamples = 12000;
+                var mate = desk.AddLoopForTests(true);
+                mate.clip = ProbeClip("mate-bed");
+                mate.timeSamples = 8000;
+                int plays = AudioGuard.PlayCalls;
+                int n = AudioGuard.ScheduleStemsTogether(new AudioSource[] { stale, mate });
+                bool rewound = n == 2 && stale.timeSamples == 0 && mate.timeSamples == 0
+                    && SameScheduledStart(stale, mate) && AudioGuard.PlayCalls == plays;
+
+                bool logged = AudioGuard.ScheduledAt(stale, out _) && AudioGuard.ScheduledAt(mate, out _);
+                AudioGuard.Release(stale);
+                bool dropped = !AudioGuard.ScheduledAt(stale, out _) && AudioGuard.ScheduledAt(mate, out _);
+                AudioGuard.DropRestore(mate);
+                bool both = !AudioGuard.ScheduledAt(mate, out _);
+
+                AudioGuard.ResetForTests();
+                desk.PlantStemForTests(0f);
+                var dawn = desk.StemForTests(0);
+                dawn.clip = ProbeClip("dawn-bed");
+                dawn.loop = true;
+                dawn.timeSamples = 5000;
+                var mid = desk.AddLoopForTests(true);
+                mid.clip = ProbeClip("mid-copy");
+                mid.volume = 0f;
+                var last = desk.AddLoopForTests(true);
+                last.clip = ProbeClip("last-copy");
+                last.volume = 0f;
+                plays = AudioGuard.PlayCalls;
+                int booted = desk.BootPlaceForTests();
+                bool boot = booted == 3 && dawn.timeSamples == 0 && mid.timeSamples == 0 && last.timeSamples == 0
+                    && SameScheduledStart(dawn, mid) && SameScheduledStart(dawn, last)
+                    && AudioGuard.PlayCalls == plays;
+
+                Check("schedule-together-rewinds-stale-stems", rewound, "rewound " + rewound + " n " + n);
+                Check("release-drops-schedule-log", logged && dropped && both, "logged " + logged + " dropped " + dropped);
+                Check("boot-stems-share-one-scheduled-start", boot, "boot " + boot + " n " + booted);
             }
             finally
             {

@@ -533,10 +533,10 @@ namespace FlockFive
             }
             for (int i = 0; i < _stems.Length; i++)
                 if (_stems[i] == null) _stems[i] = null;
-            SwapClip(0, garden, true);
+            SwapClip(0, garden, false);
             SwapClip(1, garden, false);
             SwapClip(2, garden, false);
-            SwapClip(3, combo, true);
+            SwapClip(3, combo, false);
             SwapClip(4, theme, false);
             if (_stems[4] != null)
             {
@@ -544,10 +544,12 @@ namespace FlockFive
                 _stems[4].time = 0f;
                 _stems[4].volume = 0f;
             }
-            SwapClip(5, rain, true);
+            SwapClip(5, rain, false);
             SwapClip(BadgerLoopStem, _bgLoopClip, false);
             SwapClip(BadgerCueStem, _bgEntranceClip, false);
             SwapClip(BadgerStingStem, null, false);
+            // Volumes stay with LateUpdate / SkyCycle. This only locks the start.
+            StartPlaceBeds();
             // Entrance and stingers are one-shots that live on the desk (never loop).
             if (_stems[BadgerCueStem] != null) _stems[BadgerCueStem].loop = false;
             if (_stems[BadgerStingStem] != null) _stems[BadgerStingStem].loop = false;
@@ -967,6 +969,26 @@ namespace FlockFive
             if (!_badger && _badgerMix <= 0f && _bgCutT < 0f) StopBadgerSources();
             return _badgerMix;
         }
+
+        // Garden, the silent dawn/mid/last copies, combo, and rain. Splash stays
+        // off until its welcome, and the badger voices wait for the contest.
+        int StartPlaceBeds()
+        {
+            if (_stems == null) return 0;
+            var ready = new List<AudioSource>();
+            int[] place = { 0, 1, 2, 3, 5 };
+            for (int p = 0; p < place.Length; p++)
+            {
+                int i = place[p];
+                if (i >= _stems.Length) continue;
+                var a = _stems[i];
+                if (a == null || a.clip == null) continue;
+                ready.Add(a);
+            }
+            return AudioGuard.ScheduleStemsTogether(ready);
+        }
+
+        public int BootPlaceForTests() => StartPlaceBeds();
 
         void SwapClip(int i, AudioClip clip, bool start)
         {
