@@ -406,8 +406,14 @@ namespace FlockFive.Editor
 
         static AudioClip ProbeClip(string name)
         {
-            var clip = AudioClip.Create(name, 64, 1, 22050, false);
-            clip.SetData(new float[64], 0);
+            return ProbeClip(name, 64);
+        }
+
+        static AudioClip ProbeClip(string name, int samples)
+        {
+            if (samples < 1) samples = 1;
+            var clip = AudioClip.Create(name, samples, 1, 22050, false);
+            clip.SetData(new float[samples], 0);
             return clip;
         }
 
@@ -605,16 +611,19 @@ namespace FlockFive.Editor
                 desk.AttachForTests();
                 desk.PlantStemForTests(0.24f);
                 var mid = desk.StemForTests(0);
-                mid.clip = ProbeClip("mid-bed");
+                mid.clip = ProbeClip("mid-bed", 88200);
                 mid.loop = true;
-                AudioGuard.Play(mid);
+                bool started = AudioGuard.Play(mid);
                 mid.timeSamples = 44100;
+                int planted = mid.timeSamples;
                 int plays = AudioGuard.PlayCalls;
                 int stops = AudioGuard.StopCalls;
                 AudioGuard.SetMuted(true, false);
                 AudioGuard.SetMuted(false, false);
-                bool place = AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops
-                    && mid.timeSamples == 44100 && AudioGuard.RestoreCount == 0 && !AudioGuard.NeedsRestore(mid);
+                bool place = started && planted == 44100
+                    && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops
+                    && mid.timeSamples == 44100 && AudioGuard.RestoreCount == 0 && !AudioGuard.NeedsRestore(mid)
+                    && desk.LastReassert == 0 && !AudioGuard.ScheduledAt(mid, out _);
 
                 AudioGuard.ResetForTests();
                 desk.PlantBadgerVoicesForTests(out var loop, out var cue, out var sting);
@@ -673,7 +682,8 @@ namespace FlockFive.Editor
                 AudioGuard.SetMuted(false, false);
                 bool only = desk.LastReassert == 1 && AudioGuard.WasStarted(kept) && !AudioGuard.WasStarted(other) && !AudioGuard.NeedsRestore(oneShot);
 
-                Check("mute-unmute-mid-bed-keeps-position", place, "place " + place + " samples " + mid.timeSamples);
+                Check("mute-unmute-mid-bed-keeps-position", place,
+                    "place " + place + " planted " + planted + " samples " + mid.timeSamples);
                 Check("unmute-during-cut-starts-nothing", cut, "cut " + cut);
                 Check("unmute-after-result-starts-nothing", result, "result " + result);
                 Check("unmute-before-splash-welcome-starts-nothing", early, "early " + early);
@@ -721,12 +731,18 @@ namespace FlockFive.Editor
                 bool unmute = desk.LastReassert == 2 && SameScheduledStart(a, b) && AudioGuard.PlayCalls == plays;
 
                 AudioGuard.ResetForTests();
+                // The unmute half already scheduled a and b. A playing voice is not
+                // a missed start, so the retry half uses voices that are still silent.
+                var c = desk.AddLoopForTests(true);
+                c.clip = ProbeClip("sched-c");
+                var d = desk.AddLoopForTests(true);
+                d.clip = ProbeClip("sched-d");
                 AudioGuard.NoteFmodFailure("error code 60");
-                AudioGuard.Play(a);
-                AudioGuard.Play(b);
+                bool missedRetry = !AudioGuard.Play(c) && !AudioGuard.Play(d);
                 plays = AudioGuard.PlayCalls;
                 AudioGuard.OnApplicationFocus(true);
-                bool retry = AudioGuard.WasRetried(a) && AudioGuard.WasRetried(b) && SameScheduledStart(a, b) && AudioGuard.PlayCalls == plays;
+                bool retry = missedRetry && AudioGuard.WasRetried(c) && AudioGuard.WasRetried(d)
+                    && SameScheduledStart(c, d) && AudioGuard.PlayCalls == plays;
 
                 Check("restored-stems-share-one-scheduled-start", unmute && retry,
                     "unmute " + unmute + " retry " + retry);
