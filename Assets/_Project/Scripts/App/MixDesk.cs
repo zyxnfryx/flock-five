@@ -261,8 +261,28 @@ namespace FlockFive
             return _stems[i];
         }
 
-        // After unmute: start a bed that should be heard and isn't. A voice that
-        // is already playing, or paused on purpose, stays where it is.
+        public AudioSource AddLoopForTests(bool loop)
+        {
+            var extra = gameObject.AddComponent<AudioSource>();
+            extra.playOnAwake = false;
+            extra.loop = loop;
+            extra.spatialBlend = 0f;
+            int n = _stems == null ? 0 : _stems.Length;
+            var next = new AudioSource[n + 1];
+            if (_stems != null)
+                for (int i = 0; i < n; i++) next[i] = _stems[i];
+            next[n] = extra;
+            _stems = next;
+            var basis = new float[n + 1];
+            if (_stemBase != null)
+                for (int i = 0; i < _stemBase.Length && i < n; i++) basis[i] = _stemBase[i];
+            _stemBase = basis;
+            return extra;
+        }
+
+        // Unmute brings back only the looping beds mute or a dead output stopped.
+        // A cue, a stinger, a bed under the cut or the result, and splash before
+        // its welcome stay silent. Anything already playing stays put.
         public int ReassertBed()
         {
             if (_stems == null) return 0;
@@ -270,13 +290,83 @@ namespace FlockFive
             for (int i = 0; i < _stems.Length; i++)
             {
                 var a = _stems[i];
-                if (a == null || a.clip == null || a.isPlaying) continue;
-                if (AudioGuard.IsPaused(a)) continue;
-                float want = _stemBase != null && i < _stemBase.Length ? _stemBase[i] : 0f;
-                if (want <= 0.0001f) continue;
+                if (a == null || !AudioGuard.NeedsRestore(a)) continue;
+                if (!a.loop || a.isPlaying || AudioGuard.IsPaused(a) || BlocksSkippedRetry(a) || SplashStemBlocked(a))
+                {
+                    if (!a.loop || BlocksSkippedRetry(a) || SplashStemBlocked(a))
+                        AudioGuard.DropRestore(a);
+                    continue;
+                }
+                if (a.clip == null)
+                {
+                    AudioGuard.DropRestore(a);
+                    continue;
+                }
                 if (AudioGuard.Play(a)) n++;
             }
+            LastReassert = n;
             return n;
+        }
+
+        public int LastReassert { get; private set; }
+
+        // Mute stops the beds that are actually running and remembers those alone.
+        public int SilenceForMute()
+        {
+            if (_stems == null) return 0;
+            int n = 0;
+            for (int i = 0; i < _stems.Length; i++)
+            {
+                var a = _stems[i];
+                if (a == null || !a.loop) continue;
+                if (BlocksSkippedRetry(a) || SplashStemBlocked(a))
+                {
+                    AudioGuard.DropRestore(a);
+                    continue;
+                }
+                if (!a.isPlaying && !AudioGuard.WasStarted(a)) continue;
+                AudioGuard.HoldRestore(a);
+                AudioGuard.ForgetStarted(a);
+                try { a.Stop(); }
+                catch (System.Exception ex) { AudioGuard.NoteClipFailure(a.clip, ex); }
+                n++;
+            }
+            return n;
+        }
+
+        public bool SplashStemBlocked(AudioSource source)
+        {
+            return source != null && _stems != null && _stems.Length > 4 && source == _stems[4] && !_splashLoopOn;
+        }
+
+        public void PlantSplashStemForTests(bool welcomeOn)
+        {
+            if (_stems == null || _stems.Length < 5)
+            {
+                var next = new AudioSource[5];
+                if (_stems != null)
+                    for (int i = 0; i < _stems.Length && i < 5; i++) next[i] = _stems[i];
+                _stems = next;
+            }
+            var src = _stems[4];
+            if (src == null) src = gameObject.AddComponent<AudioSource>();
+            src.playOnAwake = false;
+            src.loop = true;
+            src.spatialBlend = 0f;
+            _stems[4] = src;
+            _splashLoopOn = welcomeOn;
+        }
+
+        public void ArmCutForTests()
+        {
+            _bgCutT = 0f;
+            _bgHandBackAt = -1f;
+        }
+
+        public void ArmResultForTests()
+        {
+            _bgCutT = -1f;
+            _bgHandBackAt = 1f;
         }
 
         public void PauseForGame()
@@ -426,6 +516,7 @@ namespace FlockFive
             _splashMix = 1f; // mute garden immediately — no stray bed before the band
             _splashGate = AdPause.Unscaled + SplashPageHold;
             _splashLoopOn = false;
+            DropPlaceBeds();
             if (_stems != null && _stems.Length > 4 && _stems[4] != null)
             {
                 Halt(_stems[4]);
@@ -516,6 +607,7 @@ namespace FlockFive
         public void BadgerEntrance()
         {
             if (!BadgerReady) return;
+            DropPlaceBeds();
             StopBadgerSources();
             _badger = true;
             // The place bed under the leap (garden or splash) fades out over 0.3 s while
@@ -593,6 +685,7 @@ namespace FlockFive
         public void BadgerBattle()
         {
             if (!BadgerReady) return;
+            DropPlaceBeds();
             var loop = _stems[BadgerLoopStem];
             if (loop == null) return;
             if (_badger && (_bgCueLive || loop.isPlaying)) return;
@@ -758,7 +851,15 @@ namespace FlockFive
         {
             if (s == null) return;
             AudioGuard.Release(s);
+            AudioGuard.DropRestore(s);
             s.Stop();
+        }
+
+        void DropPlaceBeds()
+        {
+            if (_stems == null) return;
+            for (int i = 0; i <= 4 && i < _stems.Length; i++)
+                AudioGuard.DropRestore(_stems[i]);
         }
 
         void ReleaseBadger()
@@ -767,6 +868,9 @@ namespace FlockFive
             AudioGuard.Release(BadgerStem(BadgerLoopStem));
             AudioGuard.Release(BadgerStem(BadgerCueStem));
             AudioGuard.Release(BadgerStem(BadgerStingStem));
+            AudioGuard.DropRestore(BadgerStem(BadgerLoopStem));
+            AudioGuard.DropRestore(BadgerStem(BadgerCueStem));
+            AudioGuard.DropRestore(BadgerStem(BadgerStingStem));
         }
 
         static void SilenceStem(AudioSource s)

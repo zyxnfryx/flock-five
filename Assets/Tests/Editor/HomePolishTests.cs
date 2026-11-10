@@ -65,6 +65,7 @@ namespace FlockFive.Editor
             CheckPlayScheduled(Check);
             CheckAudioRetry(Check);
             CheckPauseAndUnmute(Check);
+            CheckUnmuteScope(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -413,6 +414,7 @@ namespace FlockFive.Editor
                 bed.playOnAwake = false;
 
                 int routes = AudioGuard.PauseRoutes;
+                int resumes = AudioGuard.ResumeRoutes;
                 GamePause.Push();
                 bool entered = AudioGuard.PauseRoutes == routes + 1 && GamePause.Paused;
                 GamePause.Push();
@@ -420,9 +422,9 @@ namespace FlockFive.Editor
                 AudioGuard.Pause(bed);
                 bool marked = AudioGuard.IsPaused(bed);
                 GamePause.Pop();
-                bool still = GamePause.Paused && AudioGuard.IsPaused(bed);
+                bool still = GamePause.Paused && AudioGuard.IsPaused(bed) && AudioGuard.ResumeRoutes == resumes;
                 GamePause.Pop();
-                bool cleared = !GamePause.Paused && !AudioGuard.IsPaused(bed) && AudioGuard.ResumeRoutes >= 1;
+                bool cleared = !GamePause.Paused && !AudioGuard.IsPaused(bed) && AudioGuard.ResumeRoutes == resumes + 1;
 
                 AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
                 bool missed = !AudioGuard.Play(bed) && AudioGuard.SkippedCount >= 1;
@@ -463,6 +465,77 @@ namespace FlockFive.Editor
                 Check("unmute-reasserts-the-bed",
                     kept && brought && pausedStays && silent,
                     "kept " + kept + " brought " + brought + " paused " + pausedStays + " silent " + silent);
+            }
+            finally
+            {
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.ResetForTests();
+                GamePause.Reset();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckUnmuteScope(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            GamePause.Reset();
+            var go = new UnityEngine.GameObject("unmute-scope");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantBadgerVoicesForTests(out var loop, out var cue, out var sting);
+                loop.clip = ProbeClip("badger-loop");
+                cue.clip = ProbeClip("badger-cue");
+                sting.clip = ProbeClip("badger-sting");
+                cue.loop = false;
+                sting.loop = false;
+                AudioGuard.Play(loop);
+                AudioGuard.Play(sting);
+                AudioGuard.SetMuted(true, false);
+                desk.ArmCutForTests();
+                AudioGuard.SetMuted(false, false);
+                bool cut = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(loop) && !AudioGuard.NeedsRestore(sting);
+
+                AudioGuard.ResetForTests();
+                AudioGuard.Play(loop);
+                AudioGuard.Play(sting);
+                desk.ArmResultForTests();
+                desk.BadgerResult(true);
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.SetMuted(false, false);
+                bool result = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(loop) && !AudioGuard.NeedsRestore(sting);
+
+                AudioGuard.ResetForTests();
+                desk.PlantSplashStemForTests(false);
+                var splash = desk.StemForTests(4);
+                splash.clip = ProbeClip("splash-early");
+                AudioGuard.Play(splash);
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.SetMuted(false, false);
+                bool early = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(splash);
+
+                AudioGuard.ResetForTests();
+                desk.PlantStemForTests(0.24f);
+                var kept = desk.StemForTests(0);
+                kept.clip = ProbeClip("kept-bed");
+                kept.loop = true;
+                var other = desk.AddLoopForTests(true);
+                other.clip = ProbeClip("other-bed");
+                var oneShot = desk.AddLoopForTests(false);
+                oneShot.clip = ProbeClip("stinger");
+                AudioGuard.Play(kept);
+                AudioGuard.Play(oneShot);
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.SetMuted(false, false);
+                bool only = desk.LastReassert == 1 && AudioGuard.WasStarted(kept) && !AudioGuard.WasStarted(other) && !AudioGuard.NeedsRestore(oneShot);
+
+                Check("unmute-during-cut-starts-nothing", cut, "cut " + cut);
+                Check("unmute-after-result-starts-nothing", result, "result " + result);
+                Check("unmute-before-splash-welcome-starts-nothing", early, "early " + early);
+                Check("unmute-restores-only-the-stopped-bed", only, "only " + only + " reassert " + desk.LastReassert);
             }
             finally
             {
