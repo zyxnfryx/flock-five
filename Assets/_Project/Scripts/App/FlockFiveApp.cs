@@ -6440,11 +6440,7 @@ namespace FlockFive
         // Screen-explicit so the album grid test uses the same top inset as play.
         // GUI y of the top unsafe band. safeArea is bottom-up, so the inset is
         // the distance from the screen top down to safe.yMax. iPad with no inset stays 0.
-        public static float GuiTopInset(float screenH, Rect safe)
-        {
-            if (screenH < 2f || safe.width < 2f || safe.height < 2f) return 0f;
-            return Mathf.Max(0f, screenH - safe.yMax);
-        }
+        public static float GuiTopInset(float screenH, Rect safe) => PhoneArea.GuiTopInset(screenH, safe);
 
         public static float TopControlY(float screenH, Rect safe, float y)
         {
@@ -6510,6 +6506,8 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            // Outside the camera callback, so the slab render is not nested.
+            CardStage.Flush();
             // Sensors and the card stage only live while an inspect is open (battery + memory).
             if (CardTilt.Open && _hiveInspect < 0) { CardTilt.End(); CardStage.Release(); _stageSlot = -1; }
             if (GamePause.Paused)
@@ -10211,7 +10209,7 @@ namespace FlockFive
         {
             var safe = PhoneArea.Safe;
             // Brandon: drop the whole rail so the $ row clears the logo.
-            float y = PhoneArea.H * 0.335f;
+            float y = Mathf.Max(PhoneArea.H * 0.335f, PhoneArea.GuiTopInset(PhoneArea.H, safe));
             if (right)
             {
                 float x = Mathf.Min(PhoneArea.W, safe.xMax) - 20f - size;
@@ -13683,6 +13681,21 @@ namespace FlockFive
             return !lessonHolds;
         }
 
+        // True when this GUI point is on the Back medal and Back is allowed to leave.
+        // SwallowOffTargetTap returns early on this, so the medal's own press still runs.
+        public static bool CoachVeilLetsBackThrough(Vector2 gui, bool betCoach, bool handDealt, Rect backMedal)
+            => backMedal.width > 2f && backMedal.height > 2f && backMedal.Contains(gui)
+               && PokerBackAccepts(betCoach, handDealt, true);
+
+        // The lesson veil's eat decision. False means the control under the point may run.
+        public static bool CoachVeilEats(Vector2 gui, bool gateUp, Rect onlyTarget, bool anyTap, bool betCoach, bool handDealt, Rect backMedal)
+        {
+            if (CoachVeilLetsBackThrough(gui, betCoach, handDealt, backMedal)) return false;
+            if (!gateUp) return false;
+            if (anyTap) return true;
+            return onlyTarget.width < 2f || onlyTarget.height < 2f || !onlyTarget.Contains(gui);
+        }
+
         // b119 (Brandon): the first-hand tutorial flag is the ONLY thing that hides the bet controls and holds Back.
         // Active from the armed lesson until Back, only in the visit that dealt the first-ever hand. A later visit
         // (Back never tapped, app closed), a skipped lesson or a finished tutorial play with normal controls.
@@ -13918,6 +13931,8 @@ namespace FlockFive
                 _pokerDealAimOk = false;
                 _gloveVis = false;
                 _gloveReady = false;
+                _pokerPageOn = false;
+                if (_pokerPageStep > 0) _pokerPageStep = 0;
                 _pokerHover = -1;
                 _home = HomeFace.Splash;
             }
@@ -18040,11 +18055,13 @@ namespace FlockFive
             if (t > 0.4f)
                 DrawFlipArrows(big, s, Mathf.Clamp01(t));
             float hintTop = big.yMax + 12f * s;
-            if (t > 0.4f && ShowFlipHints(!_albumTutorOn, !_upgradeTutorOn))
+            bool upgradeOn = UpgradeButtonShows(t, UpgradeContext && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3));
+            if (FlipHintsVisible(t, !_albumTutorOn, !_upgradeTutorOn, upgradeOn))
                 DrawFlipHint(hintTop, s, Mathf.Clamp01(t));
             bool upgradeHit = false;
             // Upgrade lives in the hive (album) only: never on the round popup or any other inspect.
-            if (UpgradeContext && t > 0.55f && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3))
+            // It waits until the flip hints are hidden, so FREE never sits under them.
+            if (upgradeOn)
                 upgradeHit = DrawHiveUpgrade(ix, hintTop, s, Mathf.Clamp01(t));
             else
                 _upgradeBtnR = default;
@@ -18249,9 +18266,8 @@ namespace FlockFive
             btnW = Mathf.Min(btnW, PhoneArea.W * 0.86f - (rimW + keyW) * 2f);
             // Margin: a clear gap under the hint pill and above the screen edge, rim included.
             float gapTop = Mathf.Max(18f, 20f * s) + rimW + keyW;
-            float y = pill.yMax + gapTop;
-            float edgeB = Mathf.Max(24f, 28f * s) + rimW + keyW;
-            if (y + btnH > PhoneArea.H - edgeB) y = PhoneArea.H - edgeB - btnH;
+            SeatHintAndBadge(PhoneArea.W, PhoneArea.H, pill.y, pill.width, pill.height, btnW, btnH, gapTop, out pill, out var seatedBtn);
+            float y = seatedBtn.y;
             float denyAge = _upDenyAt < 0f ? 99f : AdPause.Unscaled - _upDenyAt;
             float shake = denyAge < UpDenyShake
                 ? Mathf.Sin(denyAge * 46f) * (1f - denyAge / UpDenyShake) * btnH * 0.07f
@@ -18512,6 +18528,50 @@ namespace FlockFive
         public static bool ShowFlipHints(bool albumCoachClear, bool upgradeCoachClear)
             => albumCoachClear && upgradeCoachClear;
 
+        // Upgrade appears only after the card is mostly open, and the flip hints
+        // leave in that same moment so the two never share a frame.
+        public static bool UpgradeButtonShows(float openT, bool upgradeContext)
+            => upgradeContext && openT >= 0.55f;
+
+        public static bool FlipHintsVisible(float openT, bool albumCoachClear, bool upgradeCoachClear, bool upgradeButtonUp)
+            => openT > 0.4f && ShowFlipHints(albumCoachClear, upgradeCoachClear) && !upgradeButtonUp;
+
+        // Hint pill and the upgrade/MAXXED plate. If the plate would run off the
+        // bottom, the hint moves up. The two rects do not overlap.
+        public static void SeatHintAndBadge(float screenW, float screenH, float hintY, float hintW, float hintH, float btnW, float btnH, float gap, out Rect hint, out Rect badge)
+        {
+            if (hintW < 8f) hintW = 8f;
+            if (hintH < 8f) hintH = 8f;
+            if (btnW < 8f) btnW = 8f;
+            if (btnH < 8f) btnH = 8f;
+            if (gap < 0f) gap = 0f;
+            hint = new Rect((screenW - hintW) * 0.5f, hintY, hintW, hintH);
+            float edge = 28f;
+            float y = hint.yMax + gap;
+            if (y + btnH > screenH - edge)
+            {
+                float overflow = y + btnH - (screenH - edge);
+                hint.y = Mathf.Max(8f, hint.y - overflow);
+                y = hint.yMax + gap;
+            }
+            if (y < hint.yMax) y = hint.yMax + gap;
+            badge = new Rect((screenW - btnW) * 0.5f, y, btnW, btnH);
+        }
+
+        // Full card rect drawn behind a squashed flip so the album cannot show
+        // through the edge-on gap. The face stays inside it.
+        public static Rect FlipOccluder(Rect card) => card;
+
+        public static bool FlipFaceInsideOccluder(Rect card, float angle)
+        {
+            float squash = Mathf.Abs(Mathf.Cos(angle));
+            float w = card.width * Mathf.Max(0.08f, squash);
+            var face = new Rect(card.center.x - w * 0.5f, card.y, w, card.height);
+            var occ = FlipOccluder(card);
+            return occ.xMin <= face.xMin + 0.5f && occ.xMax >= face.xMax - 0.5f
+                && occ.yMin <= face.yMin + 0.5f && occ.yMax >= face.yMax - 0.5f;
+        }
+
         void DrawFlipHint(float y, float s, float alpha)
         {
             if (alpha < 0.04f) return;
@@ -18740,6 +18800,14 @@ namespace FlockFive
             bool capturing = _cardCapture && inspectView;
             bool flipping = _hiveFlip == i && !capturing;
             float flipU = flipping ? Mathf.Clamp01(_hiveFlipT / CardSlab.FlipSeconds) : 0f;
+            if (flipping && GuiPaint())
+            {
+                // Edge-on the face is a sliver. This plate fills the card so the album
+                // does not show through the gap. The face draws on top of it.
+                GUI.color = new Color(0.36f, 0.22f, 0.10f, 1f);
+                GUI.DrawTexture(FlipOccluder(card), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
             bool slab = flipping && inspectView && CardQuality.Tier != CardTier.Static;
             float flipA = slab ? CardSlab.Angle(flipU) : flipU * Mathf.PI;
             float squash = flipping ? Mathf.Abs(Mathf.Cos(flipA)) : 1f;

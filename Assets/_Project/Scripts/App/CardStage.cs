@@ -19,6 +19,26 @@ namespace FlockFive
         static Texture2D _texA, _texB;       // A = front face of the card, B = back face
         static Shader _shader;
         static bool _failed;
+        static bool _defer;
+
+        // True while a camera is already rendering. The slab must not call Camera.Render then.
+        public static bool MustDeferRender(bool insideCameraRender) => insideCameraRender;
+
+        public static void Flush()
+        {
+            if (!_defer || _cam == null || _rt == null) return;
+            if (MustDeferRender(Camera.current != null)) return;
+            _defer = false;
+            RenderCamera();
+        }
+
+        static void RenderCamera()
+        {
+            if (_cam == null || _rt == null) return;
+            var prev = RenderTexture.active;
+            _cam.Render();
+            RenderTexture.active = prev;
+        }
 
         public static bool Available => !_failed && CardQuality.Tier == CardTier.Full;
 
@@ -74,9 +94,11 @@ namespace FlockFive
                 float bob = Mathf.Sin(angle);
                 _slab.localRotation = Quaternion.Euler(-tilt.y * 6f + 6f * bob, angle * Mathf.Rad2Deg + tilt.x * 6f * (1f - bob), 0f);
                 _slab.localPosition = new Vector3(0f, 0f, -lift * 0.35f * bob);
-                var prev = RenderTexture.active;
-                _cam.Render();
-                RenderTexture.active = prev;
+                // OnGUI runs inside the main camera render. Camera.Render here nests a
+                // second URP camera and throws "UniversalCameraData has already been created".
+                // Pose now, draw the last frame, and render once from LateUpdate.
+                if (MustDeferRender(Camera.current != null)) _defer = true;
+                else RenderCamera();
                 var r = new Rect(card.center.x - card.width * Margin * 0.5f, card.center.y - card.height * Margin * 0.5f, card.width * Margin, card.height * Margin);
                 GUI.color = Color.white;
                 GUI.DrawTexture(r, _rt, ScaleMode.StretchToFill, true);
