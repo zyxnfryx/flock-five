@@ -140,8 +140,8 @@ namespace FlockFive
         // Poker rail button (fx_poker): the front card of the fan sits right of centre and
         // the coin dish fills the bottom, so the fingertip aims a touch right of and below
         // the hit rect's centre, on the card fan itself.
-        const float PokerGloveU = 0.56f;
-        const float PokerGloveV = 0.80f; // b118: low on the button (the coin dish), so the hand stays under the coin row
+        public const float PokerGloveU = 0.56f;
+        public const float PokerGloveV = 0.80f; // b118: low on the button (the coin dish), so the hand stays under the coin row
         // b118 (Brandon): the coins line's hand rides in from the LEFT at a height where neither the hand nor its
         // tap arc reaches the coin balance or the piggy above the poker button. Perch lift is how far the perch sits
         // ABOVE the fingertip (negative = below). rowBottom is the lowest edge of the balance / piggy row.
@@ -152,6 +152,92 @@ namespace FlockFive
             float lift = aimY - perchY;
             return Mathf.Min(lift, GloveRise(s));
         }
+
+        // Air between the coins tip and the glove. The plate moves under the whole path;
+        // this is only the gap once that split is made.
+        public static float PokerTipClearGap(float s) => CaptionGloveMargin * (s > 0.01f ? s : 1f);
+
+        // How far a right-pointing poker hand reaches past its fingertip (GUI y down).
+        public static void PokerPointingReach(float s, out float above, out float below)
+        {
+            if (s < 0.2f) s = 0.2f;
+            GloveSpan(Vector2.zero, ClampUpright(true), GloveDh(s), 0f, true, out _, out float y0, out _, out float y1);
+            above = y0 < 0f ? -y0 : 0f;
+            below = y1 > 0f ? y1 : 0f;
+        }
+
+        // Perch the coins glove actually uses. No coin row: the shared rise, which sits above the aim.
+        public static float PokerGlovePerchY(float aimY, float coinRowBottom, float s)
+        {
+            if (float.IsNaN(coinRowBottom) || float.IsNegativeInfinity(coinRowBottom))
+                return aimY - GloveRise(s);
+            return aimY - PokerGlovePerchLift(aimY, coinRowBottom, s);
+        }
+
+        // Vertical corridor of the pointing-right hand from the perch, through the tap arc, to the aim.
+        // Top is the highest pixel (smallest GUI y). Bottom is the lowest (largest GUI y).
+        public static void PokerGlovePathExtent(float aimY, float coinRowBottom, float s, out float top, out float bottom)
+        {
+            PokerPointingReach(s, out float above, out float below);
+            float perchY = PokerGlovePerchY(aimY, coinRowBottom, s);
+            float high = perchY < aimY ? perchY : aimY;
+            float low = perchY > aimY ? perchY : aimY;
+            float apex = high - GloveArch(s);
+            // The arc is a quadratic inside the hull of perch, apex, and aim, so the pivot
+            // never goes below the lower endpoint or above the apex.
+            top = apex - above;
+            bottom = low + below;
+        }
+
+        public static float PokerGlovePathBottom(float aimY, float coinRowBottom, float s)
+        {
+            PokerGlovePathExtent(aimY, coinRowBottom, s, out _, out float bottom);
+            return bottom;
+        }
+
+        // Pivot samples along that arc (perch, bow, aim). Tests judge the whole motion, not one frame.
+        public static int PokerGlovePathPivots(float aimY, float coinRowBottom, float s, float[] ys)
+        {
+            if (ys == null || ys.Length < 1) return 0;
+            float perchY = PokerGlovePerchY(aimY, coinRowBottom, s);
+            float high = perchY < aimY ? perchY : aimY;
+            float apex = high - GloveArch(s);
+            int n = ys.Length < 5 ? ys.Length : 5;
+            for (int i = 0; i < n; i++)
+            {
+                float t = n == 1 ? 1f : i / (float)(n - 1);
+                float u = 1f - t;
+                ys[i] = perchY * (u * u) + apex * (2f * u * t) + aimY * (t * t);
+            }
+            return n;
+        }
+
+        // Full-width coins tip. `pathBottom` is the lowest pixel of the glove path.
+        // The band stays under that path. A short screen may run it over the LEVEL face;
+        // it is not pulled back up onto the finger.
+        public static float PokerTipBandY(float pathBottom, float bandH, float minTop, float safeBottom, float gap)
+        {
+            if (gap < 0f) gap = 0f;
+            if (bandH < 1f) bandH = 1f;
+            float floor = pathBottom + gap;
+            float y = floor > minTop ? floor : minTop;
+            if (y + bandH > safeBottom)
+            {
+                float pinned = safeBottom - bandH;
+                if (pinned < floor) pinned = floor;
+                y = pinned;
+            }
+            return y;
+        }
+
+        // Drawn poker hand, fingertip on the pivot, pointing right. Same quad DrawGloveAt paints.
+        public static Rect PokerDrawnHand(Vector2 pivot, float s)
+        {
+            if (s < 0.2f) s = 0.2f;
+            GloveSpan(pivot, ClampUpright(true), GloveDh(s), 0f, true, out float x0, out float y0, out float x1, out float y1);
+            return new Rect(x0, y0, Mathf.Max(1f, x1 - x0), Mathf.Max(1f, y1 - y0));
+        }
+
         // Right-rail button. The hand enters from the left and points right.
         public const bool PokerGloveFromLeft = true;
 
@@ -1319,10 +1405,10 @@ namespace FlockFive
                 LessonLine(PokerIntroLine);
                 _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
                 if (!RailGloveSettled(RailPoker, box)) return;
-                // Note the plate this frame, before the glove locks, so the perch
-                // does not re-seat when the caption paints a frame later.
+                // Note the painted banner, not the snug text box. The glove locks to this
+                // plate, and the coins line is the full-width band under the path.
                 var pokerText = PokerIntroBox(handS);
-                NoteTutorPlate(CoachPanelRect(pokerText));
+                NoteTutorPlate(PokerIntroTipBand(handS, pokerText));
                 _gloveInward = true;
                 // From the left, pointing right (facing stays in the shared helper). Tap rect is
                 // the padded rail hit the button uses, so a press on the icon fades the hand
@@ -3902,9 +3988,9 @@ namespace FlockFive
             // Shared seat first. The glove check uses this band, then a spot with Drop
             // lowers its own bottom over the VIP badge. Other spots never enter that step.
             band = BannerRect(spot, text, w, screenH, safe, seat, _pokerTitleBottom, _adoptLive, s, out px, false);
-            // iPad fix: the coins line seats from the poker button's laid-out rect and the
-            // landed glove pose only (no per-frame glove motion), so it holds still, keeps the
-            // banner style every frame (no flip to the snug box), and lines up with the glove.
+            // The coins line seats from the poker button and the glove's whole path
+            // (perch, arc, landed hand), not from the live frame, so it holds still and
+            // keeps the banner style every frame (no flip to the snug box).
             if (spot == "home.poker")
             {
                 var stP = CoachLineStyle();
@@ -4038,20 +4124,27 @@ namespace FlockFive
             return band;
         }
 
-        // Under the poker button and its landed glove, inside the safe area, off the main buttons.
+        // Full-width coins tip under the glove's whole path (perch, arc, landed hand).
+        // Seating it under the fingertip alone left the approach crossing the words, and
+        // lifting the band off the LEVEL disc put it back on the finger. The plate stays
+        // under the path. On a short phone it may cover the top of the LEVEL face.
         Rect PokerCoinsBand(Rect band, float w, float h, Rect safe, float s)
         {
-            float gap = 8f * s;
+            float gap = PokerTipClearGap(s);
             float safeTop = h - safe.yMax, safeBottom = h - safe.yMin; // safeArea is bottom-up
             float minTop = Mathf.Max(safeTop, HomeBannerTop(h, safe, s));
             var button = SplashPokerRect();
             if (button.width > 2f)
             {
-                var hand = PokerPointHand(GloveTargetAt(button, PokerGloveU, PokerGloveV), s);
-                float rowBottom = Mathf.Max(button.yMax, hand.height > 2f ? hand.yMax : 0f);
-                band.y = Mathf.Max(minTop, rowBottom + gap);
+                var aim = GloveTargetAt(button, PokerGloveU, PokerGloveV);
+                var pig = PiggyRect(s);
+                float rowBottom = pig.height > 2f ? pig.yMax : float.NegativeInfinity;
+                float pathBottom = PokerGlovePathBottom(aim.y, rowBottom, s);
+                if (button.yMax > pathBottom) pathBottom = button.yMax;
+                band.y = PokerTipBandY(pathBottom, band.height, minTop, safeBottom, gap);
+                return band;
             }
-            else band.y = CoinsBannerY(w, h, safe, s, minTop, band.y);
+            band.y = CoinsBannerY(w, h, safe, s, minTop, band.y);
             LiftOffMainButtons(ref band, w, h, safe, s, default, minTop);
             if (band.yMax > safeBottom) band.y = safeBottom - band.height;
             if (band.y < minTop) band.y = minTop;
@@ -6764,13 +6857,19 @@ namespace FlockFive
         void DrawPokerIntro(float s)
         {
             if (!_pokerIntroLive) return;
-            // Opaque plate: LEVEL must not show through this one (Brandon, build 58).
-            // Build 86 (Brandon): a solid snug box clear of the LEVEL disc, the rail and the
-            // poker card, in the open sky between the coin row and the disc.
+            // Opaque plate. The painted band is the full-width coins tip under the glove path
+            // (PokerCoinsBand). This box is only the measure seat the banner replaces.
             var pr = PokerIntroBox(s);
             CapSpot("home.poker");
             DrawSplashIntroLine(PokerIntroLine, pr, s, PokerIntroFontHi(s), true, default, true);
             DrawTutorOverlay(s);
+        }
+
+        // The rect DrawSplashIntroLine will paint for the coins line: same band PokerCoinsBand seats.
+        Rect PokerIntroTipBand(float s, Rect seat)
+        {
+            var band = BannerRect("home.poker", PokerIntroLine, PhoneArea.W, PhoneArea.H, PhoneArea.Safe, seat, _pokerTitleBottom, false, s, out _, false);
+            return PokerCoinsBand(band, PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
         }
 
         // Poker intro caption: bigger than the standard line and seated over the LEVEL
