@@ -62,6 +62,7 @@ namespace FlockFive.Editor
                 CardStage.MustDeferRender(true) && !CardStage.MustDeferRender(false), "nested");
             CheckCardRender(Check);
             CheckFmod(Check);
+            CheckInvalidHandle(Check);
             CheckPlayScheduled(Check);
             CheckAudioRetry(Check);
             CheckPauseAndUnmute(Check);
@@ -224,16 +225,18 @@ namespace FlockFive.Editor
                 && !AudioGuard.NoteFmodFailure("FMOD error: failed to load clip");
             bool decode = !AudioGuard.IsFmodFailure("FMOD_ERR_FORMAT decode error")
                 && !AudioGuard.NoteFmodFailure("FMOD failed to decode the sample, error code 25");
-            bool otherCode = !AudioGuard.IsFmodFailure("FMOD error code 360");
+            bool otherCode = !AudioGuard.IsFmodFailure("error code 600")
+                && !AudioGuard.IsFmodFailure("FMOD returns error code 36 (FMOD_ERR_INVALID_HANDLE)");
             bool quiet = !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0;
             bool named = AudioGuard.IsFmodFailure("FMOD_ERR_OUTPUT_INIT")
                 && AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
             bool latched = AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
-            bool again = AudioGuard.NoteFmodFailure("FMOD failed to initialize the output device: error code 36");
+            bool again = AudioGuard.NoteFmodFailure("FMOD returns error code 60 (FMOD_ERR_OUTPUT_INIT)");
             bool once = latched && again && AudioGuard.FmodWarnings == 1;
+            int onceWarnings = AudioGuard.FmodWarnings;
             AudioGuard.OnAudioConfigurationChanged(true);
             bool config = !AudioGuard.OutputFailed;
-            bool rewarn = AudioGuard.NoteFmodFailure("error code 36") && AudioGuard.FmodWarnings == 2 && AudioGuard.OutputFailed;
+            bool rewarn = AudioGuard.NoteFmodFailure("FMOD returns error code 60 (FMOD_ERR_OUTPUT_INIT)") && AudioGuard.FmodWarnings == 2 && AudioGuard.OutputFailed;
             AudioGuard.OnApplicationFocus(true);
             bool focus = !AudioGuard.OutputFailed;
             AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
@@ -244,12 +247,67 @@ namespace FlockFive.Editor
             bool resume = !AudioGuard.OutputFailed;
             bool plain = !AudioGuard.NoteFmodFailure("InvalidOperationException: already created");
             Check("fmod-output-init-only",
-                load && decode && otherCode && quiet && named && once && plain,
+                load && decode && otherCode && quiet && named && plain,
                 "warnings " + AudioGuard.FmodWarnings + " failed " + AudioGuard.OutputFailed);
+            Check("fmod-output-init-warns-once", once && onceWarnings == 1, "warnings " + onceWarnings);
             Check("fmod-output-recovers",
                 config && rewarn && focus && held && resume && !AudioGuard.OutputFailed,
                 "config " + config + " focus " + focus + " held " + held + " resume " + resume);
             AudioGuard.ResetForTests();
+        }
+
+        static void CheckInvalidHandle(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("invalid-handle");
+            try
+            {
+                var src = go.AddComponent<AudioSource>();
+                src.playOnAwake = false;
+                src.loop = true;
+                src.clip = ProbeClip("handle-bed");
+                string[] bad =
+                {
+                    "FMOD returns error code 36 (FMOD_ERR_INVALID_HANDLE)",
+                    "FMOD returns error code 36 (FMOD_ERR_INVALID_HANDLE) executing disconnectFrom",
+                    "FMOD returns error code 36 (FMOD_ERR_INVALID_HANDLE) executing addDSP",
+                    "FMOD_ERR_INVALID_HANDLE",
+                    "error code 36"
+                };
+                bool quiet = true;
+                for (int i = 0; i < bad.Length; i++)
+                {
+                    if (AudioGuard.IsFmodFailure(bad[i]) || AudioGuard.NoteFmodFailure(bad[i])) quiet = false;
+                }
+                AudioGuard.Play(src);
+                quiet = quiet && !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0
+                    && AudioGuard.SkippedCount == 0 && !AudioGuard.NeedsRestore(src);
+
+                AudioGuard.ResetForTests();
+                bool code = AudioGuard.IsFmodFailure("FMOD returns error code 60 (FMOD_ERR_OUTPUT_INIT)")
+                    && AudioGuard.NoteFmodFailure("FMOD returns error code 60 (FMOD_ERR_OUTPUT_INIT)")
+                    && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1
+                    && !AudioGuard.Play(src) && AudioGuard.SkippedCount == 1;
+
+                AudioGuard.ResetForTests();
+                bool symbol = AudioGuard.IsFmodFailure("FMOD_ERR_OUTPUT_INIT")
+                    && AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT")
+                    && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+
+                AudioGuard.ResetForTests();
+                bool wide = !AudioGuard.IsFmodFailure("error code 600")
+                    && !AudioGuard.NoteFmodFailure("error code 600")
+                    && !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0
+                    && AudioGuard.SkippedCount == 0;
+
+                Check("invalid-handle-does-not-latch", quiet && code && symbol && wide,
+                    "quiet " + quiet + " code " + code + " symbol " + symbol + " wide " + wide);
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckPlayScheduled(System.Action<string, bool, string> Check)
@@ -333,7 +391,7 @@ namespace FlockFive.Editor
                 AudioGuard.OnApplicationFocus(true);
                 bool onlySkipped = AudioGuard.WasRetried(skipped) && !AudioGuard.WasRetried(other) && !AudioGuard.WasRetried(idleSrc);
 
-                AudioGuard.NoteFmodFailure("error code 36");
+                AudioGuard.NoteFmodFailure("error code 60");
                 desk.PlantBadgerVoicesForTests(out var loop, out var cue, out var sting);
                 AudioGuard.Play(loop);
                 int cutAt = AudioGuard.RetryPlayCount;
@@ -349,7 +407,7 @@ namespace FlockFive.Editor
                 bool resultQuiet = AudioGuard.RetryPlayCount == resultAt && !AudioGuard.WasRetried(loop) && !AudioGuard.WasRetried(sting);
 
                 var paused = skipped;
-                AudioGuard.NoteFmodFailure("error code 36");
+                AudioGuard.NoteFmodFailure("error code 60");
                 AudioGuard.Pause(paused);
                 AudioGuard.Play(paused);
                 int pauseAt = AudioGuard.RetryPlayCount;
@@ -437,7 +495,7 @@ namespace FlockFive.Editor
                 GamePause.Pop();
                 bool resumed = !AudioGuard.RetryDeferred && AudioGuard.WasRetried(bed) && AudioGuard.RetryPlayCount == held + 1;
 
-                AudioGuard.NoteFmodFailure("error code 36");
+                AudioGuard.NoteFmodFailure("error code 60");
                 desk.PlantStemForTests(0.24f);
                 bed = desk.StemForTests(0);
                 bed.clip = ProbeClip("garden-bed");
@@ -520,7 +578,7 @@ namespace FlockFive.Editor
                 bool cut = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(loop) && !AudioGuard.NeedsRestore(sting);
 
                 AudioGuard.ResetForTests();
-                AudioGuard.NoteFmodFailure("error code 36");
+                AudioGuard.NoteFmodFailure("error code 60");
                 AudioGuard.Play(loop);
                 AudioGuard.Play(sting);
                 desk.ArmResultForTests();
@@ -543,7 +601,7 @@ namespace FlockFive.Editor
                 bool early = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(splash);
 
                 AudioGuard.ResetForTests();
-                AudioGuard.NoteFmodFailure("error code 36");
+                AudioGuard.NoteFmodFailure("error code 60");
                 desk.PlantStemForTests(0.24f);
                 var kept = desk.StemForTests(0);
                 kept.clip = ProbeClip("kept-bed");
@@ -607,7 +665,7 @@ namespace FlockFive.Editor
                 bool unmute = desk.LastReassert == 2 && SameScheduledStart(a, b) && AudioGuard.PlayCalls == plays;
 
                 AudioGuard.ResetForTests();
-                AudioGuard.NoteFmodFailure("error code 36");
+                AudioGuard.NoteFmodFailure("error code 60");
                 AudioGuard.Play(a);
                 AudioGuard.Play(b);
                 plays = AudioGuard.PlayCalls;
