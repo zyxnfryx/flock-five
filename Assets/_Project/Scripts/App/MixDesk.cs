@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FlockFive
@@ -286,7 +287,7 @@ namespace FlockFive
         public int ReassertBed()
         {
             if (_stems == null) return 0;
-            int n = 0;
+            var ready = new List<AudioSource>();
             for (int i = 0; i < _stems.Length; i++)
             {
                 var a = _stems[i];
@@ -302,8 +303,9 @@ namespace FlockFive
                     AudioGuard.DropRestore(a);
                     continue;
                 }
-                if (AudioGuard.Play(a)) n++;
+                ready.Add(a);
             }
+            int n = AudioGuard.ScheduleStemsTogether(ready);
             LastReassert = n;
             return n;
         }

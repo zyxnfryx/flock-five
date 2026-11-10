@@ -66,6 +66,7 @@ namespace FlockFive.Editor
             CheckAudioRetry(Check);
             CheckPauseAndUnmute(Check);
             CheckUnmuteScope(Check);
+            CheckScheduledRestore(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -562,6 +563,58 @@ namespace FlockFive.Editor
                 Check("unmute-after-result-starts-nothing", result, "result " + result);
                 Check("unmute-before-splash-welcome-starts-nothing", early, "early " + early);
                 Check("unmute-restores-only-the-stopped-bed", only, "only " + only + " reassert " + desk.LastReassert);
+            }
+            finally
+            {
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.ResetForTests();
+                GamePause.Reset();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static bool SameScheduledStart(AudioSource a, AudioSource b)
+        {
+            double ta, tb;
+            return AudioGuard.ScheduledAt(a, out ta) && AudioGuard.ScheduledAt(b, out tb) && ta == tb;
+        }
+
+        static void CheckScheduledRestore(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            GamePause.Reset();
+            var go = new UnityEngine.GameObject("scheduled-restore");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var a = desk.StemForTests(0);
+                a.clip = ProbeClip("sched-a");
+                a.loop = true;
+                var b = desk.AddLoopForTests(true);
+                b.clip = ProbeClip("sched-b");
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                AudioGuard.Play(a);
+                AudioGuard.Play(b);
+                int plays = AudioGuard.PlayCalls;
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
+                AudioGuard.SetMuted(false, false);
+                bool unmute = desk.LastReassert == 2 && SameScheduledStart(a, b) && AudioGuard.PlayCalls == plays;
+
+                AudioGuard.ResetForTests();
+                AudioGuard.NoteFmodFailure("error code 36");
+                AudioGuard.Play(a);
+                AudioGuard.Play(b);
+                plays = AudioGuard.PlayCalls;
+                AudioGuard.OnApplicationFocus(true);
+                bool retry = AudioGuard.WasRetried(a) && AudioGuard.WasRetried(b) && SameScheduledStart(a, b) && AudioGuard.PlayCalls == plays;
+
+                Check("restored-stems-share-one-scheduled-start", unmute && retry,
+                    "unmute " + unmute + " retry " + retry);
             }
             finally
             {
