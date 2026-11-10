@@ -105,8 +105,15 @@ namespace FlockFive
             Reclaim(host);
             if (Live == null) return;
             // A second boot while the place stems are already on their clips
-            // must not rewind them. The first boot still builds.
-            if (Live.PlaceBedsHold()) return;
+            // must not rewind them. It still has to drop a stray loop: that
+            // boot is Sfx.Ensure after RebuildHost, which is when a leftover
+            // voice can survive and play a second tune.
+            if (Live.PlaceBedsHold())
+            {
+                KillForeignLoops();
+                Live.PruneExtraLoops();
+                return;
+            }
             Live.Build();
             KillForeignLoops();
         }
