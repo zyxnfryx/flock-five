@@ -66,7 +66,10 @@ namespace FlockFive
             // True only with skipOnboarding=1. Does not change when forceClear
             // fires. After that wait, the boot makes Watch Ad / 2X offerable,
             // grants one album card, and unlocks the album Upgrade glove.
-            // It does not grant No Ads.
+            // It does not grant No Ads. A later Watch Ad tap, while this hook
+            // stays armed, completes through the real RewardedGrant path
+            // (Begin, displayed, rewarded, flush) because WebGL has no LevelPlay
+            // fill. That stub is not a shipping no-fill change.
             public bool ForceRewards;
         }
 
@@ -136,6 +139,17 @@ namespace FlockFive
             if (moving || !idle) return waited >= ForceClearMoveCap;
             if (sawMove) return true;
             return waited >= ForceClearIdleCap;
+        }
+
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // Held stage pay plus the repeat payload once the grant is earned.
+        // Purse.AddOwed is what the Repeat ticket does. Not earned leaves the 1x.
+        public static int InspectRepeatTotal(int owed, int extra, bool earned)
+        {
+            if (owed < 0) owed = 0;
+            if (extra < 0) extra = 0;
+            if (!earned || extra == 0) return owed;
+            return owed + extra;
         }
 
         // How many coins to add so the purse reaches OnboardingCoins.
