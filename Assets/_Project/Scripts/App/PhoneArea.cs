@@ -25,6 +25,15 @@ namespace FlockFive
             }
         }
 
+        // Play column for a window. Wider than a phone (iPad 820x1180) pillars to 9:16.
+        // Phones keep the full window. Same rule as W/H, with the window passed in.
+        public static void PlayPixels(int screenW, int screenH, out int w, out int h)
+        {
+            bool pillar = screenH > 0 && (float)screenW / screenH > DeviceFit.PhoneAspect + Slack;
+            w = pillar ? Mathf.Min(screenW, Mathf.RoundToInt(screenH * DeviceFit.PhoneAspect)) : screenW;
+            h = screenH;
+        }
+
         public static int W => Pillar ? Mathf.Min(Screen.width, Mathf.RoundToInt(Screen.height * DeviceFit.PhoneAspect)) : Screen.width;
         public static int H => Screen.height;
         // Left edge of the area in screen pixels.
