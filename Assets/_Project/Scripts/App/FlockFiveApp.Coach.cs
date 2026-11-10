@@ -6346,6 +6346,13 @@ namespace FlockFive
             // The name plate's chips, colors, and Done sit under this gate. A lesson
             // that eats every other press must leave the plate alone.
             if (RenamePlateOwns(_avatarRename, _avatarRenameR, e.mousePosition, PhoneArea.OffX)) return;
+            // The bet coach's glove gate used to eat Back before the medal's own
+            // handler ran, so a new player could not leave. The same predicate the
+            // tests call lets that tap through. A dealt hand still does not.
+            bool betCoach = PokerBetCoachOpen(_pokerPageOn || _pokerDealHint, BirdPoker.PhaseNow == BirdPoker.Phase.Idle, !PokerMotionBusy());
+            var backMedal = BackMedalRect(DeviceFit.Ui(), TopHud());
+            if (CoachVeilLetsBackThrough(e.mousePosition, betCoach, PokerHandHoldsBack(BirdPoker.PhaseNow), backMedal))
+                return;
             // A press already advanced an informational step this frame (IMGUI or the
             // Input System). Eat the rest of it, including the mouse-up, so the next
             // step does not take the same tap and a button underneath does not fire.

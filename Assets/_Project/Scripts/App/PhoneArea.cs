@@ -40,6 +40,7 @@ namespace FlockFive
         public static int OffX => Pillar ? (Screen.width - W) / 2 : 0;
 
         // Screen.safeArea in area coordinates (bottom-up, like Screen.safeArea).
+        // Every top-anchored control reads Safe, then GuiTopInset, and nothing else.
         public static Rect Safe
         {
             get
@@ -50,6 +51,14 @@ namespace FlockFive
                 float x0 = Mathf.Clamp(s.xMin - off, 0f, w), x1 = Mathf.Clamp(s.xMax - off, 0f, w);
                 return Rect.MinMaxRect(x0, s.yMin, x1, s.yMax);
             }
+        }
+
+        // GUI pixels from the top of the screen down to the safe glass. 0 when the
+        // inset is missing (iPad, or a safe rect that already fills the screen).
+        public static float GuiTopInset(float screenH, Rect safe)
+        {
+            if (screenH < 2f || safe.width < 2f || safe.height < 2f) return 0f;
+            return Mathf.Max(0f, screenH - safe.yMax);
         }
 
         // Raw device pointer (Input System, screen pixels) to area pixels.

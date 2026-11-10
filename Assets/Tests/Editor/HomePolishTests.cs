@@ -50,6 +50,16 @@ namespace FlockFive.Editor
             CheckSafe("402", 402, 874, Check);
             CheckSafe("412", 412, 915, Check);
             CheckSafe("820", 820, 1180, Check);
+            CheckBackVeil("820", 820, 1180, new Vector2(148f, 37f), Check);
+            CheckBackVeil("402", 402, 874, new Vector2(58f, 33f), Check);
+            CheckBackVeil("412", 412, 915, new Vector2(60f, 34f), Check);
+            CheckBadge("820", 820, 1180, Check);
+            CheckBadge("402", 402, 874, Check);
+            CheckBadge("412", 412, 915, Check);
+            CheckUpgradeTiming(Check);
+            CheckFlipOccluder(Check);
+            Check("card-render-defers-inside-camera",
+                CardStage.MustDeferRender(true) && !CardStage.MustDeferRender(false), "nested");
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -97,9 +107,8 @@ namespace FlockFive.Editor
 
         static void CheckSafe(string tag, int screenW, int screenH, System.Action<string, bool, string> Check)
         {
-            bool phone = screenW / (float)screenH <= DeviceFit.PhoneAspect + 0.04f;
-            float inset = phone ? 59f : 0f;
-            float bottom = phone ? 34f : 0f;
+            float inset = 59f;
+            float bottom = 34f;
             var safe = new Rect(0f, bottom, screenW, screenH - inset - bottom);
             float s = DeviceFit.Ui(screenW, screenH);
             var chrome = FlockFiveApp.LayoutPokerChrome(screenW, screenH, safe, s);
@@ -110,6 +119,66 @@ namespace FlockFive.Editor
             Check(tag + "-top-controls-clear-safe-inset",
                 back && cog && header,
                 "inset " + inset + " back " + chrome.Back.yMin + " gear " + gear.yMin);
+        }
+
+        static void CheckBackVeil(string tag, int screenW, int screenH, Vector2 reported, System.Action<string, bool, string> Check)
+        {
+            float s = DeviceFit.Ui(screenW, screenH);
+            var safe = new Rect(0f, 0f, screenW, screenH);
+            var chrome = FlockFiveApp.LayoutPokerChrome(screenW, screenH, safe, s);
+            var back = chrome.Back;
+            var deal = new Rect(screenW * 0.55f, screenH * 0.72f, 120f, 120f);
+            bool centerEaten = FlockFiveApp.CoachVeilEats(back.center, true, deal, false, true, false, back);
+            bool dealtEaten = FlockFiveApp.CoachVeilEats(back.center, true, deal, false, true, true, back);
+            bool reportedOk = !back.Contains(reported)
+                || !FlockFiveApp.CoachVeilEats(reported, true, deal, false, true, false, back);
+            bool emptyEaten = FlockFiveApp.CoachVeilEats(new Vector2(screenW * 0.5f, screenH * 0.5f), true, deal, false, true, false, back);
+            Check(tag + "-bet-coach-veil-lets-back",
+                !centerEaten && dealtEaten && reportedOk && emptyEaten && back.Contains(back.center),
+                "back " + back + " reported " + reported);
+        }
+
+        static void CheckBadge(string tag, int screenW, int screenH, System.Action<string, bool, string> Check)
+        {
+            float s = DeviceFit.Ui(screenW, screenH);
+            float hintW = screenW * 0.7f;
+            float hintH = 70f * s;
+            float hintY = screenH - 220f * s;
+            float btnW = screenW * 0.5f;
+            float btnH = 92f * s;
+            float gap = 20f * s;
+            FlockFiveApp.SeatHintAndBadge(screenW, screenH, hintY, hintW, hintH, btnW, btnH, gap, out var hint, out var badge);
+            Check(tag + "-maxxed-clears-flip-hint",
+                !hint.Overlaps(badge) && badge.yMin >= hint.yMax - 0.5f,
+                "hint " + hint + " badge " + badge);
+        }
+
+        static void CheckUpgradeTiming(System.Action<string, bool, string> Check)
+        {
+            bool shared = false;
+            for (int i = 0; i <= 20; i++)
+            {
+                float t = i / 20f;
+                bool upgrade = FlockFiveApp.UpgradeButtonShows(t, true);
+                bool hints = FlockFiveApp.FlipHintsVisible(t, true, true, upgrade);
+                if (hints && upgrade) shared = true;
+            }
+            bool early = FlockFiveApp.FlipHintsVisible(0.45f, true, true, false)
+                && !FlockFiveApp.UpgradeButtonShows(0.45f, true);
+            bool later = FlockFiveApp.UpgradeButtonShows(0.7f, true)
+                && !FlockFiveApp.FlipHintsVisible(0.7f, true, true, true);
+            Check("upgrade-not-under-flip-hints", !shared && early && later, "shared " + shared);
+        }
+
+        static void CheckFlipOccluder(System.Action<string, bool, string> Check)
+        {
+            var card = new Rect(40f, 80f, 220f, 300f);
+            bool edge = FlockFiveApp.FlipFaceInsideOccluder(card, Mathf.PI * 0.5f);
+            bool flat = FlockFiveApp.FlipFaceInsideOccluder(card, 0f);
+            var occ = FlockFiveApp.FlipOccluder(card);
+            Check("flip-occluder-covers-the-gap",
+                edge && flat && Mathf.Abs(occ.width - card.width) < 0.5f && Mathf.Abs(occ.height - card.height) < 0.5f,
+                occ.ToString());
         }
     }
 }

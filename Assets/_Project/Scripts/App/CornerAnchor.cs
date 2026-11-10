@@ -134,7 +134,7 @@ namespace FlockFive
         public static Rect TopBarRestart(float w, float h, Rect safe, float scale, float top, Rect hive)
         {
             if (safe.width < 2f || safe.height < 2f) safe = new Rect(0f, 0f, w, h);
-            float safeTop = Mathf.Max(0f, h - safe.yMax);
+            float safeTop = PhoneArea.GuiTopInset(h, safe);
             float pad = 6f * scale;
             float limit = Mathf.Min(top, PlayfieldTopGui(w, h)) - pad;
             float y = safeTop + pad;
@@ -165,7 +165,7 @@ namespace FlockFive
             scale = DeviceFit.Ui(screenW, screenH);
             if (safe.width < 2f || safe.height < 2f)
                 safe = new Rect(0f, 0f, screenW, screenH);
-            float safeTop = screenH - safe.yMax;
+            float safeTop = PhoneArea.GuiTopInset(screenH, safe);
             float safeBot = safe.yMin;
             if (safeTop < 0f) safeTop = 0f;
             if (safeBot < 0f) safeBot = 0f;
