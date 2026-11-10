@@ -10478,7 +10478,10 @@ namespace FlockFive
             var pokerR = SplashPokerRect();
             var pokerTap = RailTapRect(RailPoker);
             var flower = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            SplashPress.LayoutRail(SplashPress.Id.Poker, pokerTap, pokerR, flower);
+            // LEVEL keeps flower padding only when it can start. A blocked flower
+            // gives that padding back to the rail, which can still open.
+            bool carveFlower = LevelCanTakeTap(flower);
+            SplashPress.LayoutRail(SplashPress.Id.Poker, pokerTap, pokerR, flower, carveFlower);
             var pokerGates = HomePressGates(RailPoker);
             pokerGates.Consent = VeilBlocks(pokerTap);
             pokerGates.Hidden = !pokerDraw;
@@ -10524,7 +10527,7 @@ namespace FlockFive
             // must not eat the tap.
             var dailyTap = SplashDailyTapRect();
             var dailyArt = DailyPressArt(dailyR);
-            SplashPress.LayoutRail(SplashPress.Id.Daily, dailyTap, dailyArt, flower);
+            SplashPress.LayoutRail(SplashPress.Id.Daily, dailyTap, dailyArt, flower, carveFlower);
             bool dailyLesson = HomeStepRail() == RailDaily;
             var dailyGates = HomePressGates(RailDaily);
             dailyGates.Consent = VeilBlocks(dailyTap);
@@ -10632,11 +10635,27 @@ namespace FlockFive
         }
 
         // True when this point would open the rail, so LEVEL must not start.
-        // The padded tap counts, except the padding that lies on the flower.
-        // A blocked icon keeps nothing.
+        // The padded tap counts. Padding on the flower is LEVEL's only when
+        // LEVEL can start. A blocked icon keeps nothing.
         public static bool RailKeepsLevelTap(Rect art, Rect padded, Rect level, bool canAct, Vector2 point)
         {
-            return canAct && SplashPress.RailTapContains(padded, art, level, point);
+            return RailKeepsLevelTap(art, padded, level, canAct, point, true);
+        }
+
+        public static bool RailKeepsLevelTap(Rect art, Rect padded, Rect level, bool canAct, Vector2 point, bool levelCanAct)
+        {
+            return canAct && SplashPress.RailTapContains(padded, art, level, point, levelCanAct);
+        }
+
+        // Same gates DrawFlowerPlay uses for the LEVEL press, before the badger grow.
+        bool LevelCanTakeTap(Rect flower)
+        {
+            var gates = HomePressGates(-1);
+            gates.Consent = VeilBlocks(flower);
+            gates.AdoptQueue = AdoptHoldsQueue();
+            gates.HomeTaken = _homeTapTaken;
+            gates.StepGate = StepGateBlocks(flower);
+            return !SplashPress.Blocks(gates);
         }
 
         bool DrawFlowerPlay(float s, string ease, int number)
