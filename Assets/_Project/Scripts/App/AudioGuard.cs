@@ -392,7 +392,46 @@ namespace FlockFive
             EnsureHost();
             InstallNative();
             HookOutputRecovery();
+#if (UNITY_WEBGL || UNITY_IOS) && DEVELOPMENT_BUILD
+            HoldDevConsole();
+#endif
         }
+
+#if (UNITY_WEBGL || UNITY_IOS) && DEVELOPMENT_BUILD
+        // DEV-ONLY. Not a shipping-path change. WebGL and iOS Development builds
+        // open the console on engine noise. Shut it unless the page asked
+        // ?devConsole=1. Errors still reach the player log. Release builds
+        // never compile this.
+        static void HoldDevConsole()
+        {
+            if (DevConsoleRequested(Application.absoluteURL)) return;
+            Debug.developerConsoleEnabled = false;
+        }
+
+        static bool DevConsoleRequested(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return false;
+            int q = url.IndexOf('?');
+            if (q < 0) return false;
+            int end = url.IndexOf('#', q + 1);
+            if (end < 0) end = url.Length;
+            int i = q + 1;
+            while (i < end)
+            {
+                int amp = url.IndexOf('&', i);
+                if (amp < 0 || amp > end) amp = end;
+                int eq = url.IndexOf('=', i);
+                if (eq < 0 || eq > amp) eq = amp;
+                if (eq - i == 10 && string.CompareOrdinal(url, i, "devConsole", 0, 10) == 0)
+                {
+                    if (amp - (eq + 1) == 1 && url[eq + 1] == '1') return true;
+                    return false;
+                }
+                i = amp + 1;
+            }
+            return false;
+        }
+#endif
 
         // Log hook plus the route-change callback. Idempotent. OnDisable and domain
         // reload both call Unhook so a destroyed host does not keep the delegate.

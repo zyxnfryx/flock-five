@@ -459,6 +459,31 @@ namespace FlockFive
         static FlockFiveApp _app;
         static int _resumeNoteFrame = -1;
         static float _resumeInputUntil = -1f;
+        // A face change (Poker Back, Collection, the contest) leaves the next
+        // control under the finger. Hold taps until that screen has settled.
+        public const float SceneInputSettle = 0.30f;
+        static float _sceneInputUntil = -1f;
+        HomeFace _sceneFace;
+        bool _sceneFaceSet;
+
+        void ArmSceneInputSettle()
+        {
+            if (!_sceneFaceSet)
+            {
+                _sceneFace = _home;
+                _sceneFaceSet = true;
+                return;
+            }
+            if (_home == _sceneFace) return;
+            _sceneFace = _home;
+            _sceneInputUntil = GateNow + SceneInputSettle;
+        }
+
+        // True while a scene change is still settling. until < 0 means no hold.
+        public static bool SceneInputBlocked(float now, float until)
+        {
+            return until >= 0f && now < until;
+        }
         // b126: the three input gates (_swallowTapsUntil, _suppressGiftUntil, _resumeInputUntil) run on ad-free
         // unscaled time. PlayClock stalls under any GamePause, so a pause leak froze them shut.
         static float GateNow => AdPause.Unscaled;
@@ -3626,6 +3651,7 @@ namespace FlockFive
 
         void UpdateBody()
         {
+            ArmSceneInputSettle();
             AudioGuard.Tick();
             if (_shot82e) MuteShotAudio();
             MaybeSmokeLaunch();
@@ -6381,7 +6407,7 @@ namespace FlockFive
         static void SwallowResumePointer()
         {
             // Also while the level transition covers the screen (held splash / mask).
-            if (GateNow >= _resumeInputUntil && !PressRainbow.StageHeld() && !StartupInputHeld) return;
+            if (GateNow >= _resumeInputUntil && GateNow >= _sceneInputUntil && !PressRainbow.StageHeld() && !StartupInputHeld) return;
             var e = Event.current;
             if (e == null) return;
             var t = e.type;
@@ -6393,7 +6419,7 @@ namespace FlockFive
         static bool Pressed(out Vector2 screen)
         {
             screen = default;
-            if (GateNow < _resumeInputUntil) return false;
+            if (GateNow < _resumeInputUntil || GateNow < _sceneInputUntil) return false;
             if (StartupInputHeld) return false;
             if (LessonGuardUp()) return false;
             // The finger wins over a synthesized mouse. On Android the mouse click
@@ -6733,6 +6759,7 @@ namespace FlockFive
         {
             // Before the swallows. A finished ostrich (or any clear) must not leave a
             // rule-eat, pest hold, fight lock or dismiss guard over the reward buttons.
+            ArmSceneInputSettle();
             ReleaseRewardChoiceGates();
             SwallowLessonGuard();
             SwallowRuleTipPointer();
@@ -17169,6 +17196,7 @@ namespace FlockFive
         // so the card grid gets the freed height. Returns the bottom of the text plate.
         // b103 (Brandon): the header plate (hive icon + title) starts a clear gap right of the Back medal. The
         // gap is measured to the PLATE edge, which hangs BoxPad.x past its content, so the two never touch.
+        public const float AlbumHeaderInsetGap = 4f;
         public const float AlbumHeaderGapRef = 12f;
         public static float AlbumHeaderGap(Rect back, float s) => Mathf.Max(AlbumHeaderGapRef * s, back.width * 0.12f);
         public static float AlbumHeaderX(Rect back, float s, float screenH)
@@ -17191,10 +17219,12 @@ namespace FlockFive
         {
             float inset = GuiTopInset(screenH, safe);
             float top = AlbumTitleOuter(back, screenW, screenH, safe, s).y;
-            // DrawSolidRound snaps the plate with Round, which can paint a pixel above the rect.
-            float slack = top - inset;
-            if (slack >= 1f) return 0f;
-            return 1f - slack;
+            // Four pixels of glass under the safe inset, at every size. The rect
+            // is what the inset test measures.
+            float want = inset + AlbumHeaderInsetGap;
+            float slack = top - want;
+            if (slack >= 0f) return 0f;
+            return -slack;
         }
 
         float DrawAlbumHeader(float s, Rect back)
@@ -18304,6 +18334,12 @@ namespace FlockFive
             float rimW = Mathf.Round(5f * Mathf.Max(1f, s * 0.6f));
             float keyW = Mathf.Max(2f, Mathf.Round(rimW * 0.3f));
             bool room = Hive.UpgradeRoom(slot);
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            // DEV-ONLY inspect hook. Not a shipping path. ?forceMaxxed=1 draws
+            // this open card as MAXXED so "Tap outside to put back" can be
+            // inspected. It does not write the album or grant an upgrade.
+            if (DevLevelSkip.ForceMaxxedFromUrl(Application.absoluteURL)) room = false;
+#endif
             bool maxxed = !room;
             bool can = room && Hive.CanUpgrade(slot);
             bool freeUp = Hive.FreeUpgradeAvailable; // #193: the first upgrade is free

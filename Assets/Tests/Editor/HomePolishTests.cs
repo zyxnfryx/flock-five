@@ -47,9 +47,16 @@ namespace FlockFive.Editor
             CheckGlove("412", 412, 915, Check);
             CheckGlove("820", 820, 1180, Check);
 
+            Check("scene-change-holds-the-second-tap",
+                !FlockFiveApp.SceneInputBlocked(10f, -1f)
+                && FlockFiveApp.SceneInputBlocked(10f, 10.30f)
+                && FlockFiveApp.SceneInputBlocked(10.29f, 10.30f)
+                && !FlockFiveApp.SceneInputBlocked(10.30f, 10.30f)
+                && Mathf.Abs(FlockFiveApp.SceneInputSettle - 0.30f) < 0.001f,
+                "300 ms");
+            CheckSafe("820", 820, 1180, Check);
             CheckSafe("402", 402, 874, Check);
             CheckSafe("412", 412, 915, Check);
-            CheckSafe("820", 820, 1180, Check);
             CheckBackVeil("820", 820, 1180, new Vector2(148f, 37f), Check);
             CheckBackVeil("402", 402, 874, new Vector2(58f, 33f), Check);
             CheckBackVeil("412", 412, 915, new Vector2(60f, 34f), Check);
@@ -64,6 +71,7 @@ namespace FlockFive.Editor
             CheckFmod(Check);
             CheckUnityOutputInit(Check);
             CheckEmulatedNoSound(Check);
+            CheckOutputThenEmulated(Check);
             CheckInvalidHandle(Check);
             CheckPlayScheduled(Check);
             CheckAudioRetry(Check);
@@ -71,6 +79,7 @@ namespace FlockFive.Editor
             CheckUnmuteScope(Check);
             CheckScheduledRestore(Check);
             CheckScheduleHousekeeping(Check);
+            CheckRebootHolds(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -131,7 +140,7 @@ namespace FlockFive.Editor
             var header = FlockFiveApp.AlbumTitleOuter(back, screenW, screenH, safe, s);
             bool backOk = backDrawn.yMin >= inset - 0.5f;
             bool cogOk = gear.yMin >= inset - 0.5f;
-            bool headerOk = header.yMin >= inset - 0.5f;
+            bool headerOk = header.yMin >= inset + 4f - 0.05f;
             Check(tag + "-top-controls-clear-safe-inset",
                 backOk && cogOk && headerOk,
                 "inset " + inset + " back " + backDrawn.yMin + " gear " + gear.yMin + " header " + header.yMin);
@@ -303,6 +312,18 @@ namespace FlockFive.Editor
                 && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
 
             Check("emulated-no-sound-latches", emulated && soft, "emulated " + emulated + " soft " + soft);
+            AudioGuard.ResetForTests();
+        }
+
+        static void CheckOutputThenEmulated(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            const string unity = "FMOD failed to initialize the output device.: \"Error initializing output device. \" (60)";
+            const string emu = "FMOD failed to initialize any audio devices, running on emulated software output with no sound. Please check your audio drivers and/or hardware for malfunction.";
+            bool first = AudioGuard.NoteFmodFailure(unity);
+            bool second = AudioGuard.NoteFmodFailure(emu);
+            bool once = first && second && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+            Check("output-init-then-emulated-warns-once", once, "warnings " + AudioGuard.FmodWarnings);
             AudioGuard.ResetForTests();
         }
 
@@ -813,6 +834,37 @@ namespace FlockFive.Editor
                 AudioGuard.SetMuted(false, false);
                 AudioGuard.ResetForTests();
                 GamePause.Reset();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckRebootHolds(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("reboot-bed");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("reboot-bed", 88200);
+                bed.loop = true;
+                AudioGuard.Play(bed);
+                AudioGuard.ScheduleStemsTogether(new AudioSource[] { bed });
+                bed.timeSamples = 20000;
+                int plays = AudioGuard.PlayCalls;
+                int stops = AudioGuard.StopCalls;
+                MixDesk.Boot(go);
+                bool held = bed.timeSamples == 20000 && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops;
+                Check("second-boot-keeps-the-bed", held,
+                    "samples " + bed.timeSamples + " plays " + AudioGuard.PlayCalls + " stops " + AudioGuard.StopCalls);
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
                 if (desk != null) MixDesk.DetachForTests(desk);
                 UnityEngine.Object.DestroyImmediate(go);
             }
