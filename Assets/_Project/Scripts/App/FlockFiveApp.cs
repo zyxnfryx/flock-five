@@ -8451,7 +8451,25 @@ namespace FlockFive
             size = Mathf.Min(size, BackMedalMaxPt * ptPx);
             size = Mathf.Max(size, 44f * ptPx, 44f);
             float x = Mathf.Max(16f, safe.xMin + 10f);
+            // The Back glove hangs under the fingertip. On a small medal in the
+            // corner that quad crosses the left edge, and the hop then walks
+            // downward trying to cure it. Seat the medal far enough right that
+            // the upright hand stays on the glass.
+            float clear = BackGloveMedalLeft(s, size);
+            if (x < clear) x = clear;
             return new Rect(x, top, size, size);
+        }
+
+        // Left edge that keeps the upright Back glove inside the screen when the
+        // phone pivot sits one nudge left of the medal center.
+        static float BackGloveMedalLeft(float s, float size)
+        {
+            float dh = Mathf.Max(8f, GloveDh(s));
+            float dw = GloveAuditDw(dh);
+            float leftOfTip = Mathf.Max(0f, GloveAuditTip().x) * dw;
+            float nudge = Mathf.Abs(PokerBackPhoneTipNudgeX);
+            float need = GloveScreenMargin + leftOfTip + nudge + 1.5f - size * 0.5f;
+            return need > 0f ? need : 0f;
         }
 
         // Hit pad stays full size. The face scales down while the finger is down.
