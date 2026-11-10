@@ -37,6 +37,8 @@ namespace FlockFive.Editor
             CheckPadDoesNotStealFlower(Check);
             CheckBlockedRailFallsThrough(Check);
             CheckSecondPointer(Check);
+            CheckRailGaps(Check);
+            CheckVeiledRail(Check);
 
             string end = fail == 0 ? "HOME_RAIL_PRIORITY_OK" : "HOME_RAIL_PRIORITY_FAIL " + fail;
             sb.AppendLine(end);
@@ -356,6 +358,86 @@ namespace FlockFive.Editor
             var flower = new SplashPress.Gesture();
             var go = flower.Apply(SplashPress.PressHit(SplashPress.Id.Level), false, only, true, true, 41);
             Check("open-flower-tap-still-starts", go.Launch, "launch=" + go.Launch);
+        }
+
+        static void CheckRailGaps(System.Action<string, bool, string> Check)
+        {
+            CheckGap("820", 820, 1180, false, Check);
+            CheckGap("402", 402, 874, true, Check);
+            CheckGap("412", 412, 915, true, Check);
+        }
+
+        static void CheckGap(string tag, int screenW, int screenH, bool phone, System.Action<string, bool, string> Check)
+        {
+            PhoneArea.PlayPixels(screenW, screenH, out int w, out int h);
+            var safe = new Rect(0f, 0f, w, h);
+            var level = SplashPress.LevelRect(w, h, safe);
+            var hiveArt = FlockFiveApp.SettledRailIcon(w, h, safe, true, 1);
+            var pokerArt = FlockFiveApp.SettledRailIcon(w, h, safe, true, 2);
+            float gap = RailGap(w);
+            var hiveTap = hiveArt;
+            var pokerTap = SplashPress.PadRail(pokerArt, gap);
+            FlockFiveApp.CloseHomeRailGaps(hiveArt, pokerArt, ref hiveTap, ref pokerTap, level, phone);
+            float mid = (hiveArt.yMax + pokerArt.yMin) * 0.5f;
+            bool meet = hiveTap.yMax >= mid - 0.6f && pokerTap.yMin <= mid + 0.6f;
+            bool phoneMeet = !phone || pokerArt.yMax > level.yMin || pokerTap.yMax >= level.yMin - 0.6f;
+            bool noSteal = pokerTap.yMax <= level.yMin + 0.6f || pokerArt.yMax > level.yMin;
+            Check(tag + "-hive-cards-meet", meet, "mid " + mid + " hive " + hiveTap.yMax + " cards " + pokerTap.yMin);
+            Check(tag + "-cards-meet-level", phoneMeet && noSteal, "pad " + pokerTap.yMax + " level " + level.yMin);
+        }
+
+        // A veiled rail claims nothing. A point on its art or pad starts LEVEL only
+        // when that point is also on the flower; otherwise the tap does nothing.
+        static void CheckVeiledRail(System.Action<string, bool, string> Check)
+        {
+            CheckVeil("820", 820, 1180, Check);
+            CheckVeil("402", 402, 874, Check);
+            CheckVeil("412", 412, 915, Check);
+        }
+
+        static void CheckVeil(string tag, int screenW, int screenH, System.Action<string, bool, string> Check)
+        {
+            PhoneArea.PlayPixels(screenW, screenH, out int w, out int h);
+            var safe = new Rect(0f, 0f, w, h);
+            var level = SplashPress.LevelRect(w, h, safe);
+            var art = FlockFiveApp.SettledRailIcon(w, h, safe, true, 2);
+            var pad = SplashPress.PadRail(art, RailGap(w));
+            var onArt = art.center;
+            bool artKept = FlockFiveApp.RailKeepsLevelTap(art, pad, level, false, onArt, true);
+            bool artLevel = level.Contains(onArt);
+            Check(tag + "-veiled-art-claims-nothing", !artKept, "point " + onArt);
+            Check(tag + "-veiled-art-falls-through",
+                VeilFallsThrough(art, pad, level, onArt) == artLevel,
+                "onLevel " + artLevel);
+
+            var onPad = new Vector2(art.center.x, art.yMax + 3f);
+            if (!pad.Contains(onPad) || art.Contains(onPad))
+                onPad = new Vector2(art.xMax + 4f, art.center.y);
+            if (pad.Contains(onPad) && !art.Contains(onPad))
+            {
+                bool padKept = FlockFiveApp.RailKeepsLevelTap(art, pad, level, false, onPad, true);
+                bool padLevel = level.Contains(onPad);
+                Check(tag + "-veiled-pad-claims-nothing", !padKept, "point " + onPad);
+                Check(tag + "-veiled-pad-falls-through",
+                    VeilFallsThrough(art, pad, level, onPad) == padLevel,
+                    "onLevel " + padLevel);
+            }
+        }
+
+        static bool VeilFallsThrough(Rect art, Rect pad, Rect level, Vector2 point)
+        {
+            var samples = new List<SplashPress.Sample>
+            {
+                new SplashPress.Sample { TouchId = 11, Pos = point, Phase = SplashPress.Phase.Tap },
+            };
+            SplashPress.ResetBoard();
+            SplashPress.LayoutRail(SplashPress.Id.Poker, pad, art, level, true);
+            SplashPress.Layout(SplashPress.Id.Level, level);
+            var rail = new SplashPress.Gesture();
+            var shut = rail.Apply(SplashPress.PressHit(SplashPress.Id.Poker), true, samples, true, true, 80);
+            var play = new SplashPress.Gesture();
+            var go = play.Apply(SplashPress.PressHit(SplashPress.Id.Level), false, samples, true, true, 80);
+            return !shut.Launch && go.Launch;
         }
     }
 }

@@ -2256,11 +2256,26 @@ namespace FlockFive
                 for (int i = 1; i <= 6; i++)
                 {
                     var q = Vector2.Lerp(near, rest, i / 6f);
-                    if (!GloveHitsAdoptBird(q, ang, s, mirror)) return q;
+                    if (!GloveHitsAdoptBird(q, ang, s, mirror)) return SeatGloveInside(q, ang, mirror, GloveDh(s), GloveAuditDw(GloveDh(s)), PhoneArea.W, PhoneArea.H);
                 }
-                return rest;
+                return SeatGloveInside(rest, ang, mirror, GloveDh(s), GloveAuditDw(GloveDh(s)), PhoneArea.W, PhoneArea.H);
             }
-            return near;
+            return SeatGloveInside(near, ang, mirror, GloveDh(s), GloveAuditDw(GloveDh(s)), PhoneArea.W, PhoneArea.H);
+        }
+
+        // Pull a glove pivot toward the screen until its quad clears the edges.
+        // The settle aim is not passed through here, so the fingertip can still land on the button.
+        public static Vector2 SeatGloveInside(Vector2 pivot, float ang, bool mirror, float dh, float dw, float screenW, float screenH)
+        {
+            if (screenW < 8f || screenH < 8f || dh < 2f || dw < 2f) return pivot;
+            var p = pivot;
+            var center = new Vector2(screenW * 0.5f, screenH * 0.5f);
+            for (int i = 0; i < 16; i++)
+            {
+                if (GloveQuadOverflow(p, ang, mirror, dw, dh, screenW, screenH) <= 0.5f) return p;
+                p = Vector2.Lerp(p, center, 0.18f);
+            }
+            return p;
         }
 
         void GloveBeginReappear(Vector2 aimGui, float s, float perchLift, bool fromLeft, float approachDeg)

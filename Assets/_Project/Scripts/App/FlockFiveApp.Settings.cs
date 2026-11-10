@@ -74,11 +74,11 @@ namespace FlockFive
             float x = m;
             if (safe.width >= 2f && safe.height >= 2f)
             {
-                safeTop = Mathf.Max(0f, h - safe.yMax);
+                safeTop = GuiTopInset(h, safe);
                 x = safe.xMin + m;
             }
             if (x < m) x = m;
-            return new Vector2(x, safeTop + m);
+            return new Vector2(x, TopControlY(h, safe, safeTop + m));
         }
 
         public static Rect SettingsGearDrawnRect(float w, float h, Rect safe)
