@@ -127,14 +127,30 @@ namespace FlockFive
         {
             public Rect Rect;
             public Rect Extra;
+            public Rect Art;
             public bool Disc;
+            // Padding that lies on Extra (the LEVEL flower) is not a hit.
+            // The drawn Art still is, so the icon wins where the two overlap.
+            public bool CarveLevel;
 
             public bool Contains(Vector2 p)
             {
                 if (Rect.width < 1f || Rect.height < 1f) return false;
-                if (!Disc) return Rect.Contains(p);
-                return DiscContains(Rect, Extra, p);
+                if (Disc) return DiscContains(Rect, Extra, p);
+                if (!CarveLevel) return Rect.Contains(p);
+                return RailTapContains(Rect, Art, Extra, p);
             }
+        }
+
+        // Padded rail tap, with the flower overlap carved out of the padding only.
+        // A point on the drawn icon is always inside. A point in the padding is
+        // inside unless it also sits on the LEVEL flower.
+        public static bool RailTapContains(Rect padded, Rect art, Rect level, Vector2 point)
+        {
+            if (padded.width < 1f || padded.height < 1f || !padded.Contains(point)) return false;
+            if (art.width > 1f && art.height > 1f && art.Contains(point)) return true;
+            if (level.width > 1f && level.height > 1f && level.Contains(point)) return false;
+            return true;
         }
 
         static readonly Hit[] Hits = new Hit[Count];
@@ -167,7 +183,21 @@ namespace FlockFive
             var hit = Hits[(int)id];
             hit.Rect = rect;
             hit.Extra = default;
+            hit.Art = default;
             hit.Disc = false;
+            hit.CarveLevel = false;
+        }
+
+        // Full padded tap. Padding that overlaps the flower is given back to LEVEL.
+        // The drawn icon is not carved, so a tap on the art still hits the rail.
+        public static void LayoutRail(Id id, Rect padded, Rect art, Rect level)
+        {
+            var hit = Hits[(int)id];
+            hit.Rect = padded;
+            hit.Art = art;
+            hit.Extra = level;
+            hit.Disc = false;
+            hit.CarveLevel = true;
         }
 
         public static void LayoutDisc(Id id, Rect medal, Rect ribbon)
@@ -175,7 +205,9 @@ namespace FlockFive
             var hit = Hits[(int)id];
             hit.Rect = medal;
             hit.Extra = ribbon;
+            hit.Art = default;
             hit.Disc = true;
+            hit.CarveLevel = false;
         }
 
         // Places the LEVEL square and returns the shared hit (press and launch).

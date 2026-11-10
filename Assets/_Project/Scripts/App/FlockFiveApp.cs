@@ -10141,7 +10141,7 @@ namespace FlockFive
         // Drawn art that may keep a LEVEL tap this frame. False when the icon
         // is visible but blocked, so the flower can still start.
         bool _yieldHive, _yieldPoker, _yieldDaily, _yieldVip, _yieldPig;
-        Rect _yieldHiveR, _yieldPokerR, _yieldDailyR, _yieldPigR;
+        Rect _yieldPigR;
 
         // Finger slop around the fixed 1.48× body. Does not change the drawn bird.
         const float HomeBirdHitPad = 8f;
@@ -10356,7 +10356,6 @@ namespace FlockFive
             hiveGates.StepGate = StepGateBlocks(hiveHit);
             var hiveView = StepHomePress(SplashPress.Id.Hive, !SplashPress.Blocks(hiveGates), hiveGates.LessonOwn);
             _yieldHive = !SplashPress.Blocks(hiveGates);
-            _yieldHiveR = hiveHit;
             StartupTrace.Lap("L.Hive");
             if (hiveView.Launch)
             {
@@ -10380,19 +10379,21 @@ namespace FlockFive
             }
 
             // Poker is the next packed sibling. Absent until level 1 is cleared,
-            // so the rail closes under the hive. The press is the drawn square.
-            // The glove still aims at the padded RailTapRect. Flower taps in that
-            // slop start the level instead of opening poker.
+            // so the rail closes under the hive. The press is the padded
+            // RailTapRect the glove aims at. Padding that sits on the LEVEL
+            // flower is carved out, so a tap there starts the level. A finger
+            // just past the icon, off the flower, still opens poker.
             bool pokerDraw = RailLive(RailPoker);
             var pokerR = SplashPokerRect();
-            SplashPress.Layout(SplashPress.Id.Poker, pokerR);
+            var pokerTap = RailTapRect(RailPoker);
+            var flower = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            SplashPress.LayoutRail(SplashPress.Id.Poker, pokerTap, pokerR, flower);
             var pokerGates = HomePressGates(RailPoker);
-            pokerGates.Consent = VeilBlocks(pokerR);
+            pokerGates.Consent = VeilBlocks(pokerTap);
             pokerGates.Hidden = !pokerDraw;
-            pokerGates.StepGate = StepGateBlocks(pokerR);
+            pokerGates.StepGate = StepGateBlocks(pokerTap);
             var pokerView = StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates), pokerGates.LessonOwn);
             _yieldPoker = !SplashPress.Blocks(pokerGates);
-            _yieldPokerR = pokerR;
             StartupTrace.Lap("L.Poker");
             if (pokerView.Launch)
             {
@@ -10426,19 +10427,20 @@ namespace FlockFive
             // unlock stays out of the pack until its lesson, then grows into the gap.
             bool dailyDraw = RailLive(RailDaily);
             var dailyR = SplashDailyRect();
-            // Press is the drawn plate, plus the streak flame when that ornament is
-            // showing. The old pad reached onto the flower. The glove still aims
-            // at the padded rect. While the Daily lesson points at this button, a
-            // coin payout still ticking (soft modal) must not eat the tap.
+            // Same padded rect the glove aims at (plate, pad, and the streak flame).
+            // Padding on the LEVEL flower is carved out. While the Daily lesson
+            // points at this button, a coin payout still ticking (soft modal)
+            // must not eat the tap.
+            var dailyTap = SplashDailyTapRect();
             var dailyArt = DailyPressArt(dailyR);
-            SplashPress.Layout(SplashPress.Id.Daily, dailyArt);
+            SplashPress.LayoutRail(SplashPress.Id.Daily, dailyTap, dailyArt, flower);
             bool dailyLesson = HomeStepRail() == RailDaily;
             var dailyGates = HomePressGates(RailDaily);
-            dailyGates.Consent = VeilBlocks(dailyArt);
+            dailyGates.Consent = VeilBlocks(dailyTap);
             dailyGates.Hidden = !dailyDraw;
             dailyGates.DailySoftOk = dailyLesson && _streakSlide < 0f;
             dailyGates.PopupGate = PopupBlocked(PopupKind.Daily);
-            dailyGates.StepGate = StepGateBlocks(dailyArt);
+            dailyGates.StepGate = StepGateBlocks(dailyTap);
             if (dailyLesson)
             {
                 // Build 85 (device strand, build 84): the Daily lesson's own target must always
@@ -10455,7 +10457,6 @@ namespace FlockFive
             }
             var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates), dailyGates.LessonOwn);
             _yieldDaily = !SplashPress.Blocks(dailyGates);
-            _yieldDailyR = dailyArt;
 #if UNITY_EDITOR
             if (ShotKeepAwake && _homeSamples.Count > 0 && DbgDaily.Length < 4000)
                 DbgDaily += (Event.current != null ? Event.current.type.ToString() : "-") + "/f" + Time.frameCount + ":" + _homeSamples[0].Phase
@@ -10520,16 +10521,17 @@ namespace FlockFive
             }
         }
 
-        // The LEVEL square must not take a tap that is already on a home icon
-        // that would open. Only the drawn art counts, and only when that button
-        // is actually live. A padded slop or a blocked icon leaves the flower free.
+        // The LEVEL square must not take a tap a home icon would open.
+        // The rail keeps its padded tap. Only the padding that sits on the
+        // flower is given back, and only when that icon can actually open.
+        // A blocked, locked, or veiled icon claims nothing.
         void KeepLevelOffHomeIcons()
         {
             ReadHomePointers(_homeSamples, out _);
             int frame = Time.frameCount;
-            if (_yieldHive) SplashPress.Reserve(_homeSamples, _yieldHiveR, frame);
-            if (_yieldPoker) SplashPress.Reserve(_homeSamples, _yieldPokerR, frame);
-            if (_yieldDaily) SplashPress.Reserve(_homeSamples, _yieldDailyR, frame);
+            if (_yieldHive) SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Hive), frame);
+            if (_yieldPoker) SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Poker), frame);
+            if (_yieldDaily) SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Daily), frame);
             if (_yieldVip) SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Vip), frame);
             if (_yieldPig) SplashPress.Reserve(_homeSamples, _yieldPigR, frame);
             var gearArt = SettingsGearDrawnRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
@@ -10538,10 +10540,12 @@ namespace FlockFive
                 SplashPress.Reserve(_homeSamples, gearArt, frame);
         }
 
-        // True when this point is on icon art that would open, so LEVEL must not start.
-        public static bool RailKeepsLevelTap(Rect drawnIcon, bool canAct, Vector2 point)
+        // True when this point would open the rail, so LEVEL must not start.
+        // The padded tap counts, except the padding that lies on the flower.
+        // A blocked icon keeps nothing.
+        public static bool RailKeepsLevelTap(Rect art, Rect padded, Rect level, bool canAct, Vector2 point)
         {
-            return canAct && drawnIcon.width > 2f && drawnIcon.height > 2f && drawnIcon.Contains(point);
+            return canAct && SplashPress.RailTapContains(padded, art, level, point);
         }
 
         bool DrawFlowerPlay(float s, string ease, int number)
@@ -10565,7 +10569,8 @@ namespace FlockFive
             gates.HomeTaken = _homeTapTaken;
             gates.StepGate = StepGateBlocks(rest);
             // Shipping path. On a wide portrait the LEVEL square reaches the cards
-            // icon. A second pointer on that art was starting the garden.
+            // icon. A second pointer on that icon was starting the garden. The
+            // padded tap stays, except where that padding lies on the flower.
             KeepLevelOffHomeIcons();
             var view = StepHomePress(SplashPress.Id.Level, !SplashPress.Blocks(gates));
             StartupTrace.Lap("L.LevelGate");
