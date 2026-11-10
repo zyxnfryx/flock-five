@@ -121,18 +121,29 @@ namespace FlockFive.Editor
             Check(tag + "-finger-past-icon-opens-rail",
                 away && RailOpens(art, pad, level, past) && !level.Contains(past),
                 "point " + past + " pad " + pad);
+            bool onFlower = PadPoint(art, pad, level, wantOnLevel: true, out var carved);
             if (tag == "820")
             {
-                bool onFlower = PadPoint(art, pad, level, wantOnLevel: true, out var carved);
                 Check("820-pad-on-flower-starts-level",
                     onFlower && !SplashPress.RailTapContains(pad, art, level, carved)
                     && LevelOpens(art, pad, level, carved),
+                    "point " + carved);
+                Check("820-blocked-level-pad-opens-rail",
+                    onFlower && RailOpens(art, pad, level, carved, false)
+                    && FlockFiveApp.RailKeepsLevelTap(art, pad, level, true, carved, false),
                     "point " + carved);
                 var onArt = new Vector2(art.x + art.width * FlockFiveApp.PokerGloveU, art.y + art.height * FlockFiveApp.PokerGloveV);
                 Check("820-art-overlap-opens-poker",
                     art.Contains(onArt) && level.Contains(onArt) && RailOpens(art, pad, level, onArt)
                     && !LevelOpensAfterRail(art, pad, level, onArt),
                     "point " + onArt);
+            }
+            else
+            {
+                Check(tag + "-blocked-level-pad-opens-rail-when-overlap",
+                    !onFlower || (RailOpens(art, pad, level, carved, false)
+                        && FlockFiveApp.RailKeepsLevelTap(art, pad, level, true, carved, false)),
+                    onFlower ? "point " + carved : "no flower overlap");
             }
         }
 
@@ -178,12 +189,17 @@ namespace FlockFive.Editor
 
         static bool RailOpens(Rect art, Rect pad, Rect level, Vector2 point)
         {
+            return RailOpens(art, pad, level, point, true);
+        }
+
+        static bool RailOpens(Rect art, Rect pad, Rect level, Vector2 point, bool carveFlower)
+        {
             var samples = new List<SplashPress.Sample>
             {
                 new SplashPress.Sample { TouchId = 6, Pos = point, Phase = SplashPress.Phase.Tap },
             };
             SplashPress.ResetBoard();
-            SplashPress.LayoutRail(SplashPress.Id.Poker, pad, art, level);
+            SplashPress.LayoutRail(SplashPress.Id.Poker, pad, art, level, carveFlower);
             var rail = new SplashPress.Gesture();
             var view = rail.Apply(SplashPress.PressHit(SplashPress.Id.Poker), false, samples, true, true, 50);
             return view.Launch;
