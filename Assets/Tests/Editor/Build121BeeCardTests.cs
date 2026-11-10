@@ -165,7 +165,7 @@ namespace FlockFive.Editor
             Check("upgrade-tap-is-only-the-button",
                 CoachTap.Kind(CoachStep.AlbumUpgrade) == CoachTapKind.Required
                 && !CoachTap.AnyTap(CoachStep.AlbumUpgrade)
-                && app.Contains("gate.Target = _upgradeBtnR"), "");
+                && (coach.Contains("gate.Target = _upgradeBtnR") || app.Contains("gate.Target = _upgradeBtnR")), "");
         }
 
         static void CheckCombs(System.Action<string, bool, string> Check)
