@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace FlockFive
@@ -613,30 +614,92 @@ namespace FlockFive
 
 #if UNITY_WEBGL && DEVELOPMENT_BUILD
         bool _devLevelSkipDone;
+        bool _devOnboardingStamped;
+        bool _devForceRewards;
 
-        // Temporary inspector hook. Compiled only for WebGL development builds.
-        // Release player builds do not contain it. Open the page with ?fflevel=3
-        // (lightning still owed) or ?fflevel=5 (bee still owed). Other gardens
-        // load too, with both of those lessons stamped seen.
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // Compiled only for WebGL development builds. Device, iOS, Android,
+        // and release player builds do not contain it. Open the page with
+        // ?fflevel=3 (lightning still owed) or ?fflevel=5 (bee still owed).
+        // Other gardens load too, with both of those lessons stamped seen.
+        // ?skipOnboarding=1 is the same kind of inspect hook. Alone, or with
+        // ?fflevel=, it stamps the home cascade seen, seeds the purse, and,
+        // with no fflevel, loads garden 2.
+        // Garden 2 can nap: a finished flock whose color is not on a feeder sleeps.
+        // The nap rule tip is left unseen so that first Zzz can still raise it.
+        // ?keepTips=1 on that skip also leaves the kit and feeder plates owed.
+        // Those three prefs are what hide FeederLine and SleepLine ("color")
+        // and the kit line. Leaf, the first-garden coach, and the pest lessons
+        // stay stamped: a live leaf or coach blocks the feeder plate.
+        // ?forceFeeder=1 turns one feeder and raises that plate.
+        // ?forceNap=1 stacks a flock no feeder wants, then the live sleep
+        // raise waits until a bird has drawn Zzz.
+        // ?openPoker=1 stays on the home shell, deals one hand, and draws it
+        // so the Back tip is the plate on screen. The Back pref stays owed.
+        // ?forceClear=1 is a WebGL Development inspect hook only, not a
+        // shipping-path change. It waits until the star wipe is down and the
+        // garden is playable, and on an ostrich garden until the entrance
+        // (honk, stride, plant) has returned him to idle. Then it empties the
+        // board and calls TryScoreGarden, the same win latch a
+        // StageClearingCollect reaches, so the real Collect / Watch Ad card
+        // opens. Default off.
+        // ?forceRewards=1 is a WebGL Development inspect hook only, not a
+        // shipping-path change. It is honored only with skipOnboarding=1 and
+        // does nothing to entrance timing. After the forceClear wait it makes
+        // Watch Ad / 2X offerable, grants one album card, and unlocks the
+        // album Upgrade glove. A tap on that button completes through the
+        // real RewardedGrant path (displayed, rewarded, flush) instead of
+        // waiting on LevelPlay. It does not grant No Ads.
         void MaybeDevLevelSkip()
         {
             if (_devLevelSkipDone) return;
-            if (!AdConsent.FirstFrameReady || StartupInputHeld) return;
+            if (StartupInputHeld) return;
             if (!_splash || _home != HomeFace.Splash) return;
             string url = Application.absoluteURL;
             if (string.IsNullOrEmpty(url)) return;
             var plan = DevLevelSkip.Plan(url, LevelData.Count);
+            if (plan.Index < 0 && !plan.OpenPoker)
+            {
+                if (!AdConsent.FirstFrameReady) return;
+                _devLevelSkipDone = true;
+                return;
+            }
+            // AdConsent opens its card at the end of the first frame. WebGL is
+            // not iOS, so Tracking.Undecided() stays true and the ATT sheet is
+            // the in-game pre-prompt. Stamp the ask (and drop a held pre-prompt)
+            // and dismiss the in-session card before that paint. The garden load
+            // still waits for the first frame, same as ?fflevel= alone.
+            if (plan.SkipOnboarding && !_devOnboardingStamped)
+            {
+                _devOnboardingStamped = true;
+                StampDevOnboardingSeen();
+                AdConsent.DismissTransient();
+            }
+            if (!AdConsent.FirstFrameReady) return;
             _devLevelSkipDone = true;
-            if (plan.Index < 0) return;
-            PlayerPrefs.SetInt("flockfive.next", plan.Index);
+            if (plan.Index >= 0) PlayerPrefs.SetInt("flockfive.next", plan.Index);
             PlayerPrefs.SetInt(CoachKey, 1);
             PlayerPrefs.SetInt(CoachLeafKey, 1);
             PlayerPrefs.SetInt(CoachSparrowKey, 1);
             PlayerPrefs.SetInt(CoachHawkKey, 1);
             PlayerPrefs.SetInt(CoachOstrichKey, 1);
-            PlayerPrefs.SetInt(RuleTips.KitKey, 1);
-            PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
-            PlayerPrefs.SetInt(RuleTips.SleepKey, 1);
+            // keepTips=1 leaves the rule plates owed, including a stamp left by an
+            // earlier skip in this browser profile. Leaf and the other coach keys
+            // above stay seen so their plates do not cover FeederLine.
+            if (plan.KeepTips)
+            {
+                PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                PlayerPrefs.DeleteKey(RuleTips.SleepKey);
+            }
+            else
+            {
+                PlayerPrefs.SetInt(RuleTips.KitKey, 1);
+                PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
+                // Nap tip stays owed on the skip path. A plain ?fflevel= still marks it seen.
+                if (plan.SkipOnboarding) PlayerPrefs.DeleteKey(RuleTips.SleepKey);
+                else PlayerPrefs.SetInt(RuleTips.SleepKey, 1);
+            }
             if (plan.KeepBee) PlayerPrefs.DeleteKey(CoachBeeKey);
             else PlayerPrefs.SetInt(CoachBeeKey, 1);
             if (plan.KeepFire)
@@ -649,8 +712,24 @@ namespace FlockFive
                 PlayerPrefs.SetInt(CoachFireKey, 1);
                 PlayerPrefs.SetInt(LightningStrike.StruckKey, 1);
             }
+            if (plan.SkipOnboarding) StampDevOnboardingSeen();
+            if (plan.ForceFeeder) PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+            if (plan.ForceNap) PlayerPrefs.DeleteKey(RuleTips.SleepKey);
             PlayerPrefs.Save();
             AdConsent.DismissTransient();
+            if (plan.SkipOnboarding)
+                Debug.Log("FF_DEV_SKIP_ONBOARDING display=" + (plan.Index + 1) + " coins=" + Purse.Coins
+                    + " keepTips=" + (plan.KeepTips ? 1 : 0)
+                    + " forceFeeder=" + (plan.ForceFeeder ? 1 : 0)
+                    + " forceNap=" + (plan.ForceNap ? 1 : 0)
+                    + " openPoker=" + (plan.OpenPoker ? 1 : 0)
+                    + " forceClear=" + (plan.ForceClear ? 1 : 0)
+                    + " forceRewards=" + (plan.ForceRewards ? 1 : 0));
+            if (plan.OpenPoker)
+            {
+                DevOpenPokerTable();
+                return;
+            }
             Debug.Log("FF_DEV_LEVEL display=" + (plan.Index + 1) + " keepBee=" + (plan.KeepBee ? 1 : 0)
                 + " keepFire=" + (plan.KeepFire ? 1 : 0));
             if (!LevelCurtain.Armed) LevelCurtain.Arm(AdPause.Unscaled);
@@ -662,6 +741,257 @@ namespace FlockFive
                 LevelCurtain.MarkReady();
                 LevelCurtain.Fire(AdPause.Unscaled);
             }
+            if (plan.ForceNap && DevForceSleepingFlock(plan.ForceFeeder))
+                StartCoroutine(DevRaiseForcedNap());
+            if (plan.ForceFeeder) DevForceFeederPlate();
+            if (plan.ForceClear)
+            {
+                _devForceRewards = plan.ForceRewards;
+                StartCoroutine(DevForceStageClear());
+            }
+        }
+
+        // One limb becomes five of a color no feeder wants, then Sync seats them
+        // asleep. Zzz is drawn in LateUpdate. The sleep plate is raised by
+        // RaiseRuleSleepTip, which on the nap-gate build waits for that Zzz.
+        bool DevForceSleepingFlock(bool feederPlateToo)
+        {
+            if (_board == null) return false;
+            BirdColor nap = BirdColor.Ruby;
+            bool free = false;
+            for (int c = 0; c < 5; c++)
+            {
+                var col = (BirdColor)c;
+                if (_board.LiveHas(col)) continue;
+                nap = col;
+                free = true;
+                break;
+            }
+            if (!free && _board.Live != null && _board.Live.Length > 0)
+            {
+                nap = _board.Live[0] ?? BirdColor.Ruby;
+                _board.Live[0] = null;
+                // Clearing the bulb is itself a feeder turn. Stamp that plate
+                // seen so it does not cover the nap, unless this URL also asked
+                // for the feeder plate.
+                if (!feederPlateToo) PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
+            }
+            int branch = -1;
+            for (int i = 0; i < _board.Branches.Count; i++)
+            {
+                var br = _board.Branches[i];
+                if (br == null || br.Broken || br.Burned || br.IsBonus) continue;
+                branch = i;
+                break;
+            }
+            if (branch < 0) return false;
+            var limb = _board.Branches[branch];
+            limb.Birds.Clear();
+            limb.Shrouded.Clear();
+            limb.Broken = false;
+            limb.AdLocked = false;
+            for (int i = 0; i < BranchState.Cap; i++)
+            {
+                limb.Birds.Add(new Bird(nap, BirdKit.Plain));
+                limb.Shrouded.Add(false);
+            }
+            SyncAll();
+            Sfx.Sleep();
+            return _board.IsSleeping(branch);
+        }
+
+        // Retries the live raise until the plate is up. The first call lands on
+        // a build that shows the nap as soon as the flock is asleep. A build
+        // that waits for Zzz no-ops until LateUpdate notes the pose.
+        IEnumerator DevRaiseForcedNap()
+        {
+            float waited = 0f;
+            while (_ruleTip != RuleTip.Sleep && waited < 3f)
+            {
+                RaiseRuleSleepTip();
+                if (_ruleTip == RuleTip.Sleep) break;
+                waited += Mathf.Max(Time.unscaledDeltaTime, 0.01f);
+                yield return null;
+            }
+            Debug.Log("FF_DEV_FORCE nap=1 tip=" + (_ruleTip == RuleTip.Sleep ? 1 : 0));
+        }
+
+        // The bulb changes, then the feeder plate is shown directly so OCR does
+        // not have to play until a real collect turns a feeder.
+        void DevForceFeederPlate()
+        {
+            if (_board != null && _board.Live != null && _board.Live.Length > 0)
+            {
+                BirdColor? before = _board.Live[0];
+                BirdColor next = before == BirdColor.Violet ? BirdColor.Peach : BirdColor.Violet;
+                for (int c = 0; c < 5; c++)
+                {
+                    var col = (BirdColor)c;
+                    if (before == col || _board.LiveHas(col)) continue;
+                    next = col;
+                    break;
+                }
+                _board.Live[0] = next;
+                SyncAll();
+            }
+            ShowRuleTip(RuleTip.Feeder);
+            Debug.Log("FF_DEV_FORCE feeder=1 tip=" + (_ruleTip == RuleTip.Feeder ? 1 : 0));
+        }
+
+        // Home shell, one dealt-and-drawn hand, Back still owed. The page and
+        // dealt prefs are stamped and this visit is the lesson hand, so the
+        // Back gate holds the result instead of settling it away. The home
+        // poker intro was already stamped with the cascade.
+        void DevOpenPokerTable()
+        {
+            PlayerPrefs.DeleteKey(CoachPokerBackKey);
+            _pokerBackDone = false;
+            _pokerBackKnown = true;
+            PlayerPrefs.SetInt(CoachPokerPageKey, 1);
+            PlayerPrefs.SetInt(CoachPokerDealtKey, 1);
+            PlayerPrefs.Save();
+            _pokerLessonHand = true;
+            _pokerPageOn = false;
+            _pokerPageStep = -1;
+            _pokerDealHint = false;
+            _pokerDealAimOk = false;
+            _pokerIntro = false;
+            _pokerIntroLive = false;
+            _pokerPayOpen = false;
+            _fivesOpen = false;
+            _pokerStamp = false;
+            _pokerMotion = PokerMotion.None;
+            _pokerWinT = -1f;
+            _splash = true;
+            _home = HomeFace.Poker;
+            NotePokerIntroLeft(false);
+            BirdPoker.Boot();
+            BirdPoker.BeginVisit();
+            BirdPoker.SyncBet();
+            bool dealt = BirdPoker.Deal();
+            bool drawn = dealt && BirdPoker.Draw();
+            Debug.Log("FF_DEV_FORCE openPoker=1 dealt=" + (dealt ? 1 : 0)
+                + " drawn=" + (drawn ? 1 : 0)
+                + " coins=" + Purse.Coins
+                + " backOwed=" + (PokerBackDone() ? 0 : 1));
+        }
+
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // After the garden is on screen. The star wipe is LevelCurtain (armed
+        // until the bloom finishes). An ostrich entrance is the non-idle act:
+        // today's chain is strut, honk, then shake, and the arrival keeps the
+        // stride act through the plant until EndEntrance sets idle. The first
+        // idle frame, before that movement, is not the end. Then the board is
+        // emptied and TryScoreGarden runs. That is the latch Collect calls
+        // after StageClearingCollect, and it is what opens the real Collect /
+        // Watch Ad card. No second overlay. forceRewards, when set, runs only
+        // after this wait, so it cannot move the entrance.
+        IEnumerator DevForceStageClear()
+        {
+            float waited = 0f;
+            bool saw = false;
+            while (true)
+            {
+                if (_splash || _board == null || _restarting || _won) yield break;
+                bool ostrich = _board.Ostrich != null && _board.Ostrich.Alive && _garden.Ostrich != null;
+                bool moving = false;
+                bool idle = true;
+                if (ostrich)
+                {
+                    var act = _garden.Ostrich.Act;
+                    idle = act == OstrichAct.Idle;
+                    moving = !idle;
+                    if (moving) saw = true;
+                }
+                bool presented = !LevelCurtain.Armed && !GardenFit.Busy;
+                if (DevLevelSkip.ForceClearReady(presented, ostrich, moving, idle, saw, waited))
+                    break;
+                waited += Mathf.Max(Time.unscaledDeltaTime, 0.01f);
+                yield return null;
+            }
+            if (_splash || _board == null || _restarting || _won) yield break;
+            if (_devForceRewards) ArmDevInspectRewards();
+            var list = _board.Branches;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var br = list[i];
+                if (br == null) continue;
+                br.Birds.Clear();
+                br.Shrouded.Clear();
+            }
+            _board.Displaced.Clear();
+            SyncAll();
+            bool scored = TryScoreGarden();
+            Debug.Log("FF_DEV_FORCE clear=1 display=" + LevelData.DisplayNumber
+                + " scored=" + (scored ? 1 : 0)
+                + " saw=" + (saw ? 1 : 0)
+                + " waited=" + waited.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // Runs only after DevForceStageClear has waited out the wipe and any
+        // ostrich entrance. Watch Ad / 2X need a ready rewarded unit and a
+        // clear count outside the new-player grace. One Hive.TakeVisitor card
+        // is what the album sheet and the card-back honeycombs read. The
+        // Upgrade glove arms in that album inspect only after the first
+        // honey-badger coach stamp (Hive.UpgradesUnlocked) and only while the
+        // upgrade lesson is still owed. The beehive rail already opens the
+        // album; the playing-cards icon stays Poker. NoAds.Grant is not called
+        // and flockfive.noads is not written.
+        void ArmDevInspectRewards()
+        {
+            Ads.ArmInspectRewardOffer();
+            var visit = Hive.TakeVisitor();
+            _levelBees.Add(visit);
+            NoteHiveCue(visit);
+            BadgerCopy.MarkCoach();
+            PlayerPrefs.DeleteKey(CoachHiveUpgradeKey);
+            _upgradeTutorDone = false;
+            _upgradeTutorKnown = false;
+            PlayerPrefs.Save();
+            Debug.Log("FF_DEV_FORCE rewards=1 adReady=" + (Ads.RewardedReady ? 1 : 0)
+                + " clears=" + Ads.SessionClears
+                + " card=" + visit.Slot
+                + " upgrade=" + (Hive.UpgradesUnlocked ? 1 : 0)
+                + " noAds=" + (NoAds.Owned ? 1 : 0));
+        }
+
+        // Home cascade the inspector otherwise has to tap through before a garden
+        // with both restart and the hive can show. Keys are the live gates:
+        // ATT ask finished (AdConsent.Consider returns none once ask >= 2; WebGL
+        // never gets a system dialog, and EditorHoldAtt would paint the sheet
+        // without reading that key), avatar adopted and named (AdoptResume stays
+        // off; Goldie is the Gold suggestion BeginAdopt writes), Daily and poker
+        // intros, and the collection lesson. CoachPokerKey is only the home
+        // intro. It does not stamp the in-table page lesson or the Back tip.
+        // CoachHiveKey is also what draws the garden hive. The in-garden hive
+        // callout and the album tutor are the collection follow-ups, so they are
+        // stamped too. The bee-card plate is CoachBeeKey, already stamped above
+        // unless this garden asked to keep it. The nap rule tip is cleared, not
+        // stamped: Garden 2 can sleep a flock that has no feeder, and the tip
+        // has to be able to open on that first Zzz. Kit and feeder are cleared
+        // only when the URL also says keepTips=1, and that happens in
+        // MaybeDevLevelSkip so this home cascade is the same either way. Coins
+        // go through Purse.Credit so flockfive.coins and its PrefGuard checksum
+        // match what the rail and the poker deal read back (including the Boot
+        // on the next home).
+        void StampDevOnboardingSeen()
+        {
+            PlayerPrefs.SetInt(AdConsent.AttAskKey, 2);
+            AdConsent.EditorHoldAtt = false;
+            PlayerPrefs.DeleteKey(RuleTips.SleepKey);
+            int seed = DevLevelSkip.CoinsToSeed(Purse.Coins);
+            if (seed > 0) Purse.Credit(seed);
+            PlayerPrefs.SetInt(AvatarPref, (int)BirdColor.Gold);
+            PlayerPrefs.SetString(AvatarNamePref, "Goldie");
+            PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
+            PlayerPrefs.SetInt(AvatarNamedPref, 1);
+            PlayerPrefs.SetInt(CoachDailyKey, 1);
+            PlayerPrefs.SetInt(CoachPokerKey, 1);
+            PlayerPrefs.SetInt(CoachHiveKey, 1);
+            PlayerPrefs.SetInt(CoachHiveGardenKey, 1);
+            PlayerPrefs.SetInt(CoachHiveAlbumKey, 1);
+            PlayerPrefs.Save();
         }
 #endif
 
