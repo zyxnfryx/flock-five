@@ -11,6 +11,7 @@ namespace FlockFive
         public const string RewardDoubleWord = "2X";
         public const string RewardCollectWord = "Collect";
         // Stage-clear 2X pays the coin prize again. Cards on that board are not doubled.
+        // Daily keeps the shorter RewardDoubleWord.
         public const string RewardCoinsDoubleWord = "2X COINS";
 
         public static bool DoublesCoinsOnly(string word)
@@ -258,17 +259,17 @@ namespace FlockFive
             else if (press.Action == RewardChoiceInput.Tap.Collect) _rewardChoice = 2;
         }
 
-        // Shared Watch-Ad-2X / Collect choice painter. Used by the REWARD popup and the DAILY
-        // popup so both have the same buttons, icon+label group, pulse, sheen and popup style.
-        // Primary = green WATCH AD 2X (or lone green Collect when no ad); Secondary = wood Collect.
+        // Shared 2X / Collect choice painter. The REWARD popup and the DAILY popup both
+        // use it, so the film mark, the single line, the pulse and the sheen stay matched.
+        // Primary = green film-strip 2X (or lone green Collect when no ad); Secondary = wood Collect.
+        // `doubleWord` is the big line. Reward passes "2X COINS"; daily leaves it null and gets "2X".
         // Caller owns hit testing and alpha (GUI.color); `a` only scales the sheen.
         void DrawOfferChoice(OfferButtonsLayout lay, bool hasAd, bool priHeld, bool secHeld, float a, float s, string collectWord, string doubleWord = null)
         {
             if (string.IsNullOrEmpty(doubleWord)) doubleWord = RewardDoubleWord;
             if (_choiceWord == null)
                 _choiceWord = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
-            // b87: the 2X button reads as "Watch Ad": video icon, "WATCH AD" over a big 2X,
-            // a gentle breathe and the shared PushButton sheen at half speed.
+            // Gentle breathe and the shared PushButton sheen at half speed.
             var priR = lay.Primary;
             float pk = 1f;
             if (hasAd && !priHeld)
@@ -284,20 +285,13 @@ namespace FlockFive
                 // b110: label is laid out and fitted at rest size, then scaled with the plate by the same pulse value.
                 var m0 = PushButton.BeginPulse(priR.center, pk);
                 face = PushButton.ScaledAbout(face, priR.center, 1f / pk);
-                // b111 (Brandon): icon + words are one group centered on the button, inside the same
-                // inner padding the Collect / Pay Double buttons use (DrawPopupWord).
-                float ic = face.height * 0.58f;
-                float gap = face.height * 0.08f;
-                float padX = face.width * PopupWordPadX;
-                float slotW = Mathf.Max(8f, face.width - 2f * padX - ic - gap);
-                var slotLab = new Rect(0f, face.y + face.height * PopupWordPadY * 0.5f, slotW, face.height * (1f - PopupWordPadY));
-                float textW = MeasureWatchAdWords(slotLab, s, doubleWord);
-                float groupW = ic + gap + textW;
-                float gx = face.center.x - groupW * 0.5f;
-                var icR = new Rect(gx, face.center.y - ic * 0.5f, ic, ic);
-                DrawPlayAdIcon(icR);
-                var txt = new Rect(icR.xMax + gap, slotLab.y, textW, slotLab.height);
-                DrawWatchAdWords(txt, s, doubleWord);
+                // Film strip + one line, one group, inside the same padding as Collect / Pay Double.
+                var full = LayoutFilmOffer(face, 0f);
+                float textW = FitDoubleWord(full.Label, s, doubleWord);
+                var mark = LayoutFilmOffer(face, textW);
+                DrawFilmPlayMark(mark.Icon);
+                int ink = Mathf.Clamp(Mathf.RoundToInt(_choiceWord.fontSize * 0.16f), 2, 8);
+                StampOutlined(mark.Label, doubleWord, _choiceWord, Color.white, 0, ink);
                 PushButton.EndPulse(m0);
                 var sf = DrawPopupButton(lay.Secondary, secHeld, PopupTint.Wood);
                 DrawPopupWord(sf, collectWord, _choiceWord, s);
@@ -305,43 +299,63 @@ namespace FlockFive
             else DrawPopupWord(face, collectWord, _choiceWord, s);
         }
 
-        public const string WatchAdWord = "WATCH AD";
         public const float WatchAdPulse = 0.03f;
         public const float WatchAdPulsePeriod = 1.6f;
-        GUIStyle _watchSmall;
+        // Film height as a fraction of the button face, and film width as a fraction of the padded row.
+        // The width cap is what keeps "2X COINS" readable on the 402 / 412 glass.
+        public const float FilmOfferHeightFrac = 0.70f;
+        public const float FilmOfferWidthFrac = 0.42f;
 
-        // Fits both lines to the slot (same FitFont/outline rule as DrawPopupWord) and returns the widest line,
-        // so the icon + words group can be centered on the button.
-        float MeasureWatchAdWords(Rect slot, float s, string doubleWord)
+        public struct FilmOfferLayout
         {
-            FitWatchAdWords(slot, s, doubleWord, out _, out _);
-            var c1 = new GUIContent(WatchAdWord);
-            var c2 = new GUIContent(doubleWord);
-            float w1 = _watchSmall.CalcSize(c1).x;
-            float w2 = _choiceWord.CalcSize(c2).x;
-            return Mathf.Min(slot.width, Mathf.Max(w1, w2));
+            public Rect Icon;
+            public Rect Label;
         }
 
-        void FitWatchAdWords(Rect r, float s, string doubleWord, out Rect top, out Rect big)
+        // `textW` <= 0 uses the whole remaining slot (the fit pass). A measured width
+        // recenters the film + word as one group. The rect is the button face DrawPopupButton returns.
+        public static FilmOfferLayout LayoutFilmOffer(Rect face, float textW)
         {
-            if (string.IsNullOrEmpty(doubleWord)) doubleWord = RewardDoubleWord;
-            if (_watchSmall == null)
-                _watchSmall = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
-            top = new Rect(r.x, r.y, r.width, r.height * 0.36f);
-            big = new Rect(r.x, r.y + r.height * 0.34f, r.width, r.height * 0.66f);
-            _watchSmall.wordWrap = false; _watchSmall.alignment = TextAnchor.MiddleCenter; _watchSmall.fontStyle = FontStyle.Bold;
-            _watchSmall.fontSize = FitFont(_watchSmall, WatchAdWord, top.width, top.height, 9, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
-            _choiceWord.wordWrap = false; _choiceWord.alignment = TextAnchor.MiddleCenter; _choiceWord.fontStyle = FontStyle.Bold;
-            _choiceWord.fontSize = FitFont(_choiceWord, doubleWord, big.width, big.height, 14, Mathf.Max(18, Mathf.RoundToInt(34f * s)));
+            float padX = face.width * PopupWordPadX;
+            float innerW = Mathf.Max(8f, face.width - 2f * padX);
+            float innerH = Mathf.Max(8f, face.height * (1f - 2f * PopupWordPadY));
+            float gap = Mathf.Max(4f, face.height * 0.06f);
+            float filmH = face.height * FilmOfferHeightFrac;
+            float filmW = filmH * FilmPlayMark.Aspect;
+            float capW = innerW * FilmOfferWidthFrac;
+            if (filmW > capW)
+            {
+                filmW = capW;
+                filmH = filmW / FilmPlayMark.Aspect;
+            }
+            float labelW = Mathf.Max(8f, innerW - filmW - gap);
+            if (textW > 0f && textW < labelW) labelW = textW;
+            float groupW = filmW + gap + labelW;
+            float gx = face.center.x - groupW * 0.5f;
+            var lay = new FilmOfferLayout();
+            lay.Icon = new Rect(gx, face.center.y - filmH * 0.5f, filmW, filmH);
+            lay.Label = new Rect(gx + filmW + gap, face.center.y - innerH * 0.5f, labelW, innerH);
+            return lay;
         }
 
-        // White fill, dark outline: same stamp as DrawPopupWord on Collect / Pay Double.
-        void DrawWatchAdWords(Rect r, float s, string doubleWord)
+        // Fits the one line to the slot (same FitFont / outline rule as DrawPopupWord) and returns its width.
+        float FitDoubleWord(Rect slot, float s, string word)
         {
-            if (string.IsNullOrEmpty(doubleWord)) doubleWord = RewardDoubleWord;
-            FitWatchAdWords(r, s, doubleWord, out var top, out var big);
-            StampOutlined(top, WatchAdWord, _watchSmall, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(_watchSmall.fontSize * 0.16f), 2, 8));
-            StampOutlined(big, doubleWord, _choiceWord, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(_choiceWord.fontSize * 0.16f), 2, 8));
+            _choiceWord.wordWrap = false;
+            _choiceWord.alignment = TextAnchor.MiddleCenter;
+            _choiceWord.fontStyle = FontStyle.Bold;
+            int cap = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            _choiceWord.fontSize = FitFont(_choiceWord, word, slot.width, slot.height, 14, cap);
+            float w = _choiceWord.CalcSize(new GUIContent(word)).x;
+            return Mathf.Min(slot.width, Mathf.Max(8f, w));
+        }
+
+        static void DrawFilmPlayMark(Rect r)
+        {
+            if (r.width < 4f || r.height < 4f) return;
+            var tex = FilmPlayMark.Texture();
+            if (tex == null) return;
+            GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
         }
 
         IEnumerator WatchRewardRepeat()
