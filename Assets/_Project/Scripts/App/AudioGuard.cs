@@ -62,6 +62,8 @@ namespace FlockFive
         static readonly List<AudioSource> _started = new List<AudioSource>(8);
         static readonly List<int> _paused = new List<int>(8);
         static readonly List<int> _retried = new List<int>(8);
+        static readonly List<int> _schedIds = new List<int>(8);
+        static readonly List<double> _schedAt = new List<double>(8);
         static readonly List<string> _logged = new List<string>(8);
         static bool _retryDeferred;
         static bool _reassertPending;
@@ -117,7 +119,6 @@ namespace FlockFive
             }
             try
             {
-                PlayCalls++;
                 source.PlayScheduled(time);
                 Release(source);
                 if (source.loop) NoteStarted(source);
@@ -128,6 +129,54 @@ namespace FlockFive
                 NotePlayback(source, ex);
                 return false;
             }
+        }
+
+        // One dspTime for every stem in the batch, so the layers stay sample-locked.
+        // Each voice still goes through PlayScheduled: catch, log once, and hold
+        // the bed again if the output is still dead.
+        public static int ScheduleStemsTogether(IEnumerable<AudioSource> sources)
+        {
+            if (sources == null) return 0;
+            var batch = new List<AudioSource>();
+            foreach (var src in sources)
+            {
+                if (Alive(src)) batch.Add(src);
+            }
+            if (batch.Count == 0) return 0;
+            double start = AudioSettings.dspTime + 0.05;
+            int n = 0;
+            for (int i = 0; i < batch.Count; i++)
+            {
+                if (!PlayScheduled(batch[i], start)) continue;
+                RememberSchedule(batch[i], start);
+                n++;
+            }
+            return n;
+        }
+
+        public static bool ScheduledAt(AudioSource source, out double start)
+        {
+            start = 0;
+            int id = Identity(source);
+            if (id == 0) return false;
+            for (int i = _schedIds.Count - 1; i >= 0; i--)
+            {
+                if (_schedIds[i] != id) continue;
+                start = _schedAt[i];
+                return true;
+            }
+            return false;
+        }
+
+        static void RememberSchedule(AudioSource source, double start)
+        {
+            int id = Identity(source);
+            if (id == 0) return;
+            _schedIds.Add(id);
+            _schedAt.Add(start);
+            for (int i = 0; i < _retried.Count; i++)
+                if (_retried[i] == id) return;
+            _retried.Add(id);
         }
 
         // Stop, cut, swap, or a place change. The source is not started again.
@@ -431,6 +480,7 @@ namespace FlockFive
             _retryDeferred = false;
             var batch = new List<AudioSource>(_skipped);
             _skipped.Clear();
+            var ready = new List<AudioSource>();
             for (int i = 0; i < batch.Count; i++)
             {
                 var s = batch[i];
@@ -438,18 +488,9 @@ namespace FlockFive
                 if (s.isPlaying) continue;
                 if (HeldPaused(s)) continue;
                 if (MixDesk.Live != null && (MixDesk.Live.BlocksSkippedRetry(s) || MixDesk.Live.SplashStemBlocked(s))) continue;
-                try
-                {
-                    s.Play();
-                    int id = Identity(s);
-                    if (id != 0) _retried.Add(id);
-                    RetryPlayCount++;
-                }
-                catch (Exception ex)
-                {
-                    NotePlayback(s, ex);
-                }
+                ready.Add(s);
             }
+            RetryPlayCount += ScheduleStemsTogether(ready);
         }
 
         static void RememberSkip(AudioSource source)
@@ -539,6 +580,8 @@ namespace FlockFive
             _started.Clear();
             _paused.Clear();
             _retried.Clear();
+            _schedIds.Clear();
+            _schedAt.Clear();
             _logged.Clear();
             RejectScheduled = null;
             PlaybackWarnings = 0;
