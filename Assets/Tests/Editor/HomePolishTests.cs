@@ -448,10 +448,10 @@ namespace FlockFive.Editor
                 bed.timeSamples = 32000;
                 AudioGuard.SetMuted(true, false);
                 AudioGuard.OnAudioConfigurationChanged(true);
-                bool muteLeftIt = AudioGuard.StopCalls == stops && AudioGuard.PlayCalls == plays
+                bool kept = AudioGuard.StopCalls == stops && AudioGuard.PlayCalls == plays
                     && bed.timeSamples == 32000 && AudioGuard.NeedsRestore(bed);
                 AudioGuard.SetMuted(false, false);
-                bool brought = heldDead && muteLeftIt && desk.LastReassert == 1;
+                bool brought = heldDead && kept && desk.LastReassert == 1;
                 AudioGuard.Pause(bed);
                 bool pausedStays = desk.ReassertBed() == 0 && AudioGuard.IsPaused(bed);
                 desk.PlantStemForTests(0f);
