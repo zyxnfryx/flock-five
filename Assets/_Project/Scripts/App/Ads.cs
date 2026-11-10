@@ -115,6 +115,8 @@ namespace FlockFive
                 _scale = Time.timeScale;
                 _audio = AudioListener.pause;
                 Time.timeScale = 0f;
+                // Snapshot playing sources before the listener pause clears isPlaying.
+                AudioGuard.Pause();
                 AudioListener.pause = true;
             }
             _depth++;
@@ -130,6 +132,7 @@ namespace FlockFive
             Time.timeScale = _scale;
             // b89: an ad still up keeps the listener paused whatever Push saved.
             AudioListener.pause = _audio || AdAudioHold.Held;
+            AudioGuard.Resume();
         }
 
         // Build 61: the unpaused time scale (1, or the solved-board auto-resolve speed). Under a
@@ -144,7 +147,8 @@ namespace FlockFive
 
         public static void Reset()
         {
-            if (_depth > 0)
+            bool was = _depth > 0;
+            if (was)
             {
                 AdLog.Add("GamePause RESET from depth=" + _depth);
                 Time.timeScale = _scale;
@@ -152,6 +156,7 @@ namespace FlockFive
             }
             _depth = 0;
             TutorHold = false;
+            if (was) AudioGuard.Resume();
         }
 
         // Pop restores the pause bit Push saved. A dialog that paused the

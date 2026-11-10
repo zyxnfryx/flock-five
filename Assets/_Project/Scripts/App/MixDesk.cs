@@ -255,6 +255,51 @@ namespace FlockFive
             _stemBase = new float[] { volume };
         }
 
+        public AudioSource StemForTests(int i)
+        {
+            if (_stems == null || i < 0 || i >= _stems.Length) return null;
+            return _stems[i];
+        }
+
+        // After unmute: start a bed that should be heard and isn't. A voice that
+        // is already playing, or paused on purpose, stays where it is.
+        public int ReassertBed()
+        {
+            if (_stems == null) return 0;
+            int n = 0;
+            for (int i = 0; i < _stems.Length; i++)
+            {
+                var a = _stems[i];
+                if (a == null || a.clip == null || a.isPlaying) continue;
+                if (AudioGuard.IsPaused(a)) continue;
+                float want = _stemBase != null && i < _stemBase.Length ? _stemBase[i] : 0f;
+                if (want <= 0.0001f) continue;
+                if (AudioGuard.Play(a)) n++;
+            }
+            return n;
+        }
+
+        public void PauseForGame()
+        {
+            if (_stems == null) return;
+            for (int i = 0; i < _stems.Length; i++)
+            {
+                var a = _stems[i];
+                if (a == null || !a.isPlaying || a.ignoreListenerPause) continue;
+                AudioGuard.Pause(a);
+            }
+        }
+
+        public void ResumeForGame()
+        {
+            if (_stems == null) return;
+            for (int i = 0; i < _stems.Length; i++)
+            {
+                var a = _stems[i];
+                if (a != null && AudioGuard.IsPaused(a)) AudioGuard.Resume(a);
+            }
+        }
+
         public float StemVolumeForTests()
         {
             if (_stems == null || _stems.Length == 0 || _stems[0] == null) return -1f;
