@@ -54,6 +54,48 @@ namespace FlockFive.Editor
                     && !OstrichEntrance.BirdVisible(0f)
                     && !OstrichEntrance.InPlay(0f), "");
 
+                var none = new OstrichEntrance.StartGate();
+                var noRainbow = OstrichEntrance.TickStart(none, false, 0.5f);
+                Check("no-rainbow-does-not-hang", noRainbow.Beat && noRainbow.EmptyShown && !noRainbow.SawWipe, "");
+
+                var held = OstrichEntrance.TickStart(none, true, 5f);
+                held = OstrichEntrance.TickStart(held, true, 5f);
+                Check("wipe-holds-the-gate", held.SawWipe && !held.Beat && held.Clear == 0f && !held.EmptyShown, "");
+                var spiked = OstrichEntrance.TickStart(held, false, 5f);
+                Check("thinning-does-not-start-the-beat", !spiked.Beat && !spiked.EmptyShown
+                    && spiked.Clear > 0f && spiked.Clear <= OstrichEntrance.StepMax + 1e-4f
+                    && spiked.Clear < OstrichEntrance.ClearHold, "clear " + spiked.Clear);
+
+                var open = spiked;
+                int guard = 0;
+                while (!open.EmptyShown && guard < 80)
+                {
+                    open = OstrichEntrance.TickStart(open, false, OstrichEntrance.StepMax);
+                    guard++;
+                }
+                Check("empty-garden-frame-before-beat", open.EmptyShown && !open.Beat
+                    && open.Clear >= OstrichEntrance.ClearHold, "clear " + open.Clear + " steps " + guard);
+                var started = OstrichEntrance.TickStart(open, false, OstrichEntrance.StepMax);
+                Check("beat-starts-after-empty-frame", started.Beat && started.EmptyShown, "");
+                var recovered = OstrichEntrance.TickStart(spiked, true, 0.016f);
+                Check("wipe-returning-resets-the-hold", recovered.SawWipe && !recovered.Beat && recovered.Clear == 0f
+                    && !recovered.EmptyShown, "");
+
+                float clock = 0f;
+                bool sawCall = false, sawStride = false, sawPlant = false, skipped = false;
+                for (int i = 0; i < 400 && clock < OstrichEntrance.Total; i++)
+                {
+                    float prev = clock;
+                    clock = OstrichEntrance.Advance(clock, 5f);
+                    if (clock - prev > OstrichEntrance.StepMax + 1e-4f) skipped = true;
+                    if (clock >= OstrichEntrance.HonkAt && clock < OstrichEntrance.StrideStart) sawCall = true;
+                    if (OstrichEntrance.BirdVisible(clock) && OstrichEntrance.PlantU(clock) == 0f) sawStride = true;
+                    if (OstrichEntrance.PlantU(clock) > 0f && clock < OstrichEntrance.Total) sawPlant = true;
+                }
+                Check("spike-cannot-skip-honk-stride-plant", !skipped && sawCall && sawStride && sawPlant
+                    && !OstrichEntrance.BirdVisible(OstrichEntrance.Advance(0f, 5f)),
+                    "t " + clock);
+
                 void CheckSpan(string label, float half)
                 {
                     float plant = OstrichMark.RestBodyX(OstrichMark.PortX, 1f, half);
@@ -255,9 +297,13 @@ namespace FlockFive.Editor
                 string fight = File.ReadAllText(Path.Combine(Path.GetDirectoryName(Application.dataPath),
                     "Assets/_Project/Scripts/App/FlockFiveApp.OstrichFight.cs"));
                 int hold = fight.IndexOf("if (!mark.Entering) mark.BeginEntrance();", System.StringComparison.Ordinal);
+                int firstYield = fight.IndexOf("yield return null", System.StringComparison.Ordinal);
+                int tick = fight.IndexOf("OstrichEntrance.TickStart(", System.StringComparison.Ordinal);
                 int wipe = fight.IndexOf("OstrichEntrance.WipeCovers(PressRainbow.Live(), PressRainbow.StageHeld())", System.StringComparison.Ordinal);
+                int advance = fight.IndexOf("OstrichEntrance.Advance(", System.StringComparison.Ordinal);
                 int present = fight.IndexOf("mark.PresentEntrance(t)", System.StringComparison.Ordinal);
-                Check("entrance-waits-until-star-wipe-clears", hold > 0 && wipe > hold && present > wipe
+                Check("entrance-waits-until-star-wipe-clears", hold > 0 && firstYield > hold && tick > firstYield
+                    && wipe > tick && advance > wipe && present > advance
                     && fight.IndexOf("SfxLibrary.Honk()", System.StringComparison.Ordinal) > wipe, "");
                 int whack = fight.IndexOf("OstrichHitTimeline.IsWhackBird(i, n)", System.StringComparison.Ordinal);
                 int show = fight.IndexOf("mark.ShowHit(hitNo)", System.StringComparison.Ordinal);

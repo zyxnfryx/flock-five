@@ -46,12 +46,19 @@ namespace FlockFive
             var mark = _garden.Ostrich;
             if (mark == null) yield break;
             if (!mark.Entering) mark.BeginEntrance();
-            // He stays offstage under the star wipe. The beat starts on the first
-            // clear garden frame, so the wipe cannot end on an already planted bird.
-            while (OstrichEntrance.WipeCovers(PressRainbow.Live(), PressRainbow.StageHeld()))
+            // Load arms this coroutine and runs it to the first yield before
+            // LevelCurtain.Fire. Checking the rainbow here would see no wipe and
+            // start the stride under the stars. This frame stays empty.
+            yield return null;
+            if (gen != _motionGen || _garden.Ostrich != mark) yield break;
+            var gate = new OstrichEntrance.StartGate();
+            while (!gate.Beat)
             {
                 if (gen != _motionGen || _garden.Ostrich != mark) yield break;
-                yield return null;
+                gate = OstrichEntrance.TickStart(gate,
+                    OstrichEntrance.WipeCovers(PressRainbow.Live(), PressRainbow.StageHeld()),
+                    Time.unscaledDeltaTime);
+                if (!gate.Beat) yield return null;
             }
             if (gen != _motionGen || _garden.Ostrich != mark) yield break;
             bool honked = false;
@@ -59,7 +66,7 @@ namespace FlockFive
             while (t < OstrichEntrance.Total)
             {
                 if (gen != _motionGen || _garden.Ostrich != mark) yield break;
-                t += Time.deltaTime;
+                t = OstrichEntrance.Advance(t, Time.unscaledDeltaTime);
                 if (!honked && t >= OstrichEntrance.HonkAt)
                 {
                     honked = true;
