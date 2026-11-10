@@ -8451,7 +8451,25 @@ namespace FlockFive
             size = Mathf.Min(size, BackMedalMaxPt * ptPx);
             size = Mathf.Max(size, 44f * ptPx, 44f);
             float x = Mathf.Max(16f, safe.xMin + 10f);
+            // The Back glove hangs under the fingertip. On a small medal in the
+            // corner that quad crosses the left edge, and the hop then walks
+            // downward trying to cure it. Seat the medal far enough right that
+            // the upright hand stays on the glass.
+            float clear = BackGloveMedalLeft(s, size);
+            if (x < clear) x = clear;
             return new Rect(x, top, size, size);
+        }
+
+        // Left edge that keeps the upright Back glove inside the screen when the
+        // phone pivot sits one nudge left of the medal center.
+        static float BackGloveMedalLeft(float s, float size)
+        {
+            float dh = Mathf.Max(8f, GloveDh(s));
+            float dw = GloveAuditDw(dh);
+            float leftOfTip = Mathf.Max(0f, GloveAuditTip().x) * dw;
+            float nudge = Mathf.Abs(PokerBackPhoneTipNudgeX);
+            float need = GloveScreenMargin + leftOfTip + nudge + 1.5f - size * 0.5f;
+            return need > 0f ? need : 0f;
         }
 
         // Hit pad stays full size. The face scales down while the finger is down.
@@ -13470,12 +13488,12 @@ namespace FlockFive
             float handS = DeviceFit.Ui();
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBackLine);
-            // Standard shared arc: the hand rides over the top and the fingertip comes straight
-            // down onto the back button. Only a tap inside the back rect is a valid tap.
-            // b124: the hand rides in from the middle right, fully on screen, pointing left at Back.
-            _gloveEntryOverride = GloveMiddleRightEntry(CoachSafeGui(8f * handS));
+            // Short rise from just under the medal. The hop ends on the medal and stays
+            // there, so the settled fingertip is inside the Back hit. Only that rect counts.
+            var gloveSafe = CoachSafeGui(8f * handS);
+            _gloveEntryOverride = PokerBackGloveStart(_pokerBackAim, handS, gloveSafe, PhoneArea.W, PhoneArea.H);
             _gloveEntryOverrideOn = true;
-            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, -90f, _pokerBackTap);
+            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, 0f, _pokerBackTap);
             _gloveEntryOverrideOn = false;
             return true;
         }
@@ -13515,13 +13533,15 @@ namespace FlockFive
                 _pokerBackAimOk = false;
                 return;
             }
-            _pokerBackAim = back.center;
+            float winW = Screen.width > 2 ? Screen.width : PhoneArea.W;
+            float winH = Screen.height > 2 ? Screen.height : PhoneArea.H;
+            _pokerBackAim = PokerBackSettleAim(back.center, back, winW, winH);
             _pokerBackTap = back;
             _pokerBackAimOk = back.width > 2f;
-            // Standard caption under the dealt row (PokerStepAnchor: BelowCards), clear of the
-            // PAY TABLE tab, the logo and BET/DEAL; the glove still points up at Back.
-            DrawPokerStandardLine(PokerBackLine, s);
+            // Glove first, tip plate last, so the words stay the highest layer.
+            // The plate itself sits up and to the right, above the hand's lane.
             DrawTutorOverlay(s);
+            DrawPokerStandardLine(PokerBackLine, s);
         }
 
         // Back medal, coin icon, wordmark, halo, and PAY TABLE tab.
