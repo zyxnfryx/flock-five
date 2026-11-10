@@ -23,9 +23,70 @@ namespace FlockFive
         // The level star wipe still owns the picture. Same pair the nap tip waits on
         // (DevLevelSkip.NapWipeCovers, PR #248, not on this branch): StageHeld's
         // realtime failsafe can open on a narrow phone while the rainbow is still
-        // painting, so a live rainbow counts too. The stride does not start until
-        // both are clear.
+        // painting, so a live rainbow counts too.
         public static bool WipeCovers(bool rainbowLive, bool stageHeld) => rainbowLive || stageHeld;
+
+        // Open garden required after WipeCovers goes false. The boolean can drop
+        // while the reveal is still the picture; one frame of "clear" is not enough.
+        public const float ClearHold = 0.45f;
+        // One hitch must not jump honk, the stride, and the plant in a single step.
+        public const float StepMax = 1f / 30f;
+
+        public struct StartGate
+        {
+            public bool SawWipe;
+            public float Clear;
+            public bool EmptyShown;
+            public bool Beat;
+        }
+
+        // covers: WipeCovers this frame. A wipe resets the open-garden count.
+        // No wipe ever seen: the beat may start (the caller already showed one
+        // offstage frame). After a wipe: ClearHold of open garden, then one
+        // more frame with the bird still offstage, then Beat.
+        public static StartGate TickStart(StartGate g, bool covers, float dt)
+        {
+            if (covers)
+            {
+                g.SawWipe = true;
+                g.Clear = 0f;
+                g.EmptyShown = false;
+                g.Beat = false;
+                return g;
+            }
+            if (!g.SawWipe)
+            {
+                g.EmptyShown = true;
+                g.Beat = true;
+                return g;
+            }
+            if (dt < 0f) dt = 0f;
+            if (dt > StepMax) dt = StepMax;
+            g.Clear += dt;
+            if (g.Clear < ClearHold)
+            {
+                g.Beat = false;
+                return g;
+            }
+            if (!g.EmptyShown)
+            {
+                g.EmptyShown = true;
+                g.Beat = false;
+                return g;
+            }
+            g.Beat = true;
+            return g;
+        }
+
+        public static float Advance(float t, float dt)
+        {
+            if (t < 0f) t = 0f;
+            if (dt < 0f) dt = 0f;
+            if (dt > StepMax) dt = StepMax;
+            t += dt;
+            if (t > Total) t = Total;
+            return t;
+        }
 
         public static float LedgeWeight(float t)
         {
