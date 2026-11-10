@@ -60,6 +60,8 @@ namespace FlockFive.Editor
             CheckFlipOccluder(Check);
             Check("card-render-defers-inside-camera",
                 CardStage.MustDeferRender(true) && !CardStage.MustDeferRender(false), "nested");
+            CheckCardRender(Check);
+            CheckFmod(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -112,13 +114,18 @@ namespace FlockFive.Editor
             var safe = new Rect(0f, bottom, screenW, screenH - inset - bottom);
             float s = DeviceFit.Ui(screenW, screenH);
             var chrome = FlockFiveApp.LayoutPokerChrome(screenW, screenH, safe, s);
-            var gear = FlockFiveApp.SettingsGearRect(screenW, screenH, safe);
-            bool back = chrome.Back.yMin >= inset - 0.5f;
-            bool cog = gear.yMin >= inset - 0.5f;
-            bool header = chrome.Back.center.y >= inset - 0.5f;
+            var gear = FlockFiveApp.SettingsGearDrawnRect(screenW, screenH, safe);
+            var backDrawn = FlockFiveApp.BackMedalDrawnRect(chrome.Back);
+            var back = chrome.Back;
+            float shift = FlockFiveApp.AlbumHeaderShift(back, screenW, screenH, safe, s);
+            if (shift > 0f) back.y += shift;
+            var header = FlockFiveApp.AlbumTitleOuter(back, screenW, screenH, safe, s);
+            bool backOk = backDrawn.yMin >= inset - 0.5f;
+            bool cogOk = gear.yMin >= inset - 0.5f;
+            bool headerOk = header.yMin >= inset - 0.5f;
             Check(tag + "-top-controls-clear-safe-inset",
-                back && cog && header,
-                "inset " + inset + " back " + chrome.Back.yMin + " gear " + gear.yMin);
+                backOk && cogOk && headerOk,
+                "inset " + inset + " back " + backDrawn.yMin + " gear " + gear.yMin + " header " + header.yMin);
         }
 
         static void CheckBackVeil(string tag, int screenW, int screenH, Vector2 reported, System.Action<string, bool, string> Check)
@@ -151,6 +158,10 @@ namespace FlockFive.Editor
             Check(tag + "-maxxed-clears-flip-hint",
                 !hint.Overlaps(badge) && badge.yMin >= hint.yMax - 0.5f,
                 "hint " + hint + " badge " + badge);
+            bool putBack = FlockFiveApp.MaxxedPutBackShows(true, 0.8f, true, true)
+                && !FlockFiveApp.FlipHintsVisible(0.8f, true, true, true)
+                && !FlockFiveApp.MaxxedPutBackShows(true, 0.8f, false, true);
+            Check(tag + "-maxxed-keeps-put-back-hint", putBack, "above the plate");
         }
 
         static void CheckUpgradeTiming(System.Action<string, bool, string> Check)
@@ -179,6 +190,41 @@ namespace FlockFive.Editor
             Check("flip-occluder-covers-the-gap",
                 edge && flat && Mathf.Abs(occ.width - card.width) < 0.5f && Mathf.Abs(occ.height - card.height) < 0.5f,
                 occ.ToString());
+        }
+
+        static void CheckCardRender(System.Action<string, bool, string> Check)
+        {
+            CardStage.ResetRenderGuardForTest();
+            bool nested = !CardStage.AllowManualRender(true, false, false);
+            bool inside = !CardStage.AllowManualRender(false, true, false);
+            bool twice = !CardStage.AllowManualRender(false, false, true);
+            CardStage.ResetRenderGuardForTest();
+            bool clear = CardStage.AllowManualRender(false, false, false);
+            string path = System.IO.Path.Combine(UnityEngine.Application.dataPath, "_Project/Scripts/App/CardStage.cs");
+            string src = System.IO.File.Exists(path) ? System.IO.File.ReadAllText(path) : "";
+            int draw = src.IndexOf("public static bool DrawFlip");
+            int set = src.IndexOf("static void Set(");
+            string body = draw >= 0 && set > draw ? src.Substring(draw, set - draw) : "";
+            bool onGui = body.IndexOf(".Render(") < 0 && body.IndexOf("_defer = true") >= 0;
+            Check("card-render-once-and-outside-ongui",
+                nested && inside && twice && clear && onGui,
+                "nested " + nested + " ongui " + onGui);
+        }
+
+        static void CheckFmod(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            bool known = AudioGuard.IsFmodFailure("FMOD failed to initialize the output device: error code 36");
+            bool plain = !AudioGuard.IsFmodFailure("NullReferenceException: Object reference not set");
+            bool once = AudioGuard.NoteFmodFailure("FMOD error code 36");
+            int n = AudioGuard.FmodWarnings;
+            bool again = AudioGuard.NoteFmodFailure("FMOD error code 36");
+            bool stayed = AudioGuard.FmodWarnings == 1 && AudioGuard.OutputFailed;
+            bool ignored = !AudioGuard.NoteFmodFailure("InvalidOperationException: already created");
+            Check("fmod-output-init-warns-once",
+                known && plain && once && again && stayed && ignored && n == 1,
+                "warnings " + AudioGuard.FmodWarnings);
+            AudioGuard.ResetForTests();
         }
     }
 }

@@ -40,6 +40,25 @@ namespace FlockFive
 
         public static int ActivateCalls { get; private set; }
         public static int LiveTokens => _n;
+        public static int FmodWarnings { get; private set; }
+        public static bool OutputFailed => _fmodNoted;
+
+        // Playback after a failed output init. The first attempt may still log;
+        // later calls stay silent so the Development Console is not reopened.
+        public static bool Play(AudioSource source)
+        {
+            if (OutputFailed || source == null) return false;
+            try
+            {
+                source.Play();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                NoteFmodFailure(ex.Message);
+                return false;
+            }
+        }
 
         struct Tok
         {
@@ -53,6 +72,11 @@ namespace FlockFive
         static readonly Tok[] _tok = new Tok[MaxTok];
         static int _n;
         static int _seq;
+        static bool _fmodNoted;
+        static bool _fmodHooked;
+        static int _fmodFrame = -1;
+        static int _otherErrorFrame = -1;
+        static bool _consoleOwnedByError;
 
         public static float TokenScale => _n > 0 ? DuckGain : 1f;
 
@@ -91,6 +115,11 @@ namespace FlockFive
             MasterVolume = 1f;
             Clock = null;
             ActivateCalls = 0;
+            FmodWarnings = 0;
+            _fmodNoted = false;
+            _fmodFrame = -1;
+            _otherErrorFrame = -1;
+            _consoleOwnedByError = false;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -100,6 +129,76 @@ namespace FlockFive
             LoadVolume();
             EnsureHost();
             InstallNative();
+            if (!_fmodHooked)
+            {
+                Application.logMessageReceived += OnAudioLog;
+                _fmodHooked = true;
+            }
+        }
+
+        // Unity's audio engine logs FMOD_ERR_OUTPUT_INIT (code 36) as an error when
+        // a Development player has no device. That opens the Development Console.
+        // The failure is non-fatal: warn once, skip later playback, and leave the
+        // console for real exceptions.
+        public static bool IsFmodFailure(string message)
+        {
+            if (string.IsNullOrEmpty(message)) return false;
+            if (message.IndexOf("FMOD", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (message.IndexOf("error code 36", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
+        }
+
+        public static bool NoteFmodFailure(string message)
+        {
+            if (!IsFmodFailure(message)) return false;
+            _fmodFrame = Time.frameCount;
+            if (!_fmodNoted)
+            {
+                _fmodNoted = true;
+                FmodWarnings++;
+                Debug.LogWarning("FMOD audio failed (error code " + FmodCode(message) + "). Sound stays off for this run.");
+            }
+            SettleDevConsole();
+            return true;
+        }
+
+        public static void SettleDevConsole()
+        {
+#if DEVELOPMENT_BUILD
+            // Keep the Development Console shut after a non-fatal FMOD init failure.
+            // A later real exception takes the console back and we stop hiding it.
+            if (!_fmodNoted || _consoleOwnedByError) return;
+            if (_otherErrorFrame == Time.frameCount) return;
+            Debug.developerConsoleVisible = false;
+#endif
+        }
+
+        static string FmodCode(string message)
+        {
+            const string key = "error code ";
+            int i = message.IndexOf(key, StringComparison.OrdinalIgnoreCase);
+            if (i >= 0)
+            {
+                int s = i + key.Length;
+                int e = s;
+                while (e < message.Length && char.IsDigit(message[e])) e++;
+                if (e > s) return message.Substring(s, e - s);
+            }
+            int paren = message.IndexOf("(36)", StringComparison.Ordinal);
+            if (paren >= 0) return "36";
+            return "FMOD";
+        }
+
+        static void OnAudioLog(string condition, string stackTrace, LogType type)
+        {
+            if (type != LogType.Error && type != LogType.Exception && type != LogType.Assert) return;
+            if (IsFmodFailure(condition) || IsFmodFailure(stackTrace))
+                NoteFmodFailure(string.IsNullOrEmpty(condition) ? stackTrace : condition);
+            else
+            {
+                _otherErrorFrame = Time.frameCount;
+                _consoleOwnedByError = true;
+            }
         }
 
         // One shared mute. The Settings sheet is the only control that writes it.
@@ -158,6 +257,11 @@ namespace FlockFive
             MasterVolume = 1f;
             Clock = null;
             ActivateCalls = 0;
+            FmodWarnings = 0;
+            _fmodNoted = false;
+            _fmodFrame = -1;
+            _otherErrorFrame = -1;
+            _consoleOwnedByError = false;
         }
 
         static double Now()

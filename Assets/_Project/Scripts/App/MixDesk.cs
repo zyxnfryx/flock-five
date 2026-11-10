@@ -301,7 +301,7 @@ namespace FlockFive
             s.volume = 0.4f;
             s.ignoreListenerPause = true;
             if (s.isPlaying) s.Stop();
-            s.Play();
+            AudioGuard.Play(s);
             _stems[i] = s;
             return s;
         }
@@ -485,7 +485,7 @@ namespace FlockFive
                 _bgHandoffDsp = -1;
                 RestLoopPitch(loop);
                 loop.timeSamples = 0;
-                loop.Play();
+                AudioGuard.Play(loop);
                 return;
             }
             double t0 = AudioSettings.dspTime + 0.03;
@@ -541,7 +541,7 @@ namespace FlockFive
             _bgHandoffDsp = -1;
             RestLoopPitch(loop);
             loop.timeSamples = 0;
-            loop.Play();
+            AudioGuard.Play(loop);
         }
 
         // Result: the bed fades out over 0.3 s and the matching stinger plays once. After the
@@ -562,7 +562,7 @@ namespace FlockFive
             s.clip = clip;
             s.timeSamples = 0;
             s.volume = BadgerStingCap;
-            s.Play();
+            AudioGuard.Play(s);
             // Lead seat for the stinger: Mid decorations wait; DuckChirp (1) so nothing dips.
             MarkLead(clip.length, DuckChirp);
             _bgHandBackAt = AdPause.Unscaled + clip.length + 0.25f;
@@ -800,7 +800,7 @@ namespace FlockFive
             }
             if (start)
             {
-                if (!a.isPlaying) a.Play();
+                if (!a.isPlaying) AudioGuard.Play(a);
             }
             else if (a.isPlaying)
                 a.Stop();
@@ -855,7 +855,7 @@ namespace FlockFive
             }
             if (start)
             {
-                if (!a.isPlaying) a.Play();
+                if (!a.isPlaying) AudioGuard.Play(a);
             }
             else if (a.isPlaying)
                 a.Stop();
@@ -984,7 +984,7 @@ namespace FlockFive
             if (_stems != null && _stems.Length > 4 && _stems[4] != null)
             {
                 _stems[4].time = 0f;
-                _stems[4].Play();
+                AudioGuard.Play(_stems[4]);
                 _splashLoopOn = true;
             }
         }
