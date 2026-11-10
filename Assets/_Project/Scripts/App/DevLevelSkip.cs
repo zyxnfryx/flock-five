@@ -19,6 +19,10 @@ namespace FlockFive
         // Honored only with skipOnboarding=1, and it acts only once forceClear
         // has already waited out the wipe and any ostrich entrance.
         public const string ForceRewardsKey = "forceRewards";
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // ?forceMaxxed=1 draws the open album card as MAXXED so Inspector can
+        // see "Tap outside to put back". It does not write the album.
+        public const string ForceMaxxedKey = "forceMaxxed";
         // A garden that never shows the entrance still has to finish the star
         // wipe. An ostrich who stays idle without ever striding (the entrance
         // did not start) is given up after this, so Inspector is not stuck.
@@ -123,6 +127,15 @@ namespace FlockFive
         public static bool ForceRewardsFromUrl(string url)
         {
             return QueryInt(url, ForceRewardsKey) == 1;
+        }
+
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // True only for ?forceMaxxed=1. Any other value is not a request.
+        // The draw site is compiled only for WebGL development builds. This
+        // does not write the album or grant an upgrade.
+        public static bool ForceMaxxedFromUrl(string url)
+        {
+            return QueryInt(url, ForceMaxxedKey) == 1;
         }
 
         // presented: the star wipe is down and the garden tween is idle.

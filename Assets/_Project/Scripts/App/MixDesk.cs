@@ -104,6 +104,9 @@ namespace FlockFive
         {
             Reclaim(host);
             if (Live == null) return;
+            // A second boot while the place stems are already on their clips
+            // must not rewind them. The first boot still builds.
+            if (Live.PlaceBedsHold()) return;
             Live.Build();
             KillForeignLoops();
         }
@@ -137,6 +140,28 @@ namespace FlockFive
                 else
                     Object.Destroy(d.gameObject);
             }
+        }
+
+        // Bound place stems that are already speaking or already scheduled.
+        // An empty slot does not count. One bound stem that is still stopped
+        // means this boot still has to start the bed.
+        bool PlaceBedsHold()
+        {
+            if (_stems == null) return false;
+            int[] place = { 0, 1, 2, 3, 5 };
+            int bound = 0;
+            int running = 0;
+            for (int p = 0; p < place.Length; p++)
+            {
+                int i = place[p];
+                if (i >= _stems.Length) continue;
+                var a = _stems[i];
+                if (a == null || a.clip == null) continue;
+                bound++;
+                double start;
+                if (a.isPlaying || AudioGuard.ScheduledAt(a, out start)) running++;
+            }
+            return bound > 0 && running == bound;
         }
 
         void Hush()
@@ -1171,6 +1196,13 @@ namespace FlockFive
             // One garden occupant: the soft porch theme. Dawn/mid/last stay
             // loaded as fallbacks but silent so two tunes never sit together.
             SetStem(0, cap * duck * gardenMix);
+            // TODO: stems 1 and 2 are volume 0 for the whole session. Stopping
+            // them until a dawn climb goes live, then scheduling that start
+            // onto stem 0's timeSamples, is not clean. PlayScheduled only takes
+            // a future dspTime, and a later seek to stem 0's sample is a second
+            // start this EditMode gate cannot hear. They stay in the shared
+            // boot schedule so the phase is already locked if a climb appears.
+            // A device pass has to prove a deferred align before that changes.
             SetStem(1, 0f);
             SetStem(2, 0f);
             SetStem(3, ComboGain() * ComboCap * duck * gardenMix);
