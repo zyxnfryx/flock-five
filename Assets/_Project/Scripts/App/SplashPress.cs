@@ -264,6 +264,25 @@ namespace FlockFive
             _claim[_claimN++] = id;
         }
 
+        // A home rail already owns this point. Claim every pointer on it so the
+        // LEVEL square, which can cover the cards icon on a wide portrait, cannot
+        // start the garden from a second sample of the same tap.
+        public static void Reserve(IList<Sample> samples, Hit hit, int frame)
+        {
+            NoteFrame(frame);
+            if (samples == null || hit == null) return;
+            for (int i = 0; i < samples.Count; i++)
+                if (hit.Contains(samples[i].Pos)) Claim(samples[i].TouchId);
+        }
+
+        public static void Reserve(IList<Sample> samples, Rect rect, int frame)
+        {
+            NoteFrame(frame);
+            if (samples == null || rect.width < 2f || rect.height < 2f) return;
+            for (int i = 0; i < samples.Count; i++)
+                if (rect.Contains(samples[i].Pos)) Claim(samples[i].TouchId);
+        }
+
         // One finger per button. A second finger cannot start another sink or a second launch.
         public sealed class Gesture
         {

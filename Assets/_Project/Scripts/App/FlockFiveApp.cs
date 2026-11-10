@@ -10091,6 +10091,21 @@ namespace FlockFive
             return new Rect(lx, y, size, size);
         }
 
+        // Settled rail icon, presence 1. slot 0 is the top of that column
+        // (right: pig, hive, poker; left: daily, VIP). The pack starts one
+        // icon above HomeRailRect's anchor, matching ApplySplashRails.
+        public static Rect SettledRailIcon(float w, float h, Rect safe, bool right, int slot)
+        {
+            float size = SplashRailSize(w);
+            float gap = Mathf.Max(24f, size * 0.30f);
+            float top = h * 0.335f - size - gap;
+            float xMax = safe.width > 1f ? safe.xMax : w;
+            float xMin = safe.width > 1f ? safe.xMin : 0f;
+            float x = right ? Mathf.Min(w, xMax) - 20f - size : Mathf.Max(20f, xMin + 12f);
+            float y = top + slot * (size + gap);
+            return new Rect(x, y, size, size);
+        }
+
         void TryPigPoke()
         {
             Sfx.Oink();
@@ -10482,6 +10497,25 @@ namespace FlockFive
             }
         }
 
+        // The LEVEL square must not take a tap that is already on a home icon.
+        // Icons are claimed first this frame; this catches a second sample of
+        // the same tap (mouse plus touch) that the icon gesture did not keep.
+        void KeepLevelOffHomeIcons()
+        {
+            ReadHomePointers(_homeSamples, out _);
+            int frame = Time.frameCount;
+            if (RailLive(RailHive))
+                SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Hive), frame);
+            if (RailLive(RailPoker))
+                SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Poker), frame);
+            if (RailLive(RailDaily))
+                SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Daily), frame);
+            if (RailLive(RailVip))
+                SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Vip), frame);
+            SplashPress.Reserve(_homeSamples, PiggyRect(DeviceFit.Ui()), frame);
+            SplashPress.Reserve(_homeSamples, SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe), frame);
+        }
+
         bool DrawFlowerPlay(float s, string ease, int number)
         {
             // Layout writes the one LEVEL hit. The sink and the launch both read it.
@@ -10502,6 +10536,10 @@ namespace FlockFive
             gates.AdoptQueue = AdoptHoldsQueue();
             gates.HomeTaken = _homeTapTaken;
             gates.StepGate = StepGateBlocks(rest);
+            // Shipping path. On a wide portrait the LEVEL square reaches the cards
+            // icon. A second pointer on that overlap was starting the garden.
+            // Rail art keeps the tap.
+            KeepLevelOffHomeIcons();
             var view = StepHomePress(SplashPress.Id.Level, !SplashPress.Blocks(gates));
             StartupTrace.Lap("L.LevelGate");
             bool held = view.Pressed || _pressShotHeld;

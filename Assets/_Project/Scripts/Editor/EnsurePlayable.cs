@@ -68,6 +68,7 @@ namespace FlockFive.Editor
             Suite("build83c1", Build83TestsC1.Run);
             Suite("build83c2", Build83TestsC2.Run);
             Suite("build83c3", Build83TestsC3.Run);
+            Suite("home-rail-priority", HomeRailPriorityTests.Run);
             Suite("build83d", Build83TestsD.Run);
             Suite("build83p2", Build83TestsP2.Run);
             Suite("build84-feeder", Build84TestsFeeder.Run);
