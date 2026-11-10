@@ -44,6 +44,15 @@ namespace FlockFive.Editor
                     && !OstrichEntrance.BirdVisible(0f)
                     && OstrichEntrance.BirdVisible(OstrichEntrance.StrideStart),
                     "total " + OstrichEntrance.Total);
+                Check("wipe-covers-until-garden-is-clear",
+                    OstrichEntrance.WipeCovers(true, false)
+                    && OstrichEntrance.WipeCovers(false, true)
+                    && OstrichEntrance.WipeCovers(true, true)
+                    && !OstrichEntrance.WipeCovers(false, false), "");
+                Check("wipe-wait-does-not-shorten-entrance",
+                    Mathf.Abs(OstrichEntrance.Total - (OstrichEntrance.StrideStart + OstrichEntrance.StrideSec + OstrichEntrance.PlantSec)) < 1e-4f
+                    && !OstrichEntrance.BirdVisible(0f)
+                    && !OstrichEntrance.InPlay(0f), "");
 
                 void CheckSpan(string label, float half)
                 {
@@ -73,6 +82,9 @@ namespace FlockFive.Editor
                     var mark = OstrichMark.Attach(root.transform, 3);
                     mark.BeginEntrance();
                     Check("intro-not-in-play", mark.Entering && !mark.InPlay && !mark.OnStage, "");
+                    // The play coroutine holds this pose until WipeCovers is false. No PresentEntrance yet.
+                    Check("held-offstage-through-wipe", mark.Entering && !mark.InPlay && !mark.OnStage
+                        && (mark.Ground == null || mark.Ground.Weight < 0.02f), "");
                     mark.PresentEntrance(0.05f);
                     Check("intro-hidden-at-call", mark.Entering && !mark.OnStage && mark.Ground != null
                         && mark.Ground.Shown && mark.Ground.Weight < 0.25f,
@@ -106,6 +118,8 @@ namespace FlockFive.Editor
                 int stageEnd = stage >= 0 ? app.IndexOf("static bool PestWillLeave(", stage, System.StringComparison.Ordinal) : -1;
                 string stageBody = stage >= 0 && stageEnd > stage ? app.Substring(stage, stageEnd - stage) : "";
                 Check("intro-gate-on-taps", gate > 0 && handle > gate && app.IndexOf("OstrichIntroBlocking()", handle, System.StringComparison.Ordinal) > handle, "");
+                Check("entrance-armed-on-load-and-restart",
+                    app.Split(new[] { "ArmOstrichEntrance();" }, System.StringSplitOptions.None).Length - 1 >= 2, "");
                 Check("intro-gate-skips-stage-clear", stageBody.Length > 0 && !stageBody.Contains("OstrichIntro")
                     && !stageBody.Contains("Watch"), "len " + stageBody.Length);
 
@@ -240,6 +254,11 @@ namespace FlockFive.Editor
 
                 string fight = File.ReadAllText(Path.Combine(Path.GetDirectoryName(Application.dataPath),
                     "Assets/_Project/Scripts/App/FlockFiveApp.OstrichFight.cs"));
+                int hold = fight.IndexOf("if (!mark.Entering) mark.BeginEntrance();", System.StringComparison.Ordinal);
+                int wipe = fight.IndexOf("OstrichEntrance.WipeCovers(PressRainbow.Live(), PressRainbow.StageHeld())", System.StringComparison.Ordinal);
+                int present = fight.IndexOf("mark.PresentEntrance(t)", System.StringComparison.Ordinal);
+                Check("entrance-waits-until-star-wipe-clears", hold > 0 && wipe > hold && present > wipe
+                    && fight.IndexOf("SfxLibrary.Honk()", System.StringComparison.Ordinal) > wipe, "");
                 int whack = fight.IndexOf("OstrichHitTimeline.IsWhackBird(i, n)", System.StringComparison.Ordinal);
                 int show = fight.IndexOf("mark.ShowHit(hitNo)", System.StringComparison.Ordinal);
                 int begin = fight.IndexOf("mark.BeginWhack()", System.StringComparison.Ordinal);

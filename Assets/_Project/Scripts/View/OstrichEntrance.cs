@@ -20,6 +20,13 @@ namespace FlockFive
         public static bool BirdVisible(float t) => t >= StrideStart;
         public static bool InPlay(float t) => t >= Total;
 
+        // The level star wipe still owns the picture. Same pair the nap tip waits on
+        // (DevLevelSkip.NapWipeCovers, PR #248, not on this branch): StageHeld's
+        // realtime failsafe can open on a narrow phone while the rainbow is still
+        // painting, so a live rainbow counts too. The stride does not start until
+        // both are clear.
+        public static bool WipeCovers(bool rainbowLive, bool stageHeld) => rainbowLive || stageHeld;
+
         public static float LedgeWeight(float t)
         {
             if (t <= 0f) return 0f;
