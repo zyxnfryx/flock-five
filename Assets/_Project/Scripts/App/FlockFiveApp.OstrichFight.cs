@@ -46,6 +46,14 @@ namespace FlockFive
             var mark = _garden.Ostrich;
             if (mark == null) yield break;
             if (!mark.Entering) mark.BeginEntrance();
+            // He stays offstage under the star wipe. The beat starts on the first
+            // clear garden frame, so the wipe cannot end on an already planted bird.
+            while (OstrichEntrance.WipeCovers(PressRainbow.Live(), PressRainbow.StageHeld()))
+            {
+                if (gen != _motionGen || _garden.Ostrich != mark) yield break;
+                yield return null;
+            }
+            if (gen != _motionGen || _garden.Ostrich != mark) yield break;
             bool honked = false;
             float t = 0f;
             while (t < OstrichEntrance.Total)
