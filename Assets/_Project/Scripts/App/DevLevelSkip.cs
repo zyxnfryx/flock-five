@@ -11,6 +11,14 @@ namespace FlockFive
         public const string ForceFeederKey = "forceFeeder";
         public const string ForceNapKey = "forceNap";
         public const string OpenPokerKey = "openPoker";
+        public const string ForceClearKey = "forceClear";
+        // A garden that never shows the entrance still has to finish the star
+        // wipe. An ostrich who stays idle without ever striding (the entrance
+        // did not start) is given up after this, so Inspector is not stuck.
+        public const float ForceClearIdleCap = 8f;
+        // He is still in the entrance. Do not cover him. This only fires if
+        // the act never returns to idle.
+        public const float ForceClearMoveCap = 20f;
         // 1-based. Garden 2 is the first board where restart and the hive can
         // both show. Garden 1 may hide the hive until collection progress.
         // Bee Thicket opens on Gold and Teal feeders and still has full Ruby
@@ -40,6 +48,12 @@ namespace FlockFive
             public bool ForceFeeder;
             public bool ForceNap;
             public bool OpenPoker;
+            // True only with skipOnboarding=1. After the star wipe, and after
+            // an ostrich entrance has returned to idle, the boot clears the
+            // board through the live win latch (TryScoreGarden), which is the
+            // same latch a StageClearingCollect reaches. That opens the real
+            // Collect / Watch Ad card. Absent the flag, nothing is cleared.
+            public bool ForceClear;
         }
 
         // 1-based garden from ?fflevel=, or 0 when the page did not ask.
@@ -79,6 +93,28 @@ namespace FlockFive
             return QueryInt(url, OpenPokerKey) == 1;
         }
 
+        // True only for ?forceClear=1. Any other value is not a request.
+        public static bool ForceClearFromUrl(string url)
+        {
+            return QueryInt(url, ForceClearKey) == 1;
+        }
+
+        // presented: the star wipe is down and the garden tween is idle.
+        // ostrich: this board has a live ostrich. moving: he is not idle
+        // (stride, honk, shake, or the plant, which stays on the stride act
+        // until the entrance ends). sawMove: that non-idle act has been seen,
+        // so a first idle frame before he walks on is not "done".
+        // No ostrich: ready as soon as the garden is presented.
+        // Ostrich: ready once the entrance movement has been seen and he is idle.
+        public static bool ForceClearReady(bool presented, bool ostrich, bool moving, bool idle, bool sawMove, float waited)
+        {
+            if (!presented) return false;
+            if (!ostrich) return true;
+            if (moving || !idle) return waited >= ForceClearMoveCap;
+            if (sawMove) return true;
+            return waited >= ForceClearIdleCap;
+        }
+
         // How many coins to add so the purse reaches OnboardingCoins.
         // Already at or above that stake adds nothing.
         public static int CoinsToSeed(int have)
@@ -96,9 +132,10 @@ namespace FlockFive
         // ?keepTips=1 on that same skip also leaves the kit and feeder rule
         // plates owed. keepTips without skipOnboarding leaves KeepTips false,
         // so a plain ?fflevel= load still stamps those plates.
-        // forceFeeder, forceNap, and openPoker are the same: only a
+        // forceFeeder, forceNap, openPoker, and forceClear are the same: only a
         // skipOnboarding=1 load sets them. Absent the flag, the plate still
-        // waits for a real feeder turn, a real nap, or a real walk to poker.
+        // waits for a real feeder turn, a real nap, or a real walk to poker,
+        // and a clear still waits for a real solve.
         public static Choice Plan(string url, int levelCount)
         {
             int display = DisplayFromUrl(url);
@@ -116,6 +153,7 @@ namespace FlockFive
                 ForceFeeder = skip && ForceFeederFromUrl(url),
                 ForceNap = skip && ForceNapFromUrl(url),
                 OpenPoker = skip && OpenPokerFromUrl(url),
+                ForceClear = skip && ForceClearFromUrl(url),
             };
         }
 
