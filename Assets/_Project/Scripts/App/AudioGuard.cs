@@ -55,6 +55,8 @@ namespace FlockFive
         public static AudioSource RejectScheduled;
 
         static readonly List<AudioSource> _skipped = new List<AudioSource>(8);
+        static readonly List<AudioSource> _restore = new List<AudioSource>(8);
+        static readonly List<AudioSource> _started = new List<AudioSource>(8);
         static readonly List<int> _paused = new List<int>(8);
         static readonly List<int> _retried = new List<int>(8);
         static readonly List<string> _logged = new List<string>(8);
@@ -73,12 +75,14 @@ namespace FlockFive
             if (OutputFailed)
             {
                 RememberSkip(source);
+                if (source.loop) HoldRestore(source);
                 return false;
             }
             try
             {
                 source.Play();
                 Release(source);
+                if (source.loop) NoteStarted(source);
                 return true;
             }
             catch (Exception ex)
@@ -104,12 +108,14 @@ namespace FlockFive
             if (OutputFailed)
             {
                 RememberSkip(source);
+                if (source.loop) HoldRestore(source);
                 return false;
             }
             try
             {
                 source.PlayScheduled(time);
                 Release(source);
+                if (source.loop) NoteStarted(source);
                 return true;
             }
             catch (Exception ex)
@@ -119,17 +125,44 @@ namespace FlockFive
             }
         }
 
-        // Stop, cut, swap, or mute. The source is no longer something recovery should start.
+        // Stop, cut, swap, or a place change. The source is not started again.
         public static void Release(AudioSource source)
         {
             if (ReferenceEquals(source, null)) return;
             int id = Identity(source);
-            for (int i = _skipped.Count - 1; i >= 0; i--)
-            {
-                var s = _skipped[i];
-                if (ReferenceEquals(s, null) || s == null || s == source || (id != 0 && Identity(s) == id))
-                    _skipped.RemoveAt(i);
-            }
+            DropFrom(_skipped, source, id);
+            DropFrom(_restore, source, id);
+            DropFrom(_started, source, id);
+        }
+
+        public static void HoldRestore(AudioSource source)
+        {
+            if (!Alive(source) || !source.loop) return;
+            if (!Listed(_restore, source)) _restore.Add(source);
+        }
+
+        public static void DropRestore(AudioSource source)
+        {
+            if (ReferenceEquals(source, null)) return;
+            int id = Identity(source);
+            DropFrom(_restore, source, id);
+            DropFrom(_started, source, id);
+        }
+
+        public static bool NeedsRestore(AudioSource source) => Listed(_restore, source);
+
+        public static bool WasStarted(AudioSource source) => Listed(_started, source);
+
+        public static void NoteStarted(AudioSource source)
+        {
+            if (!Alive(source) || !source.loop) return;
+            if (!Listed(_started, source)) _started.Add(source);
+        }
+
+        public static void ForgetStarted(AudioSource source)
+        {
+            if (ReferenceEquals(source, null)) return;
+            DropFrom(_started, source, Identity(source));
         }
 
         // Game pause. One path: mark the sources that are actually speaking, then
@@ -391,10 +424,10 @@ namespace FlockFive
             for (int i = 0; i < batch.Count; i++)
             {
                 var s = batch[i];
-                if (!Alive(s)) continue;
+                if (!Alive(s) || !s.loop) continue;
                 if (s.isPlaying) continue;
                 if (HeldPaused(s)) continue;
-                if (MixDesk.Live != null && MixDesk.Live.BlocksSkippedRetry(s)) continue;
+                if (MixDesk.Live != null && (MixDesk.Live.BlocksSkippedRetry(s) || MixDesk.Live.SplashStemBlocked(s))) continue;
                 try
                 {
                     s.Play();
@@ -412,9 +445,25 @@ namespace FlockFive
         static void RememberSkip(AudioSource source)
         {
             if (!Alive(source)) return;
-            for (int i = 0; i < _skipped.Count; i++)
-                if (_skipped[i] == source) return;
-            _skipped.Add(source);
+            if (!Listed(_skipped, source)) _skipped.Add(source);
+        }
+
+        static bool Listed(List<AudioSource> list, AudioSource source)
+        {
+            if (!Alive(source)) return false;
+            for (int i = 0; i < list.Count; i++)
+                if (list[i] == source) return true;
+            return false;
+        }
+
+        static void DropFrom(List<AudioSource> list, AudioSource source, int id)
+        {
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var s = list[i];
+                if (ReferenceEquals(s, null) || s == null || s == source || (id != 0 && Identity(s) == id))
+                    list.RemoveAt(i);
+            }
         }
 
         static bool HeldPaused(AudioSource source)
@@ -476,6 +525,8 @@ namespace FlockFive
         static void ClearSkipBook()
         {
             _skipped.Clear();
+            _restore.Clear();
+            _started.Clear();
             _paused.Clear();
             _retried.Clear();
             _logged.Clear();
@@ -554,6 +605,7 @@ namespace FlockFive
             MusicEnabled = !m;
             SfxEnabled = !m;
             if (persist) { PlayerPrefs.SetInt(MuteKey, m ? 1 : 0); PlayerPrefs.Save(); }
+            if (!was && m && MixDesk.Live != null) MixDesk.Live.SilenceForMute();
             if (was && !m)
             {
                 if (GamePause.Paused) _reassertPending = true;
