@@ -29,6 +29,8 @@ namespace FlockFive.Editor
             CheckWindow("820", 820, 1180, expectPokerOverlap: true, Check);
             CheckWindow("402", 402, 874, expectPokerOverlap: false, Check);
             CheckWindow("412", 412, 915, expectPokerOverlap: false, Check);
+            CheckPadDoesNotStealFlower(Check);
+            CheckBlockedRailFallsThrough(Check);
             CheckSecondPointer(Check);
 
             string end = fail == 0 ? "HOME_RAIL_PRIORITY_OK" : "HOME_RAIL_PRIORITY_FAIL " + fail;
@@ -45,10 +47,10 @@ namespace FlockFive.Editor
             var level = SplashPress.LevelRect(w, h, safe);
             var pig = FlockFiveApp.SettledRailIcon(w, h, safe, true, 0);
             var hive = FlockFiveApp.SettledRailIcon(w, h, safe, true, 1);
-            var poker = SplashPress.PadRail(FlockFiveApp.SettledRailIcon(w, h, safe, true, 2), Mathf.Max(24f, FlockFiveApp.SplashRailSize(w) * 0.30f));
-            var daily = SplashPress.PadRail(FlockFiveApp.SettledRailIcon(w, h, safe, false, 0), Mathf.Max(24f, FlockFiveApp.SplashRailSize(w) * 0.30f));
+            var poker = FlockFiveApp.SettledRailIcon(w, h, safe, true, 2);
+            var daily = FlockFiveApp.SettledRailIcon(w, h, safe, false, 0);
             var vip = FlockFiveApp.SettledRailIcon(w, h, safe, false, 1);
-            var gear = FlockFiveApp.SettingsGearRect(w, h, safe);
+            var gear = FlockFiveApp.SettingsGearDrawnRect(w, h, safe);
 
             bool pokerOverlap = Overlaps(level, poker);
             Check(tag + "-poker-vs-level", pokerOverlap == expectPokerOverlap,
@@ -78,10 +80,87 @@ namespace FlockFive.Editor
 
         static bool LevelMayStart(Rect level, Vector2 point, (string, Rect)[] icons)
         {
+            return LevelMayStart(level, point, icons, null);
+        }
+
+        static bool LevelMayStart(Rect level, Vector2 point, (string, Rect)[] icons, bool[] canAct)
+        {
             if (!level.Contains(point)) return false;
             for (int i = 0; i < icons.Length; i++)
-                if (icons[i].Item2.width > 2f && icons[i].Item2.Contains(point)) return false;
+            {
+                bool act = canAct == null || (i < canAct.Length && canAct[i]);
+                if (FlockFiveApp.RailKeepsLevelTap(icons[i].Item2, act, point)) return false;
+            }
             return true;
+        }
+
+        // The old pad reached past the cards and the gift into the flower.
+        // A point in that slop, off the drawn art, still starts LEVEL.
+        static void CheckPadDoesNotStealFlower(System.Action<string, bool, string> Check)
+        {
+            PhoneArea.PlayPixels(820, 1180, out int w, out int h);
+            var safe = new Rect(0f, 0f, w, h);
+            var level = SplashPress.LevelRect(w, h, safe);
+            float gap = Mathf.Max(24f, FlockFiveApp.SplashRailSize(w) * 0.30f);
+            var pokerArt = FlockFiveApp.SettledRailIcon(w, h, safe, true, 2);
+            var dailyArt = FlockFiveApp.SettledRailIcon(w, h, safe, false, 0);
+            var pokerPad = SplashPress.PadRail(pokerArt, gap);
+            var dailyPad = SplashPress.PadRail(dailyArt, gap);
+            var icons = new[] { ("poker", pokerArt), ("daily", dailyArt) };
+            bool pokerEdge = EdgeOutsideArt(level, pokerArt, pokerPad, out var pokerPoint);
+            bool dailyEdge = EdgeOutsideArt(level, dailyArt, dailyPad, out var dailyPoint);
+            Check("820-poker-pad-still-starts-level",
+                pokerEdge && LevelMayStart(level, pokerPoint, icons),
+                "point " + pokerPoint + " art " + pokerArt + " pad " + pokerPad);
+            Check("820-daily-pad-does-not-cover-level-or-starts",
+                !dailyEdge || LevelMayStart(level, dailyPoint, icons),
+                "edge " + dailyEdge + " point " + dailyPoint);
+        }
+
+        static bool EdgeOutsideArt(Rect level, Rect art, Rect pad, out Vector2 point)
+        {
+            point = new Vector2(art.center.x, art.yMax + 3f);
+            if (pad.Contains(point) && !art.Contains(point) && level.Contains(point)) return true;
+            point = new Vector2(art.xMax + 4f, art.center.y);
+            if (pad.Contains(point) && !art.Contains(point) && level.Contains(point)) return true;
+            point = new Vector2(art.xMin - 4f, art.center.y);
+            return pad.Contains(point) && !art.Contains(point) && level.Contains(point);
+        }
+
+        static void CheckBlockedRailFallsThrough(System.Action<string, bool, string> Check)
+        {
+            PhoneArea.PlayPixels(820, 1180, out int w, out int h);
+            var safe = new Rect(0f, 0f, w, h);
+            var level = SplashPress.LevelRect(w, h, safe);
+            var poker = FlockFiveApp.SettledRailIcon(w, h, safe, true, 2);
+            var point = new Vector2(poker.center.x, Mathf.Max(poker.center.y, level.yMin + 4f));
+            var icons = new[] { ("poker", poker) };
+            Check("820-overlap-is-on-the-art",
+                poker.Contains(point) && level.Contains(point),
+                "point " + point);
+            Check("820-open-rail-keeps-the-art",
+                !LevelMayStart(level, point, icons, new[] { true }),
+                "point " + point);
+            Check("820-blocked-rail-lets-level-start",
+                LevelMayStart(level, point, icons, new[] { false }),
+                "point " + point);
+
+            var samples = new List<SplashPress.Sample>
+            {
+                new SplashPress.Sample { TouchId = 8, Pos = point, Phase = SplashPress.Phase.Tap },
+            };
+            SplashPress.ResetBoard();
+            SplashPress.Layout(SplashPress.Id.Level, level);
+            var blocked = new SplashPress.Gesture();
+            var fell = blocked.Apply(SplashPress.PressHit(SplashPress.Id.Level), false, samples, true, true, 70);
+            Check("820-blocked-overlap-gesture-starts-level", fell.Launch, "launch=" + fell.Launch);
+
+            SplashPress.ResetBoard();
+            SplashPress.Reserve(samples, poker, 71);
+            var held = new SplashPress.Gesture();
+            var kept = held.Apply(SplashPress.PressHit(SplashPress.Id.Level), false, samples, true, true, 71);
+            Check("820-open-art-gesture-does-not-start-level", !kept.Launch && !kept.Pressed,
+                "launch=" + kept.Launch);
         }
 
         static bool Overlaps(Rect a, Rect b)
