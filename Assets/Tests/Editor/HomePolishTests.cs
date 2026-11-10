@@ -865,11 +865,14 @@ namespace FlockFive.Editor
                 int plays = AudioGuard.PlayCalls;
                 int stops = AudioGuard.StopCalls;
                 MixDesk.Boot(go);
-                bool bedHeld = bed.timeSamples == 20000 && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops + 1;
+                bool stillScheduled = AudioGuard.ScheduledAt(bed, out _);
+                bool bedHeld = stillScheduled && bed.timeSamples == 20000
+                    && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops + 1;
                 bool strayDown = !stray.isPlaying && stray.volume == 0f;
                 Check("second-boot-keeps-the-bed", bedHeld && strayDown,
-                    "samples " + bed.timeSamples + " plays " + AudioGuard.PlayCalls
-                    + " stops " + AudioGuard.StopCalls + " stray " + stray.volume);
+                    "scheduled " + stillScheduled + " samples " + bed.timeSamples
+                    + " plays " + AudioGuard.PlayCalls + " stops " + AudioGuard.StopCalls
+                    + " stray " + stray.volume);
             }
             finally
             {
