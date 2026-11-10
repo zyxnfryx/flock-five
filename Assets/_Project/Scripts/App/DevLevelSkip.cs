@@ -1,17 +1,24 @@
 namespace FlockFive
 {
-    // Temporary inspector hook. The boot that reads this and loads a garden is
-    // compiled only for WebGL development builds (see MaybeDevLevelSkip). This
-    // parser has no side effects. Release player builds never call it.
+    // WebGL Development inspect hook only. Not a shipping-path change.
+    // The boot that reads these flags is compiled only for WebGL development
+    // builds (see MaybeDevLevelSkip). This parser has no side effects.
+    // Device, iOS, Android, and release player builds never call it.
     public static class DevLevelSkip
     {
         public const string QueryKey = "fflevel";
+        // WebGL Development inspect hook only. Not a shipping-path change.
         public const string OnboardingKey = "skipOnboarding";
         public const string KeepTipsKey = "keepTips";
         public const string ForceFeederKey = "forceFeeder";
         public const string ForceNapKey = "forceNap";
         public const string OpenPokerKey = "openPoker";
+        // WebGL Development inspect hook only. Not a shipping-path change.
         public const string ForceClearKey = "forceClear";
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // Honored only with skipOnboarding=1, and it acts only once forceClear
+        // has already waited out the wipe and any ostrich entrance.
+        public const string ForceRewardsKey = "forceRewards";
         // A garden that never shows the entrance still has to finish the star
         // wipe. An ostrich who stays idle without ever striding (the entrance
         // did not start) is given up after this, so Inspector is not stuck.
@@ -48,12 +55,19 @@ namespace FlockFive
             public bool ForceFeeder;
             public bool ForceNap;
             public bool OpenPoker;
+            // WebGL Development inspect hook only. Not a shipping-path change.
             // True only with skipOnboarding=1. After the star wipe, and after
             // an ostrich entrance has returned to idle, the boot clears the
             // board through the live win latch (TryScoreGarden), which is the
             // same latch a StageClearingCollect reaches. That opens the real
             // Collect / Watch Ad card. Absent the flag, nothing is cleared.
             public bool ForceClear;
+            // WebGL Development inspect hook only. Not a shipping-path change.
+            // True only with skipOnboarding=1. Does not change when forceClear
+            // fires. After that wait, the boot makes Watch Ad / 2X offerable,
+            // grants one album card, and unlocks the album Upgrade glove.
+            // It does not grant No Ads.
+            public bool ForceRewards;
         }
 
         // 1-based garden from ?fflevel=, or 0 when the page did not ask.
@@ -62,6 +76,7 @@ namespace FlockFive
             return QueryInt(url, QueryKey);
         }
 
+        // WebGL Development inspect hook only. Not a shipping-path change.
         // True only for ?skipOnboarding=1. Any other value is not a request.
         public static bool OnboardingFromUrl(string url)
         {
@@ -93,10 +108,18 @@ namespace FlockFive
             return QueryInt(url, OpenPokerKey) == 1;
         }
 
+        // WebGL Development inspect hook only. Not a shipping-path change.
         // True only for ?forceClear=1. Any other value is not a request.
         public static bool ForceClearFromUrl(string url)
         {
             return QueryInt(url, ForceClearKey) == 1;
+        }
+
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // True only for ?forceRewards=1. Any other value is not a request.
+        public static bool ForceRewardsFromUrl(string url)
+        {
+            return QueryInt(url, ForceRewardsKey) == 1;
         }
 
         // presented: the star wipe is down and the garden tween is idle.
@@ -132,10 +155,12 @@ namespace FlockFive
         // ?keepTips=1 on that same skip also leaves the kit and feeder rule
         // plates owed. keepTips without skipOnboarding leaves KeepTips false,
         // so a plain ?fflevel= load still stamps those plates.
-        // forceFeeder, forceNap, openPoker, and forceClear are the same: only a
-        // skipOnboarding=1 load sets them. Absent the flag, the plate still
-        // waits for a real feeder turn, a real nap, or a real walk to poker,
-        // and a clear still waits for a real solve.
+        // forceFeeder, forceNap, openPoker, forceClear, and forceRewards are the
+        // same: only a skipOnboarding=1 load sets them. Absent the flag, the
+        // plate still waits for a real feeder turn, a real nap, or a real walk
+        // to poker, and a clear still waits for a real solve. forceRewards does
+        // not move the forceClear wait. All of these are WebGL Development
+        // inspect hooks only, not shipping-path changes.
         public static Choice Plan(string url, int levelCount)
         {
             int display = DisplayFromUrl(url);
@@ -154,6 +179,7 @@ namespace FlockFive
                 ForceNap = skip && ForceNapFromUrl(url),
                 OpenPoker = skip && OpenPokerFromUrl(url),
                 ForceClear = skip && ForceClearFromUrl(url),
+                ForceRewards = skip && ForceRewardsFromUrl(url),
             };
         }
 

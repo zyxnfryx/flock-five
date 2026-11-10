@@ -327,7 +327,7 @@ namespace FlockFive.Editor
             var garden2 = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1", 50);
             Check("plan-onboard-garden-2", garden2.Index == 1 && garden2.SkipOnboarding && !garden2.KeepBee && !garden2.KeepFire
                 && !garden2.KeepTips && !garden2.ForceFeeder && !garden2.ForceNap && !garden2.OpenPoker
-                && !garden2.ForceClear,
+                && !garden2.ForceClear && !garden2.ForceRewards,
                 "index " + garden2.Index);
             Check("force-feeder-1", DevLevelSkip.ForceFeederFromUrl(
                 "http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1&forceFeeder=1"), "1");
@@ -345,7 +345,12 @@ namespace FlockFive.Editor
                 && !DevLevelSkip.ForceClearFromUrl("http://h/?forceClear=")
                 && !DevLevelSkip.ForceClearFromUrl("http://h/?forceClear=true")
                 && !DevLevelSkip.ForceClearFromUrl("http://h/?forceClear=2")
-                && !DevLevelSkip.ForceClearFromUrl(null), "junk");
+                && !DevLevelSkip.ForceClearFromUrl(null)
+                && !DevLevelSkip.ForceRewardsFromUrl("http://h/?forceRewards=0")
+                && !DevLevelSkip.ForceRewardsFromUrl("http://h/?forceRewards=")
+                && !DevLevelSkip.ForceRewardsFromUrl("http://h/?forceRewards=true")
+                && !DevLevelSkip.ForceRewardsFromUrl("http://h/?forceRewards=2")
+                && !DevLevelSkip.ForceRewardsFromUrl(null), "junk");
             var feed = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1&forceFeeder=1", 50);
             Check("plan-force-feeder", feed.Index == 1 && feed.SkipOnboarding && feed.KeepTips && feed.ForceFeeder
                 && !feed.ForceNap && !feed.OpenPoker && !feed.ForceClear, "index " + feed.Index);
@@ -366,7 +371,8 @@ namespace FlockFive.Editor
                 "http://h/portrait?w=820&h=1180&skipOnboarding=1&fflevel=27&forceClear=1"), "1");
             var clear27 = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&fflevel=27&forceClear=1", 50);
             Check("plan-force-clear-27", clear27.Index == 26 && clear27.SkipOnboarding && clear27.ForceClear
-                && !clear27.ForceFeeder && !clear27.ForceNap && !clear27.OpenPoker && !clear27.KeepBee && !clear27.KeepFire,
+                && !clear27.ForceFeeder && !clear27.ForceNap && !clear27.OpenPoker && !clear27.KeepBee && !clear27.KeepFire
+                && !clear27.ForceRewards,
                 "index " + clear27.Index);
             var clear32 = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=32&forceClear=1", 50);
             var clear38 = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=38&forceClear=1", 50);
@@ -384,6 +390,17 @@ namespace FlockFive.Editor
                 && !DevLevelSkip.ForceClearReady(false, true, false, true, true, 5f)
                 && DevLevelSkip.ForceClearReady(true, true, true, false, true, DevLevelSkip.ForceClearMoveCap),
                 "wipe then idle");
+            Check("force-rewards-1", DevLevelSkip.ForceRewardsFromUrl(
+                "http://localhost:8184/portrait?w=820&h=1180&skipOnboarding=1&fflevel=27&forceClear=1&forceRewards=1"), "1");
+            var rewards = DevLevelSkip.Plan(
+                "http://localhost:8184/portrait?w=820&h=1180&skipOnboarding=1&fflevel=27&forceClear=1&forceRewards=1", 50);
+            Check("plan-force-rewards", rewards.Index == 26 && rewards.SkipOnboarding && rewards.ForceClear && rewards.ForceRewards
+                && !rewards.OpenPoker && !rewards.ForceFeeder, "index " + rewards.Index);
+            var rewardsAlone = DevLevelSkip.Plan("http://h/?fflevel=27&forceRewards=1", 50);
+            var rewardsNoClear = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=32&forceRewards=1", 50);
+            Check("plan-force-rewards-needs-skip", rewardsAlone.Index == 26 && !rewardsAlone.ForceRewards && !rewardsAlone.ForceClear
+                && rewardsNoClear.Index == 31 && rewardsNoClear.SkipOnboarding && rewardsNoClear.ForceRewards && !rewardsNoClear.ForceClear,
+                "index " + rewardsAlone.Index);
             Check("keeptips-absent", !DevLevelSkip.KeepTipsFromUrl("http://h/index.html")
                 && !DevLevelSkip.KeepTipsFromUrl(null) && !DevLevelSkip.KeepTipsFromUrl(""), "none");
             Check("keeptips-1", DevLevelSkip.KeepTipsFromUrl(
@@ -526,6 +543,34 @@ namespace FlockFive.Editor
                 && gated.IndexOf("StageClearingCollect") < clearFn
                 && gated.IndexOf("forceClear=\" +") > 0,
                 "wait");
+            int rewardsFn = gated.IndexOf("void ArmDevInspectRewards()");
+            int readyCall = gated.IndexOf("ForceClearReady", clearFn);
+            string ads = Read("Assets/_Project/Scripts/App/Ads.cs");
+            int adsGate = ads.IndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD");
+            int adsArm = ads.IndexOf("void ArmInspectRewardOffer()");
+            int adsEnd = adsArm >= 0 ? ads.IndexOf("#endif", adsArm) : -1;
+            string adsBody = adsGate >= 0 && adsEnd > adsArm && adsArm > adsGate
+                ? ads.Substring(adsArm, adsEnd - adsArm) : "";
+            string rewardBody = rewardsFn >= 0 ? gated.Substring(rewardsFn) : "";
+            Check("force-rewards-inspect-only",
+                rewardsFn > readyCall
+                && gated.IndexOf("if (_devForceRewards) ArmDevInspectRewards();") > readyCall
+                && gated.IndexOf("if (_devForceRewards) ArmDevInspectRewards();") < rewardsFn
+                && rewardBody.IndexOf("Ads.ArmInspectRewardOffer()") >= 0
+                && rewardBody.IndexOf("Hive.TakeVisitor()") >= 0
+                && rewardBody.IndexOf("BadgerCopy.MarkCoach()") >= 0
+                && rewardBody.IndexOf("DeleteKey(CoachHiveUpgradeKey)") >= 0
+                && rewardBody.IndexOf("FF_DEV_FORCE rewards=1") >= 0
+                && rewardBody.IndexOf("NoAds.Grant") < 0
+                && rewardBody.IndexOf("flockfive.noads") < 0
+                && adsBody.IndexOf("SetReadyOverride(1)") >= 0
+                && adsBody.IndexOf("InterstitialGraceClears") >= 0
+                && adsBody.IndexOf("NoAds.Grant") < 0
+                && adsBody.IndexOf("flockfive.noads") < 0
+                && settings.IndexOf("ArmDevInspectRewards", end) < 0
+                && settings.IndexOf("FF_DEV_FORCE rewards=1", end) < 0
+                && gated.IndexOf("WebGL Development inspect hook only") >= 0,
+                "rewards");
         }
     }
 }
