@@ -143,6 +143,11 @@ namespace FlockFive
                 if (Alive(src)) batch.Add(src);
             }
             if (batch.Count == 0) return 0;
+            for (int i = 0; i < batch.Count; i++)
+            {
+                try { batch[i].timeSamples = 0; }
+                catch (Exception ex) { NotePlayback(batch[i], ex); }
+            }
             double start = AudioSettings.dspTime + 0.05;
             int n = 0;
             for (int i = 0; i < batch.Count; i++)
@@ -168,10 +173,22 @@ namespace FlockFive
             return false;
         }
 
+        static void DropSchedule(int id)
+        {
+            if (id == 0) return;
+            for (int i = _schedIds.Count - 1; i >= 0; i--)
+            {
+                if (_schedIds[i] != id) continue;
+                _schedIds.RemoveAt(i);
+                if (i < _schedAt.Count) _schedAt.RemoveAt(i);
+            }
+        }
+
         static void RememberSchedule(AudioSource source, double start)
         {
             int id = Identity(source);
             if (id == 0) return;
+            DropSchedule(id);
             _schedIds.Add(id);
             _schedAt.Add(start);
             for (int i = 0; i < _retried.Count; i++)
@@ -187,6 +204,7 @@ namespace FlockFive
             DropFrom(_skipped, source, id);
             DropFrom(_restore, source, id);
             DropFrom(_started, source, id);
+            DropSchedule(id);
         }
 
         public static void HoldRestore(AudioSource source)
@@ -201,6 +219,7 @@ namespace FlockFive
             int id = Identity(source);
             DropFrom(_restore, source, id);
             DropFrom(_started, source, id);
+            DropSchedule(id);
         }
 
         public static bool NeedsRestore(AudioSource source) => Listed(_restore, source);
