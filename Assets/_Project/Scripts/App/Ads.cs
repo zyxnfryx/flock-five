@@ -267,6 +267,32 @@ namespace FlockFive
 
         public static void SetReadyOverride(int mode) => _readyOverride = mode;
 
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // The stage-clear Watch Ad / 2X button reads RewardRepeatReady: the
+        // rewarded unit reports ready, and lifetime clears are no longer inside
+        // the new-player grace (clears < 6). WebGL has no LevelPlay fill, and a
+        // fresh save is still in grace, so this reports the unit ready and
+        // lifts grace to the first clear that may offer the repeat. A cooldown
+        // left by an earlier inspect is cleared too. It does not grant No Ads
+        // and does not write flockfive.noads.
+        public static void ArmInspectRewardOffer()
+        {
+            SetReadyOverride(1);
+            if (SessionClears < InterstitialGraceClears)
+            {
+                SessionClears = InterstitialGraceClears;
+                PlayerPrefs.SetInt(PrefClears, SessionClears);
+            }
+            if (Cooling(AdClock, _lastAnyAd))
+            {
+                _lastAnyAd = 0;
+                PlayerPrefs.DeleteKey(PrefLastAd);
+            }
+            PlayerPrefs.Save();
+        }
+#endif
+
         // Drops a displayed-interstitial bit left by another suite. Does not touch VIP.
         public static void ResetTransientForTests() => _intDisplayed = false;
         public static bool IsBusy => IsLoading || IsShowing;
