@@ -296,7 +296,7 @@ namespace FlockFive.Editor
             {
                 string app2 = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
                 Check("album lesson with zero cards is escapable", app2.Contains("void NoteEmptyAlbumTap") && app2.Contains("AdvanceAlbumTutor(3);"), "empty-book sleeve tap advances");
-                Check("honeycomb text has a gap before the flip hint", CaptionLayout.AlbumHoneyBlock.Contains("rarity.\n\nTap to flip!") && app2.Contains("ShowFlipHints(!_albumTutorOn, !_upgradeTutorOn)"), "");
+                Check("honeycomb text has a gap before the flip hint", CaptionLayout.AlbumHoneyBlock.Contains("rarity.\n\nTap to flip!") && app2.Contains("FlipHintsVisible(t, !_albumTutorOn, !_upgradeTutorOn, upgradeOn)"), "");
             }
 
             // Album header: plate clear of the Back medal (medal already scaled by ControlK); equal padding around the pager.

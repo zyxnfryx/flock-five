@@ -325,6 +325,7 @@ namespace FlockFive
         bool _upgradeTutorAimOk;
         Vector2 _upgradeTutorAim;
         Rect _upgradeBtnR;
+        Rect _maxxedHint;
         Rect _upgradeLabelR;
         float _albumOpenAt = -1f;
         int _albumOpenFrames;
@@ -6508,6 +6509,7 @@ namespace FlockFive
         {
             // Outside the camera callback, so the slab render is not nested.
             CardStage.Flush();
+            AudioGuard.SettleDevConsole();
             // Sensors and the card stage only live while an inspect is open (battery + memory).
             if (CardTilt.Open && _hiveInspect < 0) { CardTilt.End(); CardStage.Release(); _stageSlot = -1; }
             if (GamePause.Paused)
@@ -8493,6 +8495,15 @@ namespace FlockFive
 
         // Shared disc for every screen that leaves. About 15% over the old 88pt, never under 44.
         static Rect BackMedalRect(float s, float top) => BackMedalBox(s, top, PhoneArea.Safe);
+
+        // Glow painted around the medal face. The hit rect does not include it.
+        public static float BackMedalGlowPad(float size) => Mathf.Max(0f, size) * 0.12f;
+
+        public static Rect BackMedalDrawnRect(Rect hit)
+        {
+            float pad = BackMedalGlowPad(Mathf.Min(hit.width, hit.height));
+            return new Rect(hit.x - pad, hit.y - pad, hit.width + pad * 2f, hit.height + pad * 2f);
+        }
 
         public const float InspectInsetRef = 12f;
 
@@ -13869,6 +13880,9 @@ namespace FlockFive
                 safe = new Rect(0f, 0f, w, h);
             float top = TopControlY(h, safe, TopHudBox(h, safe, 0f));
             var back = BackMedalBox(s, top, safe);
+            float glow = BackMedalGlowPad(back.height);
+            float inset = GuiTopInset(h, safe);
+            if (back.y - glow < inset) back.y += inset - (back.y - glow);
             float right = w - Mathf.Max(12f, w - safe.xMax + 10f);
             float icon = CoinBalanceIcon(w, s);
             float cy = Mathf.Max(back.center.y, top + icon * 0.5f);
@@ -17160,13 +17174,39 @@ namespace FlockFive
         public static float AlbumHeaderX(Rect back, float s, float screenH)
             => back.xMax + AlbumHeaderGap(back, s) + CaptionLayout.BoxPad(screenH).x;
 
+        // Dark plate around the Collection title row, including the caption pad.
+        // This is the edge that must sit at or below the safe inset, not the label.
+        public static Rect AlbumTitleOuter(Rect back, float screenW, float screenH, Rect safe, float s)
+        {
+            float hiveSize = Mathf.Clamp(back.height * 0.80f, 44f, 92f);
+            float hiveY = back.center.y - hiveSize * 0.5f;
+            float titleRight = screenW - CornerAnchor.EdgeInsetRight(screenW, safe) - CaptionLayout.BoxPad(screenH).x;
+            float x = AlbumHeaderX(back, s, screenH);
+            var content = new Rect(x, hiveY, Mathf.Max(48f, titleRight - x), hiveSize);
+            var hang = CaptionLayout.BoxPad(screenH);
+            return new Rect(content.x - hang.x, content.y - hang.y, content.width + hang.x * 2f, content.height + hang.y * 2f);
+        }
+
+        public static float AlbumHeaderShift(Rect back, float screenW, float screenH, Rect safe, float s)
+        {
+            float inset = GuiTopInset(screenH, safe);
+            float top = AlbumTitleOuter(back, screenW, screenH, safe, s).y;
+            // DrawSolidRound snaps the plate with Round, which can paint a pixel above the rect.
+            float slack = top - inset;
+            if (slack >= 1f) return 0f;
+            return 1f - slack;
+        }
+
         float DrawAlbumHeader(float s, Rect back)
         {
             int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
             AlbumTextSpan(PhoneArea.W, PhoneArea.Safe, s, out float left, out float textRight);
             float titleRight = PhoneArea.W - CornerAnchor.EdgeInsetRight(PhoneArea.W, PhoneArea.Safe) - CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f).x;
             float hiveSize = Mathf.Clamp(back.height * 0.80f, 44f, 92f);
-            var hiveHead = new Rect(AlbumHeaderX(back, s, PhoneArea.H > 2f ? PhoneArea.H : 720f), back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
+            float screenH = PhoneArea.H > 2f ? PhoneArea.H : 720f;
+            var hiveHead = new Rect(AlbumHeaderX(back, s, screenH), back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
+            float headerDrop = AlbumHeaderShift(back, PhoneArea.W, screenH, PhoneArea.Safe, s);
+            if (headerDrop > 0f) hiveHead.y += headerDrop;
             float textX = hiveHead.xMax + 12f * s;
             float textW = Mathf.Max(48f, titleRight - textX);
             var titleSt = GuiPool.Label(GuiSlot.AlbumTitle);
@@ -17773,6 +17813,11 @@ namespace FlockFive
 
             float top = TopControlY(PhoneArea.H, PhoneArea.Safe, TopHud());
             var back = BackMedalRect(s, top);
+            float inset = GuiTopInset(PhoneArea.H, PhoneArea.Safe);
+            float glow = BackMedalGlowPad(back.height);
+            if (back.y - glow < inset) back.y += inset - (back.y - glow);
+            float headerShift = AlbumHeaderShift(back, PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
+            if (headerShift > 0f) back.y += headerShift;
             PageSwipeAte = false;
             NoteAlbumOpen();
             if (_hiveInspect < 0 && DrawBackMedal(back))
@@ -18061,10 +18106,16 @@ namespace FlockFive
             bool upgradeHit = false;
             // Upgrade lives in the hive (album) only: never on the round popup or any other inspect.
             // It waits until the flip hints are hidden, so FREE never sits under them.
+            // A MAXXED plate still keeps "Tap outside to put back", painted after the plate.
             if (upgradeOn)
                 upgradeHit = DrawHiveUpgrade(ix, hintTop, s, Mathf.Clamp01(t));
             else
+            {
                 _upgradeBtnR = default;
+                _maxxedHint = default;
+            }
+            if (_maxxedHint.width > 8f && MaxxedPutBackShows(true, t, !_albumTutorOn, !_upgradeTutorOn))
+                DrawFlipHintBox(_maxxedHint, s, Mathf.Clamp01(t));
             if (_hiveTutorOn)
                 DrawHiveTutorGlove(big, s);
 
@@ -18240,6 +18291,7 @@ namespace FlockFive
         {
             _upgradeBtnR = default;
             _upgradeLabelR = default;
+            _maxxedHint = default;
             if (alpha < 0.04f || (uint)slot >= (uint)Hive.AlbumSlots) return false;
             if (!Hive.UpgradesUnlocked || Hive.CountOfSlot(slot) <= 0) return false;
             var pill = FlipHintRect(hintTop, s);
@@ -18267,6 +18319,7 @@ namespace FlockFive
             // Margin: a clear gap under the hint pill and above the screen edge, rim included.
             float gapTop = Mathf.Max(18f, 20f * s) + rimW + keyW;
             SeatHintAndBadge(PhoneArea.W, PhoneArea.H, pill.y, pill.width, pill.height, btnW, btnH, gapTop, out pill, out var seatedBtn);
+            if (maxxed) _maxxedHint = pill;
             float y = seatedBtn.y;
             float denyAge = _upDenyAt < 0f ? 99f : AdPause.Unscaled - _upDenyAt;
             float shake = denyAge < UpDenyShake
@@ -18536,6 +18589,10 @@ namespace FlockFive
         public static bool FlipHintsVisible(float openT, bool albumCoachClear, bool upgradeCoachClear, bool upgradeButtonUp)
             => openT > 0.4f && ShowFlipHints(albumCoachClear, upgradeCoachClear) && !upgradeButtonUp;
 
+        // MAXXED keeps the put-back line. FREE still waits until the flip hints leave.
+        public static bool MaxxedPutBackShows(bool maxxed, float openT, bool albumCoachClear, bool upgradeCoachClear)
+            => maxxed && openT > 0.4f && ShowFlipHints(albumCoachClear, upgradeCoachClear);
+
         // Hint pill and the upgrade/MAXXED plate. If the plate would run off the
         // bottom, the hint moves up. The two rects do not overlap.
         public static void SeatHintAndBadge(float screenW, float screenH, float hintY, float hintW, float hintH, float btnW, float btnH, float gap, out Rect hint, out Rect badge)
@@ -18575,6 +18632,12 @@ namespace FlockFive
         void DrawFlipHint(float y, float s, float alpha)
         {
             if (alpha < 0.04f) return;
+            DrawFlipHintBox(FlipHintRect(y, s), s, alpha);
+        }
+
+        void DrawFlipHintBox(Rect pill, float s, float alpha)
+        {
+            if (alpha < 0.04f || pill.width < 8f) return;
             const string a = "Tap to flip!";
             const string b = "Tap outside to put back";
             int hi = Mathf.Clamp(Mathf.RoundToInt(32f * s), 28, 56);
@@ -18583,7 +18646,6 @@ namespace FlockFive
             st.alignment = TextAnchor.MiddleCenter;
             st.wordWrap = false;
             st.fontSize = hi;
-            var pill = FlipHintRect(y, s);
             var inner = new Rect(pill.x + 18f, pill.y + 12f, Mathf.Max(8f, pill.width - 36f), Mathf.Max(8f, pill.height - 24f));
             NoteTutorPlate(CoachPanelRect(inner));
             DrawCoachPanel(inner, alpha);

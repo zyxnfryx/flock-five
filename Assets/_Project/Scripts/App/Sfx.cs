@@ -256,10 +256,12 @@ namespace FlockFive
         // One-shot on the voice pool. Does not mark Lead.
         static void PlayVoice(AudioClip clip, float pitch, float vol)
         {
-            if (clip == null) return;
+            if (clip == null || AudioGuard.OutputFailed) return;
             var a = Voice();
+            if (a == null) return;
             a.pitch = pitch;
-            a.PlayOneShot(clip, vol);
+            try { a.PlayOneShot(clip, vol); }
+            catch (System.Exception ex) { AudioGuard.NoteFmodFailure(ex.Message); }
         }
 
         static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer, float leadDuck = MixDesk.DuckChirp)
@@ -322,7 +324,7 @@ namespace FlockFive
             if (!_planeSrc.isPlaying)
             {
                 _planeSrc.clip = _planeClip;
-                _planeSrc.Play();
+                AudioGuard.Play(_planeSrc);
                 _planeHeld = true;
             }
             if (pan < -1f) pan = -1f;
