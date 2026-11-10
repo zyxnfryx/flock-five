@@ -62,6 +62,8 @@ namespace FlockFive.Editor
                 CardStage.MustDeferRender(true) && !CardStage.MustDeferRender(false), "nested");
             CheckCardRender(Check);
             CheckFmod(Check);
+            CheckUnityOutputInit(Check);
+            CheckEmulatedNoSound(Check);
             CheckInvalidHandle(Check);
             CheckPlayScheduled(Check);
             CheckAudioRetry(Check);
@@ -256,6 +258,54 @@ namespace FlockFive.Editor
             AudioGuard.ResetForTests();
         }
 
+        static void CheckUnityOutputInit(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            const string line = "FMOD failed to initialize the output device.: \"Error initializing output device. \" (60)";
+            bool seen = AudioGuard.IsFmodFailure(line);
+            bool first = AudioGuard.NoteFmodFailure(line);
+            bool second = AudioGuard.NoteFmodFailure(line);
+            bool unity = seen && first && second && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+
+            AudioGuard.ResetForTests();
+            bool phrase = AudioGuard.IsFmodFailure("FAILED TO INITIALIZE THE OUTPUT DEVICE")
+                && AudioGuard.NoteFmodFailure("FAILED TO INITIALIZE THE OUTPUT DEVICE")
+                && AudioGuard.NoteFmodFailure("FAILED TO INITIALIZE THE OUTPUT DEVICE")
+                && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+
+            AudioGuard.ResetForTests();
+            bool paren = AudioGuard.IsFmodFailure("FMOD (60)")
+                && AudioGuard.NoteFmodFailure("FMOD (60)")
+                && AudioGuard.NoteFmodFailure("FMOD (60)")
+                && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+            AudioGuard.ResetForTests();
+            bool bare = !AudioGuard.IsFmodFailure("(60)") && !AudioGuard.NoteFmodFailure("(60)")
+                && !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0;
+
+            Check("unity-output-init-line-latches", unity && phrase && paren && bare,
+                "unity " + unity + " phrase " + phrase + " paren " + paren + " bare " + bare);
+            AudioGuard.ResetForTests();
+        }
+
+        static void CheckEmulatedNoSound(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            const string line = "FMOD failed to initialize any audio devices, running on emulated software output with no sound. Please check your audio drivers and/or hardware for malfunction.";
+            bool seen = AudioGuard.IsFmodFailure(line);
+            bool first = AudioGuard.NoteFmodFailure(line);
+            bool second = AudioGuard.NoteFmodFailure(line);
+            bool emulated = seen && first && second && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+
+            AudioGuard.ResetForTests();
+            bool soft = AudioGuard.IsFmodFailure("RUNNING ON EMULATED SOFTWARE OUTPUT WITH NO SOUND")
+                && AudioGuard.NoteFmodFailure("RUNNING ON EMULATED SOFTWARE OUTPUT WITH NO SOUND")
+                && AudioGuard.NoteFmodFailure("RUNNING ON EMULATED SOFTWARE OUTPUT WITH NO SOUND")
+                && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+
+            Check("emulated-no-sound-latches", emulated && soft, "emulated " + emulated + " soft " + soft);
+            AudioGuard.ResetForTests();
+        }
+
         static void CheckInvalidHandle(System.Action<string, bool, string> Check)
         {
             AudioGuard.ResetForTests();
@@ -272,7 +322,13 @@ namespace FlockFive.Editor
                     "FMOD returns error code 36 (FMOD_ERR_INVALID_HANDLE) executing disconnectFrom",
                     "FMOD returns error code 36 (FMOD_ERR_INVALID_HANDLE) executing addDSP",
                     "FMOD_ERR_INVALID_HANDLE",
-                    "error code 36"
+                    "error code 36",
+                    "(600)",
+                    "(36)",
+                    "(6)",
+                    "FMOD (600)",
+                    "FMOD (36)",
+                    "FMOD (6)"
                 };
                 bool quiet = true;
                 for (int i = 0; i < bad.Length; i++)

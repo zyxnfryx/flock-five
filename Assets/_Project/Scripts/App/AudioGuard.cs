@@ -424,15 +424,20 @@ namespace FlockFive
             }
         }
 
-        // Only FMOD_ERR_OUTPUT_INIT (code 60). Code 36 is FMOD_ERR_INVALID_HANDLE.
-        // A bad handle, a clip load, a decode error, or any other FMOD code must
-        // not silence the session. The number has to be the whole code, so 600
-        // does not count as 60.
+        // Output init only. Unity logs the phrase, or "(60)" on an FMOD line.
+        // Code 36 is FMOD_ERR_INVALID_HANDLE. A bad handle, a clip load, a decode
+        // error, or any other FMOD code must not silence the session. 600 and 6
+        // are not 60. An emulated output with no sound is the same outage: the
+        // retry should run when a route comes back.
         public static bool IsFmodFailure(string message)
         {
             if (string.IsNullOrEmpty(message)) return false;
             if (message.IndexOf("FMOD_ERR_OUTPUT_INIT", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            return ErrorCodeIs(message, "60");
+            if (message.IndexOf("failed to initialize the output device", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (message.IndexOf("failed to initialize any audio devices", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (message.IndexOf("running on emulated software output with no sound", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (ErrorCodeIs(message, "60")) return true;
+            return FmodParenCodeIs(message, "60");
         }
 
         static bool ErrorCodeIs(string message, string code)
@@ -449,6 +454,27 @@ namespace FlockFive
                 if (e - s == code.Length && string.CompareOrdinal(message, s, code, 0, code.Length) == 0)
                     return true;
                 from = i + key.Length;
+            }
+            return false;
+        }
+
+        // "(60)" on a line that is about FMOD. "(600)", "(36)" and "(6)" are not.
+        static bool FmodParenCodeIs(string message, string code)
+        {
+            if (message.IndexOf("FMOD", StringComparison.OrdinalIgnoreCase) < 0) return false;
+            int from = 0;
+            while (from < message.Length)
+            {
+                int i = message.IndexOf('(', from);
+                if (i < 0) return false;
+                int s = i + 1;
+                int e = s;
+                while (e < message.Length && char.IsDigit(message[e])) e++;
+                if (e < message.Length && message[e] == ')'
+                    && e - s == code.Length
+                    && string.CompareOrdinal(message, s, code, 0, code.Length) == 0)
+                    return true;
+                from = i + 1;
             }
             return false;
         }
