@@ -99,9 +99,7 @@ namespace FlockFive.Editor
                     float btnW = wideW * 0.60f;
                     float y = h - 36f * s - btnH;
                     var btn = new Rect((w - btnW) * 0.5f, y, btnW, btnH);
-                    var label = new Rect(btn.x + btn.width * 0.06f, btn.y + btn.height * 0.10f,
-                        btn.width * 0.88f, btn.height * 0.80f);
-                    var aim = FlockFiveApp.ButtonLabelAim(btn, label, true);
+                    var aim = btn.center;
                     float dh = FlockFiveApp.GloveDh(s);
                     var safe = new Rect(0f, 0f, w, h);
                     var near = aim + new Vector2(-12f, -6f);
@@ -114,7 +112,19 @@ namespace FlockFive.Editor
                     var again = FlockFiveApp.ClaimGloveArc(start, aim, 0f, arch);
                     float apart = (start - aim).magnitude;
                     float nearApart = (near - aim).magnitude;
-                    bool offWord = btn.Contains(aim) && !label.Contains(aim) && aim.x < label.center.x;
+                    var body0 = FlockFiveApp.GloveAuditBox(aim, 0f, dh, 0f);
+                    var body1 = FlockFiveApp.GloveAuditBox(aim, 0f, dh, 1f);
+                    bool onButton = btn.Contains(aim) && body0.Overlaps(btn) && body1.Overlaps(btn);
+                    // "Tap Upgrade." is the second row of the caption seated above the button.
+                    bool offTap = true;
+                    if (names[i] == "412")
+                    {
+                        float capW = FlockFiveApp.LessonColumnWidth(w, h);
+                        float boxH = Mathf.Max(128f * s, 108f) * 0.72f;
+                        float capY = btn.y - boxH - 14f * s;
+                        var tapWords = new Rect((w - capW) * 0.5f, capY + boxH * 0.5f, capW, boxH * 0.5f);
+                        offTap = !body0.Overlaps(tapWords) && !body1.Overlaps(tapWords);
+                    }
                     // The safe edge can shorten a phone start. It still leaves the button.
                     bool away = !btn.Contains(start) && apart > 60f && apart > nearApart * 3f;
                     bool bow = (p0 - start).magnitude < 0.5f
@@ -123,15 +133,12 @@ namespace FlockFive.Editor
                         && (mid - aim).magnitude > 24f
                         && mid.y < chord.y - 8f
                         && (again - start).magnitude < 0.5f;
-                    var toWord = label.center - aim;
-                    var toStart = start - aim;
-                    bool palmOff = Vector2.Dot(toWord, toStart) < 0f;
                     Check("upgrade-glove-" + names[i],
-                        offWord && away && bow && palmOff
+                        onButton && offTap && away && bow
                         && !FlockFiveApp.ClaimGloveTravelDone(0f)
                         && FlockFiveApp.ClaimGloveTravelDone(0.82f),
                         "aim " + aim + " start " + start + " apart " + apart.ToString("0")
-                        + " off " + offWord + " away " + away + " bow " + bow + " palm " + palmOff);
+                        + " on " + onButton + " offTap " + offTap + " away " + away + " bow " + bow);
                 }
             }
             finally
@@ -143,9 +150,10 @@ namespace FlockFive.Editor
             int tick = app.IndexOf("bool TickUpgradeTutor(");
             int tickEnd = tick >= 0 ? app.IndexOf("void DrawAlbumTutor(", tick) : -1;
             string tickBody = tick >= 0 && tickEnd > tick ? app.Substring(tick, tickEnd - tick) : "";
-            Check("upgrade-aim-uses-shared-helper",
-                tickBody.Contains("ButtonLabelAim(_upgradeBtnR, _upgradeLabelR, true)")
-                && tickBody.Contains("float.NaN, true, float.NaN, _upgradeBtnR"), "");
+            Check("upgrade-aim-sits-on-the-button",
+                tickBody.Contains("var aim = _upgradeBtnR.center;")
+                && tickBody.Contains("float.NaN, true, float.NaN, _upgradeBtnR")
+                && tickBody.IndexOf("ButtonLabelAim(_upgradeBtnR, _upgradeLabelR, true)") < 0, "");
             string coach = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs");
             Check("upgrade-start-is-the-shared-far-perch",
                 coach.Contains("string.Equals(_cueLine, DailyClaimLine) || string.Equals(_cueLine, AlbumUpgradeLine)")
