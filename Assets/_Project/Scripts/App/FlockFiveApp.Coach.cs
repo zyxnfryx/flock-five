@@ -4561,7 +4561,59 @@ namespace FlockFive
                 CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s), MinLogoClear(h, safe, s));
             }
             LiftOffMainButtons(ref band, w, h, safe, s, badge, (spot == "coach.line" || spot == "coach.rule" || spot == "bee.garden") ? 0f : HomeBannerTop(h, safe, s));
+            if (spot == "album.coach")
+                ParkAlbumBand(ref band, w, h, safe, s);
             return band;
+        }
+
+        // The honey sentence sits clear of the inspect card and of the home buttons.
+        // A band that still overlaps one ends a gap above it, or moves under the card
+        // when that strip is free.
+        static void ParkAlbumBand(ref Rect band, float w, float h, Rect safe, float s)
+        {
+            float gap = 8f * (s > 0.01f ? s : 1f);
+            var buttons = new Rect[4];
+            int n = FillMainButtons(w, h, safe, buttons);
+            ClipBandAbove(ref band, buttons, n, gap);
+            float inset = Mathf.Max(34f, safe.yMin);
+            var card = SeatedInspectCard(w, h, inset, s);
+            if (card.width < 2f || card.height < 2f || !band.Overlaps(card)) return;
+            float keepY = band.y;
+            float keepH = band.height;
+            float below = card.yMax + gap;
+            var moved = band;
+            moved.y = below;
+            bool room = below + band.height <= h - inset + 0.5f && !BandHits(moved, buttons, n);
+            if (room)
+            {
+                band.y = below;
+                ClipBandAbove(ref band, buttons, n, gap);
+                if (!band.Overlaps(card) && !BandHits(band, buttons, n)) return;
+                band.y = keepY;
+                band.height = keepH;
+            }
+            float end = card.yMin - gap;
+            if (band.y < end - 4f)
+                band.height = end - band.y;
+            ClipBandAbove(ref band, buttons, n, gap);
+        }
+
+        static void ClipBandAbove(ref Rect band, Rect[] buttons, int n, float gap)
+        {
+            for (int i = 0; i < n; i++)
+            {
+                if (buttons[i].width < 2f || buttons[i].height < 2f || !band.Overlaps(buttons[i])) continue;
+                float end = buttons[i].yMin - gap;
+                if (band.y < end - 4f)
+                    band.height = end - band.y;
+            }
+        }
+
+        static bool BandHits(Rect band, Rect[] buttons, int n)
+        {
+            for (int i = 0; i < n; i++)
+                if (buttons[i].width > 2f && band.Overlaps(buttons[i])) return true;
+            return false;
         }
 
         // Play flower, garden restart, garden hive, settings gear. A banner may cover

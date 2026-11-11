@@ -150,7 +150,7 @@ namespace FlockFive
 
         // Inspect back. The value sentence is exact. The two tap lines stay with it.
         public const string AlbumHoneyBlock =
-            "Honeycombs show the card's value based on rarity.\n\nTap to flip!\nTap outside to put back";
+            "Honeycombs show the card's rarity.\n\nTap to flip!\nTap outside to put back";
 
         public const string LeafLine =
             "Leaves hide birds.\nCollect at a feeder.";

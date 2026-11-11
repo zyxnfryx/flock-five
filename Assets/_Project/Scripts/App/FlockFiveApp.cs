@@ -17866,7 +17866,15 @@ namespace FlockFive
                 if (focus.width > 8f && focus.height > 8f)
                 {
                     var pose = PoseLesson(step, focus, PhoneArea.W, PhoneArea.H, line, AlbumHoneyCount(), _albumPagerOk ? _albumPagerR : default);
-                    CapSpot("album.coach"); PaintCoachCaption(line, pose.Seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+                    var posed = pose.Seat;
+                    if (posed.Overlaps(focus))
+                    {
+                        float gap = 8f * s;
+                        float below = focus.yMax + gap;
+                        float limit = PhoneArea.H - Mathf.Max(34f, PhoneArea.Safe.yMin) - 8f;
+                        posed.y = below + posed.height <= limit ? below : Mathf.Max(8f, focus.yMin - gap - posed.height);
+                    }
+                    CapSpot("album.coach"); PaintCoachCaption(line, posed, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
                     return;
                 }
             }
@@ -17892,6 +17900,14 @@ namespace FlockFive
             float maxY = PhoneArea.H - h - 8f;
             if (y > maxY) y = maxY;
             var seat = new Rect((PhoneArea.W - w) * 0.5f, y, w, h);
+            Rect card = _albumInspectOk ? _albumInspectR : (_albumCardOk ? _albumCardR : default);
+            if (card.width > 2f && seat.Overlaps(card))
+            {
+                float gap = 8f * s;
+                float below = card.yMax + gap;
+                float limit = PhoneArea.H - Mathf.Max(34f, PhoneArea.Safe.yMin) - 8f;
+                seat.y = below + h <= limit ? below : Mathf.Max(8f, card.yMin - gap - h);
+            }
             CapSpot("album.coach"); PaintCoachCaption(line, seat, s, 12, Mathf.RoundToInt(28f * s), default, false, StandardCaptionSlack);
         }
 

@@ -28,7 +28,7 @@ namespace FlockFive.Editor
             foreach (var t in new[] { RuleTip.Kit, RuleTip.Feeder, RuleTip.Sleep })
             {
                 var line = RuleTips.Line(t);
-                Check(!string.IsNullOrEmpty(line) && line.Length <= 90, t + " line too long");
+                Check(!string.IsNullOrEmpty(line) && line.Length <= 70, t + " line too long");
                 Check(CoachTap.Kind(RuleTips.Step(t)) == CoachTapKind.Informational, t + " not any-tap");
                 Check(CoachTap.Caption(RuleTips.Step(t)) == line, t + " caption mismatch");
                 Check(RuleTips.Key(t).StartsWith("flockfive.coach.rule."), t + " key");
