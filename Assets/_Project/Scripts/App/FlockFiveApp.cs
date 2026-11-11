@@ -3740,7 +3740,12 @@ namespace FlockFive
             // even if the tutor pause did not catch this frame.
             if (_ruleTip != RuleTip.None)
             {
-                if (Pressed(out var ruleTap)) RuleTipTap(ruleTap);
+                if (TickRuleHold()) return;
+                if (Pressed(out var ruleTap))
+                {
+                    if (GardenHudAct(ruleTap)) { DismissRuleTip(); return; }
+                    RuleTipTap(ruleTap);
+                }
                 return;
             }
             if (_ruleEatGesture)
@@ -3750,6 +3755,7 @@ namespace FlockFive
                 _ruleEatGesture = false;
             }
             if (!Pressed(out var screen)) return;
+            if (GardenHudAct(screen)) return;
             // Informational leaf and pest lessons eat the press before a stamp,
             // the hud, or a branch move. Restart is exempt inside the helper.
             // The dismiss also arms the short guard, so this same tap cannot
@@ -3765,10 +3771,8 @@ namespace FlockFive
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
                 var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
-                var drawn = _gloveBodyFrame == Time.frameCount && _gloveBody.width > 2f
-                    ? _gloveBody
-                    : GloveBody(_gloveShown, _gloveShownAng, DeviceFit.Ui(), _gloveMirror);
-                if (ScreenGloveCountsAsBranch(screen, PhoneArea.H, drawn, _cueForce && _gloveVis))
+                var drawn = LiveGloveRect();
+                if (LessonGloveHit(screen, PhoneArea.H, drawn) && _cueForce && _gloveVis)
                     world = _cueAimWorld;
             HandleTap(world);
         }
@@ -6648,8 +6652,17 @@ namespace FlockFive
                 return true;
             }
             // b131: Restart lives in the top bar (above top), so it is checked before the top-bar swallow.
-            // b103: while a garden lesson glove is up, Restart and Hive only count under the glove.
-            if (CueGloveOwnsHud() && (restart.Contains(gui) || (HiveReachable() && hive.Contains(gui))))
+            // A lesson caption must not swallow Home or Restart. The tap acts.
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            bool homeHit, restartHit;
+            if (GardenHudPoint(screen, PhoneArea.H, home, restart, out homeHit, out restartHit))
+            {
+                if (homeHit) ShowSplash();
+                else Restart();
+                return true;
+            }
+            // b103: while a garden lesson glove is up, Hive only counts under the glove.
+            if (CueGloveOwnsHud() && HiveReachable() && hive.Contains(gui))
                 return !GloveTapHits(screen) ? true : HudGloveTap(screen, restart, hive, gui);
             var claim = HudClaim(gui, restart, hive, HiveReachable(), top);
             // b131: the top of a feeder bulb reaches into the top-bar band. Outside Restart, a feeder tap wins.
@@ -8823,7 +8836,9 @@ namespace FlockFive
                 tip.fontStyle = FontStyle.Bold;
                 tip.alignment = TextAnchor.MiddleCenter;
                 tip.fontSize = Mathf.Max(12, Mathf.RoundToInt(15f * s));
-                var tr = new Rect(pig.x - 248f * s, pig.y - 36f * s, 236f * s, 28f * s);
+                float tipW = 236f * s;
+                float tipX = Mathf.Max(16f, pig.x - 12f * s - tipW);
+                var tr = new Rect(tipX, pig.y - 36f * s, tipW, 28f * s);
                 var tipInk = GUI.color;
                 GUI.color = new Color(0.08f, 0.06f, 0.04f, 0.94f);
                 GUI.DrawTexture(tr, Texture2D.whiteTexture);
@@ -8906,7 +8921,7 @@ namespace FlockFive
             var st = _coinClusterStyle;
             var content = _coinClusterContent;
             content.text = coins;
-            float leftLimit = Mathf.Max(8f, PhoneArea.Safe.xMin + 8f);
+            float leftLimit = Mathf.Max(16f, PhoneArea.Safe.xMin + 16f);
             float maxW = Mathf.Max(36f, iconR.x - 8f * s - leftLimit);
             int key = coins.GetHashCode() ^ (coins.Length * 104729) ^ (Mathf.RoundToInt(maxW) * 17) ^ (Mathf.RoundToInt(iconR.height * typeScale) * 131);
             if (key != _coinKey || _coinPx < 14)
@@ -17816,7 +17831,7 @@ namespace FlockFive
             // From the left, so the palm stays off the word. The tip lands in the
             // padding beside "Upgrade", and the shared arc loops in from off the button.
             _gloveKeepOff = _tutorPlateOn && _tutorPlate.width > 2f ? _tutorPlate : default;
-            var aim = _upgradeBtnR.center;
+            var aim = UpgradeGloveSettle(_upgradeBtnR);
             _upgradeTutorAim = aim;
             _upgradeTutorAimOk = true;
             float handS = DeviceFit.Ui();
@@ -18245,8 +18260,9 @@ namespace FlockFive
             GUI.Label(xBtn, "X", xLab);
 
             bool fullyOpen = !_hiveInspectClosing && u >= 1f;
+            bool hintPut = _maxxedHint.width > 8f && HitPad(_maxxedHint, out _);
             // A honeycomb is not the card. It squishes (no marks left), and the flip waits.
-            var cardTap = InspectCardTap(big, ix, fullyOpen && !upgradeHit);
+            var cardTap = hintPut ? CardTap.None : InspectCardTap(big, ix, fullyOpen && !upgradeHit);
             bool honeyAte = cardTap == CardTap.Honey;
             if (cardTap == CardTap.Card && !PageSwipeAte && !CardTilt.DragAte)
                 BeginHiveFlip(ix);
@@ -18261,7 +18277,7 @@ namespace FlockFive
             bool onHint = _maxxedHint.width > 8f && Event.current != null
                 && Event.current.button == 0 && Event.current.type == EventType.MouseUp
                 && _maxxedHint.Contains(Event.current.mousePosition);
-            if ((outside || xHit || backHit || onHint) && !_hiveInspectClosing)
+            if ((outside || xHit || backHit || onHint || hintPut) && !_hiveInspectClosing)
                 BeginPutAwayInspect();
 
             if (_hiveInspectClosing && u >= 1f)
