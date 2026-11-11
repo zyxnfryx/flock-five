@@ -1099,17 +1099,24 @@ namespace FlockFive.Editor
                 float screenH = PhoneArea.H;
                 var tap = new Vector2(restart.center.x, screenH - restart.center.y);
                 bool acted = (bool)t.GetMethod("GardenHudAct", flags).Invoke(app, new object[] { tap });
+                var snap = (System.Collections.IEnumerator)t.GetField("EditorSnapRound", flags).GetValue(app);
                 int frames = 0;
-                bool restarting = (bool)t.GetField("_restarting", flags).GetValue(app);
+                bool landed = false;
                 int movesNow = (int)t.GetField("_coachMoves", flags).GetValue(app);
-                if (acted && (restarting || movesNow != 0))
+                if (acted && snap != null)
                 {
-                    // Edit mode does not resume the coroutine Restart started.
-                    // Step that same SnapRound, one yield per frame.
-                    t.GetField("_restarting", flags).SetValue(app, false);
+                    // Edit mode does not resume the coroutine. Step the enumerator
+                    // Restart started. The fly-in waits on Time.deltaTime, which
+                    // this batch does not advance, so after one yielded frame a
+                    // newer motion generation cancels that parade the way a second
+                    // Restart does. This same enumerator then runs the landing.
                     Time.captureDeltaTime = 2f;
-                    var snap = (System.Collections.IEnumerator)t.GetMethod("SnapRound", flags).Invoke(app, null);
-                    frames = PumpFrames(snap, 24);
+                    var gen = t.GetField("_motionGen", BindingFlags.NonPublic | BindingFlags.Static);
+                    frames = PumpFrames(snap, 64, () =>
+                    {
+                        gen.SetValue(null, (int)gen.GetValue(null) + 1);
+                    }, out landed);
+                    landed = landed && !(bool)t.GetField("_restarting", flags).GetValue(app);
                 }
                 int reset = (int)t.GetField("_coachMoves", flags).GetValue(app);
                 object[] again = { -1, -1 };
@@ -1127,7 +1134,7 @@ namespace FlockFive.Editor
                     && acted && restart.width > 2f
                     && reset == 0 && recued && from2 == wantFrom && to2 == wantTo
                     && mid && midMoves == 1 && finished
-                    && (frames > 0 || movesNow == 0),
+                    && landed && (frames > 0 || movesNow == 0),
                     "acted " + acted + " restart " + restart + " frames " + frames
                     + " moves " + afterHop + "/" + reset + "/" + midMoves);
             }
@@ -1144,9 +1151,10 @@ namespace FlockFive.Editor
             }
         }
 
-        static int PumpFrames(System.Collections.IEnumerator root, int maxFrames)
+        static int PumpFrames(System.Collections.IEnumerator root, int maxFrames, System.Action afterFirstFrame, out bool done)
         {
             int frames = 0;
+            bool noted = false;
             var stack = new System.Collections.Generic.Stack<System.Collections.IEnumerator>();
             stack.Push(root);
             while (stack.Count > 0 && frames < maxFrames)
@@ -1159,8 +1167,17 @@ namespace FlockFive.Editor
                 }
                 var child = top.Current as System.Collections.IEnumerator;
                 if (child != null) stack.Push(child);
-                else frames++;
+                else
+                {
+                    frames++;
+                    if (!noted)
+                    {
+                        noted = true;
+                        if (afterFirstFrame != null) afterFirstFrame();
+                    }
+                }
             }
+            done = stack.Count == 0;
             return frames;
         }
 
