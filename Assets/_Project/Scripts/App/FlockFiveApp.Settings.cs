@@ -136,13 +136,13 @@ namespace FlockFive
             var e = Event.current;
             bool release = e != null && e.type == EventType.MouseUp && e.button == 0;
             var gui = e != null ? e.mousePosition : default;
-            int eventId = ExitEventId();
             if (release && _exitPointerHeld)
             {
+                int eventId = ResolveExitEventId(e);
                 bool takes = GearTakesRelease(_exitPointerHeld, _exitPointerId, eventId, true, gui, r);
-                _exitPointerHeld = false;
-                if (!takes)
+                if (!takes && eventId == _exitPointerId)
                 {
+                    ClearLevelExit();
                     GUIUtility.hotControl = 0;
                     SwallowGearTap(r);
                     return;
