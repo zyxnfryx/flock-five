@@ -470,6 +470,11 @@ namespace FlockFive
         static float _sceneInputUntil = -1f;
         HomeFace _sceneFace;
         bool _sceneFaceSet;
+        // The pointer still down from the tap that left the level. Its release
+        // is swallowed. A later press is a new gesture and is not.
+        static bool _exitPointerHeld;
+        static int _exitPointerId = -1;
+        bool _skipSplashSettle;
 
         void ArmSceneInputSettle()
         {
@@ -479,8 +484,15 @@ namespace FlockFive
                 _sceneFaceSet = true;
                 return;
             }
-            if (_home == _sceneFace) return;
+            if (_home == _sceneFace)
+            {
+                _skipSplashSettle = false;
+                return;
+            }
+            bool skipTimer = _home == HomeFace.Splash && _skipSplashSettle;
             _sceneFace = _home;
+            _skipSplashSettle = false;
+            if (skipTimer) return;
             _sceneInputUntil = GateNow + SceneInputSettle;
         }
 
@@ -799,6 +811,9 @@ namespace FlockFive
                 Sfx.CardTap();
                 return;
             }
+            // The tip's pause freezes FlyOffAll, and the seed is restored only
+            // after that parade. Drop the tip before the first yield.
+            ReleaseCaptionPause();
 #if UNITY_EDITOR
             var round = SnapRound();
             EditorSnapRound = round;
@@ -810,13 +825,14 @@ namespace FlockFive
 
         void ShowSplash()
         {
+            if (!_exitPointerHeld) CaptureLevelExitPointer();
+            ReleaseCaptionPause();
             AudioGuard.OnSceneOrPopupClosed();
             ClearTransientFx();
             CloseHiveInspect();
             SeasonCrossfade.RetireLive();
             GardenLife.DetachHome();
             _splash = true;
-            _sceneInputUntil = GateNow + SceneInputSettle;
             _clearReward = false;
             CancelRewardGap();
             _gardenScoring = false;
@@ -6110,7 +6126,7 @@ namespace FlockFive
             {
                 if (gen != _motionGen) yield break;
                 if (GamePause.Paused) { yield return null; continue; }
-                t += Time.deltaTime;
+                t += ParadeStep();
                 for (int i = 0; i < birdN; i++)
                 {
                     var b = flock[i];
@@ -6289,7 +6305,7 @@ namespace FlockFive
             {
                 if (gen != _motionGen) yield break;
                 if (GamePause.Paused) { yield return null; continue; }
-                t += Time.deltaTime;
+                t += ParadeStep();
                 for (int i = 0; i < birds.Count; i++)
                 {
                     var b = birds[i];
@@ -6426,8 +6442,83 @@ namespace FlockFive
 
         // Resume delivers the pointer that was down when the app left. Eat it
         // once, for every IMGUI control, so a lesson cannot be tapped through.
+        public enum PointerEdge { None = 0, Down = 1, Release = 2 }
+
+        // True only for the release of the pointer that left the level.
+        // A pointer-down is a new gesture and is never swallowed.
+        public static bool SwallowLevelExit(bool held, int trackedId, PointerEdge edge, int eventId)
+        {
+            if (!held || edge != PointerEdge.Release) return false;
+            if (trackedId >= 0 && eventId >= 0 && eventId != trackedId) return false;
+            return true;
+        }
+
+        void ArmLevelExit(int pointerId)
+        {
+            _exitPointerHeld = true;
+            _exitPointerId = pointerId;
+            _skipSplashSettle = true;
+        }
+
+        void CaptureLevelExitPointer()
+        {
+            _exitPointerHeld = false;
+            _exitPointerId = -1;
+            var touch = Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count; i++)
+                {
+                    var t = touches[i];
+                    if (t == null || !t.press.isPressed) continue;
+                    ArmLevelExit(t.touchId.ReadValue());
+                    return;
+                }
+            }
+            if (Mouse.current != null && Mouse.current.leftButton.isPressed)
+                ArmLevelExit(-1);
+        }
+
+        static int ExitEventId()
+        {
+            if (_exitPointerId < 0) return -1;
+            var touch = Touchscreen.current;
+            if (touch == null || touch.primaryTouch == null) return -1;
+            return touch.primaryTouch.touchId.ReadValue();
+        }
+
+        static bool ConsumeLevelExit(Event e)
+        {
+            if (e == null) return false;
+            var edge = e.type == EventType.MouseUp ? PointerEdge.Release
+                : e.type == EventType.MouseDown ? PointerEdge.Down
+                : PointerEdge.None;
+            if (!SwallowLevelExit(_exitPointerHeld, _exitPointerId, edge, ExitEventId())) return false;
+            _exitPointerHeld = false;
+            return true;
+        }
+
+        static float ParadeStep()
+        {
+            float dt = Time.deltaTime;
+#if UNITY_EDITOR
+            // EditMode steps this enumerator with no player loop, so delta stays 0.
+            // A held pause never reaches here: the parade yields until it lifts.
+            if (!Application.isPlaying && dt <= 0f) dt = 0.25f;
+#endif
+            return dt;
+        }
+
         static void SwallowResumePointer()
         {
+            var leave = Event.current;
+            if (leave != null && ConsumeLevelExit(leave))
+            {
+                if (leave.type == EventType.MouseUp) GUIUtility.hotControl = 0;
+                leave.Use();
+                return;
+            }
             // Also while the level transition covers the screen (held splash / mask).
             if (GateNow >= _resumeInputUntil && GateNow >= _sceneInputUntil && !PressRainbow.StageHeld() && !StartupInputHeld) return;
             var e = Event.current;

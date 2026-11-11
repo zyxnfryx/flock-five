@@ -133,11 +133,24 @@ namespace FlockFive
             if (_settingsOpen) return;
             var q = HomeGearNow();
             var r = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            var gui = Event.current != null ? Event.current.mousePosition : default;
-            bool blocked = SceneInputBlocked(GateNow, _sceneInputUntil);
-            if (!GearTakesRelease(blocked, GateNow, _sceneInputUntil, gui, r) || !HomeGear.AcceptsTap(q) || VeilBlocks(r))
+            var e = Event.current;
+            bool release = e != null && e.type == EventType.MouseUp && e.button == 0;
+            var gui = e != null ? e.mousePosition : default;
+            int eventId = ExitEventId();
+            if (release && _exitPointerHeld)
             {
-                if (HomeGear.Shown(q) || VeilBlocks(r) || blocked) SwallowGearTap(r);
+                bool takes = GearTakesRelease(_exitPointerHeld, _exitPointerId, eventId, true, gui, r);
+                _exitPointerHeld = false;
+                if (!takes)
+                {
+                    GUIUtility.hotControl = 0;
+                    SwallowGearTap(r);
+                    return;
+                }
+            }
+            if (!HomeGear.AcceptsTap(q) || VeilBlocks(r))
+            {
+                if (HomeGear.Shown(q) || VeilBlocks(r)) SwallowGearTap(r);
                 return;
             }
             if (HitPad(r, out _gearHeld))
