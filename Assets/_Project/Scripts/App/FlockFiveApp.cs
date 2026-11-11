@@ -22,6 +22,11 @@ namespace FlockFive
         int _sel = -1;
         bool _busy;
         bool _restarting;
+#if UNITY_EDITOR
+        // The enumerator Restart just passed to StartCoroutine. Edit-mode tests
+        // step this same object. It is not read by play.
+        internal System.Collections.IEnumerator EditorSnapRound;
+#endif
         static int _motionGen;
         static int _perchWave;
         bool _won;
@@ -794,7 +799,13 @@ namespace FlockFive
                 Sfx.CardTap();
                 return;
             }
+#if UNITY_EDITOR
+            var round = SnapRound();
+            EditorSnapRound = round;
+            StartCoroutine(round);
+#else
             StartCoroutine(SnapRound());
+#endif
         }
 
         void ShowSplash()
