@@ -818,6 +818,8 @@ namespace FlockFive
                 _coachResumeFade = true;
                 _cueSpoken = null;
             }
+            else if (_coach || _leafIntro)
+                _cueSpoken = null;
         }
 
         void CoachRelease()
@@ -1049,7 +1051,7 @@ namespace FlockFive
             _cueHand = true;
             _cueForce = true;
             _cueBranch = dest;
-            CueLine(CaptionLayout.CoachPlaceLine);
+            CueLine(LevelData.Index == 0 ? CaptionLayout.FirstClearLine : CaptionLayout.CoachPlaceLine);
         }
 
         bool CoachReject(Vector2 world)
@@ -1269,6 +1271,28 @@ namespace FlockFive
         // enough to clear the banner, dip up or down.
         public static bool GardenFromRight(float aimX, float screenW) => aimX < screenW * 0.5f;
 
+        // The branch the fingertip must land in. Wide enough for a column, tall
+        // enough for one row, centered on the target bird.
+        public static Rect LessonBranchRect(Vector2 aim, float s)
+        {
+            float w = Mathf.Max(72f, 96f * Mathf.Max(0.5f, s));
+            float h = Mathf.Max(88f, 120f * Mathf.Max(0.5f, s));
+            return new Rect(aim.x - w * 0.5f, aim.y - h * 0.45f, w, h);
+        }
+
+        public static Vector2 KeepTipOnBranch(Vector2 nudged, Rect branch)
+        {
+            if (branch.width < 4f || branch.height < 4f) return nudged;
+            return new Vector2(
+                Mathf.Clamp(nudged.x, branch.xMin + 2f, branch.xMax - 2f),
+                Mathf.Clamp(nudged.y, branch.yMin + 2f, branch.yMax - 2f));
+        }
+
+        public static bool GloveTapCountsAsBranch(Vector2 gui, Rect glove, bool lessonGlove)
+        {
+            return lessonGlove && glove.width > 2f && glove.height > 2f && glove.Contains(gui);
+        }
+
         public static Vector2 GardenSidewaysAim(Vector2 aim, Rect plate, float s, float screenW, out float deg)
         {
             deg = -90f;
@@ -1332,7 +1356,9 @@ namespace FlockFive
             else
                 known = TutorCaptionPlate(out plate);
             // b98: always the sideways approach (right to left, hand pointing left), never from below.
+            var branch = LessonBranchRect(aimGui, s);
             if (known) aim = GardenSidewaysAim(aimGui, plate, s, PhoneArea.W, out _);
+            aim = KeepTipOnBranch(aim, branch);
             // Left-half target: in from the right, hand pointing left. A target at the right edge (Level 1
             // step 2, branch 5) has no room on its right for the hand, so it is met from the left, pointing
             // right (the mirrored default side approach), still level with the target. Never from below.

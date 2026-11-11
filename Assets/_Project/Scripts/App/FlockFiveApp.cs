@@ -3764,7 +3764,10 @@ namespace FlockFive
             if (OstrichIntroBlocking()) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
-            HandleTap(cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f)));
+            var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
+            if (GloveTapCountsAsBranch(screen, GloveBody(_gloveShown, _gloveShownAng, DeviceFit.Ui(), _gloveMirror), _cueForce && _gloveVis))
+                world = _cueAimWorld;
+            HandleTap(world);
         }
 
         public void ShotNow(string file)
@@ -6845,6 +6848,24 @@ namespace FlockFive
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
             else
                 GUI.Box(restart, "↩");
+            var restartLab = GuiPool.Label(GuiSlot.SettingsLink);
+            restartLab.fontStyle = FontStyle.Bold;
+            restartLab.alignment = TextAnchor.LowerCenter;
+            restartLab.fontSize = Mathf.Max(10, Mathf.RoundToInt(11f * s));
+            GUI.Label(restart, "Restart", restartLab);
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            bool homeHeld = false;
+            if (home.width > 2f && HitPad(home, out homeHeld))
+                ShowSplash();
+            GUI.color = new Color(0.10f, 0.08f, 0.05f, homeHeld ? 0.92f : 0.78f);
+            GUI.DrawTexture(home, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var homeLab = GuiPool.Label(GuiSlot.InspectX);
+            homeLab.fontStyle = FontStyle.Bold;
+            homeLab.alignment = TextAnchor.MiddleCenter;
+            homeLab.fontSize = Mathf.Max(12, Mathf.RoundToInt(16f * s));
+            homeLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
+            GUI.Label(home, "Home", homeLab);
             if (HiveReachable())
                 DrawHiveButton(CornerAnchor.HiveAlignedDraw(hive, restart), s, orbit: true, pop: true);
             else
@@ -8789,6 +8810,15 @@ namespace FlockFive
 
             // Bigger persistent balance: "$12" + coin sprite on the right.
             DrawCoinBalance(s, pig.x - 12f, pig.center.y);
+            if (AdPause.Unscaled < _coinTipUntil)
+            {
+                var tip = GuiPool.Label(GuiSlot.SettingsLink);
+                tip.fontStyle = FontStyle.Bold;
+                tip.alignment = TextAnchor.MiddleCenter;
+                tip.fontSize = Mathf.Max(12, Mathf.RoundToInt(15f * s));
+                var tr = new Rect(pig.x - 180f * s, pig.y - 28f * s, 170f * s, 22f * s);
+                GUI.Label(tr, "Coins you win.", tip);
+            }
             if (!raiseSign) DrawStreakSignLayer(s);
         }
 
@@ -8828,9 +8858,18 @@ namespace FlockFive
 
         static float CoinBalanceIcon(float s) => CoinBalanceIcon(PhoneArea.W, s);
 
+        float _coinTipUntil = -1f;
+        Rect _homeCoinR;
+
+        void ShowCoinTip()
+        {
+            _coinTipUntil = AdPause.Unscaled + 1.6f;
+        }
+
         void DrawCoinBalance(float s, float rightX, float centerY)
         {
             float icon = CoinBalanceIcon(s);
+            _homeCoinR = new Rect(rightX - icon, centerY - icon * 0.5f, icon, icon);
             var ir = new Rect(rightX - icon, centerY - icon * 0.5f, icon, icon);
             DrawCoinCluster(ir, s, CoinBalanceType);
         }
@@ -10497,7 +10536,12 @@ namespace FlockFive
             _yieldPig = !modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR);
             _yieldPigR = pigR;
             if (_yieldPig && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
+            {
                 TryPigPoke();
+                ShowCoinTip();
+            }
+            if (_homeCoinR.width > 2f && HitPad(_homeCoinR, out _))
+                ShowCoinTip();
 
             // Hive lesson hides that slot. The packer closes it; poker slides up under the pig.
             bool hiveDraw = RailLive(RailHive);

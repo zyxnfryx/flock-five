@@ -159,6 +159,15 @@ namespace FlockFive
             return new Rect(right - size, y, size, size);
         }
 
+        // Top-left home, the same size and top inset as restart.
+        public static Rect TopBarHome(Rect restart, float screenW, Rect safe)
+        {
+            if (restart.width < 2f) return default;
+            if (safe.width < 2f) safe = new Rect(0f, 0f, screenW, restart.yMax);
+            float left = Mathf.Max(16f, safe.xMin + 10f);
+            return new Rect(left, restart.y, restart.width, restart.height);
+        }
+
         static void GardenCore(float screenW, float screenH, Rect safe,
             out float scale, out float top, out float bot, out Rect restart, out Rect hive)
         {

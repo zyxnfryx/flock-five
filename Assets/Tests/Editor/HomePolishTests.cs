@@ -81,6 +81,7 @@ namespace FlockFive.Editor
             CheckScheduledRestore(Check);
             CheckScheduleHousekeeping(Check);
             CheckRebootHolds(Check);
+            CheckGardenGlove(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -861,6 +862,27 @@ namespace FlockFive.Editor
                 if (desk != null) MixDesk.DetachForTests(desk);
                 UnityEngine.Object.DestroyImmediate(go);
             }
+        }
+
+        static void CheckGardenGlove(System.Action<string, bool, string> Check)
+        {
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool inside = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                float s = DeviceFit.Ui(w[i], h[i]);
+                var aim = new Vector2(w[i] * 0.28f, h[i] * 0.42f);
+                var branch = FlockFiveApp.LessonBranchRect(aim, s);
+                var nudged = new Vector2(aim.x + branch.width, aim.y + branch.height);
+                var tip = FlockFiveApp.KeepTipOnBranch(nudged, branch);
+                if (!branch.Contains(tip)) inside = false;
+            }
+            bool clear = CaptionLayout.FirstClearLine.IndexOf("Five of one color clear.") >= 0;
+            var restart = new Rect(700f, 40f, 64f, 64f);
+            var home = CornerAnchor.TopBarHome(restart, 820f, new Rect(0f, 0f, 820f, 1180f));
+            bool mirrored = Mathf.Abs(home.y - restart.y) < 0.5f && Mathf.Abs(home.width - restart.width) < 0.5f && home.x < restart.x;
+            Check("glove-tip-lands-in-the-branch", inside && clear && mirrored, "820 402 412");
         }
 
         static void CheckRebootHolds(System.Action<string, bool, string> Check)
