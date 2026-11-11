@@ -385,7 +385,7 @@ namespace FlockFive
         }
 
 #if DEVELOPMENT_BUILD
-        public const string DevSha = "63f0d90e";
+        public const string DevSha = "522b634f";
 
         public static string DevSettingsSha(string sha)
         {
