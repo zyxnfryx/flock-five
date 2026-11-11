@@ -818,6 +818,15 @@ namespace FlockFive
             GloveVeilReset();
             CoachHideGlow();
             CoachHideRipples();
+            // SnapRound never calls CoachBegin. One guided hop would leave
+            // _coachMoves at 1, so CoachPick skips Level1First and the next
+            // move can finish the lesson.
+            if (_coach)
+            {
+                _coachMoves = 0;
+                _coachFrom = -1;
+                _coachTo = -1;
+            }
             if (_cueGift || _cueLine == GiftStuckLine)
             {
                 _coachGiftUntil = PlayClock.Now + GiftHintSeconds;
