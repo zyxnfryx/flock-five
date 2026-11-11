@@ -958,7 +958,7 @@ namespace FlockFive
             {
                 if (_splash || _won || !PestCueAlive())
                     PestIntroHide();
-                else if (!Ads.IsShowing)
+                else if (!_restarting && !Ads.IsShowing)
                     HoldTutorPause(true);
             }
             else if (!PestStageFree())
@@ -5350,9 +5350,10 @@ namespace FlockFive
         }
 
         // The release that left the level must not open the gear under the same spot.
-        public static bool GearTakesRelease(bool homeJustOpened, float now, float settleUntil, Vector2 releaseGui, Rect gear)
+        public static bool GearTakesRelease(bool exitHeld, int exitId, int eventId, bool isRelease, Vector2 releaseGui, Rect gear)
         {
-            if (homeJustOpened && SceneInputBlocked(now, settleUntil)) return false;
+            if (SwallowLevelExit(exitHeld, exitId, isRelease ? PointerEdge.Release : PointerEdge.None, eventId))
+                return false;
             if (gear.width < 2f) return false;
             return gear.Contains(releaseGui);
         }
@@ -7065,6 +7066,14 @@ namespace FlockFive
                 return;
             }
             ReleaseTutorPause();
+        }
+
+        // Restart and Home both leave the caption. The pause has to be gone
+        // before SnapRound, or FlyOffAll waits forever and the seed is never copied.
+        void ReleaseCaptionPause()
+        {
+            if (_ruleTip != RuleTip.None) DismissRuleTip();
+            else ReleaseTutorPause();
         }
 
         void ReleaseTutorPause()
