@@ -3765,7 +3765,7 @@ namespace FlockFive
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
             var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
-            if (GloveTapCountsAsBranch(screen, GloveBody(_gloveShown, _gloveShownAng, DeviceFit.Ui(), _gloveMirror), _cueForce && _gloveVis))
+            if (ScreenGloveCountsAsBranch(screen, PhoneArea.H, GloveBody(_gloveShown, _gloveShownAng, DeviceFit.Ui(), _gloveMirror), _cueForce && _gloveVis))
                 world = _cueAimWorld;
             HandleTap(world);
         }

@@ -878,11 +878,22 @@ namespace FlockFive.Editor
                 var tip = FlockFiveApp.KeepTipOnBranch(nudged, branch);
                 if (!branch.Contains(tip)) inside = false;
             }
+            bool tap = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                float H = h[i];
+                var glove = new Rect(w[i] * 0.3f, 100f, 70f, 80f);
+                var onGlove = new Vector2(glove.center.x, H - glove.center.y);
+                var mirrored = new Vector2(glove.center.x, glove.center.y);
+                if (!FlockFiveApp.ScreenGloveCountsAsBranch(onGlove, H, glove, true)) tap = false;
+                if (FlockFiveApp.ScreenGloveCountsAsBranch(mirrored, H, glove, true)) tap = false;
+            }
             bool clear = CaptionLayout.FirstClearLine.IndexOf("Five of one color clear.") >= 0;
             var restart = new Rect(700f, 40f, 64f, 64f);
             var home = CornerAnchor.TopBarHome(restart, 820f, new Rect(0f, 0f, 820f, 1180f));
             bool mirrored = Mathf.Abs(home.y - restart.y) < 0.5f && Mathf.Abs(home.width - restart.width) < 0.5f && home.x < restart.x;
             Check("glove-tip-lands-in-the-branch", inside && clear && mirrored, "820 402 412");
+            Check("screen-glove-tap-hits-the-branch", tap, "820 402 412");
         }
 
         static void CheckRebootHolds(System.Action<string, bool, string> Check)
