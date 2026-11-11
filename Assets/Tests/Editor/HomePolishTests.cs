@@ -54,7 +54,7 @@ namespace FlockFive.Editor
                 && FlockFiveApp.SceneInputBlocked(10.39f, 10.40f)
                 && !FlockFiveApp.SceneInputBlocked(10.40f, 10.40f)
                 && Mathf.Abs(FlockFiveApp.SceneInputSettle - 0.40f) < 0.001f,
-                "300 ms");
+                "400 ms");
             CheckSafe("820", 820, 1180, Check);
             CheckSafe("402", 402, 874, Check);
             CheckSafe("412", 412, 915, Check);
@@ -884,9 +884,9 @@ namespace FlockFive.Editor
                 float H = h[i];
                 var glove = new Rect(w[i] * 0.3f, 100f, 70f, 80f);
                 var onGlove = new Vector2(glove.center.x, H - glove.center.y);
-                var mirrored = new Vector2(glove.center.x, glove.center.y);
+                var mirroredScreen = new Vector2(glove.center.x, glove.center.y);
                 if (!FlockFiveApp.ScreenGloveCountsAsBranch(onGlove, H, glove, true)) tap = false;
-                if (FlockFiveApp.ScreenGloveCountsAsBranch(mirrored, H, glove, true)) tap = false;
+                if (FlockFiveApp.ScreenGloveCountsAsBranch(mirroredScreen, H, glove, true)) tap = false;
             }
             bool clear = CaptionLayout.FirstClearLine.IndexOf("Five of one color clear.") >= 0;
             var restart = new Rect(700f, 40f, 64f, 64f);
