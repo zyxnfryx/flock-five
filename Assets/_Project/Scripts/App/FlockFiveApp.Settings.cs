@@ -336,6 +336,9 @@ namespace FlockFive
                 if (animOn) DrawCheckMark(Inset(rows.AnimateToggle, 0.22f), new Color(0.20f, 0.42f, 0.16f, 1f));
 
                 var xBtn = frame.Close;
+#if DEVELOPMENT_BUILD
+                DrawDevSha(card, s);
+#endif
                 DrawGiftCloseX(xBtn, xHeld, s);
                 var pass = SettingsMotion.GearPassFor(HomeGearNow().Home, _settingsPhase);
                 if (pass == SettingsMotion.GearPass.AboveOverlay || _settingsOpen)
@@ -380,6 +383,38 @@ namespace FlockFive
             DrawSettingsGear(spin, gearHeld);
             ApplySettingsHit(hit);
         }
+
+#if DEVELOPMENT_BUILD
+        public const string DevSha = "63f0d90e";
+
+        public static string DevSettingsSha(string sha)
+        {
+            if (string.IsNullOrEmpty(sha)) return "";
+            sha = sha.Trim();
+            int n = sha.Length < 8 ? sha.Length : 8;
+            for (int i = 0; i < n; i++)
+            {
+                char c = sha[i];
+                bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                if (!hex) return "";
+            }
+            if (n < 7) return "";
+            return n == sha.Length ? sha : sha.Substring(0, n);
+        }
+
+        void DrawDevSha(Rect card, float s)
+        {
+            string sha = DevSettingsSha(DevSha);
+            if (sha.Length == 0) return;
+            var st = GuiPool.Label(GuiSlot.SettingsLink);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
+            st.fontSize = Mathf.Max(10, Mathf.RoundToInt(11f * s));
+            var r = new Rect(card.x + 8f, card.yMax - 18f * s, card.width - 16f, 14f * s);
+            StampOutlined(r, sha, st, new Color(1f, 0.97f, 0.90f, 0.7f), 0, 1);
+        }
+#endif
 
         // Full-screen black under the card. The cog is drawn after this, at full color.
         void DrawSettingsDim(float alpha)

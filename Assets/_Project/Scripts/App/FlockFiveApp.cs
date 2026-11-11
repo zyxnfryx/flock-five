@@ -461,7 +461,7 @@ namespace FlockFive
         static float _resumeInputUntil = -1f;
         // A face change (Poker Back, Collection, the contest) leaves the next
         // control under the finger. Hold taps until that screen has settled.
-        public const float SceneInputSettle = 0.30f;
+        public const float SceneInputSettle = 0.40f;
         static float _sceneInputUntil = -1f;
         HomeFace _sceneFace;
         bool _sceneFaceSet;
@@ -17571,9 +17571,12 @@ namespace FlockFive
             // Needs an open owned inspect so the Upgrade control is on screen.
             if (_hiveInspect < 0 || !AlbumInspectReady()) return;
             if (Hive.CountOfSlot(_hiveInspect) <= 0) return;
-            if (!Hive.UpgradeRoom(_hiveInspect)) return;
-            // The lesson promises a free first upgrade; a player who already has one skips it.
-            if (!Hive.FreeUpgradeAvailable) return;
+            bool room = Hive.UpgradeRoom(_hiveInspect);
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            if (DevLevelSkip.ForceMaxxedFromUrl(Application.absoluteURL)) room = false;
+#endif
+            // MAXXED has no room, so "Tap Upgrade" stays off. A free upgrade still teaches.
+            if (!UpgradeCoachForCard(room, Hive.FreeUpgradeAvailable)) return;
             BeginUpgradeTutor();
         }
 
@@ -18129,7 +18132,7 @@ namespace FlockFive
             DrawBeeAlbumCard(big, ix, s, true);
             if (t > 0.4f)
                 DrawFlipArrows(big, s, Mathf.Clamp01(t));
-            float hintTop = big.yMax + 12f * s;
+            float hintTop = PutBackHintTop(big.yMax, s);
             bool upgradeOn = UpgradeButtonShows(t, UpgradeContext && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3));
             if (FlipHintsVisible(t, !_albumTutorOn, !_upgradeTutorOn, upgradeOn))
                 DrawFlipHint(hintTop, s, Mathf.Clamp01(t));
@@ -18175,9 +18178,12 @@ namespace FlockFive
                 BeginHiveFlip(ix);
             if (Event.current != null && Event.current.rawType == EventType.MouseUp) CardTilt.ClearDragAte();
 
-            // Tap dim outside card closes (after card/X/Back/upgrade so they win hit tests)
+            // Tap anywhere outside the card puts it back, including the jungle
+            // bars beside the play column at 820. Card, X, Back, and upgrade
+            // already consumed their own taps.
             var full = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
-            bool outside = !upgradeHit && !_hiveInspectClosing && u > 0.85f && HitPad(full, out _);
+            bool margin = PillarMarginPutBack(big);
+            bool outside = !upgradeHit && !_hiveInspectClosing && u > 0.85f && (HitPad(full, out _) || margin);
             if ((outside || xHit || backHit) && !_hiveInspectClosing)
                 BeginPutAwayInspect();
 
@@ -18629,6 +18635,36 @@ namespace FlockFive
         public static bool MaxxedPutBackShows(bool maxxed, float openT, bool albumCoachClear, bool upgradeCoachClear)
             => maxxed && openT > 0.4f && ShowFlipHints(albumCoachClear, upgradeCoachClear);
 
+        // A point outside the card, including a pillar-bar tap (gui x < 0).
+        public static bool InspectDismissTap(Vector2 gui, Rect card)
+        {
+            if (card.width > 2f && card.height > 2f && card.Contains(gui)) return false;
+            return true;
+        }
+
+        // Clearance under the card's bottom frame. GUI y grows downward, so this
+        // seats the put-back hint below that frame.
+        public const float PutBackHintClear = 8f;
+        public static float PutBackHintTop(float cardBottom, float s)
+            => cardBottom + 12f * Mathf.Max(0.5f, s) + PutBackHintClear;
+
+        // MAXXED cards skip "Tap Upgrade". A card with room and a free upgrade still gets it.
+        public static bool UpgradeCoachForCard(bool room, bool freeUpgrade)
+            => room && freeUpgrade;
+
+        static bool PillarMarginPutBack(Rect card)
+        {
+            var e = Event.current;
+            if (e == null || e.button != 0 || e.type != EventType.MouseUp) return false;
+            if (!InspectDismissTap(e.mousePosition, card)) return false;
+            var p = e.mousePosition;
+            float w = PhoneArea.W;
+            float h = PhoneArea.H;
+            if (p.x >= 0f && p.y >= 0f && p.x <= w && p.y <= h) return false;
+            e.Use();
+            return true;
+        }
+
         // Hint pill and the upgrade/MAXXED plate. If the plate would run off the
         // bottom, the hint moves up. The two rects do not overlap.
         public static void SeatHintAndBadge(float screenW, float screenH, float hintY, float hintW, float hintH, float btnW, float btnH, float gap, out Rect hint, out Rect badge)
@@ -18644,7 +18680,9 @@ namespace FlockFive
             if (y + btnH > screenH - edge)
             {
                 float overflow = y + btnH - (screenH - edge);
-                hint.y = Mathf.Max(8f, hint.y - overflow);
+                float slack = Mathf.Max(0f, gap - 4f);
+                float take = Mathf.Min(overflow, slack);
+                gap -= take;
                 y = hint.yMax + gap;
             }
             if (y < hint.yMax) y = hint.yMax + gap;
