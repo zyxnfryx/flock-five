@@ -1280,6 +1280,10 @@ namespace FlockFive.Editor
                 down.type = EventType.MouseDown;
                 bool ateDown = (bool)consume.Invoke(null, new object[] { down });
                 bool pressCleared = !(bool)held.GetValue(null) && !ateDown;
+                var up = new Event();
+                up.type = EventType.MouseUp;
+                bool ateRelease = (bool)consume.Invoke(null, new object[] { up });
+                bool releaseKept = pressCleared && !ateRelease && !(bool)held.GetValue(null);
                 bool leavingDown = FlockFiveApp.DropExitOnPress(true, -1, -1, 3, 3);
                 bool otherFinger = FlockFiveApp.DropExitOnPress(true, 4, 8, 3, 3);
 
@@ -1293,8 +1297,8 @@ namespace FlockFive.Editor
                 bool mouseEatsFinger = FlockFiveApp.SwallowLevelExit(true, -1, FlockFiveApp.PointerEdge.Release, mouseVsFinger);
                 Check("home-exit-clears-on-focus-loss", focusCleared && pauseCleared,
                     "focus " + focusCleared + " pause " + pauseCleared);
-                Check("home-exit-clears-on-fresh-press", pressCleared && !leavingDown && otherFinger,
-                    "press " + pressCleared + " leaving " + leavingDown + " other " + otherFinger);
+                Check("home-exit-clears-on-fresh-press", releaseKept && !leavingDown && otherFinger,
+                    "press " + pressCleared + " release " + ateRelease + " leaving " + leavingDown + " other " + otherFinger);
                 Check("home-exit-matches-finger-id",
                     mouse == -1 && finger == 4 && other == 9 && mouseVsFinger == 9
                     && mouseSwallow && fingerSwallow && !otherSwallow && !mouseEatsFinger,
