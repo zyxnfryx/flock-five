@@ -23,6 +23,7 @@ namespace FlockFive
         // ?forceMaxxed=1 draws the open album card as MAXXED so Inspector can
         // see "Tap outside to put back". It does not write the album.
         public const string ForceMaxxedKey = "forceMaxxed";
+        public const string ForcePauseKey = "forcePause";
         // A garden that never shows the entrance still has to finish the star
         // wipe. An ostrich who stays idle without ever striding (the entrance
         // did not start) is given up after this, so Inspector is not stuck.
@@ -136,6 +137,14 @@ namespace FlockFive
         public static bool ForceMaxxedFromUrl(string url)
         {
             return QueryInt(url, ForceMaxxedKey) == 1;
+        }
+
+        // DEV-ONLY inspect hook. Not a shipping-path proof. True only for
+        // ?forcePause=1. The caption timer checks it in Development builds
+        // and does not auto-advance while it is set.
+        public static bool ForcePauseFromUrl(string url)
+        {
+            return QueryInt(url, ForcePauseKey) == 1;
         }
 
         // presented: the star wipe is down and the garden tween is idle.

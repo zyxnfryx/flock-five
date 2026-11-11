@@ -408,6 +408,7 @@ namespace FlockFive
         float _gloveActT;
         bool _gloveLockOn;
         bool _gloveSettled;
+        bool _gloveRouted;
         Rect _lessonWoodGui;
         // b88: approach heading, committed in GloveLockPose before the first pixel.
         // Draw reads these and does not re-aim. Cleared with the veil.
@@ -1075,6 +1076,11 @@ namespace FlockFive
 
         bool CoachReject(Vector2 world)
         {
+            if (_gloveRouted)
+            {
+                _gloveRouted = false;
+                return false;
+            }
             if (_cueFreeze)
             {
                 CoachNudge();
@@ -2622,7 +2628,9 @@ namespace FlockFive
             {
             float wig = hold ? 0f : Mathf.Sin(AdPause.Unscaled * 46f) * 7f * _gloveWiggle;
             var axis = _gloveAway.sqrMagnitude > 0.0001f ? _gloveAway : Vector2.right;
-            _gloveShown = arcPos - axis.normalized * wig * (1f - travel);
+            var shove = axis.normalized * wig * (1f - travel);
+            shove.x = Mathf.Clamp(shove.x, -8f, 8f);
+            _gloveShown = arcPos - shove;
             if (_gloveFaceOn)
             {
                 _gloveShownAng = _gloveFaceAng;
@@ -5206,6 +5214,19 @@ namespace FlockFive
 
         // Same pose DrawGloveAt renders. Update calls this before OnGUI, so the
         // hit rect cannot wait for the draw to store _gloveBody.
+        Rect OnScreenGlove()
+        {
+            var live = LiveGloveRect();
+            if (_gloveBodyFrame >= 0 && Time.frameCount - _gloveBodyFrame <= 1 && _gloveBody.width > 2f)
+            {
+                if (live.width < 2f) return _gloveBody;
+                return Rect.MinMaxRect(
+                    Mathf.Min(live.xMin, _gloveBody.xMin), Mathf.Min(live.yMin, _gloveBody.yMin),
+                    Mathf.Max(live.xMax, _gloveBody.xMax), Mathf.Max(live.yMax, _gloveBody.yMax));
+            }
+            return live;
+        }
+
         Rect LiveGloveRect()
         {
             float dh = GloveDh(DeviceFit.Ui());
@@ -5252,7 +5273,9 @@ namespace FlockFive
         {
             float bob = GloveBobPx(unscaledTime, hold);
             float rad = ang * Mathf.Deg2Rad;
-            return pivot + new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
+            var d = new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
+            d.x = Mathf.Clamp(d.x, -8f, 8f);
+            return pivot + d;
         }
 
         // The quad DrawGloveAt renders, after bob, dip scale, and rotation.
@@ -5295,13 +5318,52 @@ namespace FlockFive
         public static bool LessonGloveHit(Vector2 screen, float screenH, Rect drawn)
         {
             if (drawn.width < 2f || drawn.height < 2f) return false;
-            return drawn.Contains(new Vector2(screen.x, screenH - screen.y));
+            return drawn.Contains(PointerToGui(screen, screenH));
+        }
+
+        // Bottom-up screen pixels to GUI y-down. One flip, matching Pressed.
+        public static Vector2 PointerToGui(Vector2 screenBottomUp, float screenH)
+        {
+            return new Vector2(screenBottomUp.x, screenH - screenBottomUp.y);
+        }
+
+        // CSS canvas pixels to the framebuffer the glove is drawn in.
+        // Identity when the buffer matches the CSS size.
+        public static Vector2 CanvasPointer(Vector2 cssBottomUp, float cssW, float cssH, float bufferW, float bufferH)
+        {
+            if (cssW < 1f || cssH < 1f || bufferW < 1f || bufferH < 1f) return cssBottomUp;
+            return new Vector2(cssBottomUp.x * bufferW / cssW, cssBottomUp.y * bufferH / cssH);
+        }
+
+        public enum PressFate { Miss, Home, Restart, Glove, Caption }
+
+        // Handler order the player uses: Home and Restart, then the drawn glove, then the caption.
+        public static PressFate GardenPressFate(Vector2 screenBottomUp, float screenH, Rect home, Rect restart, Rect glove, bool captionUp, bool gloveUp)
+        {
+            bool homeHit, restartHit;
+            if (GardenHudPoint(screenBottomUp, screenH, home, restart, out homeHit, out restartHit))
+                return homeHit ? PressFate.Home : PressFate.Restart;
+            if (gloveUp && LessonGloveHit(screenBottomUp, screenH, glove))
+                return PressFate.Glove;
+            if (captionUp) return PressFate.Caption;
+            return PressFate.Miss;
+        }
+
+        // The release that left the level must not open the gear under the same spot.
+        public static bool GearTakesRelease(bool homeJustOpened, float now, float settleUntil, Vector2 releaseGui, Rect gear)
+        {
+            if (homeJustOpened && SceneInputBlocked(now, settleUntil)) return false;
+            if (gear.width < 2f) return false;
+            return gear.Contains(releaseGui);
         }
 
         public static Vector2 UpgradeGloveSettle(Rect button)
         {
             if (button.width < 4f || button.height < 4f) return button.center;
-            return new Vector2(button.center.x, button.y + button.height * 0.68f);
+            // Right of the word so "Upgra" stays readable, still on the plate.
+            float x = button.xMax - Mathf.Max(16f, button.width * 0.22f);
+            if (x < button.xMin + 4f) x = button.center.x;
+            return new Vector2(x, button.y + button.height * 0.72f);
         }
 
         public static float AdvanceRuleHold(float held, float unscaledDelta)

@@ -175,10 +175,7 @@ namespace FlockFive
             if (TickRuleHold()) return;
             if (Ads.IsShowing) return;
             if (Pressed(out var screen))
-            {
-                if (GardenHudAct(screen)) { DismissRuleTip(); return; }
-                RuleTipTap(screen);
-            }
+                TakeRuleTipPress(screen);
         }
 
         // Unscaled wall time. AdPause.UnscaledDelta is 0 during an ad, and the old
@@ -186,10 +183,40 @@ namespace FlockFive
         bool TickRuleHold()
         {
             if (_ruleTip == RuleTip.None) return false;
+#if DEVELOPMENT_BUILD
+            // DEV-ONLY inspect hook. Not a shipping-path proof. ?forcePause=1
+            // holds captions so they do not auto-advance. Release builds omit this.
+            if (DevLevelSkip.ForcePauseFromUrl(Application.absoluteURL)) return false;
+#endif
             _ruleHeld = AdvanceRuleHold(_ruleHeld, Time.unscaledDeltaTime);
             if (!RuleHoldDone(_ruleHeld) || Ads.IsShowing) return false;
             DismissRuleTip();
             return true;
+        }
+
+        void TakeRuleTipPress(Vector2 screen)
+        {
+            var drawn = OnScreenGlove();
+            var fate = GardenPressFate(screen, PhoneArea.H, HomeHudRect(), RestartHudRect(), drawn, true, false);
+            if (fate == PressFate.Home || fate == PressFate.Restart)
+            {
+                GardenHudAct(screen);
+                DismissRuleTip();
+                return;
+            }
+            RuleTipTap(screen);
+        }
+
+        Rect HomeHudRect()
+        {
+            HudShaken(out var restart, out _);
+            return CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+        }
+
+        Rect RestartHudRect()
+        {
+            HudShaken(out var restart, out _);
+            return restart;
         }
 
         bool RuleTipTap(Vector2 screen)
@@ -231,7 +258,7 @@ namespace FlockFive
                 if (t == EventType.MouseDown && e.button == 0)
                 {
                     var screen = new Vector2(e.mousePosition.x, PhoneArea.H - e.mousePosition.y);
-                    RuleTipTap(screen);
+                    TakeRuleTipPress(screen);
                 }
                 if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
                 return;
