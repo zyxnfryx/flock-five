@@ -469,6 +469,18 @@ namespace FlockFive
             public float X0, Y0, X1, Y1;
         }
 
+        // A live level-1 coach goes back to the first hop. CoachBegin is not on
+        // the Restart path. SnapRound and its landing both call this so a guided
+        // hop cannot stay counted while the board is restored.
+        void ResetLiveCoachStep()
+        {
+            if (!_coach) return;
+            _coachMoves = 0;
+            _coachFrom = -1;
+            _coachTo = -1;
+            _cueSpoken = null;
+        }
+
         void CoachBegin(int index)
         {
             _coach = index == 0 && PlayerPrefs.GetInt(CoachKey, 0) == 0;
@@ -818,15 +830,7 @@ namespace FlockFive
             GloveVeilReset();
             CoachHideGlow();
             CoachHideRipples();
-            // SnapRound never calls CoachBegin. One guided hop would leave
-            // _coachMoves at 1, so CoachPick skips Level1First and the next
-            // move can finish the lesson.
-            if (_coach)
-            {
-                _coachMoves = 0;
-                _coachFrom = -1;
-                _coachTo = -1;
-            }
+            ResetLiveCoachStep();
             if (_cueGift || _cueLine == GiftStuckLine)
             {
                 _coachGiftUntil = PlayClock.Now + GiftHintSeconds;

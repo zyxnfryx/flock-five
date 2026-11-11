@@ -5619,6 +5619,7 @@ namespace FlockFive
 
         IEnumerator SnapRound()
         {
+            ResetLiveCoachStep();
             if (_restarting)
             {
                 // Second tap during the parade. Stay cut; do not resume in the gap.
