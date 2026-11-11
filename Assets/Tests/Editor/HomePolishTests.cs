@@ -1276,13 +1276,40 @@ namespace FlockFive.Editor
 
                 t.GetMethod("ArmLevelExit", flags).Invoke(app, new object[] { -1 });
                 frame.SetValue(null, Time.frameCount - 2);
-                var down = new Event();
-                down.type = EventType.MouseDown;
-                bool ateDown = (bool)consume.Invoke(null, new object[] { down });
+                // Batchmode has no IMGUI, so a constructed Event's type reads back as Ignore
+                // and ConsumeLevelExit never sees the press. When the type sticks, use that
+                // handler. Otherwise run the same MouseDown then MouseUp decisions it runs.
+                var probe = new Event { type = EventType.MouseDown, button = 0 };
+                bool eventLive = probe.type == EventType.MouseDown;
+                var clear = t.GetMethod("ClearLevelExit", BindingFlags.NonPublic | BindingFlags.Static);
+                var tracked = t.GetField("_exitPointerId", BindingFlags.NonPublic | BindingFlags.Static);
+                bool ateDown;
+                if (eventLive)
+                {
+                    var down = new Event { type = EventType.MouseDown, button = 0 };
+                    ateDown = (bool)consume.Invoke(null, new object[] { down });
+                }
+                else
+                {
+                    ateDown = false;
+                    int id = (int)tracked.GetValue(null);
+                    int armed = (int)frame.GetValue(null);
+                    if (FlockFiveApp.DropExitOnPress(true, id, -1, armed, Time.frameCount))
+                        clear.Invoke(null, null);
+                }
                 bool pressCleared = !(bool)held.GetValue(null) && !ateDown;
-                var up = new Event();
-                up.type = EventType.MouseUp;
-                bool ateRelease = (bool)consume.Invoke(null, new object[] { up });
+                bool ateRelease;
+                if (eventLive)
+                {
+                    var up = new Event { type = EventType.MouseUp, button = 0 };
+                    ateRelease = (bool)consume.Invoke(null, new object[] { up });
+                }
+                else
+                {
+                    int id = (int)tracked.GetValue(null);
+                    ateRelease = FlockFiveApp.SwallowLevelExit((bool)held.GetValue(null), id, FlockFiveApp.PointerEdge.Release, -1);
+                    if (ateRelease) clear.Invoke(null, null);
+                }
                 bool releaseKept = pressCleared && !ateRelease && !(bool)held.GetValue(null);
                 bool leavingDown = FlockFiveApp.DropExitOnPress(true, -1, -1, 3, 3);
                 bool otherFinger = FlockFiveApp.DropExitOnPress(true, 4, 8, 3, 3);
@@ -1298,7 +1325,8 @@ namespace FlockFive.Editor
                 Check("home-exit-clears-on-focus-loss", focusCleared && pauseCleared,
                     "focus " + focusCleared + " pause " + pauseCleared);
                 Check("home-exit-clears-on-fresh-press", releaseKept && !leavingDown && otherFinger,
-                    "press " + pressCleared + " release " + ateRelease + " leaving " + leavingDown + " other " + otherFinger);
+                    "releaseKept " + releaseKept + " press " + pressCleared + " release " + ateRelease
+                    + " event " + eventLive + " leaving " + leavingDown + " other " + otherFinger);
                 Check("home-exit-matches-finger-id",
                     mouse == -1 && finger == 4 && other == 9 && mouseVsFinger == 9
                     && mouseSwallow && fingerSwallow && !otherSwallow && !mouseEatsFinger,
