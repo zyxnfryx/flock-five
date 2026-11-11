@@ -187,6 +187,10 @@ namespace FlockFive
         public const string CoachPlaceLine =
             "Tap a matching or empty branch.";
 
+        // First garden, the place step. Five birds make a flock. Four do not.
+        public const string FirstClearLine =
+            "Tap a matching branch.\nFive of one color clear.";
+
         public const string CoachNowhereLine =
             "Nowhere to go yet.\nTry another branch.";
 
