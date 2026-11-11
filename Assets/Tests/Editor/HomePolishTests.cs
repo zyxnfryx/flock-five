@@ -83,6 +83,7 @@ namespace FlockFive.Editor
             CheckRebootHolds(Check);
             CheckGardenGlove(Check);
             CheckUpgradeStack(Check);
+            CheckPlayerGlove(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -932,6 +933,62 @@ namespace FlockFive.Editor
                 if (!FlockFiveApp.UpgradeClearsBottom(card, h[i], 34f, s)) clear = false;
             }
             Check("upgrade-clears-bottom-inset", clear, "820 402 412 inset 34");
+        }
+
+        static void CheckPlayerGlove(System.Action<string, bool, string> Check)
+        {
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool tap = true, bobOk = true, settle = true, hud = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                float H = h[i];
+                float s = DeviceFit.Ui(w[i], H);
+                float dh = FlockFiveApp.GloveDh(s);
+                var branch = FlockFiveApp.L1BranchRect(1, w[i], H);
+                var pivot = branch.center;
+                var posed = FlockFiveApp.GloveBobPivot(pivot, 0f, 0f, false);
+                var drawn = FlockFiveApp.ScreenGloveRect(posed, 0f, dh, 0f, false);
+                var center = new Vector2(drawn.center.x, H - drawn.center.y);
+                var tip = new Vector2(pivot.x, H - pivot.y);
+                var near = new Vector2(drawn.xMax - 1.5f, drawn.center.y);
+                var nearScreen = new Vector2(near.x, H - near.y);
+                if (!FlockFiveApp.LessonGloveHit(center, H, drawn)) tap = false;
+                if (!drawn.Contains(pivot) || !FlockFiveApp.LessonGloveHit(tip, H, drawn)) tap = false;
+                if (!drawn.Contains(near) || !FlockFiveApp.LessonGloveHit(nearScreen, H, drawn)) tap = false;
+                var outside = new Vector2(drawn.xMin - 4f, H - drawn.center.y);
+                if (FlockFiveApp.LessonGloveHit(outside, H, drawn)) tap = false;
+                float lo = 99f, hi = -99f;
+                for (int k = 0; k <= 48; k++)
+                {
+                    float t = k / 48f * (Mathf.PI * 2f / 2.35f);
+                    float b = FlockFiveApp.GloveBobPx(t, false);
+                    if (b < lo) lo = b;
+                    if (b > hi) hi = b;
+                }
+                if (hi - lo > 8.01f) bobOk = false;
+                var btn = new Rect((w[i] - 180f) * 0.5f, H * 0.72f, 180f, 84f);
+                var aim = FlockFiveApp.UpgradeGloveSettle(btn);
+                if (!btn.Contains(aim)) settle = false;
+                var restart = new Rect(w[i] - 80f, 16f, 64f, 64f);
+                var home = new Rect(16f, 16f, 64f, 64f);
+                bool homeHit, restartHit;
+                var onRestart = new Vector2(restart.center.x, H - restart.center.y);
+                var onHome = new Vector2(home.center.x, H - home.center.y);
+                if (!FlockFiveApp.GardenHudPoint(onRestart, H, home, restart, out homeHit, out restartHit) || !restartHit || homeHit)
+                    hud = false;
+                if (!FlockFiveApp.GardenHudPoint(onHome, H, home, restart, out homeHit, out restartHit) || !homeHit || restartHit)
+                    hud = false;
+            }
+            float held = 0f;
+            for (int f = 0; f < 270; f++)
+                held = FlockFiveApp.AdvanceRuleHold(held, 1f / 60f);
+            bool gone = FlockFiveApp.RuleHoldDone(held) && !FlockFiveApp.RuleHoldDone(FlockFiveApp.AdvanceRuleHold(0f, 3.5f));
+            Check("player-glove-tap-advances", tap, "center tip near-miss");
+            Check("player-glove-bob-extent", bobOk, "peak to peak");
+            Check("upgrade-settle-inside-button", settle, "820 402 412");
+            Check("lesson-hud-acts", hud, "home restart");
+            Check("caption-gone-after-4-5s", gone, "unscaled");
         }
 
         static void CheckRebootHolds(System.Action<string, bool, string> Check)

@@ -172,14 +172,24 @@ namespace FlockFive
                 return;
             }
             _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.35f);
-            _ruleHeld += Mathf.Min(AdPause.UnscaledDelta, 0.1f);
-            if (_ruleHeld > RuleTips.ReadSeconds && !Ads.IsShowing)
-            {
-                DismissRuleTip();
-                return;
-            }
+            if (TickRuleHold()) return;
             if (Ads.IsShowing) return;
-            if (Pressed(out var screen)) RuleTipTap(screen);
+            if (Pressed(out var screen))
+            {
+                if (GardenHudAct(screen)) { DismissRuleTip(); return; }
+                RuleTipTap(screen);
+            }
+        }
+
+        // Unscaled wall time. AdPause.UnscaledDelta is 0 during an ad, and the old
+        // 0.1s clamp made a slow WebGL frame count as a tenth of a second.
+        bool TickRuleHold()
+        {
+            if (_ruleTip == RuleTip.None) return false;
+            _ruleHeld = AdvanceRuleHold(_ruleHeld, Time.unscaledDeltaTime);
+            if (!RuleHoldDone(_ruleHeld) || Ads.IsShowing) return false;
+            DismissRuleTip();
+            return true;
         }
 
         bool RuleTipTap(Vector2 screen)

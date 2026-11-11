@@ -99,7 +99,7 @@ namespace FlockFive.Editor
                     float btnW = wideW * 0.60f;
                     float y = h - 36f * s - btnH;
                     var btn = new Rect((w - btnW) * 0.5f, y, btnW, btnH);
-                    var aim = btn.center;
+                    var aim = FlockFiveApp.UpgradeGloveSettle(btn);
                     float dh = FlockFiveApp.GloveDh(s);
                     var safe = new Rect(0f, 0f, w, h);
                     var near = aim + new Vector2(-12f, -6f);
@@ -151,7 +151,7 @@ namespace FlockFive.Editor
             int tickEnd = tick >= 0 ? app.IndexOf("void DrawAlbumTutor(", tick) : -1;
             string tickBody = tick >= 0 && tickEnd > tick ? app.Substring(tick, tickEnd - tick) : "";
             Check("upgrade-aim-sits-on-the-button",
-                tickBody.Contains("var aim = _upgradeBtnR.center;")
+                tickBody.Contains("UpgradeGloveSettle(_upgradeBtnR)")
                 && tickBody.Contains("float.NaN, true, float.NaN, _upgradeBtnR")
                 && tickBody.IndexOf("ButtonLabelAim(_upgradeBtnR, _upgradeLabelR, true)") < 0, "");
             string coach = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs");

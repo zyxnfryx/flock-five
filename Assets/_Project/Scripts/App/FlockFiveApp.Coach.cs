@@ -2593,12 +2593,11 @@ namespace FlockFive
             // A garden lesson used to loop the whole flight. The hand left the
             // branch for 40-65 px every cycle, so the first tap missed.
             bool gardenLesson = !claimCue && !upgradeCue && !_pokerBackGloveHeld;
-            if (gardenLesson && travel >= 0.98f) _gloveSettled = true;
-            if (gardenLesson && _gloveSettled)
+            if ((gardenLesson || upgradeCue) && travel >= 0.98f) _gloveSettled = true;
+            if ((gardenLesson || upgradeCue) && _gloveSettled)
             {
-                float bob = Mathf.Sin(AdPause.Unscaled * 2.35f) * 8f;
-                var shown = aim + new Vector2(0f, bob);
-                if (_lessonWoodGui.width > 4f)
+                var shown = aim;
+                if (gardenLesson && _lessonWoodGui.width > 4f)
                 {
                     shown.x = Mathf.Clamp(shown.x, _lessonWoodGui.xMin + 1f, _lessonWoodGui.xMax - 1f);
                     shown.y = Mathf.Clamp(shown.y, _lessonWoodGui.yMin + 1f, _lessonWoodGui.yMax - 1f);
@@ -5192,6 +5191,22 @@ namespace FlockFive
             return true;
         }
 
+        // Same pose DrawGloveAt renders. Update calls this before OnGUI, so the
+        // hit rect cannot wait for the draw to store _gloveBody.
+        Rect LiveGloveRect()
+        {
+            float dh = GloveDh(DeviceFit.Ui());
+            float dip = _gloveHoldPose ? _gloveHoldDip : _gloveDip;
+            var tex = CoachGloveCurl(dip);
+            if (tex == null || dh < 1f) return _gloveBody;
+            float ang = ResolveDrawAngle(_gloveShownAng, _gloveMirror, _gloveFaceOn, _gloveHoldPose, _gloveApproach);
+            var pivot = GloveBobPivot(_gloveShown, ang, AdPause.Unscaled, _gloveHoldPose);
+            float dw = dh * (tex.width / (float)Mathf.Max(1, tex.height));
+            bool mirror = _gloveMirror;
+            DrawnGlovePose(ref pivot, ref ang, ref mirror, dw, dh, PhoneArea.W, PhoneArea.H, _gloveFaceOn);
+            return ScreenGloveRect(pivot, ang, dh, dip, mirror);
+        }
+
         void DrawCoachGlove(float s)
         {
             bool fading = _gloveAct == TutorGloveAct.FadeOutOnTap;
@@ -5211,17 +5226,93 @@ namespace FlockFive
             return new Rect(pivot.x - u * dw, pivot.y - (1f - _gloveTipV) * dh, dw, dh);
         }
 
+        // One bob, in screen pixels. Peak-to-peak is 8. Not scaled by DeviceFit.
+        public const float GloveBobAmp = 4f;
+
+        public static float GloveBobPx(float unscaledTime, bool hold)
+        {
+            if (hold) return 0f;
+            return Mathf.Sin(unscaledTime * 2.35f) * GloveBobAmp;
+        }
+
+        public static Vector2 GloveBobPivot(Vector2 pivot, float ang, float unscaledTime, bool hold)
+        {
+            float bob = GloveBobPx(unscaledTime, hold);
+            float rad = ang * Mathf.Deg2Rad;
+            return pivot + new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
+        }
+
+        // The quad DrawGloveAt renders, after bob, dip scale, and rotation.
+        // GUI space (y down), before the pillar shift. Update hit-tests this same rect.
+        // The pivot passed in is already bobbed.
+        public static Rect ScreenGloveRect(Vector2 pivot, float ang, float dh, float dip, bool mirror)
+        {
+            var tex = CoachGloveCurl(dip);
+            float dw = tex == null ? dh * (220f / 300f) : dh * (tex.width / (float)Mathf.Max(1, tex.height));
+            float left = pivot.x - _gloveTipU * dw;
+            float top = pivot.y - (1f - _gloveTipV) * dh;
+            float widen = 1f + 0.07f * dip;
+            float squash = 1f - 0.12f * dip;
+            float sx = mirror ? -widen : widen;
+            float rad = ang * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad);
+            float sn = Mathf.Sin(rad);
+            float minX = 0f, minY = 0f, maxX = 0f, maxY = 0f;
+            for (int i = 0; i < 4; i++)
+            {
+                float x = (i & 1) == 0 ? left : left + dw;
+                float y = (i & 2) == 0 ? top : top + dh;
+                float dx = (x - pivot.x) * sx;
+                float dy = (y - pivot.y) * squash;
+                float rx = pivot.x + dx * c - dy * sn;
+                float ry = pivot.y + dx * sn + dy * c;
+                if (i == 0) { minX = maxX = rx; minY = maxY = ry; }
+                else
+                {
+                    if (rx < minX) minX = rx;
+                    if (rx > maxX) maxX = rx;
+                    if (ry < minY) minY = ry;
+                    if (ry > maxY) maxY = ry;
+                }
+            }
+            return Rect.MinMaxRect(minX, minY, maxX, maxY);
+        }
+
+        // Screen point is bottom-up, the rect is GUI y-down. Same conversion Pressed uses.
+        public static bool LessonGloveHit(Vector2 screen, float screenH, Rect drawn)
+        {
+            if (drawn.width < 2f || drawn.height < 2f) return false;
+            return drawn.Contains(new Vector2(screen.x, screenH - screen.y));
+        }
+
+        public static Vector2 UpgradeGloveSettle(Rect button)
+        {
+            if (button.width < 4f || button.height < 4f) return button.center;
+            return new Vector2(button.center.x, button.y + button.height * 0.68f);
+        }
+
+        public static float AdvanceRuleHold(float held, float unscaledDelta)
+        {
+            if (unscaledDelta < 0f) unscaledDelta = 0f;
+            return held + unscaledDelta;
+        }
+
+        public static bool RuleHoldDone(float held) => held >= RuleTips.ReadSeconds;
+
+        public static bool GardenHudPoint(Vector2 screen, float screenH, Rect home, Rect restart, out bool homeHit, out bool restartHit)
+        {
+            var gui = new Vector2(screen.x, screenH - screen.y);
+            homeHit = home.width > 2f && home.Contains(gui);
+            restartHit = !homeHit && restart.width > 2f && restart.Contains(gui);
+            return homeHit || restartHit;
+        }
+
         void DrawGloveAt(Vector2 pivot, float ang, float dh, float alpha, float dip, bool mirror = false)
         {
             var tex = CoachGloveCurl(dip);
             if (tex == null) return;
             ang = ResolveDrawAngle(ang, mirror, _gloveFaceOn, _gloveHoldPose, _gloveApproach);
-            // Small poke along the finger, not a vertical bob. Zero at full dip so the
-            // tap frame's fingertip is the pivot. Held still while a tap fades the hand.
-            // Unscaled so GamePause does not freeze it.
-            float bob = _gloveHoldPose || _gloveSettled ? 0f : Mathf.Sin(AdPause.Unscaled * 2.35f) * Mathf.Min(8f, dh * 0.028f) * (1f - dip);
-            float rad = ang * Mathf.Deg2Rad;
-            pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
+            pivot = GloveBobPivot(pivot, ang, AdPause.Unscaled, _gloveHoldPose);
             float dw = dh * (tex.width / (float)tex.height);
             // b88: a locked approach does not flip to fit the glass. An unlocked
             // rest pose may still pull an off-glass pivot inside, without a new aim.
@@ -5235,7 +5326,8 @@ namespace FlockFive
             float widen = 1f + 0.07f * dip;
             float squash = 1f - 0.12f * dip;
             float sx = (mirror ? -widen : widen);
-            bool haveBox = RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 0f, out var drawn);
+            var drawn = ScreenGloveRect(pivot, ang, dh, dip, mirror);
+            bool haveBox = drawn.width > 2f && drawn.height > 2f;
             if (haveBox && alpha > 0.05f) { _gloveBody = drawn; _gloveBodyFrame = Time.frameCount; GloveBodyAlpha = alpha; }
             var prev = GUI.matrix;
             // Pivot rotation first, then the matrix already in use (GuiBase). The old
@@ -6301,7 +6393,27 @@ namespace FlockFive
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+            if (GardenHudGui(e.mousePosition)) return;
             e.Use();
+        }
+
+        bool GardenHudGui(Vector2 gui)
+        {
+            HudShaken(out var restart, out _);
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            bool homeHit, restartHit;
+            return GardenHudPoint(new Vector2(gui.x, PhoneArea.H - gui.y), PhoneArea.H, home, restart, out homeHit, out restartHit);
+        }
+
+        bool GardenHudAct(Vector2 screen)
+        {
+            HudShaken(out var restart, out _);
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            bool homeHit, restartHit;
+            if (!GardenHudPoint(screen, PhoneArea.H, home, restart, out homeHit, out restartHit)) return false;
+            if (homeHit) ShowSplash();
+            else Restart();
+            return true;
         }
 
         // One application of CoachTap. Informational fills the screen and eats the press.
@@ -6924,6 +7036,7 @@ namespace FlockFive
             }
             if (Ads.IsShowing) return;
             if (!Pressed(out var screen)) return;
+            if (GardenHudAct(screen)) return;
             if (_pestCue != 0)
             {
                 PestIntroTap(screen);
