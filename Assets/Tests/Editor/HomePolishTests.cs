@@ -47,12 +47,13 @@ namespace FlockFive.Editor
             CheckGlove("412", 412, 915, Check);
             CheckGlove("820", 820, 1180, Check);
 
+            CheckMaxxedPutBack(Check);
             Check("scene-change-holds-the-second-tap",
                 !FlockFiveApp.SceneInputBlocked(10f, -1f)
-                && FlockFiveApp.SceneInputBlocked(10f, 10.30f)
-                && FlockFiveApp.SceneInputBlocked(10.29f, 10.30f)
-                && !FlockFiveApp.SceneInputBlocked(10.30f, 10.30f)
-                && Mathf.Abs(FlockFiveApp.SceneInputSettle - 0.30f) < 0.001f,
+                && FlockFiveApp.SceneInputBlocked(10f, 10.40f)
+                && FlockFiveApp.SceneInputBlocked(10.39f, 10.40f)
+                && !FlockFiveApp.SceneInputBlocked(10.40f, 10.40f)
+                && Mathf.Abs(FlockFiveApp.SceneInputSettle - 0.40f) < 0.001f,
                 "300 ms");
             CheckSafe("820", 820, 1180, Check);
             CheckSafe("402", 402, 874, Check);
@@ -197,6 +198,29 @@ namespace FlockFive.Editor
             bool later = FlockFiveApp.UpgradeButtonShows(0.7f, true)
                 && !FlockFiveApp.FlipHintsVisible(0.7f, true, true, true);
             Check("upgrade-not-under-flip-hints", !shared && early && later, "shared " + shared);
+            bool skipMax = !FlockFiveApp.UpgradeCoachForCard(false, true);
+            bool teach = FlockFiveApp.UpgradeCoachForCard(true, true);
+            Check("maxxed-skips-upgrade-coach", skipMax && teach, "skip " + skipMax);
+        }
+
+        static void CheckMaxxedPutBack(System.Action<string, bool, string> Check)
+        {
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool taps = true;
+            bool clear = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                var card = FlockFiveApp.AlbumInspectRect(w[i], h[i]);
+                bool jungle = FlockFiveApp.InspectDismissTap(new Vector2(-24f, card.center.y), card);
+                bool margin = FlockFiveApp.InspectDismissTap(new Vector2(8f, 8f), card);
+                bool onCard = FlockFiveApp.InspectDismissTap(card.center, card);
+                if (!jungle || !margin || onCard) taps = false;
+                float top = FlockFiveApp.PutBackHintTop(card.yMax, DeviceFit.Ui(w[i], h[i]));
+                if (top < card.yMax + FlockFiveApp.PutBackHintClear - 0.5f) clear = false;
+            }
+            Check("maxxed-put-back-includes-margins", taps, "820 jungle");
+            Check("put-back-hint-clears-the-frame", clear, "gap");
         }
 
         static void CheckFlipOccluder(System.Action<string, bool, string> Check)
