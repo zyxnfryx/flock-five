@@ -474,6 +474,7 @@ namespace FlockFive
         // is swallowed. A later press is a new gesture and is not.
         static bool _exitPointerHeld;
         static int _exitPointerId = -1;
+        static int _exitPointerFrame = -1;
         bool _skipSplashSettle;
 
         void ArmSceneInputSettle()
@@ -811,9 +812,6 @@ namespace FlockFive
                 Sfx.CardTap();
                 return;
             }
-            // The tip's pause freezes FlyOffAll, and the seed is restored only
-            // after that parade. Drop the tip before the first yield.
-            ReleaseCaptionPause();
 #if UNITY_EDITOR
             var round = SnapRound();
             EditorSnapRound = round;
@@ -3637,6 +3635,7 @@ namespace FlockFive
 
         void OnApplicationPause(bool paused)
         {
+            if (!paused) ClearLevelExit();
             if (!paused) KeepAwake();
             // Back to 1 in the background; SyncAutoResolveSpeed re-arms it from live state.
             if (paused) SetAutoResolveSpeed(1f);
@@ -3660,6 +3659,7 @@ namespace FlockFive
 
         void OnApplicationFocus(bool focus)
         {
+            if (!focus) ClearLevelExit();
             if (focus) KeepAwake();
             if (focus)
             {
@@ -5646,6 +5646,10 @@ namespace FlockFive
 
         IEnumerator SnapRound()
         {
+            // Every caller (Restart, the streak ask, FinishRestart, WatchKeepStreak)
+            // lands here. The tip's pause freezes FlyOffAll, and the seed is copied
+            // only after that flight, so the release has to happen before the first yield.
+            ReleaseCaptionPause();
             ResetLiveCoachStep();
             if (_restarting)
             {
@@ -6449,15 +6453,42 @@ namespace FlockFive
         public static bool SwallowLevelExit(bool held, int trackedId, PointerEdge edge, int eventId)
         {
             if (!held || edge != PointerEdge.Release) return false;
-            if (trackedId >= 0 && eventId >= 0 && eventId != trackedId) return false;
+            return eventId == trackedId;
+        }
+
+        // A later press, or a different finger, drops a release that never arrived.
+        // The press that left the level is the same id on the armed frame and stays.
+        public static bool DropExitOnPress(bool held, int trackedId, int eventId, int armedFrame, int nowFrame)
+        {
+            if (!held) return false;
+            if (nowFrame == armedFrame && eventId == trackedId) return false;
             return true;
+        }
+
+        // The finger that ended, or mouse id -1 when no finger ended.
+        // Mouse -1 matches only a mouse release, not every release while it is held.
+        public static int ExitFingerId(int trackedId, int[] endedIds, bool mouseRelease)
+        {
+            if (endedIds != null)
+            {
+                for (int i = 0; i < endedIds.Length; i++)
+                    if (endedIds[i] == trackedId) return trackedId;
+                if (endedIds.Length > 0) return endedIds[0];
+            }
+            return mouseRelease ? -1 : int.MinValue;
         }
 
         void ArmLevelExit(int pointerId)
         {
             _exitPointerHeld = true;
             _exitPointerId = pointerId;
+            _exitPointerFrame = Time.frameCount;
             _skipSplashSettle = true;
+        }
+
+        static void ClearLevelExit()
+        {
+            _exitPointerHeld = false;
         }
 
         void CaptureLevelExitPointer()
@@ -6480,22 +6511,73 @@ namespace FlockFive
                 ArmLevelExit(-1);
         }
 
-        static int ExitEventId()
+        static int ResolveExitEventId(Event e)
         {
-            if (_exitPointerId < 0) return -1;
+            if (e == null || e.type != EventType.MouseUp) return int.MinValue;
+            int n = 0;
+            var ids = new int[8];
             var touch = Touchscreen.current;
-            if (touch == null || touch.primaryTouch == null) return -1;
-            return touch.primaryTouch.touchId.ReadValue();
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count && n < ids.Length; i++)
+                {
+                    var t = touches[i];
+                    if (t == null) continue;
+                    var phase = t.phase.ReadValue();
+                    if (phase != UnityEngine.InputSystem.TouchPhase.Ended
+                        && phase != UnityEngine.InputSystem.TouchPhase.Canceled) continue;
+                    ids[n++] = t.touchId.ReadValue();
+                }
+            }
+            if (n == 0) return ExitFingerId(_exitPointerId, null, true);
+            var ended = new int[n];
+            for (int i = 0; i < n; i++) ended[i] = ids[i];
+            return ExitFingerId(_exitPointerId, ended, true);
+        }
+
+        static int PressIdNow()
+        {
+            var touch = Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count; i++)
+                {
+                    var t = touches[i];
+                    if (t != null && t.press.wasPressedThisFrame)
+                        return t.touchId.ReadValue();
+                }
+            }
+            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+                return -1;
+            return int.MinValue;
+        }
+
+        static void NoteFreshPress()
+        {
+            if (!_exitPointerHeld) return;
+            int id = PressIdNow();
+            if (id == int.MinValue) return;
+            if (DropExitOnPress(_exitPointerHeld, _exitPointerId, id, _exitPointerFrame, Time.frameCount))
+                ClearLevelExit();
         }
 
         static bool ConsumeLevelExit(Event e)
         {
-            if (e == null) return false;
-            var edge = e.type == EventType.MouseUp ? PointerEdge.Release
-                : e.type == EventType.MouseDown ? PointerEdge.Down
-                : PointerEdge.None;
-            if (!SwallowLevelExit(_exitPointerHeld, _exitPointerId, edge, ExitEventId())) return false;
-            _exitPointerHeld = false;
+            if (e == null || !_exitPointerHeld) return false;
+            if (e.type == EventType.MouseDown)
+            {
+                int id = PressIdNow();
+                if (id == int.MinValue) id = -1;
+                if (DropExitOnPress(_exitPointerHeld, _exitPointerId, id, _exitPointerFrame, Time.frameCount))
+                    ClearLevelExit();
+                return false;
+            }
+            if (e.type != EventType.MouseUp) return false;
+            int eventId = ResolveExitEventId(e);
+            if (!SwallowLevelExit(true, _exitPointerId, PointerEdge.Release, eventId)) return false;
+            ClearLevelExit();
             return true;
         }
 
@@ -6532,6 +6614,7 @@ namespace FlockFive
         static bool Pressed(out Vector2 screen)
         {
             screen = default;
+            NoteFreshPress();
             if (GateNow < _resumeInputUntil || GateNow < _sceneInputUntil) return false;
             if (StartupInputHeld) return false;
             if (LessonGuardUp()) return false;

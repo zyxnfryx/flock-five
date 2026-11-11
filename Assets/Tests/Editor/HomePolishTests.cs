@@ -89,6 +89,7 @@ namespace FlockFive.Editor
             CheckCoachRestartPath(Check);
             CheckRealPress(Check);
             CheckCaptionLeave(Check);
+            CheckExitGuards(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1194,6 +1195,25 @@ namespace FlockFive.Editor
                     + " moves " + moves + " line " + line);
 
                 GamePause.Reset();
+                bool streakChanged = false;
+                if (now != null && now.Branches.Count > 0 && now.Branches[0].Count > 0)
+                {
+                    now.Branches[0].Birds.RemoveAt(now.Branches[0].Count - 1);
+                    streakChanged = !SameBirds(now, seedNow);
+                }
+                t.GetMethod("ShowRuleTip", flags).Invoke(app, new object[] { RuleTip.Kit });
+                bool streakHeld = GamePause.Paused;
+                var streak = (System.Collections.IEnumerator)t.GetMethod("FinishRestart", flags).Invoke(app, new object[] { false });
+                int streakFrames = 0;
+                bool streakLanded = false;
+                if (streak != null)
+                    streakFrames = PumpFrames(streak, 48, null, out streakLanded);
+                var streakBoard = (Board)t.GetField("_board", flags).GetValue(app);
+                Check("streak-finish-restart-restores-seed",
+                    streakChanged && streakHeld && streakLanded && SameBirds(streakBoard, seedNow) && !GamePause.Paused,
+                    "held " + streakHeld + " landed " + streakLanded + " frames " + streakFrames);
+
+                GamePause.Reset();
                 t.GetField("_splash", flags).SetValue(app, false);
                 t.GetField("_sceneFaceSet", flags).SetValue(app, true);
                 var faceField = t.GetField("_sceneFace", flags);
@@ -1236,6 +1256,57 @@ namespace FlockFive.Editor
             }
         }
 
+        static void CheckExitGuards(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("exit-guards");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var held = t.GetField("_exitPointerHeld", BindingFlags.NonPublic | BindingFlags.Static);
+                var frame = t.GetField("_exitPointerFrame", BindingFlags.NonPublic | BindingFlags.Static);
+                var consume = t.GetMethod("ConsumeLevelExit", BindingFlags.NonPublic | BindingFlags.Static);
+                t.GetMethod("ArmLevelExit", flags).Invoke(app, new object[] { -1 });
+                t.GetMethod("OnApplicationFocus", flags).Invoke(app, new object[] { false });
+                bool focusCleared = !(bool)held.GetValue(null);
+                t.GetMethod("ArmLevelExit", flags).Invoke(app, new object[] { 4 });
+                t.GetMethod("OnApplicationPause", flags).Invoke(app, new object[] { false });
+                bool pauseCleared = !(bool)held.GetValue(null);
+
+                t.GetMethod("ArmLevelExit", flags).Invoke(app, new object[] { -1 });
+                frame.SetValue(null, Time.frameCount - 2);
+                var down = new Event();
+                down.type = EventType.MouseDown;
+                bool ateDown = (bool)consume.Invoke(null, new object[] { down });
+                bool pressCleared = !(bool)held.GetValue(null) && !ateDown;
+                bool leavingDown = FlockFiveApp.DropExitOnPress(true, -1, -1, 3, 3);
+                bool otherFinger = FlockFiveApp.DropExitOnPress(true, 4, 8, 3, 3);
+
+                int mouse = FlockFiveApp.ExitFingerId(-1, null, true);
+                int finger = FlockFiveApp.ExitFingerId(4, new int[] { 9, 4 }, true);
+                int other = FlockFiveApp.ExitFingerId(4, new int[] { 9 }, true);
+                int mouseVsFinger = FlockFiveApp.ExitFingerId(-1, new int[] { 9 }, true);
+                bool mouseSwallow = FlockFiveApp.SwallowLevelExit(true, -1, FlockFiveApp.PointerEdge.Release, mouse);
+                bool fingerSwallow = FlockFiveApp.SwallowLevelExit(true, 4, FlockFiveApp.PointerEdge.Release, finger);
+                bool otherSwallow = FlockFiveApp.SwallowLevelExit(true, 4, FlockFiveApp.PointerEdge.Release, other);
+                bool mouseEatsFinger = FlockFiveApp.SwallowLevelExit(true, -1, FlockFiveApp.PointerEdge.Release, mouseVsFinger);
+                Check("home-exit-clears-on-focus-loss", focusCleared && pauseCleared,
+                    "focus " + focusCleared + " pause " + pauseCleared);
+                Check("home-exit-clears-on-fresh-press", pressCleared && !leavingDown && otherFinger,
+                    "press " + pressCleared + " leaving " + leavingDown + " other " + otherFinger);
+                Check("home-exit-matches-finger-id",
+                    mouse == -1 && finger == 4 && other == 9 && mouseVsFinger == 9
+                    && mouseSwallow && fingerSwallow && !otherSwallow && !mouseEatsFinger,
+                    "mouse " + mouse + " finger " + finger + " other " + other + " echo " + mouseVsFinger);
+            }
+            finally
+            {
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
         static void CheckCoachRestartPath(System.Action<string, bool, string> Check)
         {
             const string doneKey = "flockfive.coach.done";
@@ -1245,7 +1316,6 @@ namespace FlockFive.Editor
             int keepDone = PlayerPrefs.GetInt(doneKey, 0);
             int keepGift = PlayerPrefs.GetInt(giftKey, 0);
             int keepStreak = Purse.Streak;
-            float keepDelta = Time.captureDeltaTime;
             var go = new GameObject("coach-restart-path");
             try
             {
@@ -1287,17 +1357,7 @@ namespace FlockFive.Editor
                 int movesNow = (int)t.GetField("_coachMoves", flags).GetValue(app);
                 if (acted && snap != null)
                 {
-                    // Edit mode does not resume the coroutine. Step the enumerator
-                    // Restart started. The fly-in waits on Time.deltaTime, which
-                    // this batch does not advance, so after one yielded frame a
-                    // newer motion generation cancels that parade the way a second
-                    // Restart does. This same enumerator then runs the landing.
-                    Time.captureDeltaTime = 2f;
-                    var gen = t.GetField("_motionGen", BindingFlags.NonPublic | BindingFlags.Static);
-                    frames = PumpFrames(snap, 64, () =>
-                    {
-                        gen.SetValue(null, (int)gen.GetValue(null) + 1);
-                    }, out landed);
+                    frames = PumpFrames(snap, 64, null, out landed);
                     landed = landed && !(bool)t.GetField("_restarting", flags).GetValue(app);
                 }
                 int reset = (int)t.GetField("_coachMoves", flags).GetValue(app);
@@ -1322,7 +1382,6 @@ namespace FlockFive.Editor
             }
             finally
             {
-                Time.captureDeltaTime = keepDelta;
                 GamePause.Reset();
                 Purse.SetStreak(keepStreak);
                 if (hadDone) PlayerPrefs.SetInt(doneKey, keepDone);
