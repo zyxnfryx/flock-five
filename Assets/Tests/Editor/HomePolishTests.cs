@@ -82,6 +82,7 @@ namespace FlockFive.Editor
             CheckScheduleHousekeeping(Check);
             CheckRebootHolds(Check);
             CheckGardenGlove(Check);
+            CheckUpgradeStack(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -888,12 +889,49 @@ namespace FlockFive.Editor
                 if (!FlockFiveApp.ScreenGloveCountsAsBranch(onGlove, H, glove, true)) tap = false;
                 if (FlockFiveApp.ScreenGloveCountsAsBranch(mirroredScreen, H, glove, true)) tap = false;
             }
+            bool l1 = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                float H = h[i];
+                for (int step = 0; step < 5; step++)
+                {
+                    var branch = FlockFiveApp.L1BranchRect(step, w[i], h[i]);
+                    var glove = FlockFiveApp.GloveOnBranch(branch);
+                    var tip = branch.center;
+                    var tipGui = new Vector2(tip.x, tip.y);
+                    if (!branch.Contains(tip) || !branch.Contains(glove.center) || !branch.Contains(tipGui))
+                        l1 = false;
+                    if (!glove.Contains(tipGui)) l1 = false;
+                    var center = new Vector2(glove.center.x, H - glove.center.y);
+                    var tipScreen = new Vector2(tip.x, H - tip.y);
+                    if (!FlockFiveApp.ScreenGloveCountsAsBranch(center, H, glove, true)) l1 = false;
+                    if (!FlockFiveApp.ScreenGloveCountsAsBranch(tipScreen, H, glove, true)) l1 = false;
+                    var mirroredScreen = new Vector2(glove.center.x, glove.center.y);
+                    if (FlockFiveApp.ScreenGloveCountsAsBranch(mirroredScreen, H, glove, true)) l1 = false;
+                }
+            }
             bool clear = CaptionLayout.FirstClearLine.IndexOf("Five of one color clear.") >= 0;
+            bool bottom = FlockFiveApp.IsGardenBottomLine(CaptionLayout.FirstClearLine);
             var restart = new Rect(700f, 40f, 64f, 64f);
             var home = CornerAnchor.TopBarHome(restart, 820f, new Rect(0f, 0f, 820f, 1180f));
             bool mirrored = Mathf.Abs(home.y - restart.y) < 0.5f && Mathf.Abs(home.width - restart.width) < 0.5f && home.x < restart.x;
-            Check("glove-tip-lands-in-the-branch", inside && clear && mirrored, "820 402 412");
+            Check("glove-tip-lands-in-the-branch", inside && clear && mirrored && bottom, "820 402 412");
             Check("screen-glove-tap-hits-the-branch", tap, "820 402 412");
+            Check("l1-glove-center-advances", l1, "820 402 412 steps 0-4");
+        }
+
+        static void CheckUpgradeStack(System.Action<string, bool, string> Check)
+        {
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool clear = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                float s = DeviceFit.Ui(w[i], h[i]);
+                var card = FlockFiveApp.SeatedInspectCard(w[i], h[i], 34f, s);
+                if (!FlockFiveApp.UpgradeClearsBottom(card, h[i], 34f, s)) clear = false;
+            }
+            Check("upgrade-clears-bottom-inset", clear, "820 402 412 inset 34");
         }
 
         static void CheckRebootHolds(System.Action<string, bool, string> Check)

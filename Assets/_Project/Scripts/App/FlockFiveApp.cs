@@ -3764,9 +3764,12 @@ namespace FlockFive
             if (OstrichIntroBlocking()) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
-            var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
-            if (ScreenGloveCountsAsBranch(screen, PhoneArea.H, GloveBody(_gloveShown, _gloveShownAng, DeviceFit.Ui(), _gloveMirror), _cueForce && _gloveVis))
-                world = _cueAimWorld;
+                var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
+                var drawn = _gloveBodyFrame == Time.frameCount && _gloveBody.width > 2f
+                    ? _gloveBody
+                    : GloveBody(_gloveShown, _gloveShownAng, DeviceFit.Ui(), _gloveMirror);
+                if (ScreenGloveCountsAsBranch(screen, PhoneArea.H, drawn, _cueForce && _gloveVis))
+                    world = _cueAimWorld;
             HandleTap(world);
         }
 
@@ -6851,7 +6854,9 @@ namespace FlockFive
             var restartLab = GuiPool.Label(GuiSlot.SettingsLink);
             restartLab.fontStyle = FontStyle.Bold;
             restartLab.alignment = TextAnchor.LowerCenter;
-            restartLab.fontSize = Mathf.Max(10, Mathf.RoundToInt(11f * s));
+            restartLab.wordWrap = false;
+            restartLab.clipping = TextClipping.Overflow;
+            restartLab.fontSize = Mathf.Max(8, Mathf.RoundToInt(9f * Mathf.Min(s, 1.15f)));
             GUI.Label(restart, "Restart", restartLab);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             bool homeHeld = false;
@@ -6863,7 +6868,9 @@ namespace FlockFive
             var homeLab = GuiPool.Label(GuiSlot.InspectX);
             homeLab.fontStyle = FontStyle.Bold;
             homeLab.alignment = TextAnchor.MiddleCenter;
-            homeLab.fontSize = Mathf.Max(12, Mathf.RoundToInt(16f * s));
+            homeLab.wordWrap = false;
+            homeLab.clipping = TextClipping.Overflow;
+            homeLab.fontSize = Mathf.Max(9, Mathf.RoundToInt(11f * Mathf.Min(s, 1.15f)));
             homeLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
             GUI.Label(home, "Home", homeLab);
             if (HiveReachable())
@@ -8816,8 +8823,13 @@ namespace FlockFive
                 tip.fontStyle = FontStyle.Bold;
                 tip.alignment = TextAnchor.MiddleCenter;
                 tip.fontSize = Mathf.Max(12, Mathf.RoundToInt(15f * s));
-                var tr = new Rect(pig.x - 180f * s, pig.y - 28f * s, 170f * s, 22f * s);
-                GUI.Label(tr, "Coins you win.", tip);
+                var tr = new Rect(pig.x - 248f * s, pig.y - 36f * s, 236f * s, 28f * s);
+                var tipInk = GUI.color;
+                GUI.color = new Color(0.08f, 0.06f, 0.04f, 0.94f);
+                GUI.DrawTexture(tr, Texture2D.whiteTexture);
+                GUI.color = tipInk;
+                tip.normal.textColor = new Color(1f, 0.97f, 0.86f);
+                GUI.Label(tr, "Coins you win go in the piggy.", tip);
             }
             if (!raiseSign) DrawStreakSignLayer(s);
         }
@@ -17803,8 +17815,8 @@ namespace FlockFive
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             // From the left, so the palm stays off the word. The tip lands in the
             // padding beside "Upgrade", and the shared arc loops in from off the button.
-            _gloveKeepOff = _upgradeBtnR;
-            var aim = ButtonLabelAim(_upgradeBtnR, _upgradeLabelR, true);
+            _gloveKeepOff = _tutorPlateOn && _tutorPlate.width > 2f ? _tutorPlate : default;
+            var aim = _upgradeBtnR.center;
             _upgradeTutorAim = aim;
             _upgradeTutorAimOk = true;
             float handS = DeviceFit.Ui();
@@ -18147,7 +18159,9 @@ namespace FlockFive
 
             // Large portrait card ~1:1.4, the same rect the card-fit suite measures.
             // The honey caption sits in the strip under the card. Do not shrink it.
-            var to = AlbumInspectRect(PhoneArea.W, PhoneArea.H);
+            float seatS = DeviceFit.Ui();
+            float bottomInset = Mathf.Max(34f, PhoneArea.Safe.yMin);
+            var to = SeatedInspectCard(PhoneArea.W, PhoneArea.H, bottomInset, seatS);
             var from = _hiveInspectFrom;
             var big = new Rect(
                 Mathf.Lerp(from.x, to.x, t),
@@ -18228,7 +18242,10 @@ namespace FlockFive
             var full = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
             bool margin = PillarMarginPutBack(big);
             bool outside = !upgradeHit && !_hiveInspectClosing && u > 0.85f && (HitPad(full, out _) || margin);
-            if ((outside || xHit || backHit) && !_hiveInspectClosing)
+            bool onHint = _maxxedHint.width > 8f && Event.current != null
+                && Event.current.button == 0 && Event.current.type == EventType.MouseUp
+                && _maxxedHint.Contains(Event.current.mousePosition);
+            if ((outside || xHit || backHit || onHint) && !_hiveInspectClosing)
                 BeginPutAwayInspect();
 
             if (_hiveInspectClosing && u >= 1f)
