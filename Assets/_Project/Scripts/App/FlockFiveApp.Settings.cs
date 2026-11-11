@@ -385,8 +385,6 @@ namespace FlockFive
         }
 
 #if DEVELOPMENT_BUILD
-        public const string DevSha = "522b634f";
-
         public static string DevSettingsSha(string sha)
         {
             if (string.IsNullOrEmpty(sha)) return "";
@@ -404,7 +402,7 @@ namespace FlockFive
 
         void DrawDevSha(Rect card, float s)
         {
-            string sha = DevSettingsSha(DevSha);
+            string sha = DevSettingsSha(DevShaStamp.Sha);
             if (sha.Length == 0) return;
             var st = GuiPool.Label(GuiSlot.SettingsLink);
             st.fontStyle = FontStyle.Bold;

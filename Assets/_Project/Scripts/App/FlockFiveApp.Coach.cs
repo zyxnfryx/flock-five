@@ -1293,6 +1293,13 @@ namespace FlockFive
             return lessonGlove && glove.width > 2f && glove.height > 2f && glove.Contains(gui);
         }
 
+        // UpdateBody's screen point is bottom-up. GloveBody is GUI y-down.
+        // Same flip as GloveTapHits.
+        public static bool ScreenGloveCountsAsBranch(Vector2 screen, float screenH, Rect gloveBody, bool lessonGlove)
+        {
+            return GloveTapCountsAsBranch(new Vector2(screen.x, screenH - screen.y), gloveBody, lessonGlove);
+        }
+
         public static Vector2 GardenSidewaysAim(Vector2 aim, Rect plate, float s, float screenW, out float deg)
         {
             deg = -90f;
