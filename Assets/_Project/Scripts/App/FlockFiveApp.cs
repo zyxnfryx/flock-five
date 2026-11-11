@@ -816,6 +816,7 @@ namespace FlockFive
             SeasonCrossfade.RetireLive();
             GardenLife.DetachHome();
             _splash = true;
+            _sceneInputUntil = GateNow + SceneInputSettle;
             _clearReward = false;
             CancelRewardGap();
             _gardenScoring = false;
@@ -3753,10 +3754,7 @@ namespace FlockFive
             {
                 if (TickRuleHold()) return;
                 if (Pressed(out var ruleTap))
-                {
-                    if (GardenHudAct(ruleTap)) { DismissRuleTip(); return; }
-                    RuleTipTap(ruleTap);
-                }
+                    TakeRuleTipPress(ruleTap);
                 return;
             }
             if (_ruleEatGesture)
@@ -3782,8 +3780,10 @@ namespace FlockFive
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
                 var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
-                var drawn = LiveGloveRect();
-                if (LessonGloveHit(screen, PhoneArea.H, drawn) && _cueForce && _gloveVis)
+                var drawn = OnScreenGlove();
+                var fate = GardenPressFate(screen, PhoneArea.H, default, default, drawn, false, _gloveVis && _cueBranch >= 0);
+                _gloveRouted = fate == PressFate.Glove;
+                if (_gloveRouted && _cueAimWorld.sqrMagnitude > 0.01f)
                     world = _cueAimWorld;
             HandleTap(world);
         }
@@ -18272,7 +18272,8 @@ namespace FlockFive
             GUI.Label(xBtn, "X", xLab);
 
             bool fullyOpen = !_hiveInspectClosing && u >= 1f;
-            bool hintPut = _maxxedHint.width > 8f && HitPad(_maxxedHint, out _);
+            bool hintPut = PutBackHintHit(Event.current != null ? Event.current.mousePosition : default, _maxxedHint)
+                && HitPad(PutBackHintPad(_maxxedHint), out _);
             // A honeycomb is not the card. It squishes (no marks left), and the flip waits.
             var cardTap = hintPut ? CardTap.None : InspectCardTap(big, ix, fullyOpen && !upgradeHit);
             bool honeyAte = cardTap == CardTap.Honey;
@@ -18752,6 +18753,17 @@ namespace FlockFive
         public const float PutBackHintClear = 8f;
         public static float PutBackHintTop(float cardBottom, float s)
             => cardBottom + 12f * Mathf.Max(0.5f, s) + PutBackHintClear;
+
+        public static Rect PutBackHintPad(Rect hint)
+        {
+            if (hint.width < 2f) return hint;
+            return new Rect(hint.x - 12f, hint.y - 12f, hint.width + 24f, hint.height + 24f);
+        }
+
+        public static bool PutBackHintHit(Vector2 gui, Rect hint)
+        {
+            return hint.width > 2f && PutBackHintPad(hint).Contains(gui);
+        }
 
         // MAXXED cards skip "Tap Upgrade". A card with room and a free upgrade still gets it.
         public static bool UpgradeCoachForCard(bool room, bool freeUpgrade)

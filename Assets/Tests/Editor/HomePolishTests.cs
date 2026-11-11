@@ -87,6 +87,7 @@ namespace FlockFive.Editor
             CheckPlayerGlove(Check);
             CheckCoachRestart(Check);
             CheckCoachRestartPath(Check);
+            CheckRealPress(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1052,6 +1053,53 @@ namespace FlockFive.Editor
                 else PlayerPrefs.DeleteKey(giftKey);
                 UnityEngine.Object.DestroyImmediate(go);
             }
+        }
+
+        static void CheckRealPress(System.Action<string, bool, string> Check)
+        {
+            int[] cssW = { 820, 402, 412 };
+            int[] cssH = { 1180, 874, 915 };
+            float[] dpr = { 2f, 2f, 2f };
+            bool glove = true, hud = true, release = true;
+            for (int i = 0; i < cssW.Length; i++)
+            {
+                float s = DeviceFit.Ui(cssW[i], cssH[i]);
+                float dh = FlockFiveApp.GloveDh(s);
+                float bw = cssW[i] * dpr[i], bh = cssH[i] * dpr[i];
+                var pivot = new Vector2(bw * 0.42f, bh * 0.48f);
+                var drawn = FlockFiveApp.ScreenGloveRect(FlockFiveApp.GloveBobPivot(pivot, 0f, 0f, false), 0f, dh * dpr[i], 0f, false);
+                var home = new Rect(16f, 8f, 48f, 48f);
+                var restart = new Rect(bw - 64f, 8f, 48f, 48f);
+                var gear = new Rect(16f, 8f, 48f, 48f);
+                Vector2 Buf(Vector2 css)
+                {
+                    return FlockFiveApp.CanvasPointer(css, cssW[i], cssH[i], bw, bh);
+                }
+                var center = Buf(new Vector2(drawn.center.x / dpr[i], (bh - drawn.center.y) / dpr[i]));
+                var tip = Buf(new Vector2(pivot.x / dpr[i], (bh - pivot.y) / dpr[i]));
+                var nearGui = new Vector2(drawn.xMax - 1.5f, drawn.center.y);
+                var near = Buf(new Vector2(nearGui.x / dpr[i], (bh - nearGui.y) / dpr[i]));
+                if (FlockFiveApp.GardenPressFate(center, bh, home, restart, drawn, true, true) != FlockFiveApp.PressFate.Glove)
+                    glove = false;
+                if (FlockFiveApp.GardenPressFate(tip, bh, home, restart, drawn, true, true) != FlockFiveApp.PressFate.Glove)
+                    glove = false;
+                if (!drawn.Contains(nearGui) || FlockFiveApp.GardenPressFate(near, bh, home, restart, drawn, true, true) != FlockFiveApp.PressFate.Glove)
+                    glove = false;
+                var onRestart = Buf(new Vector2(restart.center.x / dpr[i], (bh - restart.center.y) / dpr[i]));
+                var onHome = Buf(new Vector2(home.center.x / dpr[i], (bh - home.center.y) / dpr[i]));
+                if (FlockFiveApp.GardenPressFate(onRestart, bh, home, restart, drawn, true, true) != FlockFiveApp.PressFate.Restart)
+                    hud = false;
+                if (FlockFiveApp.GardenPressFate(onHome, bh, home, restart, drawn, true, true) != FlockFiveApp.PressFate.Home)
+                    hud = false;
+                var releaseGui = FlockFiveApp.PointerToGui(onHome, bh);
+                if (FlockFiveApp.GearTakesRelease(true, 0.1f, FlockFiveApp.SceneInputSettle, releaseGui, gear))
+                    release = false;
+                if (!FlockFiveApp.GearTakesRelease(false, 1f, FlockFiveApp.SceneInputSettle, releaseGui, gear))
+                    release = false;
+            }
+            Check("real-press-glove-centre-tip-near", glove, "820 402 412 dpr");
+            Check("real-press-hud-before-caption", hud, "home restart");
+            Check("real-press-home-release-swallows-gear", release, "400 ms");
         }
 
         static void CheckCoachRestartPath(System.Action<string, bool, string> Check)
