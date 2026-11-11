@@ -409,7 +409,7 @@ namespace FlockFive
             st.alignment = TextAnchor.MiddleCenter;
             st.wordWrap = false;
             st.fontSize = Mathf.Max(10, Mathf.RoundToInt(11f * s));
-            var r = new Rect(card.x + 8f, card.yMax - 18f * s, card.width - 16f, 14f * s);
+            var r = new Rect(card.x + 8f, card.yMax - 32f * s, card.width - 16f, 14f * s);
             StampOutlined(r, sha, st, new Color(1f, 0.97f, 0.90f, 0.7f), 0, 1);
         }
 #endif

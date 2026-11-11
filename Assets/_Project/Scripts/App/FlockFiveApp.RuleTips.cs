@@ -173,7 +173,7 @@ namespace FlockFive
             }
             _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.35f);
             _ruleHeld += Mathf.Min(AdPause.UnscaledDelta, 0.1f);
-            if (_ruleHeld > RuleTips.HoldMax && !Ads.IsShowing)
+            if (_ruleHeld > RuleTips.ReadSeconds && !Ads.IsShowing)
             {
                 DismissRuleTip();
                 return;
@@ -185,9 +185,10 @@ namespace FlockFive
         bool RuleTipTap(Vector2 screen)
         {
             if (_ruleTip == RuleTip.None) return false;
-            var gui = new Vector2(screen.x, PhoneArea.H - screen.y);
-            if (RestartGui(gui)) return false;
-            return FinishLessonTap(RuleTips.Step(_ruleTip), false, false, DismissRuleTip);
+            // Any tap advances, including Restart and Home. The caller does not
+            // eat the event, so those controls still receive it.
+            DismissRuleTip();
+            return false;
         }
 
         void DismissRuleTip()
@@ -217,13 +218,12 @@ namespace FlockFive
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
             if (_ruleTip != RuleTip.None)
             {
-                if (t == EventType.MouseDown && e.button == 0 && !RestartGui(e.mousePosition))
+                if (t == EventType.MouseDown && e.button == 0)
                 {
                     var screen = new Vector2(e.mousePosition.x, PhoneArea.H - e.mousePosition.y);
                     RuleTipTap(screen);
                 }
                 if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-                e.Use();
                 return;
             }
             if (!_ruleEatGesture) return;

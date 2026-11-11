@@ -695,6 +695,7 @@ namespace FlockFive
         // uses (the old shrink loop's start). Banners do not auto-shrink. A long
         // line wraps into at most BannerMaxLines balanced rows and the plate grows.
         public const int BannerMaxLines = 2;
+        public static int BannerLineCap(float screenW) => screenW > 0f && screenW < 500f ? 3 : BannerMaxLines;
 
         // b89 (Brandon): caption text is a fixed share of the screen height. DeviceFit.Ui
         // eases the UI scale down on wide (tablet) screens, which shrank captions there.
@@ -808,12 +809,14 @@ namespace FlockFive
             if (string.IsNullOrEmpty(text)) return inset;
             // Keep the author's breaks. Widen the column before inventing a new wrap,
             // so "Bees earn album cards." stays one row instead of spilling into the next.
+            float open = Mathf.Max(inset, full - 56f);
+            if (open > full - 28f) open = Mathf.Max(inset, full - 28f);
             if (KeepsAuthor(style, text, inset, font)) return inset;
-            if (KeepsAuthor(style, text, full, font)) return full;
-            var fit = FitBanner(style, text, inset, font);
-            if (fit.Lines >= 1 && fit.Lines <= BannerMaxLines && ShownFits(style, fit.Shown, inset, font))
-                return inset;
-            return full;
+            if (KeepsAuthor(style, text, open, font)) return open;
+            var fit = FitBanner(style, text, open, font, BannerLineCap(full));
+            if (fit.Lines >= 1 && fit.Lines <= BannerMaxLines && ShownFits(style, fit.Shown, open, font))
+                return open;
+            return open;
         }
 
         static bool KeepsAuthor(GUIStyle style, string text, float maxW, int font)
@@ -869,7 +872,11 @@ namespace FlockFive
         // and there are at most BannerMaxLines of them. Otherwise the words
         // reflow into the fewest balanced rows that fit, never more than the cap.
         public static BannerMeasure FitBanner(GUIStyle style, string text, float maxW, int font)
+            => FitBanner(style, text, maxW, font, BannerMaxLines);
+
+        public static BannerMeasure FitBanner(GUIStyle style, string text, float maxW, int font, int lineCap)
         {
+            if (lineCap < 1) lineCap = BannerMaxLines;
             var measure = new BannerMeasure();
             measure.Font = font < 1 ? 1 : font;
             measure.Shown = text ?? "";
@@ -877,8 +884,8 @@ namespace FlockFive
             measure.TextH = 1f;
             if (string.IsNullOrEmpty(text)) return measure;
             if (maxW < 8f) maxW = 8f;
-            string shown = AuthoredBanner(style, text, maxW, measure.Font);
-            if (shown == null) shown = BalancedBanner(style, text, maxW, measure.Font, BannerMaxLines);
+            string shown = AuthoredBanner(style, text, maxW, measure.Font, lineCap);
+            if (shown == null) shown = BalancedBanner(style, text, maxW, measure.Font, lineCap);
             if (string.IsNullOrEmpty(shown)) shown = text;
             // b103: a sentence that cannot fit BannerMaxLines rows at the shared size (Brandon's exact
             // bees-on-a-branch text on a phone) shrinks in small steps, to at most 60%, until every row fits.
@@ -887,8 +894,8 @@ namespace FlockFive
             while ((text == BeePestLine || IsFireLine(text)) && measure.Font > floorPx && !RowsAllFit(style, shown, maxW, measure.Font))
             {
                 measure.Font -= 2;
-                shown = AuthoredBanner(style, text, maxW, measure.Font);
-                if (shown == null) shown = BalancedBanner(style, text, maxW, measure.Font, BannerMaxLines);
+                shown = AuthoredBanner(style, text, maxW, measure.Font, lineCap);
+                if (shown == null) shown = BalancedBanner(style, text, maxW, measure.Font, lineCap);
                 if (string.IsNullOrEmpty(shown)) shown = text;
             }
             int lines = 1;
@@ -921,6 +928,9 @@ namespace FlockFive
         // Authored newlines, when every piece fits on one row. A blank row is not
         // this path: the balancer drops it and refolds the words.
         static string AuthoredBanner(GUIStyle style, string text, float maxW, int font)
+            => AuthoredBanner(style, text, maxW, font, BannerMaxLines);
+
+        static string AuthoredBanner(GUIStyle style, string text, float maxW, int font, int lineCap)
         {
             if (text.IndexOf("\n\n", System.StringComparison.Ordinal) >= 0) return null;
             if (text.IndexOf('\n') < 0)
@@ -936,7 +946,7 @@ namespace FlockFive
                 {
                     if (!LineFits(style, text.Substring(i, len), maxW, font)) return null;
                     lines++;
-                    if (lines > BannerMaxLines) return null;
+                    if (lines > lineCap) return null;
                 }
                 if (j >= text.Length) break;
                 i = j + 1;
