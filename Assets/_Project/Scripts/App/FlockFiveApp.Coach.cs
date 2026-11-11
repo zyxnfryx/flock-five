@@ -1358,7 +1358,7 @@ namespace FlockFive
         {
             gui = default;
             world = default;
-            if (!CoachView(out var view) || _garden == null || _garden.Cam == null) return false;
+            if (!CoachView(out var view) || _garden.Cam == null) return false;
             var t = view.transform;
             var ls = t.lossyScale;
             var wood = BranchHit.WoodRect((Vector2)t.position, view.FromRight, view.IsGift, Mathf.Abs(ls.x), Mathf.Abs(ls.y));
