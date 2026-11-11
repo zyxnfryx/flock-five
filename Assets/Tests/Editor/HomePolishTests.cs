@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System.Reflection;
 using UnityEngine;
 
 namespace FlockFive.Editor
@@ -84,6 +85,7 @@ namespace FlockFive.Editor
             CheckGardenGlove(Check);
             CheckUpgradeStack(Check);
             CheckPlayerGlove(Check);
+            CheckCoachRestart(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -989,6 +991,66 @@ namespace FlockFive.Editor
             Check("upgrade-settle-inside-button", settle, "820 402 412");
             Check("lesson-hud-acts", hud, "home restart");
             Check("caption-gone-after-4-5s", gone, "unscaled");
+        }
+
+        static void CheckCoachRestart(System.Action<string, bool, string> Check)
+        {
+            const string doneKey = "flockfive.coach.done";
+            const string giftKey = "flockfive.coach.gift";
+            bool hadDone = PlayerPrefs.HasKey(doneKey);
+            bool hadGift = PlayerPrefs.HasKey(giftKey);
+            int keepDone = PlayerPrefs.GetInt(doneKey, 0);
+            int keepGift = PlayerPrefs.GetInt(giftKey, 0);
+            var go = new GameObject("coach-restart");
+            try
+            {
+                PlayerPrefs.DeleteKey(doneKey);
+                PlayerPrefs.DeleteKey(giftKey);
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_coachMoves", flags).SetValue(app, 0);
+                var pick = t.GetMethod("CoachPick", flags);
+                var moved = t.GetMethod("CoachMoved", flags);
+                var resume = t.GetMethod("FreshCoachResume", flags);
+                object[] cue = { -1, -1 };
+                bool first = (bool)pick.Invoke(app, cue);
+                int from = (int)cue[0], to = (int)cue[1];
+                bool level1 = FlockFiveApp.Level1First(board, i => false, i => false, out int wantFrom, out int wantTo);
+                t.GetField("_coachFrom", flags).SetValue(app, from);
+                t.GetField("_coachTo", flags).SetValue(app, to);
+                moved.Invoke(app, new object[] { from, to, 0 });
+                int afterHop = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                bool live = (bool)t.GetField("_coach", flags).GetValue(app);
+                resume.Invoke(app, null);
+                int reset = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                object[] again = { -1, -1 };
+                bool recued = (bool)pick.Invoke(app, again);
+                int from2 = (int)again[0], to2 = (int)again[1];
+                t.GetField("_coachFrom", flags).SetValue(app, from2);
+                t.GetField("_coachTo", flags).SetValue(app, to2);
+                moved.Invoke(app, new object[] { from2, to2, 0 });
+                int midMoves = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                bool mid = (bool)t.GetField("_coach", flags).GetValue(app);
+                moved.Invoke(app, new object[] { from2, to2, 0 });
+                bool finished = !(bool)t.GetField("_coach", flags).GetValue(app);
+                Check("restart-restores-level1-first",
+                    level1 && first && from == wantFrom && to == wantTo && live && afterHop == 1
+                    && reset == 0 && recued && from2 == wantFrom && to2 == wantTo
+                    && mid && midMoves == 1 && finished,
+                    "from " + from + "->" + from2 + " moves " + afterHop + "/" + reset + "/" + midMoves);
+            }
+            finally
+            {
+                if (hadDone) PlayerPrefs.SetInt(doneKey, keepDone);
+                else PlayerPrefs.DeleteKey(doneKey);
+                if (hadGift) PlayerPrefs.SetInt(giftKey, keepGift);
+                else PlayerPrefs.DeleteKey(giftKey);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckRebootHolds(System.Action<string, bool, string> Check)
