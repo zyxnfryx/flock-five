@@ -3888,6 +3888,7 @@ namespace FlockFive
         }
 
         int _gloveTookFrame = -1;
+        bool _glovePressLatched;
 
 #if DEVELOPMENT_BUILD
         // DEV-ONLY, inspect-only. Not a shipping-path proof. ?tapLog=1.
@@ -3926,16 +3927,33 @@ namespace FlockFive
 
         bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge)
         {
-            if (_splash || _board == null || !_gloveVis || _cueBranch < 0) return false;
-            if (!GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX)) return false;
-            HudShaken(out var restart, out _);
-            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
-            var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            var playGui = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
-            if (HudBeatsGlove(playGui, home, restart, gear)) return false;
-            // The press is the glove's. Eat it so this same tap cannot also
-            // fall through to HandleTap. The release is the only edge that acts.
-            if (!releaseEdge) return true;
+            bool onGlove = !_splash && _board != null && _gloveVis && _cueBranch >= 0
+                && GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX);
+            if (onGlove)
+            {
+                HudShaken(out var restart, out _);
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                var playGui = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
+                if (HudBeatsGlove(playGui, home, restart, gear))
+                {
+                    // The cuff is on a HUD control. That control wins, unless this
+                    // release belongs to a press that started on the glove.
+                    if (!(releaseEdge && _glovePressLatched)) return false;
+                }
+            }
+            if (!releaseEdge)
+            {
+                if (!onGlove) return false;
+                _glovePressLatched = true;
+                return true;
+            }
+            bool latched = _glovePressLatched;
+            if (latched) _glovePressLatched = false;
+            // A press that started on the glove and slid off is eaten. No move,
+            // and nothing underneath this release runs.
+            if (latched && !onGlove) return true;
+            if (!onGlove) return false;
             if (!GloveMayAct(true, false, _turnGate.Busy)) return true;
             if (_gloveTookFrame == Time.frameCount) return true;
             _gloveTookFrame = Time.frameCount;
