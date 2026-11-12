@@ -3704,14 +3704,9 @@ namespace FlockFive
 
         void OnApplicationPause(bool paused)
         {
-            if (!paused) ClearLevelExit();
             if (!paused) KeepAwake();
             // Back to 1 in the background; SyncAutoResolveSpeed re-arms it from live state.
-            if (paused)
-            {
-                SetAutoResolveSpeed(1f);
-                DropGlovePress();
-            }
+            if (paused) SetAutoResolveSpeed(1f);
             if (paused)
             {
                 NoteAppBackground();
@@ -3723,6 +3718,14 @@ namespace FlockFive
                 DailyReminder.OnAppForeground();
                 ResumeDailyReminder();
             }
+            // After the resume bookkeeping, so a heal cannot leave the home gate armed.
+            // Clear this instance too: the static path only reaches whichever object OnEnable stored.
+            if (paused) ForgetLevelPointer();
+            else
+            {
+                ClearLevelExit();
+                ForgetLevelPointer();
+            }
         }
 
         void OnApplicationQuit()
@@ -3732,7 +3735,6 @@ namespace FlockFive
 
         void OnApplicationFocus(bool focus)
         {
-            if (!focus) ClearLevelExit();
             if (focus) KeepAwake();
             if (focus)
             {
@@ -3740,6 +3742,13 @@ namespace FlockFive
                 SyncDailyDay();
             }
             else NoteAppBackground();
+            // After the background bookkeeping, so a heal cannot leave the home gate armed.
+            // Clear this instance too: the static path only reaches whichever object OnEnable stored.
+            if (!focus)
+            {
+                ClearLevelExit();
+                ForgetLevelPointer();
+            }
         }
 
         void Update()
@@ -3945,11 +3954,6 @@ namespace FlockFive
             if (restart.width > 2f && restart.Contains(windowGui)) return true;
             if (gear.width > 2f && gear.Contains(windowGui)) return true;
             return false;
-        }
-
-        bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge)
-        {
-            return TryDrawnGlove(windowGui, releaseEdge, -1);
         }
 
         bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge, int pointerId)
@@ -6697,14 +6701,16 @@ namespace FlockFive
             _skipSplashSettle = true;
         }
 
+        void ForgetLevelPointer()
+        {
+            _homeGate = default;
+            DropGlovePress();
+        }
+
         static void ClearLevelExit()
         {
             _exitPointerHeld = false;
-            if (_app != null)
-            {
-                _app._homeGate = default;
-                _app.DropGlovePress();
-            }
+            if (_app != null) _app.ForgetLevelPointer();
         }
 
         void CaptureLevelExitPointer()

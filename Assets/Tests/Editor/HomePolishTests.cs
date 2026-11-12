@@ -11,6 +11,15 @@ namespace FlockFive.Editor
     {
         const string Out = "/tmp/flock-five-home-polish-tests.txt";
 
+        static MethodInfo Method(System.Type type, string name, params System.Type[] args)
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+            var found = type.GetMethod(name, flags, null, args, null);
+            if (found == null)
+                throw new System.MissingMethodException(type.FullName + "." + name);
+            return found;
+        }
+
         [UnityEditor.MenuItem("Flock Five/Home Polish Tests")]
         public static void Run()
         {
@@ -1389,16 +1398,16 @@ namespace FlockFive.Editor
                 home.SetValue(app, System.Enum.ToObject(home.FieldType, 0));
                 gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
                 object[] pressArgs = { Vector2.zero };
-                t.GetMethod("Pressed", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, pressArgs);
+                Method(t, "Pressed", typeof(Vector2).MakeByRefType()).Invoke(null, pressArgs);
                 var afterPress = (FlockFiveApp.HomeGate)gate.GetValue(app);
                 liveHeld = afterPress.CarryHeld && afterPress.CarryId == 4;
-                try { t.GetMethod("OnGUIBody", flags).Invoke(app, null); }
+                try { Method(t, "OnGUIBody").Invoke(app, null); }
                 catch (System.Exception) { }
                 gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
-                t.GetMethod("OnApplicationFocus", flags).Invoke(app, new object[] { false });
+                Method(t, "OnApplicationFocus", typeof(bool)).Invoke(app, new object[] { false });
                 focusCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).Active;
                 gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
-                t.GetMethod("OnApplicationPause", flags).Invoke(app, new object[] { false });
+                Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { false });
                 resumeCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).Active;
             }
             finally
@@ -1459,16 +1468,16 @@ namespace FlockFive.Editor
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
-                    Play = new Vector2(px - PhoneArea.OffX, PhoneArea.H - py)
+                    Play = new Vector2(px, PhoneArea.H - py)
                 };
-                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                Method(t, "UpdateBody").Invoke(app, null);
                 int afterDown = app.EditorHandleTaps;
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 4,
-                    Play = new Vector2(px - PhoneArea.OffX, PhoneArea.H - py)
+                    Play = new Vector2(px, PhoneArea.H - py)
                 };
-                try { t.GetMethod("OnGUIBody", flags).Invoke(app, null); }
+                try { Method(t, "OnGUIBody").Invoke(app, null); }
                 catch (System.Exception) { }
                 taps = app.EditorHandleTaps;
                 int picked = (int)t.GetField("_sel", flags).GetValue(app);
@@ -1485,15 +1494,15 @@ namespace FlockFive.Editor
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
-                    Play = new Vector2(px - PhoneArea.OffX, PhoneArea.H - py)
+                    Play = new Vector2(px, PhoneArea.H - py)
                 };
-                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                Method(t, "UpdateBody").Invoke(app, null);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 4,
-                    Play = new Vector2(px - PhoneArea.OffX, PhoneArea.H - py)
+                    Play = new Vector2(px, PhoneArea.H - py)
                 };
-                try { t.GetMethod("OnGUIBody", flags).Invoke(app, null); }
+                try { Method(t, "OnGUIBody").Invoke(app, null); }
                 catch (System.Exception) { }
                 var live = app.EditorLiveMove;
                 if (live != null) PumpFrames(live, 48, null, out _);
@@ -1510,10 +1519,10 @@ namespace FlockFive.Editor
                 gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer { On = true, Up = true, Id = 4 };
                 object[] pressArgs = { Vector2.zero };
-                t.GetMethod("Pressed", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, pressArgs);
+                Method(t, "Pressed", typeof(Vector2).MakeByRefType()).Invoke(null, pressArgs);
                 pressCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).CarryHeld;
                 gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
-                try { t.GetMethod("OnGUIBody", flags).Invoke(app, null); }
+                try { Method(t, "OnGUIBody").Invoke(app, null); }
                 catch (System.Exception) { }
                 guiCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).CarryHeld;
 
@@ -1524,7 +1533,7 @@ namespace FlockFive.Editor
                 guard.Flying = true;
                 reset.SetValue(app, guard);
                 object[] hud = { default(Rect), default(Rect) };
-                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                Method(t, "HudShaken", typeof(Rect).MakeByRefType(), typeof(Rect).MakeByRefType()).Invoke(null, hud);
                 var restart = (Rect)hud[0];
                 var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(home.center.x - 30f, home.center.y - 30f, 60f, 60f));
@@ -1535,7 +1544,7 @@ namespace FlockFive.Editor
                     On = true, Down = true, Id = -1,
                     Play = new Vector2(home.center.x, PhoneArea.H - home.center.y)
                 };
-                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                Method(t, "UpdateBody").Invoke(app, null);
                 homeWon = (bool)splash.GetValue(app) && app.EditorHandleTaps == 0;
                 Check("glove-down-and-up-handle-once", once, "down " + afterDown + " total " + taps + " sel " + picked + " moved " + moved);
                 Check("home-up-id-falls-through-to-release", mouseKeepsTouchRelease && noReleaseStaysMouse && namedFingerWins,
@@ -1544,6 +1553,7 @@ namespace FlockFive.Editor
                 Check("glove-cuff-on-home-goes-home", homeWon, "home " + homeWon + " taps " + app.EditorHandleTaps);
 
                 splash.SetValue(app, false);
+                t.GetField("_board", flags).SetValue(app, board);
                 t.GetField("_gloveVis", flags).SetValue(app, true);
                 t.GetField("_cueBranch", flags).SetValue(app, from);
                 t.GetField("_sel", flags).SetValue(app, -1);
@@ -1556,36 +1566,85 @@ namespace FlockFive.Editor
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
-                    Play = new Vector2(px - PhoneArea.OffX, PhoneArea.H - py)
+                    Play = new Vector2(px, PhoneArea.H - py)
                 };
-                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                Method(t, "UpdateBody").Invoke(app, null);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 4,
                     Play = new Vector2(home.center.x, PhoneArea.H - home.center.y)
                 };
-                try { t.GetMethod("OnGUIBody", flags).Invoke(app, null); }
+                try { Method(t, "OnGUIBody").Invoke(app, null); }
                 catch (System.Exception) { }
                 int slidSel = (int)t.GetField("_sel", flags).GetValue(app);
                 bool slidHome = (bool)splash.GetValue(app);
                 bool slid = app.EditorHandleTaps == 0 && slidSel < 0 && !slidHome;
                 splash.SetValue(app, false);
                 t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
                 guard = (CoachResetGuard)reset.GetValue(app);
                 guard.Flying = true;
                 reset.SetValue(app, guard);
-                t.GetField("_glovePressLatched", flags).SetValue(app, true);
-                t.GetField("_glovePressId", flags).SetValue(app, 4);
                 app.EditorHandleTaps = 0;
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Up = false, Id = 4,
+                    Play = new Vector2(px, PhoneArea.H - py)
+                };
+                Method(t, "UpdateBody").Invoke(app, null);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = -1,
                     Play = new Vector2(home.center.x, PhoneArea.H - home.center.y)
                 };
-                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                Method(t, "UpdateBody").Invoke(app, null);
                 bool freshHome = (bool)splash.GetValue(app) && app.EditorHandleTaps == 0;
                 Check("glove-slide-off-does-nothing", slid && freshHome,
                     "slid " + slid + " fresh " + freshHome + " taps " + app.EditorHandleTaps);
+
+                splash.SetValue(app, false);
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                guard = (CoachResetGuard)reset.GetValue(app);
+                guard.Flying = true;
+                reset.SetValue(app, guard);
+                app.EditorHandleTaps = 0;
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Up = false, Id = 4,
+                    Play = new Vector2(px, PhoneArea.H - py)
+                };
+                Method(t, "UpdateBody").Invoke(app, null);
+                bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = false, Up = true, Id = 5,
+                    Play = new Vector2(px, PhoneArea.H - py)
+                };
+                try { Method(t, "OnGUIBody").Invoke(app, null); }
+                catch (System.Exception) { }
+                bool otherFinger = app.EditorHandleTaps == 0
+                    && (int)t.GetField("_sel", flags).GetValue(app) < 0
+                    && (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                bool focusDropped = false;
+                string focusEx = "";
+                try
+                {
+                    Method(t, "OnApplicationFocus", typeof(bool)).Invoke(app, new object[] { false });
+                    focusDropped = !(bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                }
+                catch (System.Exception ex)
+                {
+                    focusEx = " " + ex.GetType().Name;
+                }
+                Check("glove-second-finger-up-does-not-act", latched && otherFinger && focusDropped,
+                    "latched " + latched + " other " + otherFinger + " focus " + focusDropped + focusEx);
             }
             finally
             {
@@ -1630,34 +1689,39 @@ namespace FlockFive.Editor
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance;
                 var t = typeof(FlockFiveApp);
                 var board = LevelData.Open(0);
+                bool level1 = FlockFiveApp.Level1First(board, i => false, i => false, out int from, out _);
+                if (!level1) from = 0;
                 var view = limb.AddComponent<BranchView>();
-                view.Index = 0;
+                view.Index = from;
                 var bird = new GameObject("bird");
                 bird.transform.SetParent(limb.transform, false);
                 view.Birds[0] = bird.AddComponent<SpriteRenderer>();
                 var garden = new WorldBuilder.Garden();
-                garden.Branches = new BranchView[] { view };
+                var views = new BranchView[board.Branches.Count];
+                views[from] = view;
+                garden.Branches = views;
                 t.GetField("_board", flags).SetValue(app, board);
                 t.GetField("_garden", flags).SetValue(app, garden);
                 t.GetField("_splash", flags).SetValue(app, false);
                 t.GetField("_gloveVis", flags).SetValue(app, true);
                 t.GetField("_cueForce", flags).SetValue(app, true);
-                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
                 t.GetField("_sel", flags).SetValue(app, -1);
                 var body = t.GetField("_gloveBody", flags);
                 body.SetValue(app, new Rect(100f, 100f, 80f, 90f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                var point = new Vector2(140f, 140f);
-                t.GetMethod("TryDrawnGlove", flags).Invoke(app, new object[] { point, false });
+                var point = new Vector2(140f + PhoneArea.OffX, 140f);
+                var gloveTap = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                gloveTap.Invoke(app, new object[] { point, false, -1 });
                 int afterDown = (int)t.GetField("_sel", flags).GetValue(app);
-                t.GetMethod("TryDrawnGlove", flags).Invoke(app, new object[] { point, true });
+                gloveTap.Invoke(app, new object[] { point, true, -1 });
                 int afterUp = (int)t.GetField("_sel", flags).GetValue(app);
-                pickedOnly = afterDown < 0 && afterUp == 0;
+                pickedOnly = level1 && afterDown < 0 && afterUp == from;
                 var turn = (OstrichTurnGate)t.GetField("_turnGate", flags).GetValue(app);
                 turn.TryBeginMove();
                 t.GetField("_sel", flags).SetValue(app, -1);
                 t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
-                t.GetMethod("TryDrawnGlove", flags).Invoke(app, new object[] { point, true });
+                gloveTap.Invoke(app, new object[] { point, true, -1 });
                 stayed = (int)t.GetField("_sel", flags).GetValue(app) < 0;
             }
             finally
