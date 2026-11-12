@@ -3996,6 +3996,9 @@ namespace FlockFive
             if (!GloveMayAct(true, false, _turnGate.Busy)) return true;
             if (_gloveTookFrame == Time.frameCount) return true;
             _gloveTookFrame = Time.frameCount;
+            // The drawn hand is the cue. CoachReject accepts that route, then
+            // HandleTap still resolves the branch at this world point.
+            _gloveRouted = true;
             HandleTap(CueBranchWorld());
             return true;
         }
@@ -4045,6 +4048,11 @@ namespace FlockFive
             }
 
             int hit = HitBranch(world);
+            // The glove passed the cue branch's own point. A view the probe skipped
+            // (no seated birds yet) is still that branch.
+            if (hit < 0 && _cueForce && _cueBranch >= 0
+                && (world - CueBranchWorld()).sqrMagnitude <= 0.0001f)
+                hit = _cueBranch;
             if (hit < 0)
             {
                 if (_sel >= 0)
@@ -6872,6 +6880,25 @@ namespace FlockFive
 
         public static EditorPointer EditorPointerInject;
         public int EditorHandleTaps;
+
+        // What the last Pressed call did with the home gate. Inspect-only.
+        public struct EditorPressTrace
+        {
+            public bool HasApp;
+            public bool Splash;
+            public bool Active;
+            public bool BlockRan;
+            public bool Down;
+            public bool Up;
+            public bool CarryBefore;
+            public bool CarryAfter;
+            public int CarryId;
+            public int PressId;
+            public int UpId;
+            public int EventId;
+        }
+
+        public static EditorPressTrace LastPressTrace;
 #endif
 
         static bool FreshTouchDown()
@@ -6924,6 +6951,19 @@ namespace FlockFive
         {
             screen = default;
             NoteFreshPress();
+#if UNITY_EDITOR
+            var trace = new EditorPressTrace
+            {
+                HasApp = _app != null,
+                Splash = _app != null && _app._splash,
+                Active = _app != null && _app._homeGate.Active,
+                CarryBefore = _app != null && _app._homeGate.CarryHeld,
+                CarryId = _app != null ? _app._homeGate.CarryId : -2,
+                PressId = int.MinValue,
+                UpId = int.MinValue,
+                EventId = int.MinValue
+            };
+#endif
             if (_app != null && _app._splash && _app._homeGate.Active)
             {
                 int pressId = PressIdNow();
@@ -6942,9 +6982,27 @@ namespace FlockFive
                 }
                 else if (!down)
                     id = -1;
+#if UNITY_EDITOR
+                trace.BlockRan = true;
+                trace.Down = down;
+                trace.Up = up;
+                trace.PressId = pressId;
+                trace.UpId = upId;
+                trace.EventId = id;
+#endif
                 if (!HomeGateAllows(ref _app._homeGate, down, up, id))
+                {
+#if UNITY_EDITOR
+                    trace.CarryAfter = _app._homeGate.CarryHeld;
+                    LastPressTrace = trace;
+#endif
                     return false;
+                }
             }
+#if UNITY_EDITOR
+            if (_app != null) trace.CarryAfter = _app._homeGate.CarryHeld;
+            LastPressTrace = trace;
+#endif
 #if UNITY_EDITOR
             if (EditorPointerInject.On && EditorPointerInject.Down)
             {
