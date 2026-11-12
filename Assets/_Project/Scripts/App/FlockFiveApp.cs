@@ -4120,9 +4120,17 @@ namespace FlockFive
             if (_busy || _won || _board == null) { DropRouted("board"); return; }
             if (GateNow < _swallowTapsUntil) { DropRouted("swallow"); return; }
             if (AdPause.Unscaled < _nextTap) { DropRouted("next"); return; }
-            _nextTap = AdPause.Unscaled + 0.10f;
+            bool freezeReject = _cueFreeze;
             bool routed = _gloveRouted;
-            if (CoachReject(world)) { DropRouted("reject"); return; }
+            if (CoachReject(world))
+            {
+                // A freeze nudge is not a tap. Arming _nextTap here would make the
+                // real tap 0.10 s late.
+                if (!freezeReject) _nextTap = AdPause.Unscaled + 0.10f;
+                DropRouted("reject");
+                return;
+            }
+            _nextTap = AdPause.Unscaled + 0.10f;
 #if UNITY_EDITOR
             EditorGloveTraceNow.Rejected = false;
 #endif
