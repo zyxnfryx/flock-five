@@ -4030,11 +4030,14 @@ namespace FlockFive.Editor
                 MixDesk.Boot(go);
                 bool stillScheduled = AudioGuard.ScheduledAt(bed, out _);
                 int samples = bed.timeSamples;
-                bool bedHeld = stillScheduled && samples == 20000
+                AudioSettings.GetDSPBufferSize(out int dspBuffer, out _);
+                if (dspBuffer < 1) dspBuffer = 1;
+                bool bedHeld = stillScheduled && samples >= 20000 && samples < 20000 + dspBuffer
                     && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops + 1;
                 bool strayDown = !stray.isPlaying && stray.volume == 0f;
                 try { Check("second-boot-keeps-the-bed", bedHeld && strayDown,
                     "scheduled " + stillScheduled + " samples " + samples
+                    + " buffer " + dspBuffer
                     + " plays " + AudioGuard.PlayCalls + " stops " + AudioGuard.StopCalls
                     + " stray " + stray.volume); }
                 catch (System.Exception hopEx) { Check("second-boot-keeps-the-bed", false, ThrowText(hopEx)); }

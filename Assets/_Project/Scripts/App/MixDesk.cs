@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -194,6 +195,11 @@ namespace FlockFive
         void RestorePlaceHeads(int[] samples)
         {
             if (samples == null || _stems == null) return;
+            // KillForeignLoops and PruneExtraLoops do not seek our stems. Writing
+            // the pin back onto a bed that only advanced would jump the playhead
+            // backward by up to one buffer and tick. Restore only a real seek.
+            AudioSettings.GetDSPBufferSize(out int buffer, out _);
+            if (buffer < 1) buffer = 1;
             int[] place = { 0, 1, 2, 3, 5 };
             for (int p = 0; p < place.Length && p < samples.Length; p++)
             {
@@ -202,7 +208,10 @@ namespace FlockFive
                 if (i >= _stems.Length) continue;
                 var a = _stems[i];
                 if (a == null || a.clip == null) continue;
-                a.timeSamples = samples[p];
+                int now = a.timeSamples;
+                int delta = now - samples[p];
+                if (delta < 0 || delta > buffer)
+                    a.timeSamples = samples[p];
             }
         }
 
@@ -1044,6 +1053,7 @@ namespace FlockFive
             if (_stems == null) return 0;
             var ready = new List<AudioSource>();
             int[] place = { 0, 1, 2, 3, 5 };
+            int audible = 0;
             for (int p = 0; p < place.Length; p++)
             {
                 int i = place[p];
@@ -1051,8 +1061,52 @@ namespace FlockFive
                 var a = _stems[i];
                 if (a == null || a.clip == null) continue;
                 ready.Add(a);
+                if (a.isPlaying) audible++;
+            }
+            // A partial reboot is the only case that cuts a voice the player can
+            // hear. All-silent and all-running batches schedule immediately.
+            bool partial = audible > 0 && audible < ready.Count;
+            if (partial && Application.isPlaying && isActiveAndEnabled)
+            {
+                StartCoroutine(SoftCutPlaceBeds(ready));
+                return ready.Count;
             }
             return AudioGuard.ScheduleStemsTogether(ready);
+        }
+
+        // About 20 ms down to silence, then the batch Stop inside the schedule.
+        // The volume comes back before the scheduled start, so the cut does not click
+        // and the new lock is not mute.
+        IEnumerator SoftCutPlaceBeds(List<AudioSource> ready)
+        {
+            const float dur = 0.02f;
+            var from = new float[ready.Count];
+            var cut = new bool[ready.Count];
+            for (int i = 0; i < ready.Count; i++)
+            {
+                var a = ready[i];
+                if (a == null) continue;
+                from[i] = a.volume;
+                cut[i] = a.isPlaying;
+            }
+            float t = 0f;
+            while (t < dur)
+            {
+                t += Time.unscaledDeltaTime;
+                float u = dur > 0f ? Mathf.Clamp01(t / dur) : 1f;
+                for (int i = 0; i < ready.Count; i++)
+                {
+                    if (!cut[i] || ready[i] == null) continue;
+                    ready[i].volume = from[i] * (1f - u);
+                }
+                yield return null;
+            }
+            AudioGuard.ScheduleStemsTogether(ready);
+            for (int i = 0; i < ready.Count; i++)
+            {
+                if (ready[i] == null) continue;
+                ready[i].volume = from[i];
+            }
         }
 
         public int BootPlaceForTests() => StartPlaceBeds();
