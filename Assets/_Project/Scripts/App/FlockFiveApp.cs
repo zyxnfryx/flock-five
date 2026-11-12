@@ -3708,30 +3708,36 @@ namespace FlockFive
         void OnApplicationPause(bool paused)
         {
             if (!paused) KeepAwake();
-            // A swallowed glove press does not survive the suspend, even if the
-            // bookkeeping below fails before ForgetLevelPointer.
-            if (paused) ClearSwallowedGlove();
             // Back to 1 in the background; SyncAutoResolveSpeed re-arms it from live state.
             if (paused) SetAutoResolveSpeed(1f);
             if (paused)
             {
+                // A finger still down keeps its id, so the release after the new
+                // window does not hop. Focus loss is the path that drops it.
+                int keep = _glovePressLatched ? _glovePressId : _gloveSwallowedId;
+                int keepHud = _gloveSwallowHud;
                 NoteAppBackground();
                 DailyReminder.OnAppBackground();
+                _gloveSwallowedId = keep;
+                _gloveSwallowHud = keepHud;
             }
             else
             {
+                // Taken before resume heal. A held finger stays swallowed so its
+                // release after the new window cannot hop.
+                int keep = _glovePressLatched ? _glovePressId : _gloveSwallowedId;
+                int keepHud = _gloveSwallowHud;
                 NoteAppResume();
                 DailyReminder.OnAppForeground();
                 ResumeDailyReminder();
+                ClearLevelExit();
+                ForgetLevelPointer();
+                _gloveSwallowedId = keep;
+                _gloveSwallowHud = keepHud;
             }
             // After the resume bookkeeping, so a heal cannot leave the home gate armed.
             // Clear this instance too: the static path only reaches whichever object OnEnable stored.
             if (paused) ForgetLevelPointer();
-            else
-            {
-                ClearLevelExit();
-                ForgetLevelPointer();
-            }
         }
 
         void OnApplicationQuit()
@@ -3745,9 +3751,15 @@ namespace FlockFive
             if (!focus) ClearSwallowedGlove();
             if (focus)
             {
+                // A late focus gain is not a level change. Keep the swallowed
+                // finger, and a finger still down becomes swallowed too.
+                int keep = _glovePressLatched ? _glovePressId : _gloveSwallowedId;
+                int keepHud = _gloveSwallowHud;
                 NoteAppResume();
                 SyncDailyDay();
                 ForgetLevelPointer();
+                _gloveSwallowedId = keep;
+                _gloveSwallowHud = keepHud;
             }
             else NoteAppBackground();
             // After the background bookkeeping, so a heal cannot leave the home gate armed.
@@ -3904,6 +3916,7 @@ namespace FlockFive
                 _gloveRouted = fate == PressFate.Glove;
                 if (_gloveRouted && _cueAimWorld.sqrMagnitude > 0.01f)
                     world = _cueAimWorld;
+            _gloveEdgeId = PressIdNow();
             HandleTap(world);
         }
 
@@ -3919,6 +3932,11 @@ namespace FlockFive
         int _glovePressId = -1;
         // Down swallowed by the resume gate. Its Up must not hop after the window.
         int _gloveSwallowedId = int.MinValue;
+        // 0 began on the glove. 1 Home, 2 Restart, 3 gear.
+        int _gloveSwallowHud;
+        // The frame a swallowed touch was canceled. A mouse Up that frame must not hop.
+        int _gloveCancelFrame = -1;
+        int _gloveEdgeId = int.MinValue;
 
         void DropGlovePress()
         {
@@ -3929,18 +3947,31 @@ namespace FlockFive
         void ClearSwallowedGlove()
         {
             _gloveSwallowedId = int.MinValue;
+            _gloveSwallowHud = 0;
         }
 
-        // Only the finger whose Down the resume gate ate. Another finger's Up
-        // still reaches Home, Restart, and the gear.
+        // Only the finger whose Down the resume gate ate.
         bool SwallowedUp(int pointerId)
         {
             return _gloveSwallowedId != int.MinValue
                 && GloveFingerMatches(_gloveSwallowedId, pointerId);
         }
 
-        // A cancel never arrives as a glove Up, so the remembered id would
-        // otherwise eat a later release.
+        bool CancelBlocksHop()
+        {
+            return _gloveCancelFrame == Time.frameCount && !_glovePressLatched;
+        }
+
+        // A cancel never arrives as a glove Up. Remember the frame so a mouse
+        // release beside it cannot hop once the id is cleared.
+        void NoteSwallowedCancel(int pointerId)
+        {
+            if (_gloveSwallowedId == int.MinValue) return;
+            if (!GloveFingerMatches(_gloveSwallowedId, pointerId)) return;
+            _gloveCancelFrame = Time.frameCount;
+            ClearSwallowedGlove();
+        }
+
         void ClearSwallowedOnCancel()
         {
             if (_gloveSwallowedId == int.MinValue) return;
@@ -3952,16 +3983,28 @@ namespace FlockFive
                 var t = touches[i];
                 if (t == null) continue;
                 if (t.phase.ReadValue() != UnityEngine.InputSystem.TouchPhase.Canceled) continue;
-                if (!GloveFingerMatches(_gloveSwallowedId, t.touchId.ReadValue())) continue;
-                ClearSwallowedGlove();
-                return;
+                NoteSwallowedCancel(t.touchId.ReadValue());
+                if (_gloveSwallowedId == int.MinValue) return;
             }
         }
 
+        // Mouse is -1. A missing id is int.MinValue. Those are not the same finger.
         public static bool GloveFingerMatches(int pressedId, int releaseId)
         {
-            if (pressedId < 0 && releaseId < 0) return true;
             return pressedId == releaseId;
+        }
+
+        // 0 is not a button. 1 Home, 2 Restart, 3 gear. Play pixels, not window pixels.
+        int HudControl(Vector2 windowGui)
+        {
+            HudShaken(out var restart, out _);
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            var play = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
+            if (home.width > 2f && home.Contains(play)) return 1;
+            if (restart.width > 2f && restart.Contains(play)) return 2;
+            if (gear.width > 2f && gear.Contains(play)) return 3;
+            return 0;
         }
 
 #if DEVELOPMENT_BUILD
@@ -4001,28 +4044,57 @@ namespace FlockFive
 
         bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge, int pointerId)
         {
+            _gloveEdgeId = pointerId;
             bool onGlove = !_splash && _board != null && _gloveVis && _cueBranch >= 0
                 && GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX);
+            int hud = HudControl(windowGui);
             // Same resume gate as Pressed. This runs before SwallowResumePointer,
             // so a glove edge in that 0.35 s would otherwise become a move. Drop
             // the latch too, and remember the pointer: the Up after the window
             // is still on the glove and used to reach HandleTap with no latch.
+            // A press that begins on Home, Restart, or the gear is that button's
+            // gesture. It is not swallowed, so the release can still fire it.
             if (GateNow < _resumeInputUntil)
             {
-                if (!releaseEdge && onGlove)
+                if (!releaseEdge && hud != 0)
+                {
                     _gloveSwallowedId = pointerId;
+                    _gloveSwallowHud = hud;
+                    DropGlovePress();
+                    StampGlove("resume-hud", windowGui, onGlove, true, false);
+                    return false;
+                }
+                if (!releaseEdge && onGlove)
+                {
+                    _gloveSwallowedId = pointerId;
+                    _gloveSwallowHud = 0;
+                }
                 else if (_glovePressLatched)
                     _gloveSwallowedId = _glovePressId;
                 bool held = _glovePressLatched;
                 DropGlovePress();
                 if (!held && !onGlove) return false;
-                StampGlove("resume", windowGui, onGlove, false, false);
+                StampGlove("resume", windowGui, onGlove, hud != 0, false);
                 return true;
             }
             if (releaseEdge && SwallowedUp(pointerId))
             {
+                // The press began on this button, so the button still runs.
+                // A glove press that slid here follows the old rule: no hop, and
+                // Home does not open through that press.
+                bool button = hud != 0 && hud == _gloveSwallowHud;
                 ClearSwallowedGlove();
-                StampGlove("swallowed-up", windowGui, onGlove, false, false);
+                if (button)
+                {
+                    StampGlove("hud", windowGui, onGlove, true, false);
+                    return false;
+                }
+                StampGlove("swallowed-up", windowGui, onGlove, hud != 0, false);
+                return true;
+            }
+            if (releaseEdge && CancelBlocksHop() && onGlove && hud == 0)
+            {
+                StampGlove("cancel-frame", windowGui, onGlove, false, false);
                 return true;
             }
             bool onHud = false;
@@ -4042,6 +4114,7 @@ namespace FlockFive
                 _glovePressLatched = true;
                 _glovePressId = pointerId;
                 _gloveSwallowedId = int.MinValue;
+                _gloveSwallowHud = 0;
                 return true;
             }
             if (_glovePressLatched && !GloveFingerMatches(_glovePressId, pointerId))
@@ -4162,6 +4235,21 @@ namespace FlockFive
             {
                 DropGlovePress();
                 DropRouted("resume");
+                return;
+            }
+            // The glove route ate this finger. A direct tap must not hop it either,
+            // and a mouse Up on the frame that finger was canceled must not hop.
+            if (SwallowedUp(_gloveEdgeId))
+            {
+                ClearSwallowedGlove();
+                DropGlovePress();
+                DropRouted("swallowed-up");
+                return;
+            }
+            if (CancelBlocksHop())
+            {
+                DropGlovePress();
+                DropRouted("cancel");
                 return;
             }
 #if UNITY_EDITOR
@@ -6085,6 +6173,7 @@ namespace FlockFive
             // Every caller (Restart, the streak ask, FinishRestart, WatchKeepStreak)
             // lands here. The tip's pause freezes FlyOffAll, and the seed is copied
             // only after that flight, so the release has to happen before the first yield.
+            ClearSwallowedGlove();
             ReleaseCaptionPause();
             DropGlovePress();
             _lessonGuardUntil = 0f;
@@ -6929,7 +7018,8 @@ namespace FlockFive
         {
             _homeGate = default;
             DropGlovePress();
-            ClearSwallowedGlove();
+            // Focus(true) and resume call this. They must not wipe a swallowed
+            // press: that release still has to be eaten after the new window.
         }
 
         static void ClearLevelExit()
