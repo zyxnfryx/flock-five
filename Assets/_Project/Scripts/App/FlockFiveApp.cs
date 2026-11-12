@@ -889,6 +889,7 @@ namespace FlockFive
 
         void ShowSplash()
         {
+            DropGlovePress();
             if (!_exitPointerHeld) CaptureLevelExitPointer();
             _homeGate = BeginHomeGate(_exitPointerHeld, _exitPointerId);
             GUIUtility.hotControl = 0;
@@ -3706,7 +3707,11 @@ namespace FlockFive
             if (!paused) ClearLevelExit();
             if (!paused) KeepAwake();
             // Back to 1 in the background; SyncAutoResolveSpeed re-arms it from live state.
-            if (paused) SetAutoResolveSpeed(1f);
+            if (paused)
+            {
+                SetAutoResolveSpeed(1f);
+                DropGlovePress();
+            }
             if (paused)
             {
                 NoteAppBackground();
@@ -3840,7 +3845,9 @@ namespace FlockFive
                 if (Pressed(out var ruleTap))
                 {
                     var gui = new Vector2(ruleTap.x + PhoneArea.OffX, PhoneArea.H - ruleTap.y);
-                    if (TryDrawnGlove(gui, false)) return;
+                    int gloveId = PressIdNow();
+                    if (gloveId == int.MinValue) gloveId = -1;
+                    if (TryDrawnGlove(gui, false, gloveId)) return;
                     TakeRuleTipPress(ruleTap);
                 }
                 return;
@@ -3854,7 +3861,9 @@ namespace FlockFive
             if (!Pressed(out var screen)) return;
             {
                 var gui = new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y);
-                if (TryDrawnGlove(gui, false)) return;
+                int gloveId = PressIdNow();
+                if (gloveId == int.MinValue) gloveId = -1;
+                if (TryDrawnGlove(gui, false, gloveId)) return;
             }
             if (GardenHudAct(screen)) return;
             // Informational leaf and pest lessons eat the press before a stamp,
@@ -3889,6 +3898,19 @@ namespace FlockFive
 
         int _gloveTookFrame = -1;
         bool _glovePressLatched;
+        int _glovePressId = -1;
+
+        void DropGlovePress()
+        {
+            _glovePressLatched = false;
+            _glovePressId = -1;
+        }
+
+        public static bool GloveFingerMatches(int pressedId, int releaseId)
+        {
+            if (pressedId < 0 && releaseId < 0) return true;
+            return pressedId == releaseId;
+        }
 
 #if DEVELOPMENT_BUILD
         // DEV-ONLY, inspect-only. Not a shipping-path proof. ?tapLog=1.
@@ -3927,32 +3949,44 @@ namespace FlockFive
 
         bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge)
         {
+            return TryDrawnGlove(windowGui, releaseEdge, -1);
+        }
+
+        bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge, int pointerId)
+        {
             bool onGlove = !_splash && _board != null && _gloveVis && _cueBranch >= 0
                 && GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX);
-            if (onGlove)
+            bool onHud = false;
+            if (onGlove || (releaseEdge && _glovePressLatched))
             {
                 HudShaken(out var restart, out _);
                 var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
                 var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
                 var playGui = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
-                if (HudBeatsGlove(playGui, home, restart, gear))
-                {
-                    // The cuff is on a HUD control. That control wins, unless this
-                    // release belongs to a press that started on the glove.
-                    if (!(releaseEdge && _glovePressLatched)) return false;
-                }
+                onHud = HudBeatsGlove(playGui, home, restart, gear);
+                if (onGlove && onHud && !(releaseEdge && _glovePressLatched && GloveFingerMatches(_glovePressId, pointerId)))
+                    return false;
             }
             if (!releaseEdge)
             {
-                if (!onGlove) return false;
+                if (!onGlove || onHud) return false;
                 _glovePressLatched = true;
+                _glovePressId = pointerId;
                 return true;
             }
-            bool latched = _glovePressLatched;
-            if (latched) _glovePressLatched = false;
-            // A press that started on the glove and slid off is eaten. No move,
-            // and nothing underneath this release runs.
-            if (latched && !onGlove) return true;
+            if (_glovePressLatched && !GloveFingerMatches(_glovePressId, pointerId))
+                return false;
+            if (!_glovePressLatched || !GloveFingerMatches(_glovePressId, pointerId))
+            {
+                if (!onGlove || onHud) return false;
+            }
+            else
+            {
+                DropGlovePress();
+                // The finger that pressed the glove slid off, or landed on Home.
+                // Eat the release: no move, and Home does not open through this latch.
+                if (!onGlove || onHud) return true;
+            }
             if (!onGlove) return false;
             if (!GloveMayAct(true, false, _turnGate.Busy)) return true;
             if (_gloveTookFrame == Time.frameCount) return true;
@@ -4051,7 +4085,7 @@ namespace FlockFive
                     _garden.Branches[hit].Shake();
                     return;
                 }
-                StartCoroutine(DoMove(_sel, hit));
+                BeginMove(_sel, hit);
                 return;
             }
             if (!_board.Branches[hit].Empty)
@@ -4081,6 +4115,19 @@ namespace FlockFive
         // Gate for the ostrich gardens (see OstrichTurnGate). Idle on every other garden.
         readonly OstrichTurnGate _turnGate = new OstrichTurnGate();
         int _turnTicket;
+
+        void BeginMove(int from, int to)
+        {
+            var move = DoMove(from, to);
+#if UNITY_EDITOR
+            EditorLiveMove = move;
+#endif
+            StartCoroutine(move);
+        }
+
+#if UNITY_EDITOR
+        public System.Collections.IEnumerator EditorLiveMove;
+#endif
 
         IEnumerator DoMove(int from, int to)
         {
@@ -4243,7 +4290,7 @@ namespace FlockFive
             while (t < dur)
             {
                 if (gen != _motionGen) yield break;
-                t += Time.deltaTime;
+                t += ParadeStep();
                 float u = Mathf.SmoothStep(0f, 1f, t / dur);
                 for (int i = 0; i < run; i++)
                 {
@@ -5812,6 +5859,7 @@ namespace FlockFive
             // lands here. The tip's pause freezes FlyOffAll, and the seed is copied
             // only after that flight, so the release has to happen before the first yield.
             ReleaseCaptionPause();
+            DropGlovePress();
             ResetLiveCoachStep();
             if (_restarting)
             {
@@ -6652,7 +6700,11 @@ namespace FlockFive
         static void ClearLevelExit()
         {
             _exitPointerHeld = false;
-            if (_app != null) _app._homeGate = default;
+            if (_app != null)
+            {
+                _app._homeGate = default;
+                _app.DropGlovePress();
+            }
         }
 
         void CaptureLevelExitPointer()
@@ -7247,7 +7299,8 @@ namespace FlockFive
             _tapWho = null;
             if (tapEdge && !_splash)
             {
-                if (TryDrawnGlove(tapEv.mousePosition, tapEv.type == EventType.MouseUp))
+                int gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
+                if (TryDrawnGlove(tapEv.mousePosition, tapEv.type == EventType.MouseUp, gloveId))
                 {
                     _tapWho = "glove";
                     tapEv.Use();
@@ -7269,7 +7322,7 @@ namespace FlockFive
             if (EditorPointerInject.On && (EditorPointerInject.Down || EditorPointerInject.Up))
             {
                 var injected = new Vector2(EditorPointerInject.Play.x + PhoneArea.OffX, PhoneArea.H - EditorPointerInject.Play.y);
-                if (!_splash && TryDrawnGlove(injected, EditorPointerInject.Up))
+                if (!_splash && TryDrawnGlove(injected, EditorPointerInject.Up, EditorPointerInject.Id))
                     _tapWho = "glove";
                 if (_splash && _home == HomeFace.Splash
                     && !HomeGateAllows(ref _homeGate, EditorPointerInject.Down, EditorPointerInject.Up, EditorPointerInject.Id))
