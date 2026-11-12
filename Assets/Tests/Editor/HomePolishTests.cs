@@ -117,6 +117,8 @@ namespace FlockFive.Editor
             CheckResumeRestartFires(Check);
             CheckResumeGearFires(Check);
             CheckResumeArmClears(Check);
+            CheckResumeArmClearsOnPause(Check);
+            CheckGardenGearGoesToGlove(Check);
             CheckGearFeedsOnHomeFace(Check);
             CheckPointerIdExact(Check);
 
@@ -2312,6 +2314,98 @@ namespace FlockFive.Editor
                 Check("resume-hud-arm-clears-with-swallow",
                     !armed && arm == 1 && cleared == 0 && !fired && !splash,
                     "arm " + arm + "->" + cleared + " fired " + fired + " splash " + splash);
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeArmClearsOnPause(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-arm-pause");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var home = HudPlayRect(1);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool armed = FeedHud(app, 1, home, true, false);
+                int arm = (int)t.GetField("_resumeHudArm", flags).GetValue(app);
+                string pauseEx = "";
+                try { Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { true }); }
+                catch (System.Exception ex) { pauseEx = TapFault(ex); }
+                int after = (int)t.GetField("_resumeHudArm", flags).GetValue(app);
+                SetResumeUntil(float.NegativeInfinity);
+                bool fired = FeedHud(app, 1, home, false, true);
+                bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
+                Check("resume-hud-arm-clears-on-pause",
+                    !armed && arm == 1 && after == 0 && !fired && !splash,
+                    "arm " + arm + "->" + after + " fired " + fired + " splash " + splash + pauseEx);
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckGardenGearGoesToGlove(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("garden-gear-tap");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                var gear = HudPlayRect(3);
+                t.GetField("_gloveBody", flags).SetValue(app, gear);
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                var point = HudWindow(gear);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool inDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                string inExit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                int inArm = (int)t.GetField("_resumeHudArm", flags).GetValue(app);
+                bool inGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                SetResumeUntil(float.NegativeInfinity);
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                app.EditorHandleTaps = 0;
+                bool outDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                string outExit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                bool outGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(0f, 0f, 4f, 4f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool missIn = (bool)glove.Invoke(app, new object[] { point, false, 8 });
+                SetResumeUntil(float.NegativeInfinity);
+                bool missOut = (bool)glove.Invoke(app, new object[] { point, false, 8 });
+                bool stillGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                bool beats = FlockFiveApp.HudBeatsGlove(gear.center, new Rect(0f, 0f, 0f, 0f),
+                    new Rect(0f, 0f, 0f, 0f), gear, false);
+                Check("garden-gear-rect-goes-to-glove-or-board",
+                    inDown && inExit == "resume" && inArm == 0 && !inGear
+                    && outDown && latched && outExit != "resume-hud" && !outGear
+                    && !missIn && !missOut && !stillGear && !beats
+                    && app.EditorHandleTaps == 0,
+                    "in " + inDown + " " + inExit + " arm " + inArm
+                    + " out " + outDown + " " + outExit + " latch " + latched
+                    + " miss " + missIn + "/" + missOut + " gear " + inGear + "/" + outGear
+                    + " beats " + beats);
             }
             finally
             {
