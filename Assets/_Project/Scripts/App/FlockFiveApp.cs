@@ -3962,6 +3962,17 @@ namespace FlockFive
         {
             bool onGlove = !_splash && _board != null && _gloveVis && _cueBranch >= 0
                 && GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX);
+            // Same resume gate as Pressed. This runs before SwallowResumePointer,
+            // so a glove edge in that 0.35 s would otherwise become a move. Drop
+            // the latch too, or the release after the window completes it.
+            if (GateNow < _resumeInputUntil)
+            {
+                bool held = _glovePressLatched;
+                DropGlovePress();
+                if (!held && !onGlove) return false;
+                StampGlove("resume", windowGui, onGlove, false, false);
+                return true;
+            }
             bool onHud = false;
             if (onGlove || (releaseEdge && _glovePressLatched))
             {
@@ -4092,6 +4103,14 @@ namespace FlockFive
 
         void HandleTap(Vector2 world)
         {
+            // TakeGuiPointer reaches this before SwallowResumePointer. Pressed
+            // already holds the 0.35 s resume gate; a tap here has to hold it too.
+            if (GateNow < _resumeInputUntil)
+            {
+                DropGlovePress();
+                DropRouted("resume");
+                return;
+            }
 #if UNITY_EDITOR
             EditorHandleTaps++;
             EditorGloveTraceNow.World = world;

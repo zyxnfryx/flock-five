@@ -107,6 +107,7 @@ namespace FlockFive.Editor
             CheckGloveOneHandle(Check);
             CheckFreezeLeavesRepeatGate(Check);
             CheckHop2KeepsDestination(Check);
+            CheckResumeSwallow(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1803,6 +1804,56 @@ namespace FlockFive.Editor
             finally
             {
                 UnityEngine.Object.DestroyImmediate(root);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeSwallow(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-swallow");
+            var t = typeof(FlockFiveApp);
+            var gate = t.GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
+            float keep = (float)gate.GetValue(null);
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_coachMoves", flags).SetValue(app, 0);
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                t.GetField("_glovePressId", flags).SetValue(app, 4);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(0f, 0f, 80f, 80f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                app.EditorHandleTaps = 0;
+                gate.SetValue(null, AdPause.Unscaled + 0.35f);
+                bool swallowed = (bool)Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int))
+                    .Invoke(app, new object[] { new Vector2(10f, 10f), true, 4 });
+                bool latch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                int sel = (int)t.GetField("_sel", flags).GetValue(app);
+                int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                bool route = swallowed && !latch && sel == -1 && moves == 0 && app.EditorHandleTaps == 0
+                    && FlockFiveApp.EditorGloveTraceNow.Exit == "resume";
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, 0);
+                Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero });
+                bool tapLatch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                int selAfter = (int)t.GetField("_sel", flags).GetValue(app);
+                int movesAfter = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                bool tap = !tapLatch && selAfter == 0 && movesAfter == 0 && app.EditorHandleTaps == 0
+                    && FlockFiveApp.EditorGloveTraceNow.Exit == "resume";
+                Check("resume-swallow-blocks-glove", route && tap,
+                    "route " + swallowed + " latch " + latch + " sel " + sel + "->" + selAfter
+                    + " moves " + moves + "->" + movesAfter + " taps " + app.EditorHandleTaps
+                    + " exit " + FlockFiveApp.EditorGloveTraceNow.Exit);
+            }
+            finally
+            {
+                gate.SetValue(null, keep);
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
