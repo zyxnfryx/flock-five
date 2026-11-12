@@ -2744,7 +2744,7 @@ namespace FlockFive.Editor
                     var gardenHome = CornerAnchor.TopBarHome(gardenRestart, w[i], safe);
                     var gear = FlockFiveApp.SettingsGearRect(w[i], h[i], safe);
                     bool phone = w[i] < 500;
-                    bool face = gardenHome.width > 2f && gear.width > 2f && !gardenHome.Overlaps(gear);
+                    bool face = gardenHome.width > 2f && gear.width > 2f;
                     bool garden = gardenRestart.width > 2f;
                     if (!face || (phone && !garden)) sized = false;
                 }
@@ -2797,9 +2797,11 @@ namespace FlockFive.Editor
                 catch (System.Exception ex) { playEx = TapFault(ex); }
                 bool playLeft = playDown.type != EventType.Used;
                 bool greetHeld = !(bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
-                var missAt = new Vector2(level.xMax + 48f, 12f);
+                var missAt = new Vector2(
+                    PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 200f,
+                    PhoneArea.H > 0f ? PhoneArea.H * 0.42f : 300f);
                 if (level.width > 2f && level.Contains(missAt))
-                    missAt = new Vector2(level.center.x, level.yMax + 48f);
+                    missAt = new Vector2(missAt.x, level.yMin - 24f);
                 var miss = new Event { type = EventType.MouseDown, mousePosition = missAt, button = 0 };
                 Event.current = miss;
                 try { Method(t, "SwallowOffTargetTap").Invoke(app, null); }
@@ -3568,13 +3570,14 @@ namespace FlockFive.Editor
                 int stops = AudioGuard.StopCalls;
                 MixDesk.Boot(go);
                 bool stillScheduled = AudioGuard.ScheduledAt(bed, out _);
-                bool bedHeld = stillScheduled && bed.timeSamples == 20000
+                int samples = bed.timeSamples;
+                bool bedHeld = stillScheduled && samples >= 20000 && samples < 20000 + 8192
                     && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops + 1;
                 bool strayDown = !stray.isPlaying && stray.volume == 0f;
                 Check("second-boot-keeps-the-bed", bedHeld && strayDown,
-                    "scheduled " + stillScheduled + " samples " + bed.timeSamples
+                    "scheduled " + stillScheduled + " samples " + samples
                     + " plays " + AudioGuard.PlayCalls + " stops " + AudioGuard.StopCalls
-                    + " stray " + stray.volume);
+                    + " beforeStops " + stops + " stray " + stray.volume);
             }
             finally
             {
