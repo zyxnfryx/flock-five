@@ -6477,6 +6477,9 @@ namespace FlockFive
         // Unscaled. A lesson dismiss arms this. Board and HUD taps wait it out.
         static float _lessonGuardUntil;
 
+        // Resume, a fresh round, and an ad close are not a lesson dismiss.
+        public static void ClearLessonGuard() => _lessonGuardUntil = 0f;
+
         void MarkCoachAte() => _coachAteFrame = Time.frameCount;
 
         bool CoachAteThisFrame() => _coachAteFrame == Time.frameCount;

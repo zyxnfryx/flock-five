@@ -1497,7 +1497,7 @@ namespace FlockFive.Editor
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
                 if (aimed >= 0) t.GetField("_gloveVis", flags).SetValue(app, true);
                 int selBeforeHop = (int)t.GetField("_sel", flags).GetValue(app);
-                var boardBeforeHop = (Board)t.GetField("_board", flags).GetValue(app);
+                var boardBeforeHop = ((Board)t.GetField("_board", flags).GetValue(app)).Clone();
                 int tookBefore = (int)t.GetField("_gloveTookFrame", flags).GetValue(app);
                 t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
                 int tookAfter = (int)t.GetField("_gloveTookFrame", flags).GetValue(app);
@@ -1519,12 +1519,18 @@ namespace FlockFive.Editor
                 Method(t, "TakeGuiPointer").Invoke(app, null);
                 var hopTr = FlockFiveApp.EditorGloveTraceNow;
                 var live = app.EditorLiveMove;
-                if (live != null) PumpFrames(live, 48, null, out _);
+                const int settleCap = 240;
+                int settledFrames = 0;
+                bool settled = live == null;
+                if (live != null) settledFrames = PumpFrames(live, settleCap, null, out settled);
                 var afterBoard = (Board)t.GetField("_board", flags).GetValue(app);
                 int selAfterHop = (int)t.GetField("_sel", flags).GetValue(app);
                 int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
                 bool boardChanged = !SameBirds(boardBeforeHop, afterBoard);
-                hopTrace = " hop: aim=" + aimed
+                if (live != null && !settled)
+                    hopTrace = " move never settled after " + settleCap + " frames";
+                hopTrace += " settled=" + settled + " frames=" + settledFrames
+                    + " hop: aim=" + aimed
                     + " glove=" + hopBody.x.ToString("0") + "," + hopBody.y.ToString("0") + ","
                     + hopBody.width.ToString("0") + "," + hopBody.height.ToString("0")
                     + " pt=" + px.ToString("0") + "," + py.ToString("0")
@@ -1536,7 +1542,7 @@ namespace FlockFive.Editor
                     + " moves=" + moves
                     + " live=" + (live != null)
                     + " " + hopTr;
-                moved = level1 && boardChanged && moves > 0;
+                moved = settled && level1 && boardChanged && moves > 0;
                 bool once = afterDown == 0 && taps == 1 && picked == from && moved;
 
                 var gate = t.GetField("_homeGate", flags);

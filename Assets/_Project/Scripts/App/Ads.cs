@@ -835,6 +835,7 @@ namespace FlockFive
             RewardedGrant.OnClosed();
             AdLog.Add("gift ad closed" + (RewardedGrant.Earned ? " (rewarded)" : " (no reward yet)"));
             AudioGuard.Restore();
+            FlockFiveApp.ClearLessonGuard();
         }
 
         // Interstitial close and display failure. Same audio undo as a rewarded close.
@@ -842,6 +843,7 @@ namespace FlockFive
         public static void DeliverInterstitialClosed()
         {
             AudioGuard.Restore();
+            FlockFiveApp.ClearLessonGuard();
             bool shown = _intDisplayed;
             _intDisplayed = false;
             if (!shown || NoAds.Owned) return;

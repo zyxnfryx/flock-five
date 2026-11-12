@@ -103,7 +103,12 @@ namespace FlockFive
                 while (u < 1f)
                 {
                     if (run != _fitSerial) yield break;
-                    u += EaseDelta(Time.deltaTime) / SettleSeconds;
+                    float dt = Time.deltaTime;
+#if UNITY_EDITOR
+                    // An EditMode pump has no player loop, so delta stays 0 and the ease never lands.
+                    if (!Application.isPlaying && dt <= 0f) dt = 0.25f;
+#endif
+                    u += EaseDelta(dt) / SettleSeconds;
                     if (u > 1f) u = 1f;
                     float k = Mathf.SmoothStep(0f, 1f, u);
                     for (int i = 0; i < n; i++)
