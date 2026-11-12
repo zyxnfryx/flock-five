@@ -95,6 +95,7 @@ namespace FlockFive.Editor
             CheckForcePause(Check);
             CheckHomeTouchGate(Check);
             CheckGloveRoute(Check);
+            CheckGloveOneHandle(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1408,6 +1409,110 @@ namespace FlockFive.Editor
                 stillCarried && touchClears == false && !mismatched.CarryHeld && fresh && liveHeld && focusCleared && resumeCleared,
                 "carried " + stillCarried + " fresh " + fresh + " live " + liveHeld
                 + " focus " + focusCleared + " resume " + resumeCleared);
+        }
+
+        static void CheckGloveOneHandle(System.Action<string, bool, string> Check)
+        {
+            bool releaseHonored = FlockFiveApp.HomePointerId(-1, true, 4) == 4
+                && FlockFiveApp.HomePointerId(-1, false, 4) == -1
+                && FlockFiveApp.HomePointerId(4, true, 9) == 4;
+            var go = new GameObject("glove-one-handle");
+            var limb = new GameObject("one-handle-limb");
+            int taps = -1;
+            bool homeWon = false;
+            bool pressCleared = false, guiCleared = false;
+            var keep = FlockFiveApp.EditorPointerInject;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                var view = limb.AddComponent<BranchView>();
+                view.Index = 0;
+                var bird = new GameObject("bird");
+                bird.transform.SetParent(limb.transform, false);
+                view.Birds[0] = bird.AddComponent<SpriteRenderer>();
+                var garden = new WorldBuilder.Garden();
+                garden.Branches = new BranchView[] { view };
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                var reset = t.GetField("_coachReset", flags);
+                var guard = (CoachResetGuard)reset.GetValue(app);
+                guard.Flying = true;
+                reset.SetValue(app, guard);
+                float px = 360f, py = 520f;
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                app.EditorHandleTaps = 0;
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Up = false, Id = 4,
+                    Play = new Vector2(px - PhoneArea.OffX, PhoneArea.H - py)
+                };
+                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                int afterDown = app.EditorHandleTaps;
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = false, Up = true, Id = 4,
+                    Play = new Vector2(px - PhoneArea.OffX, PhoneArea.H - py)
+                };
+                try { t.GetMethod("OnGUIBody", flags).Invoke(app, null); }
+                catch (System.Exception) { }
+                taps = app.EditorHandleTaps;
+                bool once = afterDown == 0 && taps == 1;
+
+                var gate = t.GetField("_homeGate", flags);
+                var splash = t.GetField("_splash", flags);
+                var homeFace = t.GetField("_home", flags);
+                splash.SetValue(app, true);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer { On = true, Up = true, Id = 4 };
+                object[] pressArgs = { Vector2.zero };
+                t.GetMethod("Pressed", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, pressArgs);
+                pressCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).CarryHeld;
+                gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
+                try { t.GetMethod("OnGUIBody", flags).Invoke(app, null); }
+                catch (System.Exception) { }
+                guiCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).CarryHeld;
+
+                splash.SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                guard = (CoachResetGuard)reset.GetValue(app);
+                guard.Flying = true;
+                reset.SetValue(app, guard);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(home.center.x - 30f, home.center.y - 30f, 60f, 60f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                app.EditorHandleTaps = 0;
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Id = -1,
+                    Play = new Vector2(home.center.x, PhoneArea.H - home.center.y)
+                };
+                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                homeWon = (bool)splash.GetValue(app) && app.EditorHandleTaps == 0;
+                Check("glove-down-and-up-handle-once", once && releaseHonored, "down " + afterDown + " total " + taps);
+                Check("home-up-id-falls-through-to-release", releaseHonored, "id4 " + releaseHonored);
+                Check("home-touch-up-through-pressed-and-ongui", pressCleared && guiCleared, "press " + pressCleared + " gui " + guiCleared);
+                Check("glove-cuff-on-home-goes-home", homeWon, "home " + homeWon + " taps " + app.EditorHandleTaps);
+            }
+            finally
+            {
+                FlockFiveApp.EditorPointerInject = keep;
+                UnityEngine.Object.DestroyImmediate(limb);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckGloveRoute(System.Action<string, bool, string> Check)
