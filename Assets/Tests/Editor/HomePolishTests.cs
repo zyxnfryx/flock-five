@@ -33,6 +33,29 @@ namespace FlockFive.Editor
                 Debug.Log("[home-polish] " + (ok ? "PASS " : "FAIL ") + name + " " + detail);
             }
 
+            void Gate(string name, System.Action body)
+            {
+                try { body(); }
+                catch (System.Exception ex)
+                {
+                    var inner = ex;
+                    while (inner is System.Reflection.TargetInvocationException && inner.InnerException != null)
+                        inner = inner.InnerException;
+                    var frames = "";
+                    int n = 0;
+                    var trace = inner.StackTrace ?? "";
+                    foreach (var raw in trace.Split('\n'))
+                    {
+                        var line = raw.Trim();
+                        if (line.Length == 0) continue;
+                        frames += (frames.Length == 0 ? "" : " | ") + line;
+                        if (++n == 4) break;
+                    }
+                    Check(name, false, "THREW " + inner.GetType().Name + ": " + inner.Message
+                        + (frames.Length == 0 ? "" : " @ " + frames));
+                }
+            }
+
             Check("back-answers-during-bet-coach",
                 FlockFiveApp.PokerBackAccepts(true, false, true), "bet coach");
             Check("back-stays-shut-during-a-dealt-hand",
@@ -42,9 +65,9 @@ namespace FlockFive.Editor
             Check("back-answers-when-nothing-holds-it",
                 FlockFiveApp.PokerBackAccepts(false, false, false), "free");
 
-            CheckBird("820", 820, 1180, Check);
-            CheckBird("402", 402, 874, Check);
-            CheckBird("412", 412, 915, Check);
+            Gate("CheckBird", () => CheckBird("820", 820, 1180, Check));
+            Gate("CheckBird", () => CheckBird("402", 402, 874, Check));
+            Gate("CheckBird", () => CheckBird("412", 412, 915, Check));
 
             Check("flip-hints-hide-for-upgrade-coach",
                 !FlockFiveApp.ShowFlipHints(true, false), "upgrade");
@@ -53,11 +76,11 @@ namespace FlockFive.Editor
             Check("flip-hints-show-when-both-coaches-are-clear",
                 FlockFiveApp.ShowFlipHints(true, true), "clear");
 
-            CheckGlove("402", 402, 874, Check);
-            CheckGlove("412", 412, 915, Check);
-            CheckGlove("820", 820, 1180, Check);
+            Gate("CheckGlove", () => CheckGlove("402", 402, 874, Check));
+            Gate("CheckGlove", () => CheckGlove("412", 412, 915, Check));
+            Gate("CheckGlove", () => CheckGlove("820", 820, 1180, Check));
 
-            CheckMaxxedPutBack(Check);
+            Gate("CheckMaxxedPutBack", () => CheckMaxxedPutBack(Check));
             Check("scene-change-holds-the-second-tap",
                 !FlockFiveApp.SceneInputBlocked(10f, -1f)
                 && FlockFiveApp.SceneInputBlocked(10f, 10.40f)
@@ -65,71 +88,71 @@ namespace FlockFive.Editor
                 && !FlockFiveApp.SceneInputBlocked(10.40f, 10.40f)
                 && Mathf.Abs(FlockFiveApp.SceneInputSettle - 0.40f) < 0.001f,
                 "400 ms");
-            CheckSafe("820", 820, 1180, Check);
-            CheckSafe("402", 402, 874, Check);
-            CheckSafe("412", 412, 915, Check);
-            CheckBackVeil("820", 820, 1180, new Vector2(148f, 37f), Check);
-            CheckBackVeil("402", 402, 874, new Vector2(58f, 33f), Check);
-            CheckBackVeil("412", 412, 915, new Vector2(60f, 34f), Check);
-            CheckBadge("820", 820, 1180, Check);
-            CheckBadge("402", 402, 874, Check);
-            CheckBadge("412", 412, 915, Check);
-            CheckUpgradeTiming(Check);
-            CheckFlipOccluder(Check);
+            Gate("CheckSafe", () => CheckSafe("820", 820, 1180, Check));
+            Gate("CheckSafe", () => CheckSafe("402", 402, 874, Check));
+            Gate("CheckSafe", () => CheckSafe("412", 412, 915, Check));
+            Gate("CheckBackVeil", () => CheckBackVeil("820", 820, 1180, new Vector2(148f, 37f), Check));
+            Gate("CheckBackVeil", () => CheckBackVeil("402", 402, 874, new Vector2(58f, 33f), Check));
+            Gate("CheckBackVeil", () => CheckBackVeil("412", 412, 915, new Vector2(60f, 34f), Check));
+            Gate("CheckBadge", () => CheckBadge("820", 820, 1180, Check));
+            Gate("CheckBadge", () => CheckBadge("402", 402, 874, Check));
+            Gate("CheckBadge", () => CheckBadge("412", 412, 915, Check));
+            Gate("CheckUpgradeTiming", () => CheckUpgradeTiming(Check));
+            Gate("CheckFlipOccluder", () => CheckFlipOccluder(Check));
             Check("card-render-defers-inside-camera",
                 CardStage.MustDeferRender(true) && !CardStage.MustDeferRender(false), "nested");
-            CheckCardRender(Check);
-            CheckFmod(Check);
-            CheckUnityOutputInit(Check);
-            CheckEmulatedNoSound(Check);
-            CheckOutputThenEmulated(Check);
-            CheckInvalidHandle(Check);
-            CheckPlayScheduled(Check);
-            CheckAudioRetry(Check);
-            CheckPauseAndUnmute(Check);
-            CheckUnmuteScope(Check);
-            CheckScheduledRestore(Check);
-            CheckScheduleHousekeeping(Check);
-            CheckRebootHolds(Check);
-            CheckGardenGlove(Check);
-            CheckUpgradeStack(Check);
-            CheckPlayerGlove(Check);
-            CheckCoachRestart(Check);
-            CheckCoachRestartPath(Check);
-            CheckRealPress(Check);
-            CheckCaptionLeave(Check);
-            CheckExitGuards(Check);
-            CheckHomeAndPrivacy(Check);
-            CheckRestartRecue(Check);
-            CheckForcePause(Check);
-            CheckHomeTouchGate(Check);
-            CheckGloveRoute(Check);
-            CheckGloveOneHandle(Check);
-            CheckFreezeLeavesRepeatGate(Check);
-            CheckHop2KeepsDestination(Check);
-            CheckResumeSwallow(Check);
-            CheckResumeUpAfterSwallow(Check);
-            CheckSwallowedReleaseScope(Check);
-            CheckResumeFollowups(Check);
-            CheckResumeOtherFingerHome(Check);
-            CheckResumeButtonBegan(Check);
-            CheckResumeHomeFires(Check);
-            CheckResumeRestartFires(Check);
-            CheckResumeGearFires(Check);
-            CheckResumeArmClears(Check);
-            CheckResumeArmClearsOnPause(Check);
-            CheckGardenGearGoesToGlove(Check);
-            CheckGearFeedsOnHomeFace(Check);
-            CheckPointerIdExact(Check);
-            CheckPlayerGloveHop(Check);
-            CheckResumeFreshAndHeld(Check);
-            CheckFreshResumeSurfaces(Check);
-            CheckResumeBranches(Check);
-            CheckGlovePressOwner(Check);
-            CheckRestartClearsCaptions(Check);
-            CheckHomeControlsAtSizes(Check);
-            CheckHomeChainOneAtATime(Check);
-            CheckPauseKeepsHeldId(Check);
+            Gate("CheckCardRender", () => CheckCardRender(Check));
+            Gate("CheckFmod", () => CheckFmod(Check));
+            Gate("CheckUnityOutputInit", () => CheckUnityOutputInit(Check));
+            Gate("CheckEmulatedNoSound", () => CheckEmulatedNoSound(Check));
+            Gate("CheckOutputThenEmulated", () => CheckOutputThenEmulated(Check));
+            Gate("CheckInvalidHandle", () => CheckInvalidHandle(Check));
+            Gate("CheckPlayScheduled", () => CheckPlayScheduled(Check));
+            Gate("CheckAudioRetry", () => CheckAudioRetry(Check));
+            Gate("CheckPauseAndUnmute", () => CheckPauseAndUnmute(Check));
+            Gate("CheckUnmuteScope", () => CheckUnmuteScope(Check));
+            Gate("CheckScheduledRestore", () => CheckScheduledRestore(Check));
+            Gate("CheckScheduleHousekeeping", () => CheckScheduleHousekeeping(Check));
+            Gate("CheckRebootHolds", () => CheckRebootHolds(Check));
+            Gate("CheckGardenGlove", () => CheckGardenGlove(Check));
+            Gate("CheckUpgradeStack", () => CheckUpgradeStack(Check));
+            Gate("CheckPlayerGlove", () => CheckPlayerGlove(Check));
+            Gate("CheckCoachRestart", () => CheckCoachRestart(Check));
+            Gate("CheckCoachRestartPath", () => CheckCoachRestartPath(Check));
+            Gate("CheckRealPress", () => CheckRealPress(Check));
+            Gate("CheckCaptionLeave", () => CheckCaptionLeave(Check));
+            Gate("CheckExitGuards", () => CheckExitGuards(Check));
+            Gate("CheckHomeAndPrivacy", () => CheckHomeAndPrivacy(Check));
+            Gate("CheckRestartRecue", () => CheckRestartRecue(Check));
+            Gate("CheckForcePause", () => CheckForcePause(Check));
+            Gate("CheckHomeTouchGate", () => CheckHomeTouchGate(Check));
+            Gate("CheckGloveRoute", () => CheckGloveRoute(Check));
+            Gate("CheckGloveOneHandle", () => CheckGloveOneHandle(Check));
+            Gate("CheckFreezeLeavesRepeatGate", () => CheckFreezeLeavesRepeatGate(Check));
+            Gate("CheckHop2KeepsDestination", () => CheckHop2KeepsDestination(Check));
+            Gate("CheckResumeSwallow", () => CheckResumeSwallow(Check));
+            Gate("CheckResumeUpAfterSwallow", () => CheckResumeUpAfterSwallow(Check));
+            Gate("CheckSwallowedReleaseScope", () => CheckSwallowedReleaseScope(Check));
+            Gate("CheckResumeFollowups", () => CheckResumeFollowups(Check));
+            Gate("CheckResumeOtherFingerHome", () => CheckResumeOtherFingerHome(Check));
+            Gate("CheckResumeButtonBegan", () => CheckResumeButtonBegan(Check));
+            Gate("CheckResumeHomeFires", () => CheckResumeHomeFires(Check));
+            Gate("CheckResumeRestartFires", () => CheckResumeRestartFires(Check));
+            Gate("CheckResumeGearFires", () => CheckResumeGearFires(Check));
+            Gate("CheckResumeArmClears", () => CheckResumeArmClears(Check));
+            Gate("CheckResumeArmClearsOnPause", () => CheckResumeArmClearsOnPause(Check));
+            Gate("CheckGardenGearGoesToGlove", () => CheckGardenGearGoesToGlove(Check));
+            Gate("CheckGearFeedsOnHomeFace", () => CheckGearFeedsOnHomeFace(Check));
+            Gate("CheckPointerIdExact", () => CheckPointerIdExact(Check));
+            Gate("CheckPlayerGloveHop", () => CheckPlayerGloveHop(Check));
+            Gate("CheckResumeFreshAndHeld", () => CheckResumeFreshAndHeld(Check));
+            Gate("CheckFreshResumeSurfaces", () => CheckFreshResumeSurfaces(Check));
+            Gate("CheckResumeBranches", () => CheckResumeBranches(Check));
+            Gate("CheckGlovePressOwner", () => CheckGlovePressOwner(Check));
+            Gate("CheckRestartClearsCaptions", () => CheckRestartClearsCaptions(Check));
+            Gate("CheckHomeControlsAtSizes", () => CheckHomeControlsAtSizes(Check));
+            Gate("CheckHomeChainOneAtATime", () => CheckHomeChainOneAtATime(Check));
+            Gate("CheckPauseKeepsHeldId", () => CheckPauseKeepsHeldId(Check));
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1241,6 +1264,7 @@ namespace FlockFive.Editor
                     now.Branches[0].Birds.RemoveAt(now.Branches[0].Count - 1);
                     streakChanged = !SameBirds(now, seedNow);
                 }
+                t.GetField("_holdRuleForLesson", flags).SetValue(app, false);
                 t.GetMethod("ShowRuleTip", flags).Invoke(app, new object[] { RuleTip.Kit });
                 bool streakHeld = GamePause.Paused;
                 var streak = (System.Collections.IEnumerator)t.GetMethod("FinishRestart", flags).Invoke(app, new object[] { false });
@@ -1885,6 +1909,24 @@ namespace FlockFive.Editor
             return (int)replay.Invoke(app, new object[] { down, downId, up, upId });
         }
 
+        static WorldBuilder.Garden SeatGarden(out GameObject limb, out GameObject camGo)
+        {
+            limb = new GameObject("hop-limb");
+            camGo = new GameObject("hop-cam");
+            var view = limb.AddComponent<BranchView>();
+            for (int s = 0; s < BranchState.Cap; s++)
+            {
+                var seat = new GameObject("seat");
+                seat.transform.SetParent(limb.transform, false);
+                view.Seats[s] = seat.transform;
+            }
+            var garden = new WorldBuilder.Garden();
+            garden.Branches = new[] { view };
+            garden.Cam = camGo.AddComponent<Camera>();
+            garden.Feeders = new FeederView[0];
+            return garden;
+        }
+
         static void SetResumeUntil(float until)
         {
             typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, until);
@@ -2038,7 +2080,7 @@ namespace FlockFive.Editor
                 int focusId = Swallowed();
                 bool focusUp = ReleaseAt(off, 4, out string focusExit);
                 bool focusCleared = focusArmed && focusId == int.MinValue
-                    && !focusUp && focusExit != "swallowed-up" && EditorTaps(app) == 0;
+                    && focusUp && focusExit == "no-press" && EditorTaps(app) == 0;
                 Check("resume-focus-loss-clears-swallow", focusCleared,
                     "focus " + focusArmed + " id " + focusId + " " + focusExit + focusEx
                     + " taps " + EditorTaps(app));
@@ -2056,6 +2098,7 @@ namespace FlockFive.Editor
                 int loadId = Swallowed();
                 bool loadUp = ReleaseAt(off, 4, out string loadExit);
                 bool exitArmed = Arm();
+                t.GetField("_app", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, app);
                 Method(t, "ClearLevelExit").Invoke(null, null);
                 int exitId = Swallowed();
                 bool hideArmed = Arm();
@@ -2078,8 +2121,8 @@ namespace FlockFive.Editor
                     && exitId == int.MinValue && hideId == int.MinValue
                     && snapId == int.MinValue && cancelId == int.MinValue;
                 bool left = homeArmed && loadArmed && homeId == int.MinValue && loadId == int.MinValue
-                    && !homeUp && homeExit != "swallowed-up"
-                    && !loadUp && loadExit != "swallowed-up";
+                    && homeUp && homeExit == "no-press"
+                    && loadUp && loadExit == "no-press";
                 Check("resume-swallow-clears-on-home-and-load", left,
                     "home " + homeArmed + " id " + homeId + " " + homeExit + homeEx
                     + " load " + loadArmed + " id " + loadId + " " + loadExit + loadEx);
@@ -2114,11 +2157,14 @@ namespace FlockFive.Editor
         static void CheckPlayerGloveHop(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("player-glove-hop");
+            GameObject limb = null, camGo = null;
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
                 float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
                 float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
                 t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
@@ -2140,7 +2186,13 @@ namespace FlockFive.Editor
                 int hopsThird = ReplayGlove(app, down, 7, up, -1);
                 Check("player-touch-down-mouse-up-hops-once", hops == 1 && hopsAgain == 1 && hopsThird == 1,
                     "hops " + hops + " again " + hopsAgain + " third " + hopsThird);
-                var home = HudPlayRect(1);
+                Rect home;
+                try { home = HudPlayRect(1); }
+                catch (System.Exception ex)
+                {
+                    Check("player-glove-on-hud-hops-at-later-steps", false, ex.Message);
+                    return;
+                }
                 var onHome = HudWindow(home);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(home.center.x - 36f, home.center.y - 36f, 72f, 72f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
@@ -2154,6 +2206,8 @@ namespace FlockFive.Editor
             }
             finally
             {
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
@@ -2162,11 +2216,14 @@ namespace FlockFive.Editor
         {
             var go = new GameObject("resume-fresh-held");
             float keep = ResumeUntil();
+            GameObject limb = null, camGo = null;
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
                 float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
                 float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
                 t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
@@ -2198,6 +2255,8 @@ namespace FlockFive.Editor
             finally
             {
                 SetResumeUntil(keep);
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
@@ -2220,11 +2279,14 @@ namespace FlockFive.Editor
             var go = new GameObject("glove-press-owner");
             float keep = ResumeUntil();
             var prev = Event.current;
+            GameObject limb = null, camGo = null;
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
                 t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
                 t.GetField("_splash", flags).SetValue(app, false);
                 t.GetField("_gloveVis", flags).SetValue(app, true);
@@ -2267,6 +2329,8 @@ namespace FlockFive.Editor
             {
                 Event.current = prev;
                 SetResumeUntil(keep);
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
@@ -2276,11 +2340,14 @@ namespace FlockFive.Editor
             var go = new GameObject("resume-branches");
             float keep = ResumeUntil();
             var prev = Event.current;
+            GameObject limb = null, camGo = null;
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
                 t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
                 t.GetField("_splash", flags).SetValue(app, false);
                 var restart = HudPlayRect(2);
@@ -2327,6 +2394,8 @@ namespace FlockFive.Editor
                 SetInject(false, false, default);
                 Event.current = prev;
                 SetResumeUntil(keep);
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
                 GamePause.Reset();
                 UnityEngine.Object.DestroyImmediate(go);
             }
@@ -2496,9 +2565,9 @@ namespace FlockFive.Editor
                 t.GetField("_sel", flags).SetValue(app, -1);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                SetEditorTaps(app, 0);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
+                NoteHeld(app, 4);
                 bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
                 SetResumeUntil(float.NegativeInfinity);
                 bool up = (bool)glove.Invoke(app, new object[] { homePt, true, 5 });
@@ -2912,9 +2981,14 @@ namespace FlockFive.Editor
                 t.GetField("_cueForce", flags).SetValue(app, true);
                 t.GetField("_sel", flags).SetValue(app, -1);
                 var gear = HudPlayRect(3);
-                t.GetField("_gloveBody", flags).SetValue(app, gear);
+                var homeR = HudPlayRect(1);
+                var restartR = HudPlayRect(2);
+                var play = gear.center;
+                if (homeR.Contains(play) || restartR.Contains(play))
+                    play = new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.55f);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(play.x - 40f, play.y - 40f, 80f, 80f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                var point = HudWindow(gear);
+                var point = new Vector2(play.x + PhoneArea.OffX, play.y);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 bool inDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
