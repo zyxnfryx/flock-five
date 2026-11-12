@@ -145,7 +145,13 @@ namespace FlockFive
             if (batch.Count == 0) return 0;
             for (int i = 0; i < batch.Count; i++)
             {
-                try { batch[i].timeSamples = 0; }
+                // A source Play() already started would keep advancing under the
+                // schedule. Stop it first so the playhead waits at the shared mark.
+                try
+                {
+                    batch[i].Stop();
+                    batch[i].timeSamples = 0;
+                }
                 catch (Exception ex) { NotePlayback(batch[i], ex); }
             }
             double start = AudioSettings.dspTime + 0.05;

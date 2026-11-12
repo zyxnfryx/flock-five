@@ -160,12 +160,28 @@ namespace FlockFive
         }
 
         // Top-left home, the same size and top inset as restart.
+        // screenH 0 uses the live phone height. The gear owns that corner, so
+        // Home steps to the right of the gear hit when the two would overlap.
         public static Rect TopBarHome(Rect restart, float screenW, Rect safe)
+        {
+            float h = PhoneArea.H > 2f ? PhoneArea.H : 0f;
+            return TopBarHome(restart, screenW, safe, h);
+        }
+
+        public static Rect TopBarHome(Rect restart, float screenW, Rect safe, float screenH)
         {
             if (restart.width < 2f) return default;
             if (safe.width < 2f) safe = new Rect(0f, 0f, screenW, restart.yMax);
             float left = Mathf.Max(16f, safe.xMin + 10f);
-            return new Rect(left, restart.y, restart.width, restart.height);
+            var home = new Rect(left, restart.y, restart.width, restart.height);
+            if (screenH < 2f) return home;
+            var gear = FlockFiveApp.SettingsGearRect(screenW, screenH, safe);
+            if (gear.width < 2f || !home.Overlaps(gear)) return home;
+            float nudged = gear.xMax + 8f;
+            var side = new Rect(nudged, home.y, home.width, home.height);
+            bool room = side.xMax <= screenW - 4f && (restart.xMin < 2f || side.xMax <= restart.xMin - 4f);
+            if (room) return side;
+            return new Rect(home.x, gear.yMax + 8f, home.width, home.height);
         }
 
         static void GardenCore(float screenW, float screenH, Rect safe,

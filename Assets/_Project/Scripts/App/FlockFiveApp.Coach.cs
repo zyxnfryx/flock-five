@@ -8009,11 +8009,12 @@ namespace FlockFive
             NoteLessonDismiss(step);
         }
 
-        // markSeen false: a heal reset (pause, focus) is not a completion. The pref stays 0 and the
-        // lesson re-arms at the next splash.
+        // markSeen is retained so a heal and a Play leave share one method. Neither
+        // finished Tap Daily. Only DismissDailyIntro writes the pref, so the lesson
+        // is back on the next home visit.
         void NoteDailyIntroLeft(bool markSeen = true)
         {
-            if (markSeen && _dailyIntroSaw) MarkDailyCoach();
+            if (markSeen) { }
             _dailyIntro = false;
             _dailyIntroLive = false;
             _dailyIntroSaw = false;
