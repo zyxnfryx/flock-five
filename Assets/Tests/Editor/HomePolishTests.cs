@@ -1479,8 +1479,9 @@ namespace FlockFive.Editor
                     On = true, Down = false, Up = true, Id = 4,
                     Play = new Vector2(px, PhoneArea.H - py)
                 };
+                SeatOpenLesson(app);
                 try { Method(t, "OnGUIBody").Invoke(app, null); }
-                catch (System.Exception ex) { upEx = " " + ex.GetType().Name; }
+                catch (System.Exception ex) { upEx = TapFault(ex); }
                 taps = app.EditorHandleTaps;
                 int picked = (int)t.GetField("_sel", flags).GetValue(app);
                 upTrace = FlockFiveApp.EditorGloveTraceNow.ToString() + upEx;
@@ -1498,6 +1499,7 @@ namespace FlockFive.Editor
                 };
                 Method(t, "UpdateBody").Invoke(app, null);
                 t.GetField("_nextTap", flags).SetValue(app, 0f);
+                SeatOpenLesson(app);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 4,
@@ -1704,6 +1706,24 @@ namespace FlockFive.Editor
             }
         }
 
+        // A dismiss in an earlier check arms the static lesson guard. A live
+        // Level 1 glove is not under that guard (ShowSplash zeroes it).
+        static void SeatOpenLesson(object app)
+        {
+            var t = typeof(FlockFiveApp);
+            t.GetField("_lessonGuardUntil", BindingFlags.NonPublic | BindingFlags.Static)
+                .SetValue(null, float.NegativeInfinity);
+            t.GetField("_coachAteFrame", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(app, -1);
+        }
+
+        static string TapFault(System.Exception ex)
+        {
+            var inner = ex is System.Reflection.TargetInvocationException tie && tie.InnerException != null
+                ? tie.InnerException : ex;
+            return " " + inner.GetType().Name + ": " + inner.Message + " | " + inner.StackTrace;
+        }
+
         static BranchView Limb(GameObject host, int index, Vector3 at)
         {
             host.transform.position = at;
@@ -1761,6 +1781,7 @@ namespace FlockFive.Editor
                 t.GetField("_cueForce", flags).SetValue(app, true);
                 t.GetField("_cueBranch", flags).SetValue(app, from);
                 t.GetField("_sel", flags).SetValue(app, -1);
+                SeatOpenLesson(app);
                 float gx = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
                 float gy = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
                 var body = t.GetField("_gloveBody", flags);
