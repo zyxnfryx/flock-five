@@ -3987,7 +3987,11 @@ namespace FlockFive
             bool heldLatch = _glovePressLatched;
             if (!_glovePressLatched || !GloveFingerMatches(_glovePressId, pointerId))
             {
-                if (!onGlove || onHud) return false;
+                if (!onGlove || onHud)
+                {
+                    StampGlove("no-glove", windowGui, onGlove, onHud, false);
+                    return false;
+                }
             }
             else
             {
@@ -4104,6 +4108,7 @@ namespace FlockFive
             EditorGloveTraceNow.Routed = _gloveRouted;
             EditorGloveTraceNow.TurnBusy = _turnGate.Busy;
             EditorGloveTraceNow.NextTap = _nextTap;
+            EditorGloveTraceNow.Now = AdPause.Unscaled;
             EditorGloveTraceNow.ViewProbe = CueViewProbe();
             var mainCam = Camera.main;
             EditorGloveTraceNow.CamMain = mainCam == null ? "null" : mainCam.name;
@@ -4267,6 +4272,7 @@ namespace FlockFive
             var move = DoMove(from, to);
 #if UNITY_EDITOR
             EditorLiveMove = move;
+            EditorGloveTraceNow.BeginMove = true;
 #endif
             StartCoroutine(move);
         }
@@ -7047,8 +7053,8 @@ namespace FlockFive
             public bool Fallback;
             public float Dist, Threshold;
             public string CamMain, CamUsed;
-            public bool TurnBusy, Rejected, Routed, CueForce, CueFreeze, CueGift;
-            public float NextTap;
+            public bool TurnBusy, Rejected, Routed, CueForce, CueFreeze, CueGift, BeginMove;
+            public float NextTap, Now;
             public int SelBefore, SelAfter;
 
             public override string ToString()
@@ -7063,7 +7069,8 @@ namespace FlockFive
                     + " fall=" + Fallback + " dist=" + Dist.ToString("0.0000") + " thr=" + Threshold.ToString("0.0000")
                     + " camMain=" + CamMain + " cam=" + CamUsed
                     + " turn=" + TurnBusy + " reject=" + Rejected + " routed=" + Routed
-                    + " next=" + NextTap.ToString("0.00")
+                    + " next=" + NextTap.ToString("0.00") + " now=" + Now.ToString("0.00")
+                    + " begin=" + BeginMove
                     + " force=" + CueForce + " freeze=" + CueFreeze + " gift=" + CueGift
                     + " sel=" + SelBefore + "->" + SelAfter;
             }
