@@ -4163,7 +4163,13 @@ namespace FlockFive
             // is still on the glove and used to reach HandleTap with no latch.
             // A press that begins on Home, Restart, or the gear is that button's
             // gesture. It is not swallowed, so the release can still fire it.
-            if (ResumeHolds(pointerId))
+            // A WebGL up is mouse -1 for the touch that went down. Match that
+            // press, not the synthesized id, or a fresh tap is eaten because
+            // the mouse was the thing down at hide.
+            int resumeId = pointerId;
+            if (releaseEdge && pointerId == -1 && _glovePressLatched && _glovePressId >= 0)
+                resumeId = _glovePressId;
+            if (ResumeHolds(resumeId))
             {
                 if (!releaseEdge && hud != 0)
                 {
@@ -4219,12 +4225,18 @@ namespace FlockFive
                 var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
                 var playGui = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
                 onHud = HudBeatsGlove(playGui, home, restart, gear, HomeGear.Shown(HomeGearNow()));
-                if (onGlove && onHud && !(releaseEdge && _glovePressLatched && GloveFingerMatches(_glovePressId, pointerId)))
+                // Steps 2 and 3 at 820 sit on Home or Restart. Exact id match
+                // misses the player's mouse -1 release and the hop is dropped.
+                if (onGlove && onHud && !(releaseEdge && GloveOwnsRelease(pointerId)))
                     return false;
             }
             if (!releaseEdge)
             {
-                if (!onGlove || onHud) return false;
+                if (!onGlove) return false;
+                // A mouse press on the button under the glove is that button.
+                // A touch on the drawn glove is the lesson, at every step.
+                if (onHud && pointerId < 0) return false;
+                _gloveEchoFrame = -1;
                 _glovePressLatched = true;
                 _glovePressId = pointerId;
                 _gloveSwallowedId = int.MinValue;
@@ -4249,10 +4261,13 @@ namespace FlockFive
             {
                 _gloveEchoId = _glovePressId;
                 _gloveEchoFrame = Time.frameCount;
+                // The player's up is mouse -1 and often lands on the button the
+                // glove overlaps. That is still the glove tap. A same-id slide
+                // onto Home is the button, and does not hop.
+                bool synthesized = pointerId == -1 && _glovePressId >= 0;
+                if (synthesized) _gloveEdgeId = _glovePressId;
                 DropGlovePress();
-                // Home still wins. A release that misses the glove rect is the
-                // same tap: the player often reports the up off the quad.
-                if (onHud)
+                if (onHud && !synthesized)
                 {
                     StampGlove("ate-hud", windowGui, onGlove, onHud, false);
 #if UNITY_EDITOR
@@ -4346,9 +4361,9 @@ namespace FlockFive
 
         void HandleTap(Vector2 world)
         {
-            // TakeGuiPointer reaches this before SwallowResumePointer. Pressed
-            // already holds the 0.35 s resume gate; a tap here has to hold it too.
-            if (GateNow < _resumeInputUntil)
+            // TakeGuiPointer reaches this before SwallowResumePointer. Only a
+            // press that was already down at hide is swallowed. A fresh tap is not.
+            if (ResumeHolds(_gloveEdgeId))
             {
                 DropGlovePress();
                 DropRouted("resume");
@@ -11859,9 +11874,8 @@ namespace FlockFive
             HitHomeAvatar(s, tutorUp);
             HitAdoptTutor(s);
             StartupTrace.Lap("L.Hits");
-            // The greet's taps never get here: StepTapGate's any-tap step (GateAdoptGreet)
-            // eats them at the top of OnGUI and advances to the look step.
-            // Owed bird lesson keeps LEVEL from starting under the breath or the greet.
+            // A greet tap off Play is eaten above and advances to the look step.
+            // Play and the gear stay live through the greet, the name, and Tap Daily.
             if (DrawFlowerPlay(s, ease, number))
                 PressLevelButton();
             DrawHomeAvatar(s);
@@ -11950,9 +11964,9 @@ namespace FlockFive
         {
             var gates = HomePressGates(-1);
             gates.Consent = VeilBlocks(flower);
-            gates.AdoptQueue = AdoptHoldsQueue();
             gates.HomeTaken = _homeTapTaken;
             gates.StepGate = StepGateBlocks(flower);
+            ReleasePlayForChain(ref gates);
             return !SplashPress.Blocks(gates);
         }
 
@@ -11976,9 +11990,10 @@ namespace FlockFive
             // so a tap on Collect or Watch Ad is not rejected as a LEVEL press.
             if (RewardChoiceButtonsDue()) gates.SoftModal = true;
             gates.Consent = VeilBlocks(rest);
-            gates.AdoptQueue = AdoptHoldsQueue();
+            // Play stays up through "a bird followed you", naming, and Tap Daily.
             gates.HomeTaken = _homeTapTaken;
             gates.StepGate = StepGateBlocks(rest);
+            ReleasePlayForChain(ref gates);
             // Shipping path. On a wide portrait the LEVEL square reaches the cards
             // icon. A second pointer on that icon was starting the garden. The
             // padded tap stays, except where that padding lies on the flower.

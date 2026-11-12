@@ -147,6 +147,8 @@ namespace FlockFive
 
         void ShowRuleTip(RuleTip due)
         {
+            // Restart of the first garden holds Crowns and Nice until step 1 is back.
+            if (_holdRuleForLesson && _coach) return;
             _ruleTip = due;
             _ruleHeld = 0f;
             _cueHand = false;
