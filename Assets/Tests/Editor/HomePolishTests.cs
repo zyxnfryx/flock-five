@@ -108,6 +108,7 @@ namespace FlockFive.Editor
             CheckFreezeLeavesRepeatGate(Check);
             CheckHop2KeepsDestination(Check);
             CheckResumeSwallow(Check);
+            CheckResumeUpAfterSwallow(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1276,6 +1277,7 @@ namespace FlockFive.Editor
 
         static void CheckExitGuards(System.Action<string, bool, string> Check)
         {
+            float keepResume = ResumeUntil();
             var go = new GameObject("exit-guards");
             try
             {
@@ -1352,6 +1354,7 @@ namespace FlockFive.Editor
             }
             finally
             {
+                SetResumeUntil(keepResume);
                 GamePause.Reset();
                 UnityEngine.Object.DestroyImmediate(go);
             }
@@ -1387,6 +1390,7 @@ namespace FlockFive.Editor
             bool touchClears = FlockFiveApp.HomeGateAllows(ref mismatched, false, true, 4);
             bool fresh = !mismatched.CarryHeld && touchClears == false
                 && FlockFiveApp.HomeGateAllows(ref mismatched, true, false, 4);
+            float keepResume = ResumeUntil();
             var go = new GameObject("home-touch-gate");
             bool liveHeld = false, focusCleared = false, resumeCleared = false;
             try
@@ -1415,6 +1419,7 @@ namespace FlockFive.Editor
             }
             finally
             {
+                SetResumeUntil(keepResume);
                 UnityEngine.Object.DestroyImmediate(go);
             }
             Check("home-touch-release-clears-gate",
@@ -1808,12 +1813,21 @@ namespace FlockFive.Editor
             }
         }
 
+        static float ResumeUntil()
+        {
+            return (float)typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+        }
+
+        static void SetResumeUntil(float until)
+        {
+            typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, until);
+        }
+
         static void CheckResumeSwallow(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("resume-swallow");
             var t = typeof(FlockFiveApp);
-            var gate = t.GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
-            float keep = (float)gate.GetValue(null);
+            float keep = ResumeUntil();
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
@@ -1830,7 +1844,7 @@ namespace FlockFive.Editor
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(0f, 0f, 80f, 80f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
                 app.EditorHandleTaps = 0;
-                gate.SetValue(null, AdPause.Unscaled + 0.35f);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
                 bool swallowed = (bool)Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int))
                     .Invoke(app, new object[] { new Vector2(10f, 10f), true, 4 });
                 bool latch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
@@ -1853,7 +1867,54 @@ namespace FlockFive.Editor
             }
             finally
             {
-                gate.SetValue(null, keep);
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeUpAfterSwallow(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-up-after");
+            var t = typeof(FlockFiveApp);
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_coachMoves", flags).SetValue(app, 0);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                app.EditorHandleTaps = 0;
+                var point = new Vector2(px + PhoneArea.OffX, py);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                string downExit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                SetResumeUntil(float.NegativeInfinity);
+                bool up = (bool)glove.Invoke(app, new object[] { point, true, 4 });
+                int sel = (int)t.GetField("_sel", flags).GetValue(app);
+                int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                string upExit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                bool quiet = down && downExit == "resume" && !latched
+                    && up && upExit == "swallowed-up"
+                    && app.EditorHandleTaps == 0 && sel == -1 && moves == 0;
+                Check("resume-up-after-swallowed-down-does-not-hop", quiet,
+                    "down " + down + " " + downExit + " latch " + latched
+                    + " up " + up + " " + upExit + " taps " + app.EditorHandleTaps
+                    + " sel " + sel + " moves " + moves);
+            }
+            finally
+            {
+                SetResumeUntil(keep);
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
