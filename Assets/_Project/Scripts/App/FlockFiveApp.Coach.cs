@@ -1059,6 +1059,10 @@ namespace FlockFive
                 // The second guided hop finishes the lesson. Keep the stage clear while it plays.
                 if (_coachMoves >= 1)
                 {
+                    // ClearCue already hid the hand. Drop the finger too; the hop
+                    // keeps the stage clear, so the hand does not come back here.
+                    _gloveVis = false;
+                    DropGlovePress();
                     CoachHideGlow();
                     _gloveReady = false;
                     return;
