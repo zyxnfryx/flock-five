@@ -705,6 +705,7 @@ namespace FlockFive
             GloveVeilReset();
             CoachClearCue();
             DropGlovePress();
+            ClearSwallowedGlove();
             CoachHideGlow();
             CoachHideRipples();
             _pestCue = 0;

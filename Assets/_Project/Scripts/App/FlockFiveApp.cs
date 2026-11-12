@@ -890,6 +890,7 @@ namespace FlockFive
 
         void ShowSplash()
         {
+            ClearSwallowedGlove();
             DropGlovePress();
             if (!_exitPointerHeld) CaptureLevelExitPointer();
             _homeGate = BeginHomeGate(_exitPointerHeld, _exitPointerId);
@@ -969,6 +970,7 @@ namespace FlockFive
 
         void Load(int index)
         {
+            ClearSwallowedGlove();
             AudioGuard.OnSceneOrPopupClosed();
             // Before the garden (and its season banner) is built. A solved board
             // that is still browsing the inspect does not come through here.
@@ -3706,6 +3708,9 @@ namespace FlockFive
         void OnApplicationPause(bool paused)
         {
             if (!paused) KeepAwake();
+            // A swallowed glove press does not survive the suspend, even if the
+            // bookkeeping below fails before ForgetLevelPointer.
+            if (paused) ClearSwallowedGlove();
             // Back to 1 in the background; SyncAutoResolveSpeed re-arms it from live state.
             if (paused) SetAutoResolveSpeed(1f);
             if (paused)
@@ -3737,6 +3742,7 @@ namespace FlockFive
         void OnApplicationFocus(bool focus)
         {
             if (focus) KeepAwake();
+            if (!focus) ClearSwallowedGlove();
             if (focus)
             {
                 NoteAppResume();
@@ -3763,6 +3769,7 @@ namespace FlockFive
 
         void UpdateBody()
         {
+            ClearSwallowedOnCancel();
             ArmSceneInputSettle();
             AudioGuard.Tick();
             if (_shot82e) MuteShotAudio();
@@ -3919,13 +3926,36 @@ namespace FlockFive
             _glovePressId = -1;
         }
 
-        // The Up of a Down the resume gate ate, or any Up while that press left no latch.
+        void ClearSwallowedGlove()
+        {
+            _gloveSwallowedId = int.MinValue;
+        }
+
+        // Only the finger whose Down the resume gate ate. Another finger's Up
+        // still reaches Home, Restart, and the gear.
         bool SwallowedUp(int pointerId)
         {
-            if (_gloveSwallowedId == int.MinValue) return false;
-            if (_glovePressLatched && !GloveFingerMatches(_gloveSwallowedId, pointerId))
-                return false;
-            return true;
+            return _gloveSwallowedId != int.MinValue
+                && GloveFingerMatches(_gloveSwallowedId, pointerId);
+        }
+
+        // A cancel never arrives as a glove Up, so the remembered id would
+        // otherwise eat a later release.
+        void ClearSwallowedOnCancel()
+        {
+            if (_gloveSwallowedId == int.MinValue) return;
+            var touch = UnityEngine.InputSystem.Touchscreen.current;
+            if (touch == null) return;
+            var touches = touch.touches;
+            for (int i = 0; i < touches.Count; i++)
+            {
+                var t = touches[i];
+                if (t == null) continue;
+                if (t.phase.ReadValue() != UnityEngine.InputSystem.TouchPhase.Canceled) continue;
+                if (!GloveFingerMatches(_gloveSwallowedId, t.touchId.ReadValue())) continue;
+                ClearSwallowedGlove();
+                return;
+            }
         }
 
         public static bool GloveFingerMatches(int pressedId, int releaseId)
@@ -3991,8 +4021,7 @@ namespace FlockFive
             }
             if (releaseEdge && SwallowedUp(pointerId))
             {
-                if (GloveFingerMatches(_gloveSwallowedId, pointerId))
-                    _gloveSwallowedId = int.MinValue;
+                ClearSwallowedGlove();
                 StampGlove("swallowed-up", windowGui, onGlove, false, false);
                 return true;
             }
@@ -6900,12 +6929,15 @@ namespace FlockFive
         {
             _homeGate = default;
             DropGlovePress();
+            ClearSwallowedGlove();
         }
 
         static void ClearLevelExit()
         {
             _exitPointerHeld = false;
-            if (_app != null) _app.ForgetLevelPointer();
+            if (_app == null) return;
+            _app.ClearSwallowedGlove();
+            _app.ForgetLevelPointer();
         }
 
         void CaptureLevelExitPointer()
@@ -7598,6 +7630,7 @@ namespace FlockFive
         // outside a real OnGUI. OnGUIBody paints after it.
         void TakeGuiPointer()
         {
+            ClearSwallowedOnCancel();
             var tapEv = Event.current;
             _tapEdge = tapEv != null && tapEv.button == 0
                 && (tapEv.type == EventType.MouseDown || tapEv.type == EventType.MouseUp);
