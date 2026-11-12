@@ -1059,10 +1059,14 @@ namespace FlockFive
                 // The second guided hop finishes the lesson. Keep the stage clear while it plays.
                 if (_coachMoves >= 1)
                 {
-                    // ClearCue already hid the hand. Drop the finger too; the hop
-                    // keeps the stage clear, so the hand does not come back here.
+                    // A finger already down on the destination stays. Dropping it
+                    // here would cancel the hop the moment _coachMoves ticks to 1.
+                    if (_glovePressLatched)
+                    {
+                        _gloveVis = true;
+                        return;
+                    }
                     _gloveVis = false;
-                    DropGlovePress();
                     CoachHideGlow();
                     _gloveReady = false;
                     return;
@@ -1119,19 +1123,17 @@ namespace FlockFive
 
         bool CoachReject(Vector2 world)
         {
-            if (_gloveRouted)
-            {
-                _gloveRouted = false;
-                return false;
-            }
+            // Freeze and the gift lesson still own the tap. The glove is drawn on a
+            // frozen lock, so a glove route must not skip the nudge.
             if (_cueFreeze)
             {
+                _gloveRouted = false;
                 CoachNudge();
                 return true;
             }
-            if (!_cueForce || _cueBranch < 0) return false;
             if (_cueGift)
             {
+                _gloveRouted = false;
                 int other = OtherGiftBranch(_cueBranch);
                 int hit = HitGiftSign(world);
                 bool sign = hit == _cueBranch || (other >= 0 && hit == other);
@@ -1147,11 +1149,15 @@ namespace FlockFive
                 if (!CanOfferBonus(open)) return true;
                 if (nearBranch >= 0) OpenBonus(nearBranch);
                 CoachHideNow();
-                // b103 (Brandon): the honoured gift tap ends the hint for good. CoachHideNow re-arms the hint
-                // window (for a reset), so clear it AFTER, or the glove comes back once the offer closes.
                 ClearGiftHint(ref _coachGiftUntil, ref _coachResumeFade, ref _deadEndNudged);
                 return nearBranch >= 0;
             }
+            if (_gloveRouted)
+            {
+                _gloveRouted = false;
+                return false;
+            }
+            if (!_cueForce || _cueBranch < 0) return false;
             if (HitBranch(world) == _cueBranch) return false;
             CoachNudge();
             return true;

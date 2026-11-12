@@ -15,11 +15,35 @@ namespace FlockFive.Editor
         const string PlayCmd = "/tmp/flock-five-play";
 
         // One batch entry for the edit-mode suites. Unity -executeMethod FlockFive.Editor.EnsurePlayable.RunEditorTests
+        // -suite home-polish runs only that suite. RunHomePolishOnly is the same entry without the arg.
         public static void RunEditorTests()
         {
             // Suites write PlayerPrefs; keep the real prefs untouched (snapshot + restore).
             using (TestPrefsSandbox.Begin())
+            {
+                string only = SuiteArg();
+                if (only == "home-polish")
+                {
+                    Suite("home-polish", HomePolishTests.Run);
+                    return;
+                }
                 RunEditorSuites();
+            }
+        }
+
+        // Fast Mac gate for the glove and home checks. Tests only.
+        public static void RunHomePolishOnly()
+        {
+            using (TestPrefsSandbox.Begin())
+                Suite("home-polish", HomePolishTests.Run);
+        }
+
+        static string SuiteArg()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+                if (args[i] == "-suite") return args[i + 1];
+            return null;
         }
 
         static void RunEditorSuites()

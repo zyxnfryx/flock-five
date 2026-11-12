@@ -3980,7 +3980,10 @@ namespace FlockFive
                 return true;
             }
             if (_glovePressLatched && !GloveFingerMatches(_glovePressId, pointerId))
+            {
+                StampGlove("other-finger", windowGui, onGlove, onHud, false);
                 return false;
+            }
             if (!_glovePressLatched || !GloveFingerMatches(_glovePressId, pointerId))
             {
                 if (!onGlove || onHud) return false;
@@ -3990,17 +3993,81 @@ namespace FlockFive
                 DropGlovePress();
                 // The finger that pressed the glove slid off, or landed on Home.
                 // Eat the release: no move, and Home does not open through this latch.
-                if (!onGlove || onHud) return true;
+                if (!onGlove || onHud)
+                {
+                    StampGlove(onHud ? "ate-hud" : "ate-off", windowGui, onGlove, onHud, false);
+                    return true;
+                }
             }
-            if (!onGlove) return false;
-            if (!GloveMayAct(true, false, _turnGate.Busy)) return true;
-            if (_gloveTookFrame == Time.frameCount) return true;
+            if (!onGlove)
+            {
+                StampGlove("off-glove", windowGui, onGlove, onHud, false);
+                return false;
+            }
+            if (!GloveMayAct(true, false, _turnGate.Busy))
+            {
+                StampGlove("may-act", windowGui, onGlove, onHud, false);
+                return true;
+            }
+            if (_gloveTookFrame == Time.frameCount)
+            {
+                StampGlove("same-frame", windowGui, onGlove, onHud, false);
+                return true;
+            }
             _gloveTookFrame = Time.frameCount;
             // The drawn hand is the cue. CoachReject accepts that route, then
             // HandleTap still resolves the branch at this world point.
             _gloveRouted = true;
+            StampGlove("handle", windowGui, onGlove, onHud, true);
             HandleTap(CueBranchWorld());
             return true;
+        }
+
+#if UNITY_EDITOR
+        void StampGlove(string exit, Vector2 point, bool onGlove, bool onHud, bool willHandle)
+        {
+            var g = OnScreenGlove();
+            EditorGloveTraceNow.Exit = exit;
+            EditorGloveTraceNow.Glove = g;
+            EditorGloveTraceNow.Point = point;
+            EditorGloveTraceNow.TryHit = willHandle || exit == "handle";
+            EditorGloveTraceNow.OnGlove = onGlove;
+            EditorGloveTraceNow.OnHud = onHud;
+            EditorGloveTraceNow.Latched = _glovePressLatched;
+            EditorGloveTraceNow.CueFrom = _coachFrom;
+            EditorGloveTraceNow.CueTo = _coachTo;
+            EditorGloveTraceNow.CueBranch = _cueBranch;
+            EditorGloveTraceNow.TurnBusy = _turnGate.Busy;
+            EditorGloveTraceNow.Routed = _gloveRouted;
+            EditorGloveTraceNow.CueForce = _cueForce;
+            EditorGloveTraceNow.CueFreeze = _cueFreeze;
+            EditorGloveTraceNow.CueGift = _cueGift;
+            EditorGloveTraceNow.NextTap = _nextTap;
+            EditorGloveTraceNow.SelBefore = _sel;
+            var main = Camera.main;
+            EditorGloveTraceNow.CamMain = main == null ? "null" : main.name;
+            EditorGloveTraceNow.CamUsed = _garden.Cam == null ? "null" : _garden.Cam.name;
+        }
+#else
+        void StampGlove(string exit, Vector2 point, bool onGlove, bool onHud, bool willHandle) { }
+#endif
+
+        void DropRouted(string exit)
+        {
+            _gloveRouted = false;
+#if UNITY_EDITOR
+            EditorGloveTraceNow.Exit = exit;
+            EditorGloveTraceNow.SelAfter = _sel;
+            EditorGloveTraceNow.Routed = false;
+#endif
+        }
+
+        int CueViewProbe()
+        {
+            if (_garden.Branches == null || (uint)_cueBranch >= (uint)_garden.Branches.Length) return -2;
+            var v = _garden.Branches[_cueBranch];
+            if (v == null) return -1;
+            return v.gameObject.activeInHierarchy ? 1 : 0;
         }
 
         Vector2 CueBranchWorld()
@@ -4016,43 +4083,81 @@ namespace FlockFive
         {
 #if UNITY_EDITOR
             EditorHandleTaps++;
+            EditorGloveTraceNow.World = world;
+            EditorGloveTraceNow.SelBefore = _sel;
+            EditorGloveTraceNow.CueBranch = _cueBranch;
+            EditorGloveTraceNow.CueFrom = _coachFrom;
+            EditorGloveTraceNow.CueTo = _coachTo;
+            EditorGloveTraceNow.CueForce = _cueForce;
+            EditorGloveTraceNow.CueFreeze = _cueFreeze;
+            EditorGloveTraceNow.CueGift = _cueGift;
+            EditorGloveTraceNow.Routed = _gloveRouted;
+            EditorGloveTraceNow.TurnBusy = _turnGate.Busy;
+            EditorGloveTraceNow.NextTap = _nextTap;
+            EditorGloveTraceNow.ViewProbe = CueViewProbe();
+            var mainCam = Camera.main;
+            EditorGloveTraceNow.CamMain = mainCam == null ? "null" : mainCam.name;
+            EditorGloveTraceNow.CamUsed = _garden.Cam == null ? "null" : _garden.Cam.name;
+            var cuePt = CueBranchWorld();
+            EditorGloveTraceNow.Dist = (world - cuePt).sqrMagnitude;
+            EditorGloveTraceNow.Threshold = 0.0001f;
 #endif
-            if (OstrichIntroBlocking()) return;
-            if (_ruleTip != RuleTip.None || _ruleEatGesture) return;
-            if (LessonTapBlocked()) return;
-            if (_busy || _won || _board == null) return;
-            if (GateNow < _swallowTapsUntil) return;
-            if (AdPause.Unscaled < _nextTap) return;
+            if (OstrichIntroBlocking()) { DropRouted("ostrich"); return; }
+            if (_ruleTip != RuleTip.None || _ruleEatGesture) { DropRouted("rule"); return; }
+            if (LessonTapBlocked()) { DropRouted("lesson"); return; }
+            if (_busy || _won || _board == null) { DropRouted("board"); return; }
+            if (GateNow < _swallowTapsUntil) { DropRouted("swallow"); return; }
+            if (AdPause.Unscaled < _nextTap) { DropRouted("next"); return; }
             _nextTap = AdPause.Unscaled + 0.10f;
-            if (CoachReject(world)) return;
+            bool routed = _gloveRouted;
+            if (CoachReject(world)) { DropRouted("reject"); return; }
+#if UNITY_EDITOR
+            EditorGloveTraceNow.Rejected = false;
+#endif
 
-            int sign = HitGiftSign(world);
-            if (sign >= 0)
-            {
-                if (CanOfferBonus(sign)) OpenBonus(sign);
-                return;
-            }
-            // Bird and limb taps must not open a gift a moment later.
-            _suppressGiftUntil = GateNow + 1f;
-
-            int feeder = HitFeeder(world);
-            if (feeder >= 0)
-            {
-                if (_sel >= 0)
-                {
-                    _garden.Branches[_sel].SetReady(false);
-                    _sel = -1;
-                }
-                _garden.Feeders[feeder].Poke();
-                return;
-            }
-
-            int hit = HitBranch(world);
-            // The glove passed the cue branch's own point. A view the probe skipped
-            // (no seated birds yet) is still that branch.
-            if (hit < 0 && _cueForce && _cueBranch >= 0
-                && (world - CueBranchWorld()).sqrMagnitude <= 0.0001f)
+            int hit = -1;
+            bool cuePoint = _cueForce && _cueBranch >= 0
+                && (world - CueBranchWorld()).sqrMagnitude <= 0.0001f
+                && OstrichTurn.Tappable(_board, _cueBranch);
+#if UNITY_EDITOR
+            EditorGloveTraceNow.Fallback = cuePoint;
+#endif
+            // A glove release aimed at the cue branch resolves there before a gift
+            // sign or a feeder can swallow the same point.
+            if (routed && cuePoint)
                 hit = _cueBranch;
+            else
+            {
+                int sign = HitGiftSign(world);
+                if (sign >= 0)
+                {
+                    if (CanOfferBonus(sign)) OpenBonus(sign);
+                    DropRouted("gift-sign");
+                    return;
+                }
+                _suppressGiftUntil = GateNow + 1f;
+
+                int feeder = HitFeeder(world);
+                if (feeder >= 0)
+                {
+                    if (_sel >= 0)
+                    {
+                        _garden.Branches[_sel].SetReady(false);
+                        _sel = -1;
+                    }
+                    _garden.Feeders[feeder].Poke();
+                    DropRouted("feeder");
+                    return;
+                }
+
+                hit = HitBranch(world);
+                if (hit < 0 && cuePoint)
+                    hit = _cueBranch;
+            }
+            _suppressGiftUntil = GateNow + 1f;
+#if UNITY_EDITOR
+            EditorGloveTraceNow.Hit = hit;
+#endif
             if (hit < 0)
             {
                 if (_sel >= 0)
@@ -4060,11 +4165,13 @@ namespace FlockFive
                     _garden.Branches[_sel].SetReady(false);
                     _sel = -1;
                 }
+                DropRouted("miss");
                 return;
             }
             if (Locked(hit) && _sel < 0)
             {
                 _garden.Branches[hit].Shake();
+                DropRouted("locked");
                 return;
             }
             if (_sel < 0)
@@ -4073,20 +4180,24 @@ namespace FlockFive
                 {
                     _garden.Branches[hit].Shake();
                     if (_board.IsSleeping(hit)) { Sfx.Sleep(); RaiseRuleSleepTip(); }
+                    DropRouted("cantpick");
                     return;
                 }
                 Select(hit);
+                DropRouted("select");
                 return;
             }
             if (hit == _sel)
             {
                 _garden.Branches[_sel].SetReady(false);
                 _sel = -1;
+                DropRouted("unselect");
                 return;
             }
             if (Locked(_sel) || Locked(hit))
             {
                 _garden.Branches[hit].Shake();
+                DropRouted("locked-pair");
                 return;
             }
             if (_board.CanMove(_sel, hit, out _))
@@ -4096,9 +4207,11 @@ namespace FlockFive
                 if (_turnGate.Busy)
                 {
                     _garden.Branches[hit].Shake();
+                    DropRouted("turn");
                     return;
                 }
                 BeginMove(_sel, hit);
+                DropRouted("move");
                 return;
             }
             if (!_board.Branches[hit].Empty)
@@ -6899,6 +7012,44 @@ namespace FlockFive
         }
 
         public static EditorPressTrace LastPressTrace;
+
+        // Last glove release the tests drove. Inspect-only. One line, every step.
+        public struct EditorGloveTrace
+        {
+            public string Exit;
+            public Rect Glove;
+            public Vector2 Point;
+            public bool TryHit, OnGlove, OnHud, Latched;
+            public int CueFrom, CueTo, CueBranch;
+            public Vector2 World;
+            public int ViewProbe;
+            public int Hit;
+            public bool Fallback;
+            public float Dist, Threshold;
+            public string CamMain, CamUsed;
+            public bool TurnBusy, Rejected, Routed, CueForce, CueFreeze, CueGift;
+            public float NextTap;
+            public int SelBefore, SelAfter;
+
+            public override string ToString()
+            {
+                return "exit=" + Exit
+                    + " glove=" + Glove.x.ToString("0") + "," + Glove.y.ToString("0") + "," + Glove.width.ToString("0") + "," + Glove.height.ToString("0")
+                    + " pt=" + Point.x.ToString("0") + "," + Point.y.ToString("0")
+                    + " try=" + TryHit + " on=" + OnGlove + "/" + OnHud + " latch=" + Latched
+                    + " cue=" + CueFrom + "->" + CueTo + " branch=" + CueBranch
+                    + " world=" + World.x.ToString("0.00") + "," + World.y.ToString("0.00")
+                    + " view=" + ViewProbe + " hit=" + Hit
+                    + " fall=" + Fallback + " dist=" + Dist.ToString("0.0000") + " thr=" + Threshold.ToString("0.0000")
+                    + " camMain=" + CamMain + " cam=" + CamUsed
+                    + " turn=" + TurnBusy + " reject=" + Rejected + " routed=" + Routed
+                    + " next=" + NextTap.ToString("0.00")
+                    + " force=" + CueForce + " freeze=" + CueFreeze + " gift=" + CueGift
+                    + " sel=" + SelBefore + "->" + SelAfter;
+            }
+        }
+
+        public static EditorGloveTrace EditorGloveTraceNow;
 #endif
 
         static bool FreshTouchDown()
