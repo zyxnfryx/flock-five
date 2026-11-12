@@ -3910,11 +3910,22 @@ namespace FlockFive
         int _gloveTookFrame = -1;
         bool _glovePressLatched;
         int _glovePressId = -1;
+        // Down swallowed by the resume gate. Its Up must not hop after the window.
+        int _gloveSwallowedId = int.MinValue;
 
         void DropGlovePress()
         {
             _glovePressLatched = false;
             _glovePressId = -1;
+        }
+
+        // The Up of a Down the resume gate ate, or any Up while that press left no latch.
+        bool SwallowedUp(int pointerId)
+        {
+            if (_gloveSwallowedId == int.MinValue) return false;
+            if (_glovePressLatched && !GloveFingerMatches(_gloveSwallowedId, pointerId))
+                return false;
+            return true;
         }
 
         public static bool GloveFingerMatches(int pressedId, int releaseId)
@@ -3964,13 +3975,25 @@ namespace FlockFive
                 && GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX);
             // Same resume gate as Pressed. This runs before SwallowResumePointer,
             // so a glove edge in that 0.35 s would otherwise become a move. Drop
-            // the latch too, or the release after the window completes it.
+            // the latch too, and remember the pointer: the Up after the window
+            // is still on the glove and used to reach HandleTap with no latch.
             if (GateNow < _resumeInputUntil)
             {
+                if (!releaseEdge && onGlove)
+                    _gloveSwallowedId = pointerId;
+                else if (_glovePressLatched)
+                    _gloveSwallowedId = _glovePressId;
                 bool held = _glovePressLatched;
                 DropGlovePress();
                 if (!held && !onGlove) return false;
                 StampGlove("resume", windowGui, onGlove, false, false);
+                return true;
+            }
+            if (releaseEdge && SwallowedUp(pointerId))
+            {
+                if (GloveFingerMatches(_gloveSwallowedId, pointerId))
+                    _gloveSwallowedId = int.MinValue;
+                StampGlove("swallowed-up", windowGui, onGlove, false, false);
                 return true;
             }
             bool onHud = false;
@@ -3989,6 +4012,7 @@ namespace FlockFive
                 if (!onGlove || onHud) return false;
                 _glovePressLatched = true;
                 _glovePressId = pointerId;
+                _gloveSwallowedId = int.MinValue;
                 return true;
             }
             if (_glovePressLatched && !GloveFingerMatches(_glovePressId, pointerId))
