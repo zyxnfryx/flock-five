@@ -4086,12 +4086,6 @@ namespace FlockFive
         // the resume window also arms here and the release calls GardenHudAct.
         bool FeedResumeHudButton(int which, Rect playRect, Vector2 windowGui, bool down, bool up, out bool held)
         {
-            // Restart during the resume window stays swallowed. That arm is its own commit.
-            if (which == 2)
-            {
-                held = false;
-                return false;
-            }
             held = false;
             var play = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
             bool inside = playRect.width > 2f && playRect.Contains(play);
@@ -7329,9 +7323,9 @@ namespace FlockFive
             int heldId = pointer ? HomeEventId(e, t == EventType.MouseDown, t == EventType.MouseUp) : -1;
             bool held = pointer && _app.ResumeHolds(heldId);
             int hud = _app.HudControl(e.mousePosition);
-            // Fresh Home and gear. A finger already down at hide is swallowed.
-            // Fresh Restart stays swallowed until its own commit.
-            if (resumeHold && !otherHold && (hud == 1 || hud == 3) && !held)
+            // Fresh Home, gear, and Restart. A finger already down at hide is swallowed.
+            // Dropping this commit puts a fresh Restart tap back in the swallow.
+            if (resumeHold && !otherHold && hud != 0 && !held)
                 return;
             if (resumeHold && !otherHold && hud == 2 && pointer)
             {
@@ -7772,7 +7766,7 @@ namespace FlockFive
         // makes this return false, which is the whole of that drop.
         bool ResumeSwallowsRestart()
         {
-            return GateNow < _resumeInputUntil;
+            return false;
         }
 
         // The finger that went down on the glove owns the press. Home and Restart wait.
@@ -8098,6 +8092,8 @@ namespace FlockFive
             bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
             bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
             var hudAt = hudEv != null ? hudEv.mousePosition : restart.center;
+            if (restart.width > 2f)
+                FeedResumeHudButton(2, restart, hudAt, hudDown, hudUp, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             bool homeHeld = false;
             if (home.width > 2f)

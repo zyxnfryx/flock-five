@@ -2740,21 +2740,25 @@ namespace FlockFive.Editor
                 string frozenEx = "";
                 try { Method(t, "UpdateBody").Invoke(app, null); }
                 catch (System.Exception ex) { frozenEx = TapFault(ex); }
-                bool frozen = !SnapArmed(app) && !(bool)t.GetField("_splash", flags).GetValue(app) && frozenEx.Length == 0;
+                bool frozen = SnapArmed(app) && !(bool)t.GetField("_splash", flags).GetValue(app) && frozenEx.Length == 0;
                 t.GetField("_frozen", flags).SetValue(app, false);
+                t.GetField("_restarting", flags).SetValue(app, false);
+                EditorField("EditorSnapRound").SetValue(app, null);
                 var gift = t.GetField("_gift", flags);
                 gift.SetValue(app, System.Enum.ToObject(gift.FieldType, 1));
                 string giftEx = "";
                 try { Method(t, "UpdateBody").Invoke(app, null); }
                 catch (System.Exception ex) { giftEx = TapFault(ex); }
-                bool gifted = !SnapArmed(app) && giftEx.Length == 0;
+                bool gifted = SnapArmed(app) && giftEx.Length == 0;
                 gift.SetValue(app, System.Enum.ToObject(gift.FieldType, 0));
+                t.GetField("_restarting", flags).SetValue(app, false);
+                EditorField("EditorSnapRound").SetValue(app, null);
                 var hold = typeof(SeasonReveal).GetProperty("HoldsPlay", BindingFlags.Public | BindingFlags.Static);
                 hold.GetSetMethod(true).Invoke(null, new object[] { true });
                 string seasonEx = "";
                 try { Method(t, "UpdateBody").Invoke(app, null); }
                 catch (System.Exception ex) { seasonEx = TapFault(ex); }
-                bool season = !SnapArmed(app) && seasonEx.Length == 0;
+                bool season = SnapArmed(app) && seasonEx.Length == 0;
                 var appField = t.GetField("_app", BindingFlags.NonPublic | BindingFlags.Static);
                 var live = appField.GetValue(null);
                 appField.SetValue(null, null);
@@ -2764,11 +2768,11 @@ namespace FlockFive.Editor
                 Method(t, "SwallowResumePointer").Invoke(null, null);
                 bool left = down.type != EventType.Used;
                 appField.SetValue(null, live);
-                try { Check("resume-branches-leave-restart",
+                try { Check("resume-branches-restart",
                     frozen && gifted && season && left,
                     "frozen " + frozen + frozenEx + " gift " + gifted + giftEx
                     + " season " + season + seasonEx + " null " + left); }
-                catch (System.Exception hopEx) { Check("resume-branches-leave-restart", false, ThrowText(hopEx)); }
+                catch (System.Exception hopEx) { Check("resume-branches-restart", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -3288,13 +3292,22 @@ namespace FlockFive.Editor
                 var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
                 Event.current = down;
                 Method(t, "SwallowResumePointer").Invoke(null, null);
-                bool swallowed = down.type != EventType.MouseDown || down.type == EventType.Used;
+                bool left = down.type != EventType.Used;
+                FeedHud(app, 2, restart, true, false);
+                SetResumeUntil(float.NegativeInfinity);
+                var up = new Event { type = EventType.MouseUp, mousePosition = at, button = 0 };
+                Event.current = up;
+                bool fired = false;
+                string fireEx = "";
+                try { fired = FeedHud(app, 2, restart, false, true); }
+                catch (System.Exception ex) { fireEx = TapFault(ex); }
                 bool going = SnapArmed(app)
                     || (bool)t.GetField("_restarting", flags).GetValue(app)
                     || t.GetField("_restartAsk", flags).GetValue(app).ToString() != "None";
-                try { Check("resume-restart-stays-swallowed", swallowed && !going,
-                    "type " + down.type + " going " + going); }
-                catch (System.Exception hopEx) { Check("resume-restart-stays-swallowed", false, ThrowText(hopEx)); }
+                try { Check("resume-restart-press-fires", left && going,
+                    "left " + left + " type " + down.type
+                    + " fired " + fired + " going " + going + fireEx); }
+                catch (System.Exception hopEx) { Check("resume-restart-press-fires", false, ThrowText(hopEx)); }
             }
             finally
             {
