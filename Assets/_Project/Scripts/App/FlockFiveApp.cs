@@ -3712,6 +3712,7 @@ namespace FlockFive
             if (paused) SetAutoResolveSpeed(1f);
             if (paused)
             {
+                CapturePointersDownAtHide();
                 // A finger still down keeps its id, so the release after the new
                 // window does not hop. Focus loss is the path that drops it.
                 int keep = _glovePressLatched ? _glovePressId : _gloveSwallowedId;
@@ -3751,7 +3752,11 @@ namespace FlockFive
         void OnApplicationFocus(bool focus)
         {
             if (focus) KeepAwake();
-            if (!focus) ClearSwallowedGlove();
+            if (!focus)
+            {
+                CapturePointersDownAtHide();
+                ClearSwallowedGlove();
+            }
             if (focus)
             {
                 // A late focus gain is not a level change. Keep the swallowed
@@ -3951,6 +3956,40 @@ namespace FlockFive
             _glovePressId = -1;
         }
 
+        readonly System.Collections.Generic.HashSet<int> _downAtHide = new System.Collections.Generic.HashSet<int>();
+
+        void NoteDownAtHide(int id)
+        {
+            if (id == int.MinValue) id = -1;
+            _downAtHide.Add(id);
+        }
+
+        void CapturePointersDownAtHide()
+        {
+            _downAtHide.Clear();
+            var touch = UnityEngine.InputSystem.Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count; i++)
+                {
+                    var hit = touches[i];
+                    if (hit == null || !hit.press.isPressed) continue;
+                    NoteDownAtHide(hit.touchId.ReadValue());
+                }
+            }
+            if (Mouse.current != null && Mouse.current.leftButton.isPressed)
+                NoteDownAtHide(-1);
+            if (_glovePressLatched) NoteDownAtHide(_glovePressId);
+        }
+
+        bool ResumeHolds(int pointerId)
+        {
+            if (GateNow >= _resumeInputUntil) return false;
+            if (pointerId == int.MinValue) pointerId = -1;
+            return _downAtHide.Contains(pointerId);
+        }
+
         void ClearSwallowedGlove()
         {
             _gloveSwallowedId = int.MinValue;
@@ -4004,6 +4043,24 @@ namespace FlockFive
         public static bool GloveFingerMatches(int pressedId, int releaseId)
         {
             return pressedId == releaseId;
+        }
+
+        // The player sends the press as a touch id and the release as mouse -1.
+        // That pair is the same contact. Two different touch ids are not.
+        bool GloveOwnsRelease(int releaseId)
+        {
+            if (!_glovePressLatched) return false;
+            if (GloveFingerMatches(_glovePressId, releaseId)) return true;
+            return releaseId == -1 && _glovePressId >= 0;
+        }
+
+        int _gloveEchoId = int.MinValue;
+        int _gloveEchoFrame = -1;
+
+        bool EchoRelease(int releaseId)
+        {
+            if (_gloveEchoFrame < 0 || Time.frameCount - _gloveEchoFrame > 1) return false;
+            return releaseId == _gloveEchoId || releaseId == -1;
         }
 
         // 0 is not a button. 1 Home, 2 Restart, 3 gear. Play pixels, not window pixels.
@@ -4086,11 +4143,6 @@ namespace FlockFive
             return true;
         }
 
-        public static bool HudBeatsGlove(Vector2 windowGui, Rect home, Rect restart, Rect gear)
-        {
-            return HudBeatsGlove(windowGui, home, restart, gear, true);
-        }
-
         public static bool HudBeatsGlove(Vector2 windowGui, Rect home, Rect restart, Rect gear, bool gearShown)
         {
             if (home.width > 2f && home.Contains(windowGui)) return true;
@@ -4111,7 +4163,7 @@ namespace FlockFive
             // is still on the glove and used to reach HandleTap with no latch.
             // A press that begins on Home, Restart, or the gear is that button's
             // gesture. It is not swallowed, so the release can still fire it.
-            if (GateNow < _resumeInputUntil)
+            if (ResumeHolds(pointerId))
             {
                 if (!releaseEdge && hud != 0)
                 {
@@ -4149,6 +4201,11 @@ namespace FlockFive
                 StampGlove("swallowed-up", windowGui, onGlove, hud != 0, false);
                 return true;
             }
+            if (releaseEdge && EchoRelease(pointerId))
+            {
+                StampGlove("echo", windowGui, onGlove, hud != 0, false);
+                return true;
+            }
             if (releaseEdge && CancelBlocksHop(pointerId) && onGlove && hud == 0)
             {
                 StampGlove("cancel-frame", windowGui, onGlove, false, false);
@@ -4174,12 +4231,13 @@ namespace FlockFive
                 _gloveSwallowHud = 0;
                 return true;
             }
-            if (_glovePressLatched && !GloveFingerMatches(_glovePressId, pointerId))
+            bool owns = GloveOwnsRelease(pointerId);
+            if (_glovePressLatched && !owns)
             {
                 StampGlove("other-finger", windowGui, onGlove, onHud, false);
                 return false;
             }
-            if (!_glovePressLatched || !GloveFingerMatches(_glovePressId, pointerId))
+            if (!owns)
             {
                 if (!onGlove || onHud)
                 {
@@ -4189,19 +4247,21 @@ namespace FlockFive
             }
             else
             {
+                _gloveEchoId = _glovePressId;
+                _gloveEchoFrame = Time.frameCount;
                 DropGlovePress();
-                // The finger that pressed the glove slid off, or landed on Home.
-                // Eat the release: no move, and Home does not open through this latch.
-                if (!onGlove || onHud)
+                // Home still wins. A release that misses the glove rect is the
+                // same tap: the player often reports the up off the quad.
+                if (onHud)
                 {
-                    StampGlove(onHud ? "ate-hud" : "ate-off", windowGui, onGlove, onHud, false);
+                    StampGlove("ate-hud", windowGui, onGlove, onHud, false);
 #if UNITY_EDITOR
                     EditorGloveTraceNow.Latched = true;
 #endif
                     return true;
                 }
             }
-            if (!onGlove)
+            if (!onGlove && !owns)
             {
                 StampGlove("off-glove", windowGui, onGlove, onHud, false);
                 return false;
@@ -7216,6 +7276,8 @@ namespace FlockFive
                 return;
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            int heldId = HomeEventId(e, t == EventType.MouseDown, t == EventType.MouseUp);
+            if (_app != null && !_app.ResumeHolds(heldId)) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
             e.Use();
         }
@@ -7254,6 +7316,16 @@ namespace FlockFive
 
         public static EditorPointer EditorPointerInject;
         public int EditorHandleTaps;
+
+        // DEV-ONLY. The player press is a touch id and the release is mouse -1,
+        // in that order. Editor tests inject one id, so they never saw the miss.
+        public int DevReplayGloveTap(Vector2 downGui, int downId, Vector2 upGui, int upId)
+        {
+            int before = EditorHandleTaps;
+            TryDrawnGlove(downGui, false, downId);
+            TryDrawnGlove(upGui, true, upId);
+            return EditorHandleTaps - before;
+        }
 
         // What the last Pressed call did with the home gate. Inspect-only.
         public struct EditorPressTrace
@@ -7422,7 +7494,13 @@ namespace FlockFive
                 return true;
             }
 #endif
-            if (GateNow < _resumeInputUntil || GateNow < _sceneInputUntil) return false;
+            if (GateNow < _sceneInputUntil) return false;
+            if (GateNow < _resumeInputUntil)
+            {
+                int rid = PressIdNow();
+                if (rid == int.MinValue) rid = -1;
+                if (_app != null && _app.ResumeHolds(rid)) return false;
+            }
             if (StartupInputHeld) return false;
             if (LessonGuardUp()) return false;
             // The finger wins over a synthesized mouse. On Android the mouse click

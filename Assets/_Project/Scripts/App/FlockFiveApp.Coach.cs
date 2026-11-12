@@ -446,6 +446,7 @@ namespace FlockFive
         SpriteRenderer _coachGlow;
         SpriteRenderer[] _ripples;
         float[] _rippleAge;
+        bool _holdRuleForLesson;
         bool _coachLineHeld;
         float _coachLineHold;
         float _coachLineHoldX;
@@ -538,6 +539,7 @@ namespace FlockFive
         {
             if (!_coach) return;
             _coach = false;
+            _holdRuleForLesson = false;
             PlayerPrefs.SetInt(CoachKey, 1);
             if (PlayerPrefs.GetInt(CoachGiftKey, 0) == 0 && GiftBranch() >= 0)
             {
@@ -820,11 +822,13 @@ namespace FlockFive
         // A Crowns or Nice line that was up, or still due, does not return.
         void SettleRestartLesson()
         {
+            bool stale = _ruleTip == RuleTip.Kit || _ruleTip == RuleTip.Feeder || _ruleTurned;
             _ruleTip = RuleTip.None;
             _ruleHeld = 0f;
             _ruleEatGesture = false;
             _ruleTurned = false;
             _cueLine = null;
+            if (stale) _holdRuleForLesson = true;
             _cueSpoken = null;
             if (PlayerPrefs.GetInt(CoachKey, 0) != 0) return;
             if (LevelData.DisplayNumber != 1) return;
@@ -4641,7 +4645,8 @@ namespace FlockFive
                 badge = AdoptVipBadgeRect(w, h, safe);
                 CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s), MinLogoClear(h, safe, s));
             }
-            LiftOffMainButtons(ref band, w, h, safe, s, badge, (spot == "coach.line" || spot == "coach.rule" || spot == "bee.garden") ? 0f : HomeBannerTop(h, safe, s));
+            bool gardenSpot = spot == "coach.line" || spot == "coach.rule" || spot == "bee.garden";
+            LiftOffMainButtons(ref band, w, h, safe, s, badge, gardenSpot ? 0f : HomeBannerTop(h, safe, s), !gardenSpot);
             if (spot == "album.coach")
                 ParkAlbumBand(ref band, w, h, safe, s);
             return band;
@@ -4701,12 +4706,17 @@ namespace FlockFive
         // the adopt VIP badge; it may not cover one of these.
         public static int FillMainButtons(float w, float h, Rect safe, Rect[] dst)
         {
+            return FillMainButtons(w, h, safe, dst, true);
+        }
+
+        public static int FillMainButtons(float w, float h, Rect safe, Rect[] dst, bool gearShown)
+        {
             if (dst == null || dst.Length < 4) return 0;
             dst[0] = SplashPress.LevelRect(w, h, safe);
             CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
             dst[1] = restart;
             dst[2] = hive;
-            dst[3] = SettingsGearRect(w, h, safe);
+            dst[3] = gearShown ? SettingsGearRect(w, h, safe) : default;
             return 4;
         }
 
@@ -4719,10 +4729,10 @@ namespace FlockFive
                 && band.yMax >= badge.yMax - 0.5f;
         }
 
-        static void LiftOffMainButtons(ref Rect band, float w, float h, Rect safe, float s, Rect mustCover, float floorY = 0f)
+        static void LiftOffMainButtons(ref Rect band, float w, float h, Rect safe, float s, Rect mustCover, float floorY = 0f, bool gearShown = true)
         {
             var buttons = new Rect[4];
-            int n = FillMainButtons(w, h, safe, buttons);
+            int n = FillMainButtons(w, h, safe, buttons, gearShown);
             float gap = 8f * (s > 0.01f ? s : 1f);
             for (int pass = 0; pass < n; pass++)
             {
