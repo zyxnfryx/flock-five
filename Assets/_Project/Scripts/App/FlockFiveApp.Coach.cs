@@ -812,6 +812,38 @@ namespace FlockFive
 
         // Landing: the interrupted step's caption is set once and fades in from 0.
         // The bonus hint restarts its whole window so the fade-out tail cannot flash.
+        // Restart dropped the tip. The first-garden lesson comes back as step 1.
+        // A Crowns or Nice line that was up, or still due, does not return.
+        void SettleRestartLesson()
+        {
+            _ruleTip = RuleTip.None;
+            _ruleHeld = 0f;
+            _ruleEatGesture = false;
+            _ruleTurned = false;
+            _cueLine = null;
+            _cueSpoken = null;
+            if (PlayerPrefs.GetInt(CoachKey, 0) != 0) return;
+            if (LevelData.DisplayNumber != 1) return;
+            _coach = true;
+            _coachMoves = 0;
+            _coachFrom = -1;
+            _coachTo = -1;
+            _coachReset = default;
+            _coachResetVerb = CoachResetVerb.None;
+            _coachResetWant = false;
+            _cueHand = true;
+            _cueForce = true;
+            if (!CoachPick(out int from, out int to)) return;
+            _coachFrom = from;
+            _coachTo = to;
+            _cueBranch = from;
+            _cueLine = "Tap a branch to pick up its top birds.";
+            _cueSpoken = _cueLine;
+            _gloveVis = true;
+            _gloveReady = true;
+            _coachFade = 1f;
+        }
+
         void FreshCoachResume()
         {
             _coachFade = 0f;
@@ -5316,6 +5348,20 @@ namespace FlockFive
             return drawn.Contains(PointerToGui(screen, screenH));
         }
 
+        // The drawn quad in window GUI pixels, pillar shift included.
+        // Event.mousePosition is already in that space.
+        public static Rect GloveWindowRect(Rect playGui, float offX)
+        {
+            if (playGui.width < 2f) return playGui;
+            return new Rect(playGui.x + offX, playGui.y, playGui.width, playGui.height);
+        }
+
+        public static bool GloveWindowHit(Vector2 windowGui, Rect playGui, float offX)
+        {
+            var box = GloveWindowRect(playGui, offX);
+            return box.width > 2f && box.height > 2f && box.Contains(windowGui);
+        }
+
         // Bottom-up screen pixels to GUI y-down. One flip, matching Pressed.
         public static Vector2 PointerToGui(Vector2 screenBottomUp, float screenH)
         {
@@ -5356,10 +5402,11 @@ namespace FlockFive
         public static Vector2 UpgradeGloveSettle(Rect button)
         {
             if (button.width < 4f || button.height < 4f) return button.center;
-            // Right of the word so "Upgra" stays readable, still on the plate.
-            float x = button.xMax - Mathf.Max(16f, button.width * 0.22f);
-            if (x < button.xMin + 4f) x = button.center.x;
-            return new Vector2(x, button.y + button.height * 0.72f);
+            // Fingertip on the bottom-right corner. The quad hangs below the
+            // tip, so the label on the plate stays readable.
+            float x = Mathf.Clamp(button.xMax - 8f, button.xMin + 4f, button.xMax - 4f);
+            float y = Mathf.Clamp(button.yMax - 8f, button.yMin + 4f, button.yMax - 4f);
+            return new Vector2(x, y);
         }
 
         public static float AdvanceRuleHold(float held, float unscaledDelta)

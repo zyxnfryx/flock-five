@@ -502,6 +502,72 @@ namespace FlockFive
         {
             return until >= 0f && now < until;
         }
+
+        // Home just opened from a level. A pointer that was already down is
+        // carried. Nothing on home runs until that pointer releases and a new
+        // press starts on home. The gear then opens only if that new press
+        // began on the gear and the release is still inside it.
+        public struct HomeGate
+        {
+            public bool Active;
+            public bool CarryHeld;
+            public int CarryId;
+            public bool FreshDown;
+            public int FreshId;
+        }
+
+        public static HomeGate BeginHomeGate(bool carriedDown, int carriedId)
+        {
+            return new HomeGate
+            {
+                Active = true,
+                CarryHeld = carriedDown,
+                CarryId = carriedDown ? carriedId : -2,
+                FreshDown = false,
+                FreshId = -2
+            };
+        }
+
+        public static bool HomeGateAllows(ref HomeGate g, bool down, bool up, int id)
+        {
+            if (!g.Active) return true;
+            if (g.CarryHeld)
+            {
+                if (up && (id == g.CarryId || (g.CarryId < 0 && id < 0)))
+                    g.CarryHeld = false;
+                return false;
+            }
+            if (!g.FreshDown)
+            {
+                if (!down) return false;
+                g.FreshDown = true;
+                g.FreshId = id;
+                return true;
+            }
+            return true;
+        }
+
+        public const float SettingsToggleSettle = 0.25f;
+
+        public static bool SettingsPanelSettled(float ageSeconds)
+        {
+            return ageSeconds >= SettingsToggleSettle;
+        }
+
+        // A privacy or settings toggle flips only when the panel has settled
+        // and both the press and the release of that gesture were inside it.
+        public static bool ToggleMayFlip(bool settled, bool downInside, bool upInside)
+        {
+            return settled && downInside && upInside;
+        }
+
+        HomeGate _homeGate;
+        string _tapWho;
+        bool _tapEdge, _tapDown;
+        Vector2 _tapAt;
+        bool _dnsArmed, _animArmed, _soundArmed;
+        bool _consentYesArmed, _consentNoArmed;
+        float _consentShownAt = -1f;
         // b126: the three input gates (_swallowTapsUntil, _suppressGiftUntil, _resumeInputUntil) run on ad-free
         // unscaled time. PlayClock stalls under any GamePause, so a pause leak froze them shut.
         static float GateNow => AdPause.Unscaled;
@@ -824,6 +890,8 @@ namespace FlockFive
         void ShowSplash()
         {
             if (!_exitPointerHeld) CaptureLevelExitPointer();
+            _homeGate = BeginHomeGate(_exitPointerHeld, _exitPointerId);
+            GUIUtility.hotControl = 0;
             ReleaseCaptionPause();
             AudioGuard.OnSceneOrPopupClosed();
             ClearTransientFx();
@@ -3770,7 +3838,11 @@ namespace FlockFive
             {
                 if (TickRuleHold()) return;
                 if (Pressed(out var ruleTap))
+                {
+                    var gui = new Vector2(ruleTap.x + PhoneArea.OffX, PhoneArea.H - ruleTap.y);
+                    if (TryDrawnGlove(gui, true)) return;
                     TakeRuleTipPress(ruleTap);
+                }
                 return;
             }
             if (_ruleEatGesture)
@@ -3780,6 +3852,10 @@ namespace FlockFive
                 _ruleEatGesture = false;
             }
             if (!Pressed(out var screen)) return;
+            {
+                var gui = new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y);
+                if (TryDrawnGlove(gui, true)) return;
+            }
             if (GardenHudAct(screen)) return;
             // Informational leaf and pest lessons eat the press before a stamp,
             // the hud, or a branch move. Restart is exempt inside the helper.
@@ -3809,6 +3885,53 @@ namespace FlockFive
 #if UNITY_EDITOR
             Shot(file);
 #endif
+        }
+
+        int _gloveTookFrame = -1;
+
+#if DEVELOPMENT_BUILD
+        // DEV-ONLY, inspect-only. Not a shipping-path proof. ?tapLog=1.
+        void EmitTap(bool down, Vector2 at, string who)
+        {
+            if (!DevLevelSkip.TapLogFromUrl(Application.absoluteURL)) return;
+            string scene = _splash ? "home" : (_ruleTip != RuleTip.None ? "caption" : "level");
+            var glove = GloveWindowRect(OnScreenGlove(), PhoneArea.OffX);
+            var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            Debug.Log("[tap] " + (down ? "down" : "up")
+                + " " + at.x.ToString("0") + "," + at.y.ToString("0")
+                + " (screen px) dpr 1 " + Screen.width + "," + Screen.height
+                + " -> consumedBy=" + (string.IsNullOrEmpty(who) ? "open" : who)
+                + " scene=" + scene + " step=" + _coachMoves
+                + " glove=" + glove.x.ToString("0") + "," + glove.y.ToString("0") + "," + glove.width.ToString("0") + "," + glove.height.ToString("0")
+                + " hint=" + _maxxedHint.x.ToString("0") + "," + _maxxedHint.y.ToString("0") + "," + _maxxedHint.width.ToString("0") + "," + _maxxedHint.height.ToString("0")
+                + " gear=" + gear.x.ToString("0") + "," + gear.y.ToString("0") + "," + gear.width.ToString("0") + "," + gear.height.ToString("0"));
+        }
+#endif
+
+        // The whole drawn glove, cuff included, before any caption or branch reject.
+        bool TryDrawnGlove(Vector2 windowGui, bool act)
+        {
+            if (_splash || _board == null || !_gloveVis || _cueBranch < 0) return false;
+            if (!GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX)) return false;
+            if (act && _gloveTookFrame != Time.frameCount)
+            {
+                _gloveTookFrame = Time.frameCount;
+                PerformCuedGlove();
+            }
+            return true;
+        }
+
+        void PerformCuedGlove()
+        {
+            if (_board == null || _cueBranch < 0) return;
+            if (_sel < 0)
+            {
+                if (_board.CanPick(_cueBranch)) Select(_cueBranch);
+                return;
+            }
+            int to = _coachTo >= 0 ? _coachTo : _cueBranch;
+            if (to != _sel && _board.CanMove(_sel, to, out _))
+                StartCoroutine(DoMove(_sel, to));
         }
 
         void HandleTap(Vector2 world)
@@ -5737,6 +5860,7 @@ namespace FlockFive
             // Formation is home. This frame stays dark; the interrupted step fades in next.
             _restarting = false;
             TickCoachReset(false, true);
+            SettleRestartLesson();
             StillBirds(false);
             _busy = false;
             ArmGardenStamp();
@@ -6611,10 +6735,30 @@ namespace FlockFive
             e.Use();
         }
 
+        static bool FreshTouchDown()
+        {
+            var touch = Touchscreen.current;
+            if (touch == null) return false;
+            var touches = touch.touches;
+            for (int i = 0; i < touches.Count; i++)
+            {
+                var t = touches[i];
+                if (t != null && t.press.wasPressedThisFrame) return true;
+            }
+            return false;
+        }
+
         static bool Pressed(out Vector2 screen)
         {
             screen = default;
             NoteFreshPress();
+            if (_app != null && _app._splash && _app._homeGate.Active)
+            {
+                bool down = (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+                    || FreshTouchDown();
+                if (!HomeGateAllows(ref _app._homeGate, down, false, -1))
+                    return false;
+            }
             if (GateNow < _resumeInputUntil || GateNow < _sceneInputUntil) return false;
             if (StartupInputHeld) return false;
             if (LessonGuardUp()) return false;
@@ -6843,9 +6987,9 @@ namespace FlockFive
             bool homeHit, restartHit;
             if (GardenHudPoint(screen, PhoneArea.H, home, restart, out homeHit, out restartHit))
             {
-                if (homeHit) ShowSplash();
-                else Restart();
-                return true;
+            if (homeHit) { _tapWho = "home"; ShowSplash(); }
+            else { _tapWho = "restart"; Restart(); }
+            return true;
             }
             // b103: while a garden lesson glove is up, Hive only counts under the glove.
             if (CueGloveOwnsHud() && HiveReachable() && hive.Contains(gui))
@@ -6894,7 +7038,7 @@ namespace FlockFive
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
                 Event.current.Use();
-            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); return; }
+            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); FinishTapLog(); return; }
             var ev = Event.current != null ? Event.current.type : EventType.Ignore;
             var sp = StartupTrace.Begin(ev == EventType.Repaint ? "GUI.Repaint" : ev == EventType.Layout ? "GUI.Layout" : "GUI.Input");
             try { OnGUIBody(); }
@@ -6902,7 +7046,15 @@ namespace FlockFive
             DrawRewardChoiceTop();
             DrawWarmCover();
             PaintPressRainbow();
+            FinishTapLog();
             if (ev == EventType.Repaint) _guiEndTick = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
+        void FinishTapLog()
+        {
+#if DEVELOPMENT_BUILD
+            if (_tapEdge) EmitTap(_tapDown, _tapAt, _tapWho);
+#endif
         }
 
         // Release rainbow: one top-level paint, the very last thing every OnGUI does,
@@ -6962,6 +7114,32 @@ namespace FlockFive
 
         void OnGUIBody()
         {
+            var tapEv = Event.current;
+            _tapEdge = tapEv != null && tapEv.button == 0
+                && (tapEv.type == EventType.MouseDown || tapEv.type == EventType.MouseUp);
+            _tapDown = tapEv != null && tapEv.type == EventType.MouseDown;
+            _tapAt = tapEv != null ? tapEv.mousePosition : default;
+            bool tapEdge = _tapEdge;
+            _tapWho = null;
+            if (tapEdge && !_splash)
+            {
+                if (TryDrawnGlove(tapEv.mousePosition, true))
+                {
+                    _tapWho = "glove";
+                    tapEv.Use();
+                }
+            }
+            if (tapEdge && _splash && _home == HomeFace.Splash)
+            {
+                bool down = tapEv.type == EventType.MouseDown;
+                bool up = tapEv.type == EventType.MouseUp;
+                if (!HomeGateAllows(ref _homeGate, down, up, -1))
+                {
+                    GUIUtility.hotControl = 0;
+                    if (_tapWho == null) _tapWho = "home-gate";
+                    tapEv.Use();
+                }
+            }
             // Before the swallows. A finished ostrich (or any clear) must not leave a
             // rule-eat, pest hold, fight lock or dismiss guard over the reward buttons.
             ArmSceneInputSettle();
@@ -18446,8 +18624,10 @@ namespace FlockFive
             GUI.Label(xBtn, "X", xLab);
 
             bool fullyOpen = !_hiveInspectClosing && u >= 1f;
-            bool hintPut = PutBackHintHit(Event.current != null ? Event.current.mousePosition : default, _maxxedHint)
-                && HitPad(PutBackHintPad(_maxxedHint), out _);
+            var hintGui = Event.current != null ? Event.current.mousePosition : default;
+            bool hintUp = Event.current != null && Event.current.button == 0 && Event.current.type == EventType.MouseUp
+                && PutBackHintHit(hintGui, _maxxedHint);
+            bool hintPut = hintUp || (PutBackHintHit(hintGui, _maxxedHint) && HitPad(PutBackHintPad(_maxxedHint), out _));
             // A honeycomb is not the card. It squishes (no marks left), and the flip waits.
             var cardTap = hintPut ? CardTap.None : InspectCardTap(big, ix, fullyOpen && !upgradeHit);
             bool honeyAte = cardTap == CardTap.Honey;
@@ -18465,7 +18645,10 @@ namespace FlockFive
                 && Event.current.button == 0 && Event.current.type == EventType.MouseUp
                 && _maxxedHint.Contains(Event.current.mousePosition);
             if ((outside || xHit || backHit || onHint || hintPut) && !_hiveInspectClosing)
+            {
+                if (hintPut || onHint) _tapWho = "hint";
                 BeginPutAwayInspect();
+            }
 
             if (_hiveInspectClosing && u >= 1f)
                 FinishPutAwayInspect();
@@ -18930,8 +19113,7 @@ namespace FlockFive
 
         public static Rect PutBackHintPad(Rect hint)
         {
-            if (hint.width < 2f) return hint;
-            return new Rect(hint.x - 12f, hint.y - 12f, hint.width + 24f, hint.height + 24f);
+            return hint;
         }
 
         public static bool PutBackHintHit(Vector2 gui, Rect hint)

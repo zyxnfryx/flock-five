@@ -184,9 +184,10 @@ namespace FlockFive
         {
             if (_ruleTip == RuleTip.None) return false;
 #if DEVELOPMENT_BUILD
-            // DEV-ONLY inspect hook. Not a shipping-path proof. ?forcePause=1
-            // holds captions so they do not auto-advance. Release builds omit this.
-            if (DevLevelSkip.ForcePauseFromUrl(Application.absoluteURL)) return false;
+            // DEV-ONLY inspect hook. Not a shipping-path proof.
+            // ?forcePause=1 holds indefinitely. ?forcePause=N holds N seconds.
+            // DevPauseFlip is the devConsole toggle. Release builds omit this.
+            if (DevLevelSkip.CaptionHeld(Application.absoluteURL, _ruleHeld)) return false;
 #endif
             _ruleHeld = AdvanceRuleHold(_ruleHeld, Time.unscaledDeltaTime);
             if (!RuleHoldDone(_ruleHeld) || Ads.IsShowing) return false;
