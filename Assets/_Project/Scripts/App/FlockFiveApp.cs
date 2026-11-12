@@ -619,6 +619,7 @@ namespace FlockFive
                 if (_app != null)
                 {
                     _resumeInputUntil = GateNow + 0.35f;
+                    _lessonGuardUntil = 0f;
                     _app._gateBlindSince = -1f;
                     _app.FreshTutorGlove();
                     // The suspend may have cut a step off. Settle it before the first tap lands.
@@ -3984,7 +3985,6 @@ namespace FlockFive
                 StampGlove("other-finger", windowGui, onGlove, onHud, false);
                 return false;
             }
-            bool heldLatch = _glovePressLatched;
             if (!_glovePressLatched || !GloveFingerMatches(_glovePressId, pointerId))
             {
                 if (!onGlove || onHud)
@@ -4002,13 +4002,10 @@ namespace FlockFive
                 {
                     StampGlove(onHud ? "ate-hud" : "ate-off", windowGui, onGlove, onHud, false);
 #if UNITY_EDITOR
-                    EditorGloveTraceNow.Latched = heldLatch;
+                    EditorGloveTraceNow.Latched = true;
 #endif
                     return true;
                 }
-#if UNITY_EDITOR
-                EditorGloveTraceNow.Latched = heldLatch;
-#endif
             }
             if (!onGlove)
             {
@@ -4031,7 +4028,7 @@ namespace FlockFive
             _gloveRouted = true;
             StampGlove("handle", windowGui, onGlove, onHud, true);
 #if UNITY_EDITOR
-            EditorGloveTraceNow.Latched = heldLatch;
+            EditorGloveTraceNow.Latched = true;
 #endif
             HandleTap(CueBranchWorld());
             return true;
@@ -6012,6 +6009,7 @@ namespace FlockFive
             // only after that flight, so the release has to happen before the first yield.
             ReleaseCaptionPause();
             DropGlovePress();
+            _lessonGuardUntil = 0f;
             ResetLiveCoachStep();
             if (_restarting)
             {
