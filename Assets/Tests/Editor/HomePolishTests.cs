@@ -111,6 +111,12 @@ namespace FlockFive.Editor
             CheckResumeUpAfterSwallow(Check);
             CheckSwallowedReleaseScope(Check);
             CheckResumeFollowups(Check);
+            CheckResumeOtherFingerHome(Check);
+            CheckResumeButtonBegan(Check);
+            CheckResumeHomeFires(Check);
+            CheckResumeRestartFires(Check);
+            CheckResumeGearFires(Check);
+            CheckPointerIdExact(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1933,7 +1939,7 @@ namespace FlockFive.Editor
                 float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
                 float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
                 var point = new Vector2(px + PhoneArea.OffX, py);
-                var homePt = HomeWindow(out bool homeReal);
+                var off = new Vector2(-1000f, -1000f);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 var idField = t.GetField("_gloveSwallowedId", flags);
                 int Swallowed() => (int)idField.GetValue(app);
@@ -1963,21 +1969,13 @@ namespace FlockFive.Editor
                     return up;
                 }
 
-                bool armed = Arm();
-                bool otherUp = ReleaseAt(homePt, 5, out string otherExit);
-                bool other = homeReal && armed && !otherUp && otherExit == "no-glove" && Swallowed() == 4
-                    && app.EditorHandleTaps == 0;
-                Check("resume-swallow-leaves-other-finger", other,
-                    "home " + homeReal + " armed " + armed + " up " + otherUp + " " + otherExit
-                    + " id " + Swallowed() + " taps " + app.EditorHandleTaps);
-
                 bool focusArmed = Arm();
                 string focusEx = "";
                 try { Method(t, "OnApplicationFocus", typeof(bool)).Invoke(app, new object[] { false }); }
                 catch (System.Exception ex) { focusEx = TapFault(ex); }
                 int focusId = Swallowed();
-                bool focusUp = ReleaseAt(homePt, 4, out string focusExit);
-                bool focusCleared = focusArmed && homeReal && focusId == int.MinValue
+                bool focusUp = ReleaseAt(off, 4, out string focusExit);
+                bool focusCleared = focusArmed && focusId == int.MinValue
                     && !focusUp && focusExit != "swallowed-up" && app.EditorHandleTaps == 0;
                 Check("resume-focus-loss-clears-swallow", focusCleared,
                     "focus " + focusArmed + " id " + focusId + " " + focusExit + focusEx
@@ -1988,13 +1986,13 @@ namespace FlockFive.Editor
                 try { Method(t, "ShowSplash").Invoke(app, null); }
                 catch (System.Exception ex) { homeEx = TapFault(ex); }
                 int homeId = Swallowed();
-                bool homeUp = ReleaseAt(homePt, 4, out string homeExit);
+                bool homeUp = ReleaseAt(off, 4, out string homeExit);
                 bool loadArmed = Arm();
                 string loadEx = "";
                 try { Method(t, "Load", typeof(int)).Invoke(app, new object[] { 0 }); }
                 catch (System.Exception ex) { loadEx = TapFault(ex); }
                 int loadId = Swallowed();
-                bool loadUp = ReleaseAt(homePt, 4, out string loadExit);
+                bool loadUp = ReleaseAt(off, 4, out string loadExit);
                 bool exitArmed = Arm();
                 Method(t, "ClearLevelExit").Invoke(null, null);
                 int exitId = Swallowed();
@@ -2017,7 +2015,7 @@ namespace FlockFive.Editor
                 bool stateClears = exitArmed && hideArmed && snapArmed && cancelArmed
                     && exitId == int.MinValue && hideId == int.MinValue
                     && snapId == int.MinValue && cancelId == int.MinValue;
-                bool left = homeReal && homeArmed && loadArmed && homeId == int.MinValue && loadId == int.MinValue
+                bool left = homeArmed && loadArmed && homeId == int.MinValue && loadId == int.MinValue
                     && !homeUp && homeExit != "swallowed-up"
                     && !loadUp && loadExit != "swallowed-up";
                 Check("resume-swallow-clears-on-home-and-load", left,
@@ -2032,6 +2030,267 @@ namespace FlockFive.Editor
             {
                 SetResumeUntil(keep);
                 GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckPointerIdExact(System.Action<string, bool, string> Check)
+        {
+            var mouse = FlockFiveApp.BeginHomeGate(true, -1);
+            bool otherNeg = FlockFiveApp.HomeGateAllows(ref mouse, false, true, -2);
+            bool mouseHeld = mouse.CarryHeld && !otherNeg;
+            var same = FlockFiveApp.BeginHomeGate(true, -1);
+            FlockFiveApp.HomeGateAllows(ref same, false, true, -1);
+            bool mouseCleared = !same.CarryHeld;
+            var missing = FlockFiveApp.BeginHomeGate(true, int.MinValue);
+            FlockFiveApp.HomeGateAllows(ref missing, false, true, -1);
+            bool missingHeld = missing.CarryHeld;
+            Check("pointer-id-exact-on-home-gate", mouseHeld && mouseCleared && missingHeld,
+                "held " + mouse.CarryHeld + " cleared " + !same.CarryHeld + " missing " + missing.CarryHeld);
+        }
+
+        static Rect HudPlayRect(int which, out bool real)
+        {
+            object[] hud = { default(Rect), default(Rect) };
+            typeof(FlockFiveApp).GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static)
+                .Invoke(null, hud);
+            var restart = (Rect)hud[0];
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            var rect = which == 2 ? restart : which == 3 ? gear : home;
+            real = rect.width > 2f && rect.height > 2f;
+            return rect;
+        }
+
+        static Vector2 HudWindow(Rect play)
+        {
+            return new Vector2(play.center.x + PhoneArea.OffX, play.center.y);
+        }
+
+        static void CheckResumeOtherFingerHome(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-other-home");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                var point = new Vector2(px + PhoneArea.OffX, py);
+                var home = HudPlayRect(1, out bool real);
+                var homePt = HudWindow(home);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                app.EditorHandleTaps = 0;
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                SetResumeUntil(float.NegativeInfinity);
+                bool up = (bool)glove.Invoke(app, new object[] { homePt, true, 5 });
+                int id = (int)t.GetField("_gloveSwallowedId", flags).GetValue(app);
+                bool onHome = FlockFiveApp.HudBeatsGlove(home.center, home, new Rect(0f, 0f, 0f, 0f), new Rect(0f, 0f, 0f, 0f));
+                Check("resume-swallow-leaves-other-finger",
+                    real && onHome && down && !up && FlockFiveApp.EditorGloveTraceNow.Exit == "no-glove"
+                    && id == 4 && app.EditorHandleTaps == 0,
+                    "real " + real + " down " + down + " up " + up + " "
+                    + FlockFiveApp.EditorGloveTraceNow.Exit + " id " + id);
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeButtonBegan(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-button-began");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                var point = new Vector2(px + PhoneArea.OffX, py);
+                var home = HudPlayRect(1, out bool real);
+                var homePt = HudWindow(home);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                app.EditorHandleTaps = 0;
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool down = (bool)glove.Invoke(app, new object[] { homePt, false, 4 });
+                string downExit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                int id = (int)t.GetField("_gloveSwallowedId", flags).GetValue(app);
+                SetResumeUntil(float.NegativeInfinity);
+                bool up = (bool)glove.Invoke(app, new object[] { homePt, true, 4 });
+                bool began = real && !down && downExit == "resume-hud" && id == 4
+                    && !up && FlockFiveApp.EditorGloveTraceNow.Exit == "hud" && app.EditorHandleTaps == 0;
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool gloveDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                SetResumeUntil(float.NegativeInfinity);
+                app.EditorHandleTaps = 0;
+                bool slide = (bool)glove.Invoke(app, new object[] { homePt, true, 4 });
+                bool slideEaten = gloveDown && slide && FlockFiveApp.EditorGloveTraceNow.Exit == "swallowed-up"
+                    && app.EditorHandleTaps == 0;
+                Check("resume-button-press-still-fires", began && slideEaten,
+                    "down " + down + " " + downExit + " up " + up
+                    + " slide " + slide + " " + FlockFiveApp.EditorGloveTraceNow.Exit);
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static bool FeedHud(FlockFiveApp app, int which, Rect play, bool down, bool up)
+        {
+            var t = typeof(FlockFiveApp);
+            object[] args = { which, play, HudWindow(play), down, up, false };
+            var feed = t.GetMethod("FeedResumeHudButton",
+                BindingFlags.NonPublic | BindingFlags.Instance, null,
+                new[] { typeof(int), typeof(Rect), typeof(Vector2), typeof(bool), typeof(bool), typeof(bool).MakeByRefType() },
+                null);
+            return (bool)feed.Invoke(app, args);
+        }
+
+        static void CheckResumeHomeFires(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-home-fires");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var home = HudPlayRect(1, out bool real);
+                var at = HudWindow(home);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
+                Event.current = down;
+                Method(t, "SwallowResumePointer").Invoke(null, null);
+                bool left = down.type != EventType.Used;
+                bool armed = FeedHud(app, 1, home, true, false);
+                SetResumeUntil(float.NegativeInfinity);
+                var up = new Event { type = EventType.MouseUp, mousePosition = at, button = 0 };
+                Event.current = up;
+                bool fired = false;
+                string fireEx = "";
+                try { fired = FeedHud(app, 1, home, false, true); }
+                catch (System.Exception ex) { fireEx = TapFault(ex); }
+                bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
+                Check("resume-home-press-fires", real && left && !armed && splash,
+                    "real " + real + " left " + left + " type " + down.type
+                    + " armed " + armed + " fired " + fired + " splash " + splash + fireEx);
+            }
+            finally
+            {
+                Event.current = prev;
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeRestartFires(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-restart-fires");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            int streak = Purse.Streak;
+            try
+            {
+                Purse.SetStreak(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var restart = HudPlayRect(2, out bool real);
+                var at = HudWindow(restart);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
+                Event.current = down;
+                Method(t, "SwallowResumePointer").Invoke(null, null);
+                bool left = down.type != EventType.Used;
+                FeedHud(app, 2, restart, true, false);
+                SetResumeUntil(float.NegativeInfinity);
+                var up = new Event { type = EventType.MouseUp, mousePosition = at, button = 0 };
+                Event.current = up;
+                bool fired = false;
+                string fireEx = "";
+                try { fired = FeedHud(app, 2, restart, false, true); }
+                catch (System.Exception ex) { fireEx = TapFault(ex); }
+                bool going = app.EditorSnapRound != null
+                    || (bool)t.GetField("_restarting", flags).GetValue(app)
+                    || t.GetField("_restartAsk", flags).GetValue(app).ToString() != "None";
+                Check("resume-restart-press-fires", real && left && going,
+                    "real " + real + " left " + left + " type " + down.type
+                    + " fired " + fired + " going " + going + fireEx);
+            }
+            finally
+            {
+                Event.current = prev;
+                Purse.SetStreak(streak);
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeGearFires(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-gear-fires");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_splash", flags).SetValue(app, true);
+                var homeFace = t.GetField("_home", flags);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                var gear = HudPlayRect(3, out bool real);
+                var at = HudWindow(gear);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
+                Event.current = down;
+                Method(t, "SwallowResumePointer").Invoke(null, null);
+                bool left = down.type != EventType.Used;
+                FeedHud(app, 3, gear, true, false);
+                SetResumeUntil(float.NegativeInfinity);
+                var up = new Event { type = EventType.MouseUp, mousePosition = at, button = 0 };
+                Event.current = up;
+                bool fired = false;
+                string fireEx = "";
+                try { fired = FeedHud(app, 3, gear, false, true); }
+                catch (System.Exception ex) { fireEx = TapFault(ex); }
+                bool open = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                Check("resume-gear-press-fires", real && left && open,
+                    "real " + real + " left " + left + " type " + down.type
+                    + " fired " + fired + " open " + open + fireEx);
+            }
+            finally
+            {
+                Event.current = prev;
+                SetResumeUntil(keep);
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
@@ -2068,7 +2327,6 @@ namespace FlockFive.Editor
                 float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
                 float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
                 var point = new Vector2(px + PhoneArea.OffX, py);
-                var homePt = HomeWindow(out bool homeReal);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 var idField = t.GetField("_gloveSwallowedId", flags);
                 int Swallowed() => (int)idField.GetValue(app);
@@ -2150,35 +2408,6 @@ namespace FlockFive.Editor
                     + " sel " + t.GetField("_sel", flags).GetValue(app)
                     + " id " + Swallowed() + " " + FlockFiveApp.EditorGloveTraceNow.Exit);
 
-                bool began = true;
-                string beganExit = "";
-                bool beganUp = true;
-                int beganId = 0;
-                if (homeReal)
-                {
-                    Pose();
-                    SetResumeUntil(AdPause.Unscaled + 0.35f);
-                    began = (bool)glove.Invoke(app, new object[] { homePt, false, 4 });
-                    beganExit = FlockFiveApp.EditorGloveTraceNow.Exit;
-                    beganId = Swallowed();
-                    SetResumeUntil(float.NegativeInfinity);
-                    app.EditorHandleTaps = 0;
-                    beganUp = (bool)glove.Invoke(app, new object[] { homePt, true, 4 });
-                }
-                bool button = homeReal && !began && beganExit == "resume-hud" && beganId == 4
-                    && !beganUp && FlockFiveApp.EditorGloveTraceNow.Exit == "hud"
-                    && app.EditorHandleTaps == 0;
-                bool armedSlide = Arm();
-                app.EditorHandleTaps = 0;
-                bool slide = (bool)glove.Invoke(app, new object[] { homePt, true, 4 });
-                bool slideEaten = armedSlide && homeReal && slide
-                    && FlockFiveApp.EditorGloveTraceNow.Exit == "swallowed-up"
-                    && app.EditorHandleTaps == 0;
-                Check("resume-button-press-still-fires", button && slideEaten,
-                    "home " + homeReal + " down " + began + " " + beganExit
-                    + " up " + beganUp + " slide " + slide + " " + FlockFiveApp.EditorGloveTraceNow.Exit
-                    + " taps " + app.EditorHandleTaps);
-
                 bool armedCancel = Arm();
                 Method(t, "NoteSwallowedCancel", typeof(int)).Invoke(app, new object[] { 9 });
                 int otherCancel = Swallowed();
@@ -2190,7 +2419,14 @@ namespace FlockFive.Editor
                     && mouseUp && FlockFiveApp.EditorGloveTraceNow.Exit == "cancel-frame"
                     && app.EditorHandleTaps == 0
                     && (int)t.GetField("_sel", flags).GetValue(app) == -1;
+                t.GetField("_board", flags).SetValue(app, null);
+                t.GetField("_gloveEdgeId", flags).SetValue(app, 5);
+                app.EditorHandleTaps = 0;
+                Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero });
+                bool otherOpen = FlockFiveApp.EditorGloveTraceNow.Exit == "board" && app.EditorHandleTaps == 1;
                 t.GetField("_gloveCancelFrame", flags).SetValue(app, -1);
+                Check("resume-cancel-leaves-other-finger", otherOpen,
+                    "exit " + FlockFiveApp.EditorGloveTraceNow.Exit + " taps " + app.EditorHandleTaps);
                 Check("resume-cancel-and-mouse-up-does-not-hop", cancelQuiet,
                     "armed " + armedCancel + " other " + otherCancel + " up " + mouseUp
                     + " " + FlockFiveApp.EditorGloveTraceNow.Exit

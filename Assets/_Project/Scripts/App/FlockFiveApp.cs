@@ -533,7 +533,7 @@ namespace FlockFive
             if (!g.Active) return true;
             if (g.CarryHeld)
             {
-                if (up && (id == g.CarryId || (g.CarryId < 0 && id < 0)))
+                if (up && id == g.CarryId)
                     g.CarryHeld = false;
                 return false;
             }
@@ -892,6 +892,7 @@ namespace FlockFive
         {
             ClearSwallowedGlove();
             DropGlovePress();
+            _splash = true;
             if (!_exitPointerHeld) CaptureLevelExitPointer();
             _homeGate = BeginHomeGate(_exitPointerHeld, _exitPointerId);
             GUIUtility.hotControl = 0;
@@ -901,7 +902,6 @@ namespace FlockFive
             CloseHiveInspect();
             SeasonCrossfade.RetireLive();
             GardenLife.DetachHome();
-            _splash = true;
             _clearReward = false;
             CancelRewardGap();
             _gardenScoring = false;
@@ -3934,8 +3934,12 @@ namespace FlockFive
         int _gloveSwallowedId = int.MinValue;
         // 0 began on the glove. 1 Home, 2 Restart, 3 gear.
         int _gloveSwallowHud;
-        // The frame a swallowed touch was canceled. A mouse Up that frame must not hop.
+        // The frame a swallowed touch was canceled, and that touch's id.
+        // A mouse Up (-1) in that frame is the hop. Any other finger is not blocked.
         int _gloveCancelFrame = -1;
+        int _gloveCancelId = int.MinValue;
+        // Which HUD button was pressed inside the resume window. 0 none, 1 Home, 2 Restart, 3 gear.
+        int _resumeHudArm;
         int _gloveEdgeId = int.MinValue;
 
         void DropGlovePress()
@@ -3957,9 +3961,12 @@ namespace FlockFive
                 && GloveFingerMatches(_gloveSwallowedId, pointerId);
         }
 
-        bool CancelBlocksHop()
+        bool CancelBlocksHop(int pointerId)
         {
-            return _gloveCancelFrame == Time.frameCount && !_glovePressLatched;
+            if (_gloveCancelFrame != Time.frameCount || _glovePressLatched) return false;
+            // The canceled touch, and the mouse release that arrives with it.
+            // A different finger keeps its own tap.
+            return pointerId == _gloveCancelId || pointerId == -1;
         }
 
         // A cancel never arrives as a glove Up. Remember the frame so a mouse
@@ -3969,6 +3976,7 @@ namespace FlockFive
             if (_gloveSwallowedId == int.MinValue) return;
             if (!GloveFingerMatches(_gloveSwallowedId, pointerId)) return;
             _gloveCancelFrame = Time.frameCount;
+            _gloveCancelId = pointerId;
             ClearSwallowedGlove();
         }
 
@@ -4005,6 +4013,38 @@ namespace FlockFive
             if (restart.width > 2f && restart.Contains(play)) return 2;
             if (gear.width > 2f && gear.Contains(play)) return 3;
             return 0;
+        }
+
+        // OnGUI calls this for Home, Restart, and the gear. HitPad arms on the down
+        // and fires on the release. Edit-mode tests have no IMGUI, so a down inside
+        // the resume window also arms here and the release calls GardenHudAct.
+        bool FeedResumeHudButton(int which, Rect playRect, Vector2 windowGui, bool down, bool up, out bool held)
+        {
+            held = false;
+            var play = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
+            bool inside = playRect.width > 2f && playRect.Contains(play);
+            bool pad = false;
+            if (Event.current != null)
+            {
+                try { pad = HitPad(playRect, out held); }
+                catch (System.Exception) { pad = false; }
+            }
+            if (down && inside && GateNow < _resumeInputUntil)
+                _resumeHudArm = which;
+            bool armedUp = up && _resumeHudArm == which && inside;
+            if (up && _resumeHudArm == which && !inside)
+                _resumeHudArm = 0;
+            bool fire = which == 2 ? armedUp : (pad || armedUp);
+            if (!fire) return false;
+            _resumeHudArm = 0;
+            if (which == 3)
+            {
+                _tapWho = "gear";
+                ApplySettingsHit(SettingsMotion.Hit.Gear);
+                _hitLock = 1;
+                return true;
+            }
+            return GardenHudAct(new Vector2(play.x, PhoneArea.H - play.y));
         }
 
 #if DEVELOPMENT_BUILD
@@ -4092,7 +4132,7 @@ namespace FlockFive
                 StampGlove("swallowed-up", windowGui, onGlove, hud != 0, false);
                 return true;
             }
-            if (releaseEdge && CancelBlocksHop() && onGlove && hud == 0)
+            if (releaseEdge && CancelBlocksHop(pointerId) && onGlove && hud == 0)
             {
                 StampGlove("cancel-frame", windowGui, onGlove, false, false);
                 return true;
@@ -4246,7 +4286,7 @@ namespace FlockFive
                 DropRouted("swallowed-up");
                 return;
             }
-            if (CancelBlocksHop())
+            if (CancelBlocksHop(_gloveEdgeId))
             {
                 DropGlovePress();
                 DropRouted("cancel");
@@ -7145,9 +7185,16 @@ namespace FlockFive
                 return;
             }
             // Also while the level transition covers the screen (held splash / mask).
-            if (GateNow >= _resumeInputUntil && GateNow >= _sceneInputUntil && !PressRainbow.StageHeld() && !StartupInputHeld) return;
+            bool resumeHold = GateNow < _resumeInputUntil;
+            bool otherHold = GateNow < _sceneInputUntil || PressRainbow.StageHeld() || StartupInputHeld;
+            if (!resumeHold && !otherHold) return;
             var e = Event.current;
             if (e == null) return;
+            // Home, Restart, and the gear arm in HitPad later this OnGUI pass.
+            // Swallowing the down here leaves hotControl unset, so the release never fires.
+            // A scene cover or the startup hold still swallows those buttons.
+            if (resumeHold && !otherHold && HudControl(e.mousePosition) != 0)
+                return;
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
@@ -7323,8 +7370,7 @@ namespace FlockFive
                     // The finger that left the level still clears the gate when another
                     // press is reported on the same call. HomePointerId keeps a
                     // nonnegative press and would leave that release unread.
-                    bool carryUp = _app._homeGate.CarryHeld
-                        && (upId == _app._homeGate.CarryId || (_app._homeGate.CarryId < 0 && upId < 0));
+                    bool carryUp = _app._homeGate.CarryHeld && upId == _app._homeGate.CarryId;
                     id = carryUp ? upId : HomePointerId(down ? pressId : -1, true, upId);
                 }
                 else if (!down)
@@ -7862,10 +7908,16 @@ namespace FlockFive
             restartLab.clipping = TextClipping.Overflow;
             restartLab.fontSize = Mathf.Max(8, Mathf.RoundToInt(9f * Mathf.Min(s, 1.15f)));
             GUI.Label(restart, "Restart", restartLab);
+            var hudEv = Event.current;
+            bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
+            bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
+            var hudAt = hudEv != null ? hudEv.mousePosition : restart.center;
+            if (restart.width > 2f)
+                FeedResumeHudButton(2, restart, hudAt, hudDown, hudUp, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             bool homeHeld = false;
-            if (home.width > 2f && HitPad(home, out homeHeld))
-                ShowSplash();
+            if (home.width > 2f)
+                FeedResumeHudButton(1, home, hudAt, hudDown, hudUp, out homeHeld);
             GUI.color = new Color(0.10f, 0.08f, 0.05f, homeHeld ? 0.92f : 0.78f);
             GUI.DrawTexture(home, Texture2D.whiteTexture);
             GUI.color = Color.white;

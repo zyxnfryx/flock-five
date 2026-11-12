@@ -153,12 +153,9 @@ namespace FlockFive
                 if (HomeGear.Shown(q) || VeilBlocks(r)) SwallowGearTap(r);
                 return;
             }
-            if (HitPad(r, out _gearHeld))
-            {
-                _tapWho = "gear";
-                ApplySettingsHit(SettingsMotion.Hit.Gear);
-                _hitLock = 1;
-            }
+            bool gearDown = e != null && e.type == EventType.MouseDown && e.button == 0;
+            var gearAt = e != null ? e.mousePosition : r.center;
+            FeedResumeHudButton(3, r, gearAt, gearDown, release, out _gearHeld);
         }
 
         void TickSettingsMotion()
