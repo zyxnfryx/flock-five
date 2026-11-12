@@ -1049,6 +1049,7 @@ namespace FlockFive
 
             // Sleep (and any rule tip) can open on level 1, while the coach still owns this branch.
             if (_ruleTip != RuleTip.None) return;
+            int heldCue = _cueBranch;
             CoachClearCue();
             // b115 (Brandon): the "Stuck? Tap the gift branch" cue is gone. The only gift glove left is the one on the
             // ad offer popup (ArmAdHand, first card only, flag persisted), so it never returns after the first use.
@@ -1063,6 +1064,7 @@ namespace FlockFive
                     // here would cancel the hop the moment _coachMoves ticks to 1.
                     if (_glovePressLatched)
                     {
+                        _cueBranch = heldCue;
                         _gloveVis = true;
                         return;
                     }
@@ -1149,6 +1151,8 @@ namespace FlockFive
                 if (!CanOfferBonus(open)) return true;
                 if (nearBranch >= 0) OpenBonus(nearBranch);
                 CoachHideNow();
+                // b103 (Brandon): the honoured gift tap ends the hint for good. CoachHideNow re-arms the hint
+                // window (for a reset), so clear it AFTER, or the glove comes back once the offer closes.
                 ClearGiftHint(ref _coachGiftUntil, ref _coachResumeFade, ref _deadEndNudged);
                 return nearBranch >= 0;
             }

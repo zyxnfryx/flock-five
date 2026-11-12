@@ -105,6 +105,8 @@ namespace FlockFive.Editor
             CheckHomeTouchGate(Check);
             CheckGloveRoute(Check);
             CheckGloveOneHandle(Check);
+            CheckFreezeLeavesRepeatGate(Check);
+            CheckHop2KeepsDestination(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1708,6 +1710,67 @@ namespace FlockFive.Editor
 
         // A dismiss in an earlier check arms the static lesson guard. A live
         // Level 1 glove is not under that guard (ShowSplash zeroes it).
+        static void CheckFreezeLeavesRepeatGate(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("freeze-next");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                SeatOpenLesson(app);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_cueFreeze", flags).SetValue(app, true);
+                float mark = AdPause.Unscaled;
+                t.GetField("_nextTap", flags).SetValue(app, mark);
+                t.GetMethod("HandleTap", flags).Invoke(app, new object[] { Vector2.zero });
+                float after = (float)t.GetField("_nextTap", flags).GetValue(app);
+                Check("freeze-reject-does-not-arm-next-tap", after == mark, "mark " + mark + " after " + after);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckHop2KeepsDestination(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("hop2-cue");
+            var root = new GameObject("hop2-root");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                SeatOpenLesson(app);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var garden = new WorldBuilder.Garden();
+                garden.Root = root.transform;
+                garden.Cam = WorldBuilder.MakeCamera(root.transform);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_coachMoves", flags).SetValue(app, 1);
+                t.GetField("_cueBranch", flags).SetValue(app, 4);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                var locked = t.GetField("_locked", flags).GetValue(app);
+                locked.GetType().GetMethod("Add", new[] { typeof(int) }).Invoke(locked, new object[] { 0 });
+                t.GetMethod("CoachAdvance", flags).Invoke(app, null);
+                int cue = (int)t.GetField("_cueBranch", flags).GetValue(app);
+                bool vis = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+                bool latch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                Check("hop2-latched-keeps-destination", cue == 4 && vis && latch,
+                    "cue " + cue + " vis " + vis + " latch " + latch);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
         static void SeatOpenLesson(object app)
         {
             var t = typeof(FlockFiveApp);
