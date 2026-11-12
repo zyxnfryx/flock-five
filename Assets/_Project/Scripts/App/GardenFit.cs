@@ -59,11 +59,21 @@ namespace FlockFive
             // (ClearBusy, or an instant fit) owns the pose, so do not start another ease.
             if (!instant && _busy)
             {
-                int waitFor = _fitSerial;
-                while (_busy && _fitSerial == waitFor)
-                    yield return null;
-                if (_fitSerial != waitFor)
-                    yield break;
+#if UNITY_EDITOR
+                // Edit mode never ticks the coroutine UpdateBody started, so Busy
+                // stays set and a pumped move yields null here until the cap.
+                // Take the pose. The abandoned ease exits when its serial changes.
+                if (!Application.isPlaying)
+                    ClearBusy();
+                else
+#endif
+                {
+                    int waitFor = _fitSerial;
+                    while (_busy && _fitSerial == waitFor)
+                        yield return null;
+                    if (_fitSerial != waitFor)
+                        yield break;
+                }
             }
 
             int run = ++_fitSerial;
