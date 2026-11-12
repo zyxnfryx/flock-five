@@ -3952,6 +3952,7 @@ namespace FlockFive
         {
             _gloveSwallowedId = int.MinValue;
             _gloveSwallowHud = 0;
+            _resumeHudArm = 0;
         }
 
         // Only the finger whose Down the resume gate ate.
@@ -4020,6 +4021,12 @@ namespace FlockFive
         // the resume window also arms here and the release calls GardenHudAct.
         bool FeedResumeHudButton(int which, Rect playRect, Vector2 windowGui, bool down, bool up, out bool held)
         {
+            // Restart during the resume window stays swallowed. That arm is its own commit.
+            if (which == 2)
+            {
+                held = false;
+                return false;
+            }
             held = false;
             var play = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
             bool inside = playRect.width > 2f && playRect.Contains(play);
@@ -7193,7 +7200,9 @@ namespace FlockFive
             // Home, Restart, and the gear arm in HitPad later this OnGUI pass.
             // Swallowing the down here leaves hotControl unset, so the release never fires.
             // A scene cover or the startup hold still swallows those buttons.
-            if (resumeHold && !otherHold && HudControl(e.mousePosition) != 0)
+            int hud = HudControl(e.mousePosition);
+            // Home and the gear. Restart stays swallowed until its own commit.
+            if (resumeHold && !otherHold && (hud == 1 || hud == 3))
                 return;
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
@@ -7912,8 +7921,6 @@ namespace FlockFive
             bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
             bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
             var hudAt = hudEv != null ? hudEv.mousePosition : restart.center;
-            if (restart.width > 2f)
-                FeedResumeHudButton(2, restart, hudAt, hudDown, hudUp, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             bool homeHeld = false;
             if (home.width > 2f)
