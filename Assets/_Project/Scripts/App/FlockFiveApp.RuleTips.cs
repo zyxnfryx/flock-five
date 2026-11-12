@@ -77,6 +77,7 @@ namespace FlockFive
         bool RuleTipAdvance()
         {
             if (_ruleTip != RuleTip.None) return true;
+            if (_holdRuleForLesson && _coach) return false;
             RuleTrackFeeders();
             if (_pestCue != 0 || _collecting || _busy || !PestStageFree()) return false;
             var seen = new RuleTips.Seen

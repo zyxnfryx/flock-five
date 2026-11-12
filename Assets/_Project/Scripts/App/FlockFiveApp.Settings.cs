@@ -118,8 +118,8 @@ namespace FlockFive
             {
                 // Rail gloves, the Daily Claim step, and the adopt look step.
                 if (HomeStepRail() >= 0) forced = true;
-                if (_dailyIntroLive && _dailyOpen && !_dailyAskOpen) forced = true;
-                if (_adoptLive && _adoptStep == AdoptStep.Look) forced = true;
+                // The post-level chain (a bird followed you, naming, Tap Daily)
+                // keeps the gear and Play tappable. The captions sit clear of them.
                 if (ForcedGloveUp()) forced = true;
             }
             return new HomeGearQuery { Home = home, Cover = cover, ForcedTap = forced };
