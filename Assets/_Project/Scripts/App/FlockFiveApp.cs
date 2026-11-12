@@ -7536,6 +7536,14 @@ namespace FlockFive
 
         void OnGUIBody()
         {
+            TakeGuiPointer();
+            PaintAfterPointer();
+        }
+
+        // Pointer edges only. No GUI draw, so an editor test can call this
+        // outside a real OnGUI. OnGUIBody paints after it.
+        void TakeGuiPointer()
+        {
             var tapEv = Event.current;
             _tapEdge = tapEv != null && tapEv.button == 0
                 && (tapEv.type == EventType.MouseDown || tapEv.type == EventType.MouseUp);
@@ -7578,6 +7586,10 @@ namespace FlockFive
                 }
             }
 #endif
+        }
+
+        void PaintAfterPointer()
+        {
             // Before the swallows. A finished ostrich (or any clear) must not leave a
             // rule-eat, pest hold, fight lock or dismiss guard over the reward buttons.
             ArmSceneInputSettle();

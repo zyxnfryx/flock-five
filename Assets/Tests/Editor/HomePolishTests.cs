@@ -1482,8 +1482,7 @@ namespace FlockFive.Editor
                     Play = new Vector2(px, PhoneArea.H - py)
                 };
                 SeatOpenLesson(app);
-                try { Method(t, "OnGUIBody").Invoke(app, null); }
-                catch (System.Exception ex) { upEx = TapFault(ex); }
+                Method(t, "TakeGuiPointer").Invoke(app, null);
                 taps = app.EditorHandleTaps;
                 int picked = (int)t.GetField("_sel", flags).GetValue(app);
                 upTrace = FlockFiveApp.EditorGloveTraceNow.ToString() + upEx;
@@ -1501,14 +1500,15 @@ namespace FlockFive.Editor
                 };
                 Method(t, "UpdateBody").Invoke(app, null);
                 t.GetField("_nextTap", flags).SetValue(app, 0f);
+                // The player's second tap is a later frame. This gate is one glove act per frame.
+                t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
                 SeatOpenLesson(app);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 4,
                     Play = new Vector2(px, PhoneArea.H - py)
                 };
-                try { Method(t, "OnGUIBody").Invoke(app, null); }
-                catch (System.Exception) { }
+                Method(t, "TakeGuiPointer").Invoke(app, null);
                 var live = app.EditorLiveMove;
                 if (live != null) PumpFrames(live, 48, null, out _);
                 var afterBoard = (Board)t.GetField("_board", flags).GetValue(app);
