@@ -21662,7 +21662,7 @@ namespace FlockFive
                 if (retry)
                 {
                     DismissAdHand();
-                    Restart();
+                    ActRestart();
                     return;
                 }
                 if (contGo)
