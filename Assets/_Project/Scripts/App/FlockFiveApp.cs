@@ -3720,6 +3720,9 @@ namespace FlockFive
                 DailyReminder.OnAppBackground();
                 _gloveSwallowedId = keep;
                 _gloveSwallowHud = keepHud;
+                // The held finger stays swallowed. A HUD button armed before the
+                // pause must not fire on the release after it.
+                _resumeHudArm = 0;
             }
             else
             {
@@ -4012,7 +4015,9 @@ namespace FlockFive
             var play = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
             if (home.width > 2f && home.Contains(play)) return 1;
             if (restart.width > 2f && restart.Contains(play)) return 2;
-            if (gear.width > 2f && gear.Contains(play)) return 3;
+            // The gear is drawn only on the home face. The same rect in the garden
+            // is empty space, so it must not steal a glove or board tap.
+            if (HomeGear.Shown(HomeGearNow()) && gear.width > 2f && gear.Contains(play)) return 3;
             return 0;
         }
 
@@ -4083,9 +4088,14 @@ namespace FlockFive
 
         public static bool HudBeatsGlove(Vector2 windowGui, Rect home, Rect restart, Rect gear)
         {
+            return HudBeatsGlove(windowGui, home, restart, gear, true);
+        }
+
+        public static bool HudBeatsGlove(Vector2 windowGui, Rect home, Rect restart, Rect gear, bool gearShown)
+        {
             if (home.width > 2f && home.Contains(windowGui)) return true;
             if (restart.width > 2f && restart.Contains(windowGui)) return true;
-            if (gear.width > 2f && gear.Contains(windowGui)) return true;
+            if (gearShown && gear.width > 2f && gear.Contains(windowGui)) return true;
             return false;
         }
 
@@ -4151,7 +4161,7 @@ namespace FlockFive
                 var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
                 var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
                 var playGui = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
-                onHud = HudBeatsGlove(playGui, home, restart, gear);
+                onHud = HudBeatsGlove(playGui, home, restart, gear, HomeGear.Shown(HomeGearNow()));
                 if (onGlove && onHud && !(releaseEdge && _glovePressLatched && GloveFingerMatches(_glovePressId, pointerId)))
                     return false;
             }
