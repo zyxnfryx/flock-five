@@ -3984,6 +3984,7 @@ namespace FlockFive
                 StampGlove("other-finger", windowGui, onGlove, onHud, false);
                 return false;
             }
+            bool heldLatch = _glovePressLatched;
             if (!_glovePressLatched || !GloveFingerMatches(_glovePressId, pointerId))
             {
                 if (!onGlove || onHud) return false;
@@ -3996,8 +3997,14 @@ namespace FlockFive
                 if (!onGlove || onHud)
                 {
                     StampGlove(onHud ? "ate-hud" : "ate-off", windowGui, onGlove, onHud, false);
+#if UNITY_EDITOR
+                    EditorGloveTraceNow.Latched = heldLatch;
+#endif
                     return true;
                 }
+#if UNITY_EDITOR
+                EditorGloveTraceNow.Latched = heldLatch;
+#endif
             }
             if (!onGlove)
             {
@@ -4019,6 +4026,9 @@ namespace FlockFive
             // HandleTap still resolves the branch at this world point.
             _gloveRouted = true;
             StampGlove("handle", windowGui, onGlove, onHud, true);
+#if UNITY_EDITOR
+            EditorGloveTraceNow.Latched = heldLatch;
+#endif
             HandleTap(CueBranchWorld());
             return true;
         }
@@ -4101,6 +4111,8 @@ namespace FlockFive
             var cuePt = CueBranchWorld();
             EditorGloveTraceNow.Dist = (world - cuePt).sqrMagnitude;
             EditorGloveTraceNow.Threshold = 0.0001f;
+            EditorGloveTraceNow.Hit = -1;
+            EditorGloveTraceNow.Fallback = false;
 #endif
             if (OstrichIntroBlocking()) { DropRouted("ostrich"); return; }
             if (_ruleTip != RuleTip.None || _ruleEatGesture) { DropRouted("rule"); return; }
