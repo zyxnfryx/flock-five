@@ -1494,14 +1494,14 @@ namespace FlockFive.Editor
                 float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
                     Play = new Vector2(px, PhoneArea.H - py)
                 };
                 Method(t, "UpdateBody").Invoke(app, null);
-                int afterDown = app.EditorHandleTaps;
+                int afterDown = EditorTaps(app);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 4,
@@ -1509,7 +1509,7 @@ namespace FlockFive.Editor
                 };
                 SeatOpenLesson(app);
                 Method(t, "TakeGuiPointer").Invoke(app, null);
-                taps = app.EditorHandleTaps;
+                taps = EditorTaps(app);
                 int picked = (int)t.GetField("_sel", flags).GetValue(app);
                 upTrace = FlockFiveApp.EditorGloveTraceNow.ToString() + upEx;
                 // Coach aims the destination with no finger down, the way the
@@ -1609,14 +1609,14 @@ namespace FlockFive.Editor
                 var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(home.center.x - 30f, home.center.y - 30f, 60f, 60f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Id = -1,
                     Play = new Vector2(home.center.x, PhoneArea.H - home.center.y)
                 };
                 Method(t, "UpdateBody").Invoke(app, null);
-                homeWon = (bool)splash.GetValue(app) && app.EditorHandleTaps == 0;
+                homeWon = (bool)splash.GetValue(app) && EditorTaps(app) == 0;
                 Check("glove-down-and-up-handle-once", once,
                     "down " + afterDown + " total " + taps + " sel " + picked + " moved " + moved
                     + " " + upTrace + hopTrace);
@@ -1624,7 +1624,7 @@ namespace FlockFive.Editor
                     "kept " + mouseKeepsTouchRelease + " mouse " + noReleaseStaysMouse + " finger " + namedFingerWins);
                 Check("home-touch-up-through-pressed-and-ongui", pressCleared && guiCleared,
                     "press " + pressCleared + " gui " + guiCleared + " " + pressTrace);
-                Check("glove-cuff-on-home-goes-home", homeWon, "home " + homeWon + " taps " + app.EditorHandleTaps);
+                Check("glove-cuff-on-home-goes-home", homeWon, "home " + homeWon + " taps " + EditorTaps(app));
 
                 splash.SetValue(app, false);
                 garden.Cam = new GameObject("glove-cam-slide").AddComponent<Camera>();
@@ -1636,7 +1636,7 @@ namespace FlockFive.Editor
                 t.GetField("_sel", flags).SetValue(app, -1);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
@@ -1653,13 +1653,13 @@ namespace FlockFive.Editor
                 catch (System.Exception) { }
                 int slidSel = (int)t.GetField("_sel", flags).GetValue(app);
                 bool slidHome = (bool)splash.GetValue(app);
-                bool slid = downLatched && app.EditorHandleTaps == 0 && slidSel < 0 && !slidHome;
+                bool slid = downLatched && EditorTaps(app) == 0 && slidSel < 0 && !slidHome;
                 splash.SetValue(app, false);
                 t.GetField("_gloveVis", flags).SetValue(app, true);
                 t.GetField("_cueBranch", flags).SetValue(app, from);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
@@ -1672,9 +1672,9 @@ namespace FlockFive.Editor
                     Play = new Vector2(home.center.x, PhoneArea.H - home.center.y)
                 };
                 Method(t, "UpdateBody").Invoke(app, null);
-                bool freshHome = (bool)splash.GetValue(app) && app.EditorHandleTaps == 0;
+                bool freshHome = (bool)splash.GetValue(app) && EditorTaps(app) == 0;
                 Check("glove-slide-off-does-nothing", slid && freshHome,
-                    "latch " + downLatched + " slid " + slid + " fresh " + freshHome + " taps " + app.EditorHandleTaps);
+                    "latch " + downLatched + " slid " + slid + " fresh " + freshHome + " taps " + EditorTaps(app));
 
                 splash.SetValue(app, false);
                 garden.Cam = new GameObject("glove-cam-finger").AddComponent<Camera>();
@@ -1686,7 +1686,7 @@ namespace FlockFive.Editor
                 t.GetField("_sel", flags).SetValue(app, -1);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
@@ -1701,7 +1701,7 @@ namespace FlockFive.Editor
                 };
                 try { Method(t, "OnGUIBody").Invoke(app, null); }
                 catch (System.Exception) { }
-                bool otherFinger = app.EditorHandleTaps == 0
+                bool otherFinger = EditorTaps(app) == 0
                     && (int)t.GetField("_sel", flags).GetValue(app) < 0
                     && (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
                 bool focusDropped = false;
@@ -1728,7 +1728,7 @@ namespace FlockFive.Editor
                 t.GetField("_sel", flags).SetValue(app, -1);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
@@ -1752,10 +1752,10 @@ namespace FlockFive.Editor
                     On = true, Down = false, Up = true, Id = 5,
                     Play = new Vector2(px, PhoneArea.H - py)
                 };
-                int tapsBeforeUp = app.EditorHandleTaps;
+                int tapsBeforeUp = EditorTaps(app);
                 try { Method(t, "OnGUIBody").Invoke(app, null); }
                 catch (System.Exception) { }
-                bool splashUpQuiet = app.EditorHandleTaps == tapsBeforeUp;
+                bool splashUpQuiet = EditorTaps(app) == tapsBeforeUp;
                 Check("glove-showsplash-drops-stale-latch", splashLatched && splashDropped && splashUpQuiet,
                     "latched " + splashLatched + " dropped " + splashDropped + " quiet " + splashUpQuiet + splashEx);
             }
@@ -1843,6 +1843,46 @@ namespace FlockFive.Editor
                 .Invoke(app, new object[] { id });
         }
 
+        // Editor-only and internal members. The test assembly has no InternalsVisibleTo.
+        static System.Reflection.FieldInfo EditorField(string name)
+        {
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic
+                | BindingFlags.Instance | BindingFlags.Static;
+            var found = typeof(FlockFiveApp).GetField(name, flags);
+            if (found == null)
+                throw new System.MissingFieldException(typeof(FlockFiveApp).FullName, name);
+            return found;
+        }
+
+        static bool SnapArmed(object app)
+        {
+            return EditorField("EditorSnapRound").GetValue(app) != null;
+        }
+
+        static int EditorTaps(object app)
+        {
+            return (int)EditorField("EditorHandleTaps").GetValue(app);
+        }
+
+        static void SetEditorTaps(object app, int n)
+        {
+            EditorField("EditorHandleTaps").SetValue(app, n);
+        }
+
+        static string GloveExit()
+        {
+            object trace = EditorField("EditorGloveTraceNow").GetValue(null);
+            return (string)trace.GetType().GetField("Exit").GetValue(trace);
+        }
+
+        static int ReplayGlove(FlockFiveApp app, Vector2 down, int downId, Vector2 up, int upId)
+        {
+            var replay = typeof(FlockFiveApp).GetMethod("DevReplayGloveTap",
+                BindingFlags.Public | BindingFlags.Instance, null,
+                new[] { typeof(Vector2), typeof(int), typeof(Vector2), typeof(int) }, null);
+            return (int)replay.Invoke(app, new object[] { down, downId, up, upId });
+        }
+
         static void SetResumeUntil(float until)
         {
             typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, until);
@@ -1868,7 +1908,7 @@ namespace FlockFive.Editor
                 t.GetField("_glovePressId", flags).SetValue(app, 4);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(0f, 0f, 80f, 80f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 NoteHeld(app, 4);
                 bool swallowed = (bool)Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int))
@@ -1876,20 +1916,20 @@ namespace FlockFive.Editor
                 bool latch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
                 int sel = (int)t.GetField("_sel", flags).GetValue(app);
                 int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
-                bool route = swallowed && !latch && sel == -1 && moves == 0 && app.EditorHandleTaps == 0
-                    && FlockFiveApp.EditorGloveTraceNow.Exit == "resume";
+                bool route = swallowed && !latch && sel == -1 && moves == 0 && EditorTaps(app) == 0
+                    && GloveExit() == "resume";
                 t.GetField("_glovePressLatched", flags).SetValue(app, true);
                 t.GetField("_sel", flags).SetValue(app, 0);
                 Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero });
                 bool tapLatch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
                 int selAfter = (int)t.GetField("_sel", flags).GetValue(app);
                 int movesAfter = (int)t.GetField("_coachMoves", flags).GetValue(app);
-                bool tap = !tapLatch && selAfter == 0 && movesAfter == 0 && app.EditorHandleTaps == 0
-                    && FlockFiveApp.EditorGloveTraceNow.Exit == "resume";
+                bool tap = !tapLatch && selAfter == 0 && movesAfter == 0 && EditorTaps(app) == 0
+                    && GloveExit() == "resume";
                 Check("resume-swallow-blocks-glove", route && tap,
                     "route " + swallowed + " latch " + latch + " sel " + sel + "->" + selAfter
-                    + " moves " + moves + "->" + movesAfter + " taps " + app.EditorHandleTaps
-                    + " exit " + FlockFiveApp.EditorGloveTraceNow.Exit);
+                    + " moves " + moves + "->" + movesAfter + " taps " + EditorTaps(app)
+                    + " exit " + GloveExit());
             }
             finally
             {
@@ -1918,25 +1958,25 @@ namespace FlockFive.Editor
                 t.GetField("_coachMoves", flags).SetValue(app, 0);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 var point = new Vector2(px + PhoneArea.OffX, py);
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 NoteHeld(app, 4);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
                 bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
-                string downExit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                string downExit = GloveExit();
                 SetResumeUntil(float.NegativeInfinity);
                 bool up = (bool)glove.Invoke(app, new object[] { point, true, 4 });
                 int sel = (int)t.GetField("_sel", flags).GetValue(app);
                 int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
-                string upExit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                string upExit = GloveExit();
                 bool quiet = down && downExit == "resume" && !latched
                     && up && upExit == "swallowed-up"
-                    && app.EditorHandleTaps == 0 && sel == -1 && moves == 0;
+                    && EditorTaps(app) == 0 && sel == -1 && moves == 0;
                 Check("resume-up-after-swallowed-down-does-not-hop", quiet,
                     "down " + down + " " + downExit + " latch " + latched
-                    + " up " + up + " " + upExit + " taps " + app.EditorHandleTaps
+                    + " up " + up + " " + upExit + " taps " + EditorTaps(app)
                     + " sel " + sel + " moves " + moves);
             }
             finally
@@ -1973,19 +2013,19 @@ namespace FlockFive.Editor
                     t.GetField("_coachMoves", flags).SetValue(app, 0);
                     t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                     t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                    app.EditorHandleTaps = 0;
+                    SetEditorTaps(app, 0);
                     SetResumeUntil(AdPause.Unscaled + 0.35f);
                     NoteHeld(app, 4);
                     bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
                     SetResumeUntil(float.NegativeInfinity);
-                    return down && FlockFiveApp.EditorGloveTraceNow.Exit == "resume"
+                    return down && GloveExit() == "resume"
                         && !(bool)t.GetField("_glovePressLatched", flags).GetValue(app)
                         && Swallowed() == 4;
                 }
                 bool ReleaseAt(Vector2 at, int id, out string exit)
                 {
                     bool up = (bool)glove.Invoke(app, new object[] { at, true, id });
-                    exit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                    exit = GloveExit();
                     return up;
                 }
 
@@ -1996,10 +2036,10 @@ namespace FlockFive.Editor
                 int focusId = Swallowed();
                 bool focusUp = ReleaseAt(off, 4, out string focusExit);
                 bool focusCleared = focusArmed && focusId == int.MinValue
-                    && !focusUp && focusExit != "swallowed-up" && app.EditorHandleTaps == 0;
+                    && !focusUp && focusExit != "swallowed-up" && EditorTaps(app) == 0;
                 Check("resume-focus-loss-clears-swallow", focusCleared,
                     "focus " + focusArmed + " id " + focusId + " " + focusExit + focusEx
-                    + " taps " + app.EditorHandleTaps);
+                    + " taps " + EditorTaps(app));
 
                 bool homeArmed = Arm();
                 string homeEx = "";
@@ -2092,10 +2132,10 @@ namespace FlockFive.Editor
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
                 var down = new Vector2(px + PhoneArea.OffX, py);
                 var up = new Vector2(px + PhoneArea.OffX + 180f, py + 180f);
-                app.EditorHandleTaps = 0;
-                int hops = app.DevReplayGloveTap(down, 7, up, -1);
-                int hopsAgain = app.DevReplayGloveTap(down, 7, up, -1);
-                int hopsThird = app.DevReplayGloveTap(down, 7, up, -1);
+                SetEditorTaps(app, 0);
+                int hops = ReplayGlove(app, down, 7, up, -1);
+                int hopsAgain = ReplayGlove(app, down, 7, up, -1);
+                int hopsThird = ReplayGlove(app, down, 7, up, -1);
                 Check("player-touch-down-mouse-up-hops-once", hops == 1 && hopsAgain == 1 && hopsThird == 1,
                     "hops " + hops + " again " + hopsAgain + " third " + hopsThird);
                 var home = HudPlayRect(1);
@@ -2103,10 +2143,10 @@ namespace FlockFive.Editor
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(home.center.x - 36f, home.center.y - 36f, 72f, 72f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
                 t.GetField("_coachMoves", flags).SetValue(app, 1);
-                int overlap = app.DevReplayGloveTap(onHome, 7, onHome, -1);
+                int overlap = ReplayGlove(app, onHome, 7, onHome, -1);
                 t.GetField("_coachMoves", flags).SetValue(app, 2);
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                int overlapNext = app.DevReplayGloveTap(onHome, 8, onHome, -1);
+                int overlapNext = ReplayGlove(app, onHome, 8, onHome, -1);
                 Check("player-glove-on-hud-hops-at-later-steps", overlap == 1 && overlapNext == 1,
                     "step2 " + overlap + " step3 " + overlapNext);
             }
@@ -2138,20 +2178,20 @@ namespace FlockFive.Editor
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
                 var point = new Vector2(px + PhoneArea.OffX, py);
                 SetResumeUntil(AdPause.Unscaled + 0.10f);
-                app.EditorHandleTaps = 0;
-                int fresh = app.DevReplayGloveTap(point, 9, point, -1);
+                SetEditorTaps(app, 0);
+                int fresh = ReplayGlove(app, point, 9, point, -1);
                 NoteHeld(app, 4);
                 t.GetField("_glovePressLatched", flags).SetValue(app, true);
                 t.GetField("_glovePressId", flags).SetValue(app, 4);
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 bool heldUp = (bool)glove.Invoke(app, new object[] { point, true, 4 });
                 Check("resume-fresh-tap-hops-held-press-swallowed",
-                    fresh == 1 && heldUp && app.EditorHandleTaps == 0
-                    && FlockFiveApp.EditorGloveTraceNow.Exit == "resume",
-                    "fresh " + fresh + " held " + heldUp + " " + FlockFiveApp.EditorGloveTraceNow.Exit
-                    + " taps " + app.EditorHandleTaps);
+                    fresh == 1 && heldUp && EditorTaps(app) == 0
+                    && GloveExit() == "resume",
+                    "fresh " + fresh + " held " + heldUp + " " + GloveExit()
+                    + " taps " + EditorTaps(app));
             }
             finally
             {
@@ -2324,7 +2364,7 @@ namespace FlockFive.Editor
                 t.GetField("_sel", flags).SetValue(app, -1);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
@@ -2333,10 +2373,10 @@ namespace FlockFive.Editor
                 int id = (int)t.GetField("_gloveSwallowedId", flags).GetValue(app);
                 bool onHome = FlockFiveApp.HudBeatsGlove(home.center, home, new Rect(0f, 0f, 0f, 0f), new Rect(0f, 0f, 0f, 0f), false);
                 Check("resume-swallow-leaves-other-finger",
-                    onHome && down && !up && FlockFiveApp.EditorGloveTraceNow.Exit == "no-glove"
-                    && id == 4 && app.EditorHandleTaps == 0,
+                    onHome && down && !up && GloveExit() == "no-glove"
+                    && id == 4 && EditorTaps(app) == 0,
                     "down " + down + " up " + up + " "
-                    + FlockFiveApp.EditorGloveTraceNow.Exit + " id " + id);
+                    + GloveExit() + " id " + id);
             }
             finally
             {
@@ -2365,27 +2405,27 @@ namespace FlockFive.Editor
                 t.GetField("_cueBranch", flags).SetValue(app, 0);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 NoteHeld(app, 4);
                 bool down = (bool)glove.Invoke(app, new object[] { homePt, false, 4 });
-                string downExit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                string downExit = GloveExit();
                 int id = (int)t.GetField("_gloveSwallowedId", flags).GetValue(app);
                 SetResumeUntil(float.NegativeInfinity);
                 bool up = (bool)glove.Invoke(app, new object[] { homePt, true, 4 });
                 bool began = !down && downExit == "resume-hud" && id == 4
-                    && !up && FlockFiveApp.EditorGloveTraceNow.Exit == "hud" && app.EditorHandleTaps == 0;
+                    && !up && GloveExit() == "hud" && EditorTaps(app) == 0;
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 bool gloveDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
                 SetResumeUntil(float.NegativeInfinity);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 bool slide = (bool)glove.Invoke(app, new object[] { homePt, true, 4 });
-                bool slideEaten = gloveDown && slide && FlockFiveApp.EditorGloveTraceNow.Exit == "swallowed-up"
-                    && app.EditorHandleTaps == 0;
+                bool slideEaten = gloveDown && slide && GloveExit() == "swallowed-up"
+                    && EditorTaps(app) == 0;
                 Check("resume-button-press-still-fires", began && slideEaten,
                     "down " + down + " " + downExit + " up " + up
-                    + " slide " + slide + " " + FlockFiveApp.EditorGloveTraceNow.Exit);
+                    + " slide " + slide + " " + GloveExit());
             }
             finally
             {
@@ -2474,16 +2514,16 @@ namespace FlockFive.Editor
                 var screen = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
                 try { Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { screen }); }
                 catch (System.Exception) { }
-                bool restartLeftDown = app.EditorSnapRound == null
+                bool restartLeftDown = !SnapArmed(app)
                     && !(bool)t.GetField("_restarting", flags).GetValue(app)
                     && t.GetField("_restartAsk", flags).GetValue(app).ToString() == "None";
                 t.GetField("_gloveEdgeId", flags).SetValue(app, 11);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 string boardEx = "";
                 try { Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero }); }
                 catch (System.Exception ex) { boardEx = TapFault(ex); }
-                bool board = app.EditorHandleTaps == 1
-                    && FlockFiveApp.EditorGloveTraceNow.Exit != "resume";
+                bool board = EditorTaps(app) == 1
+                    && GloveExit() != "resume";
                 t.GetField("_splash", flags).SetValue(app, true);
                 var homeFace = t.GetField("_home", flags);
                 homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
@@ -2603,7 +2643,7 @@ namespace FlockFive.Editor
                 Event.current = down;
                 Method(t, "SwallowResumePointer").Invoke(null, null);
                 bool swallowed = down.type != EventType.MouseDown || down.type == EventType.Used;
-                bool going = app.EditorSnapRound != null
+                bool going = SnapArmed(app)
                     || (bool)t.GetField("_restarting", flags).GetValue(app)
                     || t.GetField("_restartAsk", flags).GetValue(app).ToString() != "None";
                 Check("resume-restart-stays-swallowed", swallowed && !going,
@@ -2746,14 +2786,14 @@ namespace FlockFive.Editor
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 bool inDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
-                string inExit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                string inExit = GloveExit();
                 int inArm = (int)t.GetField("_resumeHudArm", flags).GetValue(app);
                 bool inGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
                 SetResumeUntil(float.NegativeInfinity);
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 bool outDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
-                string outExit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                string outExit = GloveExit();
                 bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
                 bool outGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(0f, 0f, 4f, 4f));
@@ -2770,7 +2810,7 @@ namespace FlockFive.Editor
                     inDown && inLatch && inExit != "resume-hud" && inArm == 0 && !inGear
                     && outDown && latched && outExit != "resume-hud" && !outGear
                     && !missIn && !missOut && !stillGear && !beats
-                    && app.EditorHandleTaps == 0,
+                    && EditorTaps(app) == 0,
                     "in " + inDown + " " + inExit + " arm " + inArm
                     + " out " + outDown + " " + outExit + " latch " + latched
                     + " miss " + missIn + "/" + missOut + " gear " + inGear + "/" + outGear
@@ -2839,7 +2879,7 @@ namespace FlockFive.Editor
                     t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
                     t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
                     t.GetField("_glovePressLatched", flags).SetValue(app, false);
-                    app.EditorHandleTaps = 0;
+                    SetEditorTaps(app, 0);
                 }
                 bool Arm()
                 {
@@ -2848,7 +2888,7 @@ namespace FlockFive.Editor
                     NoteHeld(app, 4);
                     bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
                     SetResumeUntil(float.NegativeInfinity);
-                    return down && FlockFiveApp.EditorGloveTraceNow.Exit == "resume" && Swallowed() == 4;
+                    return down && GloveExit() == "resume" && Swallowed() == 4;
                 }
 
                 bool armedFocus = Arm();
@@ -2859,12 +2899,12 @@ namespace FlockFive.Editor
                 SetResumeUntil(float.NegativeInfinity);
                 bool focusUp = (bool)glove.Invoke(app, new object[] { point, true, 4 });
                 bool focusKeeps = armedFocus && afterFocus == 4 && focusUp
-                    && FlockFiveApp.EditorGloveTraceNow.Exit == "swallowed-up"
-                    && app.EditorHandleTaps == 0;
+                    && GloveExit() == "swallowed-up"
+                    && EditorTaps(app) == 0;
                 Check("resume-focus-gain-keeps-swallowed-id", focusKeeps,
                     "armed " + armedFocus + " id " + afterFocus + " up " + focusUp
-                    + " " + FlockFiveApp.EditorGloveTraceNow.Exit + focusEx
-                    + " taps " + app.EditorHandleTaps);
+                    + " " + GloveExit() + focusEx
+                    + " taps " + EditorTaps(app));
 
                 Pose();
                 t.GetField("_glovePressLatched", flags).SetValue(app, true);
@@ -2882,53 +2922,53 @@ namespace FlockFive.Editor
                 Pose();
                 idField.SetValue(app, held);
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 bool pauseUp = (bool)glove.Invoke(app, new object[] { point, true, 4 });
                 bool heldQuiet = held == 4 && pauseUp
-                    && FlockFiveApp.EditorGloveTraceNow.Exit == "swallowed-up"
-                    && app.EditorHandleTaps == 0
+                    && GloveExit() == "swallowed-up"
+                    && EditorTaps(app) == 0
                     && (int)t.GetField("_sel", flags).GetValue(app) == -1;
                 Check("resume-held-through-pause-does-not-hop", heldQuiet,
-                    "id " + held + " up " + pauseUp + " " + FlockFiveApp.EditorGloveTraceNow.Exit
-                    + " taps " + app.EditorHandleTaps + pauseEx);
+                    "id " + held + " up " + pauseUp + " " + GloveExit()
+                    + " taps " + EditorTaps(app) + pauseEx);
 
                 bool armedTap = Arm();
                 t.GetField("_gloveEdgeId", flags).SetValue(app, 4);
                 t.GetField("_sel", flags).SetValue(app, 0);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero });
-                bool tapAte = armedTap && app.EditorHandleTaps == 0
+                bool tapAte = armedTap && EditorTaps(app) == 0
                     && (int)t.GetField("_sel", flags).GetValue(app) == 0
                     && Swallowed() == int.MinValue
-                    && FlockFiveApp.EditorGloveTraceNow.Exit == "swallowed-up";
+                    && GloveExit() == "swallowed-up";
                 Check("resume-handletap-gates-swallowed-id", tapAte,
-                    "armed " + armedTap + " taps " + app.EditorHandleTaps
+                    "armed " + armedTap + " taps " + EditorTaps(app)
                     + " sel " + t.GetField("_sel", flags).GetValue(app)
-                    + " id " + Swallowed() + " " + FlockFiveApp.EditorGloveTraceNow.Exit);
+                    + " id " + Swallowed() + " " + GloveExit());
 
                 bool armedCancel = Arm();
                 Method(t, "NoteSwallowedCancel", typeof(int)).Invoke(app, new object[] { 9 });
                 int otherCancel = Swallowed();
                 Method(t, "NoteSwallowedCancel", typeof(int)).Invoke(app, new object[] { 4 });
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 t.GetField("_sel", flags).SetValue(app, -1);
                 bool mouseUp = (bool)glove.Invoke(app, new object[] { point, true, -1 });
                 bool cancelQuiet = armedCancel && otherCancel == 4 && Swallowed() == int.MinValue
-                    && mouseUp && FlockFiveApp.EditorGloveTraceNow.Exit == "cancel-frame"
-                    && app.EditorHandleTaps == 0
+                    && mouseUp && GloveExit() == "cancel-frame"
+                    && EditorTaps(app) == 0
                     && (int)t.GetField("_sel", flags).GetValue(app) == -1;
                 t.GetField("_board", flags).SetValue(app, null);
                 t.GetField("_gloveEdgeId", flags).SetValue(app, 5);
-                app.EditorHandleTaps = 0;
+                SetEditorTaps(app, 0);
                 Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero });
-                bool otherOpen = FlockFiveApp.EditorGloveTraceNow.Exit == "board" && app.EditorHandleTaps == 1;
+                bool otherOpen = GloveExit() == "board" && EditorTaps(app) == 1;
                 t.GetField("_gloveCancelFrame", flags).SetValue(app, -1);
                 Check("resume-cancel-leaves-other-finger", otherOpen,
-                    "exit " + FlockFiveApp.EditorGloveTraceNow.Exit + " taps " + app.EditorHandleTaps);
+                    "exit " + GloveExit() + " taps " + EditorTaps(app));
                 Check("resume-cancel-and-mouse-up-does-not-hop", cancelQuiet,
                     "armed " + armedCancel + " other " + otherCancel + " up " + mouseUp
-                    + " " + FlockFiveApp.EditorGloveTraceNow.Exit
-                    + " taps " + app.EditorHandleTaps);
+                    + " " + GloveExit()
+                    + " taps " + EditorTaps(app));
             }
             finally
             {
