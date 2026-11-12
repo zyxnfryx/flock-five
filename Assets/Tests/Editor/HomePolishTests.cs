@@ -123,6 +123,7 @@ namespace FlockFive.Editor
             Gate("CheckScheduledRestore", () => CheckScheduledRestore(Check));
             Gate("CheckScheduleHousekeeping", () => CheckScheduleHousekeeping(Check));
             Gate("CheckRebootHolds", () => CheckRebootHolds(Check));
+            Gate("CheckSoftCut", () => CheckSoftCut(Check));
             Gate("CheckGardenGlove", () => CheckGardenGlove(Check));
             Gate("CheckUpgradeStack", () => CheckUpgradeStack(Check));
             Gate("CheckPlayerGlove", () => CheckPlayerGlove(Check));
@@ -4000,6 +4001,81 @@ namespace FlockFive.Editor
                 at.Append(e.GetType().Name);
             }
             return "current=" + current + " at=" + at;
+        }
+
+        static void CheckSoftCut(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("soft-cut");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.4f);
+                var bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("soft-bed", 44100);
+                bed.loop = true;
+                AudioGuard.Play(bed);
+                var mate = desk.AddLoopForTests(true);
+                mate.clip = ProbeClip("soft-mate", 44100);
+                mate.loop = true;
+                mate.volume = 0f;
+                var set = Method(typeof(MixDesk), "SetStem", typeof(int), typeof(float));
+                const float mix = 0.4f;
+                set.Invoke(desk, new object[] { 0, mix });
+                float expect = mix * desk.FreezeDuck * desk.SoftCutForTests * AudioGuard.MusicScale;
+                float full = bed.volume;
+                int plays = AudioGuard.PlayCalls;
+                int started = desk.BootPlaceForTests();
+                bool armed = started == 2 && desk.SoftCutLiveForTests
+                    && desk.SoftCutSchedulesForTests == 0
+                    && !AudioGuard.ScheduledAt(bed, out _);
+                float frame = 1f / 60f;
+                float prev = full;
+                bool down = full > prev * 0.5f;
+                for (int i = 0; i < 4; i++)
+                {
+                    desk.StepSoftCutForTests(frame);
+                    set.Invoke(desk, new object[] { 0, mix });
+                    if (!(bed.volume < prev - 0.0001f)) down = false;
+                    prev = bed.volume;
+                }
+                bool stillOpen = desk.SoftCutLiveForTests && desk.SoftCutSchedulesForTests == 0
+                    && AudioGuard.PlayCalls == plays;
+                int again = desk.BootPlaceForTests();
+                bool noDouble = again == started && desk.SoftCutSchedulesForTests == 0
+                    && !AudioGuard.ScheduledAt(bed, out _) && AudioGuard.PlayCalls == plays;
+                desk.StepSoftCutForTests(frame);
+                float floor = desk.SoftCutFloorForTests;
+                set.Invoke(desk, new object[] { 0, mix });
+                float after = bed.volume;
+                bool done = !desk.SoftCutLiveForTests
+                    && desk.SoftCutSchedulesForTests == 1
+                    && Mathf.Abs(floor) < 0.0001f
+                    && Mathf.Abs(desk.SoftCutForTests - 1f) < 0.0001f
+                    && Mathf.Abs(after - expect) < 0.0001f
+                    && AudioGuard.PlayCalls == plays
+                    && AudioGuard.ScheduledAt(bed, out _);
+                try { Check("soft-cut-fades-through-setstem", armed && down && stillOpen && done,
+                    "armed " + armed + " down " + down + " open " + stillOpen
+                    + " floor " + floor.ToString("0.000") + " after " + after.ToString("0.000")
+                    + " expect " + expect.ToString("0.000")
+                    + " gain " + desk.SoftCutForTests.ToString("0.000")
+                    + " schedules " + desk.SoftCutSchedulesForTests
+                    + " plays " + AudioGuard.PlayCalls); }
+                catch (System.Exception hopEx) { Check("soft-cut-fades-through-setstem", false, ThrowText(hopEx)); }
+                try { Check("soft-cut-second-start-does-not-reschedule", noDouble && desk.SoftCutSchedulesForTests == 1,
+                    "again " + again + " schedules " + desk.SoftCutSchedulesForTests
+                    + " plays " + AudioGuard.PlayCalls); }
+                catch (System.Exception hopEx) { Check("soft-cut-second-start-does-not-reschedule", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckRebootHolds(System.Action<string, bool, string> Check)

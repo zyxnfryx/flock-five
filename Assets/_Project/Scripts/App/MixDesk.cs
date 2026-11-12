@@ -33,6 +33,13 @@ namespace FlockFive
         // can never leave it down: whenever no tutorial freeze holds, it slews back to 1.
         public const float FreezeFadeSeconds = 0.6f;
         float _freezeDuck = 1f;
+        // 1 while the beds are up. A partial reboot eases this to 0 so LateUpdate
+        // carries the fade, then the schedule runs and it returns to 1.
+        float _softCut = 1f;
+        bool _softCutLive;
+        List<AudioSource> _softCutReady;
+        int _softCutSchedules;
+        float _softCutFloor;
         float[] _stemBase;
         bool _freezeThrough;
         float _freezeLast = -1f;
@@ -526,7 +533,7 @@ namespace FlockFive
             for (int i = 0; i < _stems.Length && i < _stemBase.Length; i++)
             {
                 var a = _stems[i];
-                if (a != null) a.volume = _stemBase[i] * _freezeDuck * user;
+                if (a != null) a.volume = _stemBase[i] * _freezeDuck * _softCut * user;
             }
         }
 
@@ -1046,10 +1053,36 @@ namespace FlockFive
             return _badgerMix;
         }
 
+        // Long enough for four frames at 60 fps, short enough to stay a cut.
+        public const float SoftCutSeconds = 0.08f;
+
+        public float SoftCutForTests => _softCut;
+        public bool SoftCutLiveForTests => _softCutLive;
+        public int SoftCutSchedulesForTests => _softCutSchedules;
+        public float SoftCutFloorForTests => _softCutFloor;
+
+        // Edit mode has no coroutine tick. Tests advance unscaled time themselves.
+        public void StepSoftCutForTests(float unscaledDt) => AdvanceSoftCut(unscaledDt);
+
+        bool StemAudible(AudioSource a)
+        {
+            if (a == null) return false;
+            if (a.isPlaying) return true;
+#if UNITY_EDITOR
+            // Edit mode often leaves isPlaying false after Play(). A started loop
+            // that still has level is the voice a reboot would cut.
+            if (!Application.isPlaying && AudioGuard.WasStarted(a) && a.volume > 0.001f)
+                return true;
+#endif
+            return false;
+        }
+
         // Garden, the silent dawn/mid/last copies, combo, and rain. Splash stays
         // off until its welcome, and the badger voices wait for the contest.
         int StartPlaceBeds()
         {
+            if (_softCutLive)
+                return _softCutReady != null ? _softCutReady.Count : 0;
             if (_stems == null) return 0;
             var ready = new List<AudioSource>();
             int[] place = { 0, 1, 2, 3, 5 };
@@ -1061,51 +1094,60 @@ namespace FlockFive
                 var a = _stems[i];
                 if (a == null || a.clip == null) continue;
                 ready.Add(a);
-                if (a.isPlaying) audible++;
+                if (StemAudible(a)) audible++;
             }
             // A partial reboot is the only case that cuts a voice the player can
             // hear. All-silent and all-running batches schedule immediately.
             bool partial = audible > 0 && audible < ready.Count;
-            if (partial && Application.isPlaying && isActiveAndEnabled)
-            {
-                StartCoroutine(SoftCutPlaceBeds(ready));
-                return ready.Count;
-            }
-            return AudioGuard.ScheduleStemsTogether(ready);
+            if (!partial)
+                return AudioGuard.ScheduleStemsTogether(ready);
+            _softCutLive = true;
+            _softCut = 1f;
+            _softCutReady = ready;
+            if (Application.isPlaying && isActiveAndEnabled)
+                StartCoroutine(SoftCutPlaceBeds());
+            return ready.Count;
         }
 
-        // About 20 ms down to silence, then the batch Stop inside the schedule.
-        // The volume comes back before the scheduled start, so the cut does not click
-        // and the new lock is not mute.
-        IEnumerator SoftCutPlaceBeds(List<AudioSource> ready)
+        IEnumerator SoftCutPlaceBeds()
         {
-            const float dur = 0.02f;
-            var from = new float[ready.Count];
-            var cut = new bool[ready.Count];
-            for (int i = 0; i < ready.Count; i++)
+            while (_softCutLive)
             {
-                var a = ready[i];
-                if (a == null) continue;
-                from[i] = a.volume;
-                cut[i] = a.isPlaying;
-            }
-            float t = 0f;
-            while (t < dur)
-            {
-                t += Time.unscaledDeltaTime;
-                float u = dur > 0f ? Mathf.Clamp01(t / dur) : 1f;
-                for (int i = 0; i < ready.Count; i++)
-                {
-                    if (!cut[i] || ready[i] == null) continue;
-                    ready[i].volume = from[i] * (1f - u);
-                }
+                AdvanceSoftCut(Time.unscaledDeltaTime);
+                if (!_softCutLive) yield break;
                 yield return null;
             }
-            AudioGuard.ScheduleStemsTogether(ready);
-            for (int i = 0; i < ready.Count; i++)
+        }
+
+        void AdvanceSoftCut(float dt)
+        {
+            if (!_softCutLive) return;
+            if (dt < 0f) dt = 0f;
+            float pace = SoftCutSeconds > 0f ? dt / SoftCutSeconds : 1f;
+            _softCut = Mathf.MoveTowards(_softCut, 0f, pace);
+            ApplySoftCutGain();
+            if (_softCut > 0f) return;
+            _softCut = 0f;
+            ApplySoftCutGain();
+            _softCutFloor = _stems != null && _stems.Length > 0 && _stems[0] != null ? _stems[0].volume : 0f;
+            var ready = _softCutReady;
+            _softCutSchedules++;
+            if (ready != null)
+                AudioGuard.ScheduleStemsTogether(ready);
+            _softCut = 1f;
+            _softCutLive = false;
+            _softCutReady = null;
+            ApplySoftCutGain();
+        }
+
+        void ApplySoftCutGain()
+        {
+            if (_stems == null || _stemBase == null) return;
+            for (int i = 0; i < _stems.Length && i < _stemBase.Length; i++)
             {
-                if (ready[i] == null) continue;
-                ready[i].volume = from[i];
+                var a = _stems[i];
+                if (a == null) continue;
+                a.volume = _stemBase[i] * _freezeDuck * _softCut * AudioGuard.MusicScale;
             }
         }
 
@@ -1240,7 +1282,7 @@ namespace FlockFive
             for (int i = 0; i < _stems.Length && i < _stemBase.Length; i++)
             {
                 var a = _stems[i];
-                if (a != null) a.volume = _stemBase[i] * _freezeDuck * AudioGuard.MusicScale;
+                if (a != null) a.volume = _stemBase[i] * _freezeDuck * _softCut * AudioGuard.MusicScale;
             }
         }
 
@@ -1342,7 +1384,9 @@ namespace FlockFive
                 return;
             }
             // MusicScale folds in MasterGain: slider, duck, and ad silence.
-            a.volume = vol * _freezeDuck * AudioGuard.MusicScale;
+            // _softCut is the partial-reboot fade. LateUpdate calls SetStem every
+            // frame, so the ramp has to live here or the mix writes over it.
+            a.volume = vol * _freezeDuck * _softCut * AudioGuard.MusicScale;
         }
 
         static int LoopN() => Mathf.RoundToInt(NBars * 4f * Beat * Rate);
