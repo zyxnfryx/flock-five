@@ -109,6 +109,7 @@ namespace FlockFive.Editor
             CheckHop2KeepsDestination(Check);
             CheckResumeSwallow(Check);
             CheckResumeUpAfterSwallow(Check);
+            CheckSwallowedReleaseScope(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1915,6 +1916,105 @@ namespace FlockFive.Editor
             finally
             {
                 SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckSwallowedReleaseScope(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("swallow-scope");
+            var t = typeof(FlockFiveApp);
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                var point = new Vector2(px + PhoneArea.OffX, py);
+                var off = new Vector2(-1000f, -1000f);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var idField = t.GetField("_gloveSwallowedId", flags);
+                int Swallowed() => (int)idField.GetValue(app);
+                bool Arm()
+                {
+                    t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                    t.GetField("_splash", flags).SetValue(app, false);
+                    t.GetField("_gloveVis", flags).SetValue(app, true);
+                    t.GetField("_cueBranch", flags).SetValue(app, 0);
+                    t.GetField("_cueForce", flags).SetValue(app, true);
+                    t.GetField("_sel", flags).SetValue(app, -1);
+                    t.GetField("_coachMoves", flags).SetValue(app, 0);
+                    t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                    t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                    app.EditorHandleTaps = 0;
+                    SetResumeUntil(AdPause.Unscaled + 0.35f);
+                    bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                    SetResumeUntil(float.NegativeInfinity);
+                    return down && FlockFiveApp.EditorGloveTraceNow.Exit == "resume"
+                        && !(bool)t.GetField("_glovePressLatched", flags).GetValue(app)
+                        && Swallowed() == 4;
+                }
+                bool Release(int id, out string exit)
+                {
+                    bool up = (bool)glove.Invoke(app, new object[] { off, true, id });
+                    exit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                    return up;
+                }
+
+                bool armed = Arm();
+                bool otherUp = Release(5, out string otherExit);
+                bool other = armed && !otherUp && otherExit == "no-glove" && Swallowed() == 4
+                    && app.EditorHandleTaps == 0;
+                Check("resume-swallow-leaves-other-finger", other,
+                    "armed " + armed + " up " + otherUp + " " + otherExit + " id " + Swallowed()
+                    + " taps " + app.EditorHandleTaps);
+
+                bool pauseArmed = Arm();
+                string pauseEx = "";
+                try { Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { true }); }
+                catch (System.Exception ex) { pauseEx = TapFault(ex); }
+                int pauseId = Swallowed();
+                bool pauseUp = Release(4, out string pauseExit);
+                bool focusArmed = Arm();
+                string focusEx = "";
+                try { Method(t, "OnApplicationFocus", typeof(bool)).Invoke(app, new object[] { false }); }
+                catch (System.Exception ex) { focusEx = TapFault(ex); }
+                int focusId = Swallowed();
+                bool focusUp = Release(4, out string focusExit);
+                bool cleared = pauseArmed && focusArmed
+                    && pauseId == int.MinValue && focusId == int.MinValue
+                    && !pauseUp && pauseExit != "swallowed-up"
+                    && !focusUp && focusExit != "swallowed-up"
+                    && app.EditorHandleTaps == 0;
+                Check("resume-swallow-clears-on-pause-and-focus", cleared,
+                    "pause " + pauseArmed + " id " + pauseId + " " + pauseExit + pauseEx
+                    + " focus " + focusArmed + " id " + focusId + " " + focusExit + focusEx
+                    + " taps " + app.EditorHandleTaps);
+
+                bool homeArmed = Arm();
+                string homeEx = "";
+                try { Method(t, "ShowSplash").Invoke(app, null); }
+                catch (System.Exception ex) { homeEx = TapFault(ex); }
+                int homeId = Swallowed();
+                bool homeUp = Release(4, out string homeExit);
+                bool loadArmed = Arm();
+                string loadEx = "";
+                try { Method(t, "Load", typeof(int)).Invoke(app, new object[] { 0 }); }
+                catch (System.Exception ex) { loadEx = TapFault(ex); }
+                int loadId = Swallowed();
+                bool loadUp = Release(4, out string loadExit);
+                bool left = homeArmed && loadArmed && homeId == int.MinValue && loadId == int.MinValue
+                    && !homeUp && homeExit != "swallowed-up"
+                    && !loadUp && loadExit != "swallowed-up";
+                Check("resume-swallow-clears-on-home-and-load", left,
+                    "home " + homeArmed + " id " + homeId + " " + homeExit + homeEx
+                    + " load " + loadArmed + " id " + loadId + " " + loadExit + loadEx);
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                GamePause.Reset();
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
