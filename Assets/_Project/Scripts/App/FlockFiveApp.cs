@@ -3740,6 +3740,7 @@ namespace FlockFive
             {
                 NoteAppResume();
                 SyncDailyDay();
+                ForgetLevelPointer();
             }
             else NoteAppBackground();
             // After the background bookkeeping, so a heal cannot leave the home gate armed.
@@ -6925,12 +6926,22 @@ namespace FlockFive
             NoteFreshPress();
             if (_app != null && _app._splash && _app._homeGate.Active)
             {
-                int id = PressIdNow();
-                bool down = id != int.MinValue;
+                int pressId = PressIdNow();
+                bool down = pressId != int.MinValue;
                 int upId;
                 bool up = PressReleased(out upId);
-                if (up) id = HomePointerId(down ? id : -1, true, upId);
-                else if (!down) id = -1;
+                int id = down ? pressId : -1;
+                if (up)
+                {
+                    // The finger that left the level still clears the gate when another
+                    // press is reported on the same call. HomePointerId keeps a
+                    // nonnegative press and would leave that release unread.
+                    bool carryUp = _app._homeGate.CarryHeld
+                        && (upId == _app._homeGate.CarryId || (_app._homeGate.CarryId < 0 && upId < 0));
+                    id = carryUp ? upId : HomePointerId(down ? pressId : -1, true, upId);
+                }
+                else if (!down)
+                    id = -1;
                 if (!HomeGateAllows(ref _app._homeGate, down, up, id))
                     return false;
             }
@@ -18253,12 +18264,14 @@ namespace FlockFive
             if (_home != HomeFace.Hive)
             {
                 _gloveVis = false;
+                DropGlovePress();
                 _albumTutorAimOk = false;
                 return false;
             }
             if (!AlbumPageSettled() || !TutorialGateClear())
             {
                 _gloveVis = false;
+                DropGlovePress();
                 if (OtherTutorialLive()) return false;
                 return true;
             }
@@ -18266,6 +18279,7 @@ namespace FlockFive
             {
                 AdvanceAlbumTutor(2);
                 _gloveVis = false;
+                DropGlovePress();
                 return true;
             }
             // Flip done → honeycombs-by-rarity step (stay on the open back).
@@ -18273,17 +18287,20 @@ namespace FlockFive
             {
                 AdvanceAlbumTutor(3);
                 _gloveVis = false;
+                DropGlovePress();
                 return true;
             }
             if (_albumTutorStep == 2 && _hiveInspect < 0)
             {
                 AdvanceAlbumTutor(1);
                 _gloveVis = false;
+                DropGlovePress();
                 return true;
             }
             if (_albumTutorStep == 2 && !AlbumInspectReady())
             {
                 _gloveVis = false;
+                DropGlovePress();
                 return true;
             }
             // Honey step: any put-away advances to the page lesson.
@@ -18293,17 +18310,20 @@ namespace FlockFive
                 {
                     AdvanceAlbumTutor(AlbumStepPage);
                     _gloveVis = false;
+                    DropGlovePress();
                     return true;
                 }
                 if (!AlbumInspectReady())
                 {
                     _gloveVis = false;
+                    DropGlovePress();
                     return true;
                 }
             }
             if (_albumTutorStep >= AlbumStepPage && _hiveInspect >= 0)
             {
                 _gloveVis = false;
+                DropGlovePress();
                 return true;
             }
             Vector2 aim = _albumTutorAim;
@@ -18366,24 +18386,28 @@ namespace FlockFive
             if (_home != HomeFace.Hive || !Hive.UpgradesUnlocked)
             {
                 _gloveVis = false;
+                DropGlovePress();
                 _upgradeTutorAimOk = false;
                 return false;
             }
             if (!AlbumPageSettled() || !TutorialGateClear())
             {
                 _gloveVis = false;
+                DropGlovePress();
                 if (OtherTutorialLive()) return false;
                 return true;
             }
             if (_hiveInspect < 0 || !AlbumInspectReady() || Hive.CountOfSlot(_hiveInspect) <= 0)
             {
                 _gloveVis = false;
+                DropGlovePress();
                 _upgradeTutorAimOk = false;
                 return true;
             }
             if (_upgradeBtnR.width < 8f)
             {
                 _gloveVis = false;
+                DropGlovePress();
                 _upgradeTutorAimOk = false;
                 return true;
             }

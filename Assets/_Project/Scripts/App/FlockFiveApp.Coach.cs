@@ -509,6 +509,7 @@ namespace FlockFive
             _cueSpoken = null;
             _cueBranch = -1;
             _gloveVis = false;
+            DropGlovePress();
             GloveVeilReset();
             _adHand = false;
             _pestCue = 0;
@@ -682,7 +683,6 @@ namespace FlockFive
             _cueLine = null;
             _cueBranch = -1;
             _gloveVis = false;
-            DropGlovePress();
         }
 
         // Same-frame hide. SnapRound and the splash set this before the glove draws.
@@ -704,6 +704,7 @@ namespace FlockFive
             _cueSpoken = null;
             GloveVeilReset();
             CoachClearCue();
+            DropGlovePress();
             CoachHideGlow();
             CoachHideRipples();
             _pestCue = 0;
@@ -1067,6 +1068,7 @@ namespace FlockFive
                     _cueHand = true;
                     _cueFreeze = true;
                     _cueBranch = next;
+                    _gloveVis = true;
                 }
                 else CoachHideGlow();
                 return;
@@ -1084,6 +1086,7 @@ namespace FlockFive
                 _cueHand = true;
                 _cueForce = true;
                 _cueBranch = _coachFrom;
+                _gloveVis = true;
                 CueLine("Tap a branch to pick up its top birds.");
                 return;
             }
@@ -1106,6 +1109,7 @@ namespace FlockFive
             _cueHand = true;
             _cueForce = true;
             _cueBranch = dest;
+            _gloveVis = true;
             CueLine(LevelData.Index == 0 ? CaptionLayout.FirstClearLine : CaptionLayout.CoachPlaceLine);
         }
 
@@ -1747,6 +1751,7 @@ namespace FlockFive
             _cueLine = null;
             _cueBranch = -1;
             _gloveVis = false;
+            DropGlovePress();
             CoachHideGlow();
             CoachHideRipples();
         }
@@ -1756,6 +1761,7 @@ namespace FlockFive
             if (!_adHand) return;
             _adHand = false;
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             NoteLessonDismiss(CoachStep.AdHand);
         }
@@ -2081,6 +2087,7 @@ namespace FlockFive
                     _gloveHidStep = -1;
                     GloveVeilReset();
                     _gloveVis = false;
+                    DropGlovePress();
                     GloveReturns++;
                 }
                 return;
@@ -8205,6 +8212,7 @@ namespace FlockFive
             {
                 _cueHand = false;
                 _gloveVis = false;
+                DropGlovePress();
                 _leafKeepOn = false;
                 CoachHideGlow();
                 return;
@@ -8224,6 +8232,7 @@ namespace FlockFive
                 _tutorSeatOn = false;
                 _leafSeatOn = false;
                 _gloveVis = false;
+                DropGlovePress();
                 _cueBranch = b;
                 _leafKeepOn = false;
                 HideLeafGlove();
@@ -8663,6 +8672,7 @@ namespace FlockFive
             if (!PestAim(out var gui, out var world))
             {
                 _gloveVis = false;
+                DropGlovePress();
                 CoachHideGlow();
                 return;
             }
