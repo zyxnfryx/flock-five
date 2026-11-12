@@ -114,12 +114,10 @@ namespace FlockFive
             if (_dailyOpen) cover |= HomeCover.DailyCard;
             if (_settingsOpen) cover |= HomeCover.Settings;
             bool forced = false;
-            if (home)
+            if (home && !HomeChainOpen())
             {
-                // Rail gloves, the Daily Claim step, and the adopt look step.
+                // Rail gloves still take the gear. The post-level chain does not.
                 if (HomeStepRail() >= 0) forced = true;
-                // The post-level chain (a bird followed you, naming, Tap Daily)
-                // keeps the gear and Play tappable. The captions sit clear of them.
                 if (ForcedGloveUp()) forced = true;
             }
             return new HomeGearQuery { Home = home, Cover = cover, ForcedTap = forced };
@@ -222,6 +220,21 @@ namespace FlockFive
             if (!HomeGear.AcceptsTap(q)) return false;
             var r = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             return r.width >= 2f && r.Contains(p);
+        }
+
+        // The post-level captions leave Play alone, the same way they leave the gear.
+        bool PlayExempt(Vector2 p)
+        {
+            if (!HomeChainOpen() || _home != HomeFace.Splash) return false;
+            var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            return level.width >= 2f && level.Contains(p);
+        }
+
+        bool PlayRect(Rect button)
+        {
+            var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            if (level.width < 2f || button.width < 2f) return false;
+            return level.Contains(button.center) || button.Contains(level.center);
         }
 
         // Sound On/Off and the master slider share the first row. Privacy, then

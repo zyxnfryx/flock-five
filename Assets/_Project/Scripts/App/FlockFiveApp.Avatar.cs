@@ -272,11 +272,20 @@ namespace FlockFive
             return false;
         }
 
-        // Daily, hive, and poker wait until the adoption scene has finished.
+        // Daily, hive, and poker wait until the bird, then its name, have finished.
+        // One caption at a time: greet, naming, then Tap Daily.
         bool AdoptHoldsQueue()
         {
+            if (_avatarRename) return true;
             if (_adoptLive || _adoptStep != AdoptStep.Off) return true;
             return _adoptOwed && !AvatarAdopted() && LevelData.NextPlay >= 1;
+        }
+
+        // The post-level captions. Gear and Play stay tappable through all three.
+        bool HomeChainOpen()
+        {
+            if (_avatarRename || _adoptLive || _adoptStep != AdoptStep.Off) return true;
+            return _dailyIntro || _dailyIntroLive;
         }
 
         bool BirdSettledOnBranch() => _birdSettledOnBranch;

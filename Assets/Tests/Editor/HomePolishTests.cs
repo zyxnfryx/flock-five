@@ -123,8 +123,10 @@ namespace FlockFive.Editor
             CheckPointerIdExact(Check);
             CheckPlayerGloveHop(Check);
             CheckResumeFreshAndHeld(Check);
+            CheckFreshResumeSurfaces(Check);
             CheckRestartClearsCaptions(Check);
             CheckHomeControlsAtSizes(Check);
+            CheckHomeChainOneAtATime(Check);
             CheckPauseKeepsHeldId(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
@@ -2093,8 +2095,20 @@ namespace FlockFive.Editor
                 app.EditorHandleTaps = 0;
                 int hops = app.DevReplayGloveTap(down, 7, up, -1);
                 int hopsAgain = app.DevReplayGloveTap(down, 7, up, -1);
-                Check("player-touch-down-mouse-up-hops-once", hops == 1 && hopsAgain == 1,
-                    "hops " + hops + " again " + hopsAgain);
+                int hopsThird = app.DevReplayGloveTap(down, 7, up, -1);
+                Check("player-touch-down-mouse-up-hops-once", hops == 1 && hopsAgain == 1 && hopsThird == 1,
+                    "hops " + hops + " again " + hopsAgain + " third " + hopsThird);
+                var home = HudPlayRect(1);
+                var onHome = HudWindow(home);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(home.center.x - 36f, home.center.y - 36f, 72f, 72f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                t.GetField("_coachMoves", flags).SetValue(app, 1);
+                int overlap = app.DevReplayGloveTap(onHome, 7, onHome, -1);
+                t.GetField("_coachMoves", flags).SetValue(app, 2);
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                int overlapNext = app.DevReplayGloveTap(onHome, 8, onHome, -1);
+                Check("player-glove-on-hud-hops-at-later-steps", overlap == 1 && overlapNext == 1,
+                    "step2 " + overlap + " step3 " + overlapNext);
             }
             finally
             {
@@ -2152,33 +2166,68 @@ namespace FlockFive.Editor
             var key = "flockfive.coach.done";
             bool had = PlayerPrefs.HasKey(key);
             int keep = PlayerPrefs.GetInt(key, 0);
+            bool hadKit = PlayerPrefs.HasKey(RuleTips.KitKey);
+            int kitKeep = PlayerPrefs.GetInt(RuleTips.KitKey, 0);
             try
             {
                 PlayerPrefs.DeleteKey(key);
+                PlayerPrefs.DeleteKey(RuleTips.KitKey);
                 LevelData.Open(0);
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance;
-                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                var board = LevelData.Open(0);
+                t.GetField("_board", flags).SetValue(app, board);
+                bool crowns = RearmFromCaption(app, t, flags, 1, RuleTips.KitLine);
+                bool nice = RearmFromCaption(app, t, flags, 2, RuleTips.FeederLine);
+                if (board.Branches.Count > 0 && board.Branches[0].Birds.Count > 0)
+                {
+                    var bird = board.Branches[0].Birds[0];
+                    board.Branches[0].Birds[0] = new Bird(bird.Color, BirdKit.Crown);
+                }
                 t.GetField("_ruleTip", flags).SetValue(app, System.Enum.ToObject(
-                    t.GetField("_ruleTip", flags).FieldType, 1));
-                t.GetField("_ruleTurned", flags).SetValue(app, true);
-                t.GetField("_cueLine", flags).SetValue(app, "Crowns go with crowns,\nbows with bows!\nA set is five matching birds.");
+                    t.GetField("_ruleTip", flags).FieldType, 0));
+                t.GetField("_ruleTurned", flags).SetValue(app, false);
+                t.GetField("_cueLine", flags).SetValue(app, null);
                 Method(t, "SettleRestartLesson").Invoke(app, null);
+                bool advanced = (bool)Method(t, "RuleTipAdvance").Invoke(app, null);
+                Method(t, "ShowRuleTip", typeof(RuleTip)).Invoke(app, new object[] { RuleTip.Kit });
                 var tip = t.GetField("_ruleTip", flags).GetValue(app).ToString();
                 string line = (string)t.GetField("_cueLine", flags).GetValue(app);
-                bool vis = (bool)t.GetField("_gloveVis", flags).GetValue(app);
-                bool cue = (int)t.GetField("_cueBranch", flags).GetValue(app) >= 0;
-                Check("restart-clears-crowns-and-rearms-step-one",
-                    tip == "None" && line != null && line.IndexOf("Tap a branch") >= 0 && vis && cue,
-                    "tip " + tip + " line " + line + " vis " + vis + " cue " + cue);
+                bool held = (bool)t.GetField("_holdRuleForLesson", flags).GetValue(app);
+                bool stale = !advanced && tip == "None" && line != null && line.IndexOf("Tap a branch") >= 0
+                    && line.IndexOf("Crowns") < 0 && held;
+                Check("restart-clears-crowns-and-rearms-step-one", crowns,
+                    "crowns " + crowns);
+                Check("restart-clears-nice-and-rearms-step-one", nice, "nice " + nice);
+                Check("restart-after-fifth-red-does-not-replay-crowns", stale,
+                    "advanced " + advanced + " tip " + tip + " line " + line + " held " + held);
             }
             finally
             {
                 if (had) PlayerPrefs.SetInt(key, keep);
                 else PlayerPrefs.DeleteKey(key);
+                if (hadKit) PlayerPrefs.SetInt(RuleTips.KitKey, kitKeep);
+                else PlayerPrefs.DeleteKey(RuleTips.KitKey);
                 UnityEngine.Object.DestroyImmediate(go);
             }
+        }
+
+        static bool RearmFromCaption(FlockFiveApp app, System.Type t, BindingFlags flags, int tipValue, string caption)
+        {
+            t.GetField("_ruleTip", flags).SetValue(app, System.Enum.ToObject(
+                t.GetField("_ruleTip", flags).FieldType, tipValue));
+            t.GetField("_ruleTurned", flags).SetValue(app, true);
+            t.GetField("_cueLine", flags).SetValue(app, caption);
+            t.GetField("_gloveVis", flags).SetValue(app, false);
+            t.GetField("_cueBranch", flags).SetValue(app, -1);
+            Method(t, "SettleRestartLesson").Invoke(app, null);
+            var tip = t.GetField("_ruleTip", flags).GetValue(app).ToString();
+            string line = (string)t.GetField("_cueLine", flags).GetValue(app);
+            bool vis = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+            bool cue = (int)t.GetField("_cueBranch", flags).GetValue(app) >= 0;
+            return tip == "None" && line != null && line.IndexOf("Tap a branch") >= 0
+                && line.IndexOf("Crowns") < 0 && line.IndexOf("Nice!") < 0 && vis && cue;
         }
 
         static void CheckHomeControlsAtSizes(System.Action<string, bool, string> Check)
@@ -2194,7 +2243,9 @@ namespace FlockFive.Editor
                 FlockFiveApp.FillMainButtons(w[i], h[i], safe, buttons, true);
                 bool play = buttons[0].width > 2f && buttons[0].height > 2f;
                 bool gear = buttons[3].width > 2f && buttons[3].height > 2f;
-                bool apart = play && gear && !buttons[0].Overlaps(buttons[3]);
+                bool restart = buttons[1].width > 2f && buttons[1].height > 2f;
+                bool home = CornerAnchor.TopBarHome(buttons[1], w[i], safe).width > 2f;
+                bool apart = play && gear && restart && home && !buttons[0].Overlaps(buttons[3]);
                 var garden = new Rect[4];
                 FlockFiveApp.FillMainButtons(w[i], h[i], safe, garden, false);
                 bool noGear = garden[3].width <= 0f;
@@ -2394,6 +2445,133 @@ namespace FlockFive.Editor
             }
         }
 
+        static bool FreshDownLeft(FlockFiveApp app, Vector2 at)
+        {
+            var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
+            Event.current = down;
+            Method(typeof(FlockFiveApp), "SwallowResumePointer").Invoke(null, null);
+            return down.type != EventType.Used;
+        }
+
+        static void CheckFreshResumeSurfaces(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("fresh-resume-surfaces");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            int streak = Purse.Streak;
+            try
+            {
+                Purse.SetStreak(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                SetResumeUntil(AdPause.Unscaled + 0.10f);
+                var restart = HudPlayRect(2);
+                var home = HudPlayRect(1);
+                bool restartLeft = FreshDownLeft(app, HudWindow(restart));
+                bool homeLeft = FreshDownLeft(app, HudWindow(home));
+                var screen = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                string actEx = "";
+                try { Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { screen }); }
+                catch (System.Exception ex) { actEx = TapFault(ex); }
+                bool going = app.EditorSnapRound != null
+                    || (bool)t.GetField("_restarting", flags).GetValue(app)
+                    || t.GetField("_restartAsk", flags).GetValue(app).ToString() != "None";
+                t.GetField("_splash", flags).SetValue(app, true);
+                var homeFace = t.GetField("_home", flags);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                bool gearLeft = FreshDownLeft(app, HudWindow(HudPlayRect(3)));
+                int[] w = { 820, 402, 412 };
+                int[] h = { 1180, 874, 915 };
+                bool sized = true;
+                for (int i = 0; i < w.Length; i++)
+                {
+                    var safe = new Rect(0f, 34f, w[i], h[i] - 34f - 59f);
+                    CornerAnchor.Garden(w[i], h[i], safe, out _, out _, out _, out var gardenRestart, out _);
+                    var gardenHome = CornerAnchor.TopBarHome(gardenRestart, w[i], safe);
+                    var gear = FlockFiveApp.SettingsGearRect(w[i], h[i], safe);
+                    bool phone = w[i] < 500;
+                    bool face = gardenHome.width > 2f && gear.width > 2f && !gardenHome.Overlaps(gear);
+                    bool garden = gardenRestart.width > 2f;
+                    if (!face || (phone && !garden)) sized = false;
+                }
+                Check("resume-fresh-restart-home-gear",
+                    restartLeft && homeLeft && gearLeft && going && sized,
+                    "restart " + restartLeft + " home " + homeLeft + " gear " + gearLeft
+                    + " going " + going + " sized " + sized + actEx);
+            }
+            finally
+            {
+                Event.current = prev;
+                Purse.SetStreak(streak);
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckHomeChainOneAtATime(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("home-chain");
+            var prev = Event.current;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_splash", flags).SetValue(app, true);
+                var homeFace = t.GetField("_home", flags);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                t.GetField("_railInit", flags).SetValue(app, true);
+                t.GetField("_adoptLive", flags).SetValue(app, true);
+                var step = t.GetField("_adoptStep", flags);
+                step.SetValue(app, System.Enum.ToObject(step.FieldType, 1));
+                bool greetHolds = (bool)Method(t, "AdoptHoldsQueue").Invoke(app, null);
+                t.GetField("_adoptLive", flags).SetValue(app, false);
+                step.SetValue(app, System.Enum.ToObject(step.FieldType, 0));
+                t.GetField("_avatarRename", flags).SetValue(app, true);
+                bool nameHolds = (bool)Method(t, "AdoptHoldsQueue").Invoke(app, null);
+                t.GetField("_avatarRename", flags).SetValue(app, false);
+                t.GetField("_dailyIntro", flags).SetValue(app, true);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                t.GetField("_adoptLive", flags).SetValue(app, true);
+                bool gearDuring = HomeGear.AcceptsTap((HomeGearQuery)Method(t, "HomeGearNow").Invoke(app, null));
+                var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                var playAt = new Vector2(level.center.x, level.center.y);
+                var playDown = new Event { type = EventType.MouseDown, mousePosition = playAt, button = 0 };
+                Event.current = playDown;
+                string playEx = "";
+                try { Method(t, "SwallowOffTargetTap").Invoke(app, null); }
+                catch (System.Exception ex) { playEx = TapFault(ex); }
+                bool playLeft = playDown.type != EventType.Used;
+                bool greetHeld = !(bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
+                var missAt = new Vector2(level.xMax + 48f, 12f);
+                if (level.width > 2f && level.Contains(missAt))
+                    missAt = new Vector2(level.center.x, level.yMax + 48f);
+                var miss = new Event { type = EventType.MouseDown, mousePosition = missAt, button = 0 };
+                Event.current = miss;
+                try { Method(t, "SwallowOffTargetTap").Invoke(app, null); }
+                catch (System.Exception) { }
+                bool greetDone = (bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
+                bool playCan = false;
+                string canEx = "";
+                try { playCan = (bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { level }); }
+                catch (System.Exception ex) { canEx = TapFault(ex); }
+                Check("home-captions-queue-and-leave-play",
+                    greetHolds && nameHolds && gearDuring && playLeft && greetHeld && greetDone && playCan,
+                    "greet " + greetHolds + " name " + nameHolds + " gear " + gearDuring
+                    + " play " + playLeft + " held " + greetHeld + " done " + greetDone
+                    + " can " + playCan + playEx + canEx);
+            }
+            finally
+            {
+                Event.current = prev;
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
         static void CheckResumeRestartFires(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("resume-restart-fires");
@@ -2411,6 +2589,7 @@ namespace FlockFive.Editor
                 var restart = HudPlayRect(2);
                 var at = HudWindow(restart);
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
+                NoteHeld(app, -1);
                 var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
                 Event.current = down;
                 Method(t, "SwallowResumePointer").Invoke(null, null);

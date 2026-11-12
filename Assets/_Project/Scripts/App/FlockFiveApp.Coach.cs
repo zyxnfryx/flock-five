@@ -822,16 +822,17 @@ namespace FlockFive
         // A Crowns or Nice line that was up, or still due, does not return.
         void SettleRestartLesson()
         {
-            bool stale = _ruleTip == RuleTip.Kit || _ruleTip == RuleTip.Feeder || _ruleTurned;
             _ruleTip = RuleTip.None;
             _ruleHeld = 0f;
             _ruleEatGesture = false;
             _ruleTurned = false;
             _cueLine = null;
-            if (stale) _holdRuleForLesson = true;
             _cueSpoken = null;
             if (PlayerPrefs.GetInt(CoachKey, 0) != 0) return;
             if (LevelData.DisplayNumber != 1) return;
+            // Crowns or Nice may still be up, or already gone a few seconds
+            // after the fifth red. Either way it does not come back over step 1.
+            _holdRuleForLesson = true;
             _coach = true;
             _coachMoves = 0;
             _coachFrom = -1;
@@ -841,15 +842,16 @@ namespace FlockFive
             _coachResetWant = false;
             _cueHand = true;
             _cueForce = true;
-            if (!CoachPick(out int from, out int to)) return;
-            _coachFrom = from;
-            _coachTo = to;
-            _cueBranch = from;
             _cueLine = "Tap a branch to pick up its top birds.";
             _cueSpoken = _cueLine;
             _gloveVis = true;
             _gloveReady = true;
             _coachFade = 1f;
+            if (!CoachPick(out int from, out int to) && !Level1First(_board, Locked, GiftLocked, out from, out to))
+                return;
+            _coachFrom = from;
+            _coachTo = to;
+            _cueBranch = from;
         }
 
         void FreshCoachResume()
@@ -6822,7 +6824,7 @@ namespace FlockFive
                 {
                     var p0 = e.mousePosition;
                     bool inside = GloveTapHits(new Vector2(p0.x, PhoneArea.H - p0.y));
-                    if (!GloveFocusAllows(true, true, inside, HomeGearExempt(p0) || GiftCloseExempt(p0)))
+                    if (!GloveFocusAllows(true, true, inside, HomeGearExempt(p0) || GiftCloseExempt(p0) || PlayExempt(p0)))
                     {
                         if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
                         e.Use();
@@ -6837,7 +6839,7 @@ namespace FlockFive
             if (gate.Step == GateBadgerGuide && BadgerFrozenUi.PressPasses(e.mousePosition, default, _bgGateToggle, _bgGateFreeze)) return;
             if (gate.AnyTap)
             {
-                if (HomeGearExempt(e.mousePosition)) return;
+                if (HomeGearExempt(e.mousePosition) || PlayExempt(e.mousePosition)) return;
                 // b123: lessons 1-3 ignore back, the power row and combs: eaten, no advance.
                 if (gate.Step == GateBadgerLesson && BadgerLessonIgnores(e.mousePosition))
                 {
