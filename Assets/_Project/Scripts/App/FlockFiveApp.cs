@@ -4059,8 +4059,11 @@ namespace FlockFive
 
         bool EchoRelease(int releaseId)
         {
-            if (_gloveEchoFrame < 0 || Time.frameCount - _gloveEchoFrame > 1) return false;
-            return releaseId == _gloveEchoId || releaseId == -1;
+            // One press, one hop. A later up is the same press until a new down,
+            // however many frames sit between the releases.
+            if (_gloveEchoFrame < 0) return false;
+            if (GloveFingerMatches(_gloveEchoId, releaseId)) return true;
+            return releaseId == -1 && _gloveEchoId >= 0;
         }
 
         // 0 is not a button. 1 Home, 2 Restart, 3 gear. Play pixels, not window pixels.
@@ -4238,11 +4241,13 @@ namespace FlockFive
             }
             if (!releaseEdge)
             {
+                // A new press ends the previous one, so its extra ups cannot hop.
+                _gloveEchoFrame = -1;
+                _gloveEchoId = int.MinValue;
                 if (!onGlove) return false;
                 // A mouse press on the button under the glove is that button.
                 // A touch on the drawn glove is the lesson, at every step.
                 if (onHud && pointerId < 0) return false;
-                _gloveEchoFrame = -1;
                 _glovePressLatched = true;
                 _glovePressId = pointerId;
                 _gloveSwallowedId = int.MinValue;
@@ -4257,11 +4262,10 @@ namespace FlockFive
             }
             if (!owns)
             {
-                if (!onGlove || onHud)
-                {
-                    StampGlove("no-glove", windowGui, onGlove, onHud, false);
-                    return false;
-                }
+                // A mouse -1 that is not this glove press is not a hop.
+                // On a button it stays that button. Anywhere else it is dropped.
+                StampGlove(onHud ? "no-glove" : "no-press", windowGui, onGlove, onHud, false);
+                return !onHud;
             }
             else
             {
@@ -7293,9 +7297,11 @@ namespace FlockFive
             // A scene cover or the startup hold still swallows those buttons.
             var t = e.type;
             bool pointer = t == EventType.MouseDown || t == EventType.MouseUp || t == EventType.MouseDrag;
+            // Destroyed app: Unity's == is null. Do not eat Home, the gear, or the board.
+            if (_app == null) return;
             int heldId = pointer ? HomeEventId(e, t == EventType.MouseDown, t == EventType.MouseUp) : -1;
-            bool held = pointer && _app != null && _app.ResumeHolds(heldId);
-            int hud = _app != null ? _app.HudControl(e.mousePosition) : 0;
+            bool held = pointer && _app.ResumeHolds(heldId);
+            int hud = _app.HudControl(e.mousePosition);
             // Fresh Home and gear. A finger already down at hide is swallowed.
             // Fresh Restart stays swallowed until its own commit.
             if (resumeHold && !otherHold && (hud == 1 || hud == 3) && !held)
@@ -7307,7 +7313,7 @@ namespace FlockFive
                 return;
             }
             if (!pointer) return;
-            if (_app != null && !held) return;
+            if (!held) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
             e.Use();
         }
@@ -7730,8 +7736,29 @@ namespace FlockFive
         // The glove is on Restart or Hive: let the real control run.
         bool HudGloveTap(Vector2 screen, Rect restart, Rect hive, Vector2 gui)
         {
-            if (restart.Contains(gui)) { Restart(); return true; }
+            if (restart.Contains(gui)) return ActRestart();
             OpenLevelHive();
+            return true;
+        }
+
+        // Fresh Restart stays down through the resume window. The Restart commit
+        // makes this return false, which is the whole of that drop.
+        bool ResumeSwallowsRestart()
+        {
+            return GateNow < _resumeInputUntil;
+        }
+
+        // The finger that went down on the glove owns the press. Home and Restart wait.
+        bool GloveOwnsHudPress()
+        {
+            return _glovePressLatched || _gloveTookFrame == Time.frameCount;
+        }
+
+        bool ActRestart()
+        {
+            if (ResumeSwallowsRestart() || GloveOwnsHudPress()) return true;
+            _tapWho = "restart";
+            Restart();
             return true;
         }
 
@@ -7758,9 +7785,14 @@ namespace FlockFive
             bool homeHit, restartHit;
             if (GardenHudPoint(screen, PhoneArea.H, home, restart, out homeHit, out restartHit))
             {
-            if (homeHit) { _tapWho = "home"; ShowSplash(); }
-            else { _tapWho = "restart"; Restart(); }
-            return true;
+                if (homeHit)
+                {
+                    if (GloveOwnsHudPress()) return true;
+                    _tapWho = "home";
+                    ShowSplash();
+                }
+                else ActRestart();
+                return true;
             }
             // b103: while a garden lesson glove is up, Hive only counts under the glove.
             if (CueGloveOwnsHud() && HiveReachable() && hive.Contains(gui))
@@ -7770,7 +7802,7 @@ namespace FlockFive
             if (claim == HudTap.TopBar && FeederUnder(screen)) return false;
             switch (claim)
             {
-                case HudTap.Restart: Restart(); return true;
+                case HudTap.Restart: ActRestart(); return true;
                 case HudTap.TopBar: return true;
                 case HudTap.Hive: OpenLevelHive(); return true;
             }

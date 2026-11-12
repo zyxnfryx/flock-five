@@ -124,6 +124,8 @@ namespace FlockFive.Editor
             CheckPlayerGloveHop(Check);
             CheckResumeFreshAndHeld(Check);
             CheckFreshResumeSurfaces(Check);
+            CheckResumeBranches(Check);
+            CheckGlovePressOwner(Check);
             CheckRestartClearsCaptions(Check);
             CheckHomeControlsAtSizes(Check);
             CheckHomeChainOneAtATime(Check);
@@ -2196,6 +2198,136 @@ namespace FlockFive.Editor
             finally
             {
                 SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void SetInject(bool on, bool down, Vector2 play)
+        {
+            var nested = typeof(FlockFiveApp).GetNestedType("EditorPointer",
+                BindingFlags.Public | BindingFlags.NonPublic);
+            object box = System.Activator.CreateInstance(nested);
+            nested.GetField("On").SetValue(box, on);
+            nested.GetField("Down").SetValue(box, down);
+            nested.GetField("Up").SetValue(box, false);
+            nested.GetField("Id").SetValue(box, -1);
+            nested.GetField("Play").SetValue(box, play);
+            EditorField("EditorPointerInject").SetValue(null, box);
+        }
+
+        static void CheckGlovePressOwner(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("glove-press-owner");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_coach", flags).SetValue(app, true);
+                var home = HudPlayRect(1);
+                var onHome = HudWindow(home);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(home.center.x - 36f, home.center.y - 36f, 72f, 72f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetResumeUntil(float.NegativeInfinity);
+                SetEditorTaps(app, 0);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                glove.Invoke(app, new object[] { onHome, false, 7 });
+                var screen = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { screen });
+                bool downQuiet = !(bool)t.GetField("_splash", flags).GetValue(app) && !SnapArmed(app);
+                glove.Invoke(app, new object[] { onHome, true, -1 });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { screen });
+                bool owned = EditorTaps(app) == 1 && downQuiet
+                    && !(bool)t.GetField("_splash", flags).GetValue(app) && !SnapArmed(app);
+                t.GetField("_gloveEchoFrame", flags).SetValue(app, Time.frameCount - 8);
+                SetEditorTaps(app, 0);
+                glove.Invoke(app, new object[] { onHome, true, -1 });
+                bool oneHop = EditorTaps(app) == 0 && !SnapArmed(app);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                t.GetField("_gloveEchoFrame", flags).SetValue(app, -1);
+                SetEditorTaps(app, 0);
+                bool toHud = !(bool)glove.Invoke(app, new object[] { onHome, true, -1 });
+                var off = new Vector2((PhoneArea.W > 0f ? PhoneArea.W : 400f) * 0.5f + PhoneArea.OffX,
+                    (PhoneArea.H > 0f ? PhoneArea.H : 800f) * 0.5f);
+                bool dropped = (bool)glove.Invoke(app, new object[] { off, true, -1 });
+                bool loose = toHud && dropped && EditorTaps(app) == 0;
+                Check("glove-press-owns-home-and-restart", owned && oneHop && loose,
+                    "owned " + owned + " once " + oneHop + " loose " + loose
+                    + " taps " + EditorTaps(app) + " exit " + GloveExit());
+            }
+            finally
+            {
+                Event.current = prev;
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeBranches(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-branches");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var restart = HudPlayRect(2);
+                var play = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                SetInject(true, true, play);
+                t.GetField("_frozen", flags).SetValue(app, true);
+                string frozenEx = "";
+                try { Method(t, "UpdateBody").Invoke(app, null); }
+                catch (System.Exception ex) { frozenEx = TapFault(ex); }
+                bool frozen = !SnapArmed(app) && !(bool)t.GetField("_splash", flags).GetValue(app) && frozenEx.Length == 0;
+                t.GetField("_frozen", flags).SetValue(app, false);
+                var gift = t.GetField("_gift", flags);
+                gift.SetValue(app, System.Enum.ToObject(gift.FieldType, 1));
+                string giftEx = "";
+                try { Method(t, "UpdateBody").Invoke(app, null); }
+                catch (System.Exception ex) { giftEx = TapFault(ex); }
+                bool gifted = !SnapArmed(app) && giftEx.Length == 0;
+                gift.SetValue(app, System.Enum.ToObject(gift.FieldType, 0));
+                var hold = typeof(SeasonReveal).GetProperty("HoldsPlay", BindingFlags.Public | BindingFlags.Static);
+                hold.GetSetMethod(true).Invoke(null, new object[] { true });
+                string seasonEx = "";
+                try { Method(t, "UpdateBody").Invoke(app, null); }
+                catch (System.Exception ex) { seasonEx = TapFault(ex); }
+                bool season = !SnapArmed(app) && seasonEx.Length == 0;
+                var appField = t.GetField("_app", BindingFlags.NonPublic | BindingFlags.Static);
+                var live = appField.GetValue(null);
+                appField.SetValue(null, null);
+                var home = HudPlayRect(1);
+                var down = new Event { type = EventType.MouseDown, mousePosition = HudWindow(home), button = 0 };
+                Event.current = down;
+                Method(t, "SwallowResumePointer").Invoke(null, null);
+                bool left = down.type != EventType.Used;
+                appField.SetValue(null, live);
+                Check("resume-branches-leave-restart",
+                    frozen && gifted && season && left,
+                    "frozen " + frozen + frozenEx + " gift " + gifted + giftEx
+                    + " season " + season + seasonEx + " null " + left);
+            }
+            finally
+            {
+                var hold = typeof(SeasonReveal).GetProperty("HoldsPlay", BindingFlags.Public | BindingFlags.Static);
+                if (hold != null) hold.GetSetMethod(true).Invoke(null, new object[] { false });
+                SetInject(false, false, default);
+                Event.current = prev;
+                SetResumeUntil(keep);
+                GamePause.Reset();
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
