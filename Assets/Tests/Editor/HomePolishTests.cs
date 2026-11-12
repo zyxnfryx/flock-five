@@ -1438,6 +1438,7 @@ namespace FlockFive.Editor
                 bool moved = false;
                 string upTrace = "";
                 string upEx = "";
+                string hopTrace = "";
                 var keep = FlockFiveApp.EditorPointerInject;
                 try
                 {
@@ -1486,34 +1487,56 @@ namespace FlockFive.Editor
                 taps = app.EditorHandleTaps;
                 int picked = (int)t.GetField("_sel", flags).GetValue(app);
                 upTrace = FlockFiveApp.EditorGloveTraceNow.ToString() + upEx;
-                t.GetField("_gloveVis", flags).SetValue(app, true);
-                t.GetField("_cueBranch", flags).SetValue(app, to);
-                t.GetField("_cueForce", flags).SetValue(app, true);
-                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                // Coach aims the destination with no finger down, the way the
+                // frame after a select does. The glove quad is then on that cue.
+                FlockFiveApp.EditorPointerInject = default;
+                Method(t, "UpdateBody").Invoke(app, null);
+                int aimed = (int)t.GetField("_cueBranch", flags).GetValue(app);
+                var hopBody = new Rect(px - 50f, py - 50f, 100f, 100f);
+                t.GetField("_gloveBody", flags).SetValue(app, hopBody);
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                t.GetField("_glovePressLatched", flags).SetValue(app, false);
-                app.EditorHandleTaps = 0;
+                if (aimed >= 0) t.GetField("_gloveVis", flags).SetValue(app, true);
+                int selBeforeHop = (int)t.GetField("_sel", flags).GetValue(app);
+                var boardBeforeHop = (Board)t.GetField("_board", flags).GetValue(app);
+                int tookBefore = (int)t.GetField("_gloveTookFrame", flags).GetValue(app);
+                t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
+                int tookAfter = (int)t.GetField("_gloveTookFrame", flags).GetValue(app);
+                float now = AdPause.Unscaled;
+                t.GetField("_nextTap", flags).SetValue(app, now);
+                SeatOpenLesson(app);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
                     Play = new Vector2(px, PhoneArea.H - py)
                 };
-                Method(t, "UpdateBody").Invoke(app, null);
-                t.GetField("_nextTap", flags).SetValue(app, 0f);
-                // The player's second tap is a later frame. This gate is one glove act per frame.
-                t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
-                SeatOpenLesson(app);
+                Method(t, "TakeGuiPointer").Invoke(app, null);
+                bool hopLatched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 4,
                     Play = new Vector2(px, PhoneArea.H - py)
                 };
                 Method(t, "TakeGuiPointer").Invoke(app, null);
+                var hopTr = FlockFiveApp.EditorGloveTraceNow;
                 var live = app.EditorLiveMove;
                 if (live != null) PumpFrames(live, 48, null, out _);
                 var afterBoard = (Board)t.GetField("_board", flags).GetValue(app);
+                int selAfterHop = (int)t.GetField("_sel", flags).GetValue(app);
                 int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
-                moved = level1 && !SameBirds(before, afterBoard) && moves > 0;
+                bool boardChanged = !SameBirds(boardBeforeHop, afterBoard);
+                hopTrace = " hop: aim=" + aimed
+                    + " glove=" + hopBody.x.ToString("0") + "," + hopBody.y.ToString("0") + ","
+                    + hopBody.width.ToString("0") + "," + hopBody.height.ToString("0")
+                    + " pt=" + px.ToString("0") + "," + py.ToString("0")
+                    + " latch=" + hopLatched
+                    + " took=" + tookBefore + "->" + tookAfter
+                    + " next=" + now.ToString("0.00") + " now=" + AdPause.Unscaled.ToString("0.00")
+                    + " sel=" + selBeforeHop + "->" + selAfterHop
+                    + " board=" + (boardChanged ? "changed" : "same")
+                    + " moves=" + moves
+                    + " live=" + (live != null)
+                    + " " + hopTr;
+                moved = level1 && boardChanged && moves > 0;
                 bool once = afterDown == 0 && taps == 1 && picked == from && moved;
 
                 var gate = t.GetField("_homeGate", flags);
@@ -1558,7 +1581,8 @@ namespace FlockFive.Editor
                 Method(t, "UpdateBody").Invoke(app, null);
                 homeWon = (bool)splash.GetValue(app) && app.EditorHandleTaps == 0;
                 Check("glove-down-and-up-handle-once", once,
-                    "down " + afterDown + " total " + taps + " sel " + picked + " moved " + moved + " " + upTrace);
+                    "down " + afterDown + " total " + taps + " sel " + picked + " moved " + moved
+                    + " " + upTrace + hopTrace);
                 Check("home-up-id-falls-through-to-release", mouseKeepsTouchRelease && noReleaseStaysMouse && namedFingerWins,
                     "kept " + mouseKeepsTouchRelease + " mouse " + noReleaseStaysMouse + " finger " + namedFingerWins);
                 Check("home-touch-up-through-pressed-and-ongui", pressCleared && guiCleared,
