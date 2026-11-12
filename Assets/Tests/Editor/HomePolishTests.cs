@@ -1434,6 +1434,8 @@ namespace FlockFive.Editor
                 bool pressCleared = false, guiCleared = false;
                 string pressTrace = "";
                 bool moved = false;
+                string upTrace = "";
+                string upEx = "";
                 var keep = FlockFiveApp.EditorPointerInject;
                 try
                 {
@@ -1478,9 +1480,10 @@ namespace FlockFive.Editor
                     Play = new Vector2(px, PhoneArea.H - py)
                 };
                 try { Method(t, "OnGUIBody").Invoke(app, null); }
-                catch (System.Exception) { }
+                catch (System.Exception ex) { upEx = " " + ex.GetType().Name; }
                 taps = app.EditorHandleTaps;
                 int picked = (int)t.GetField("_sel", flags).GetValue(app);
+                upTrace = FlockFiveApp.EditorGloveTraceNow.ToString() + upEx;
                 t.GetField("_gloveVis", flags).SetValue(app, true);
                 t.GetField("_cueBranch", flags).SetValue(app, to);
                 t.GetField("_cueForce", flags).SetValue(app, true);
@@ -1550,7 +1553,8 @@ namespace FlockFive.Editor
                 };
                 Method(t, "UpdateBody").Invoke(app, null);
                 homeWon = (bool)splash.GetValue(app) && app.EditorHandleTaps == 0;
-                Check("glove-down-and-up-handle-once", once, "down " + afterDown + " total " + taps + " sel " + picked + " moved " + moved);
+                Check("glove-down-and-up-handle-once", once,
+                    "down " + afterDown + " total " + taps + " sel " + picked + " moved " + moved + " " + upTrace);
                 Check("home-up-id-falls-through-to-release", mouseKeepsTouchRelease && noReleaseStaysMouse && namedFingerWins,
                     "kept " + mouseKeepsTouchRelease + " mouse " + noReleaseStaysMouse + " finger " + namedFingerWins);
                 Check("home-touch-up-through-pressed-and-ongui", pressCleared && guiCleared,
@@ -1733,6 +1737,7 @@ namespace FlockFive.Editor
             var go = new GameObject("glove-route");
             var limb = new GameObject("glove-limb");
             bool pickedOnly = false, stayed = false;
+            string routeTrace = "";
             int sawDown = -2, sawUp = -2;
             bool downHit = false, upHit = false;
             try
@@ -1767,6 +1772,7 @@ namespace FlockFive.Editor
                 sawDown = (int)t.GetField("_sel", flags).GetValue(app);
                 upHit = (bool)gloveTap.Invoke(app, new object[] { point, true, -1 });
                 sawUp = (int)t.GetField("_sel", flags).GetValue(app);
+                routeTrace = FlockFiveApp.EditorGloveTraceNow.ToString();
                 int afterDown = sawDown;
                 int afterUp = sawUp;
                 pickedOnly = level1 && downHit && upHit && afterDown < 0 && afterUp == from;
@@ -1784,7 +1790,7 @@ namespace FlockFive.Editor
             }
             Check("glove-one-tap-does-not-pick-and-move", downSkips && oneEdge && pickedOnly,
                 "down " + downSkips + " edge " + oneEdge + " pick " + pickedOnly
-                + " hit " + downHit + "/" + upHit + " sel " + sawDown + "->" + sawUp);
+                + " hit " + downHit + "/" + upHit + " sel " + sawDown + "->" + sawUp + " " + routeTrace);
             Check("glove-hud-beats-cuff", hudWins,
                 "home " + cuffInHome + " glove " + cuffInGlove + " hud " + hudPoint + " skip " + gloveSkipsHud
                 + " cuff " + cuff.x.ToString("0") + "," + cuff.y.ToString("0"));
