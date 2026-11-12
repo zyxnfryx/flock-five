@@ -2468,21 +2468,31 @@ namespace FlockFive.Editor
                 t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
                 t.GetField("_splash", flags).SetValue(app, false);
                 SetResumeUntil(AdPause.Unscaled + 0.10f);
-                var restart = HudPlayRect(2);
                 var home = HudPlayRect(1);
-                bool restartLeft = FreshDownLeft(app, HudWindow(restart));
                 bool homeLeft = FreshDownLeft(app, HudWindow(home));
+                var restart = HudPlayRect(2);
                 var screen = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
-                string actEx = "";
                 try { Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { screen }); }
-                catch (System.Exception ex) { actEx = TapFault(ex); }
-                bool going = app.EditorSnapRound != null
-                    || (bool)t.GetField("_restarting", flags).GetValue(app)
-                    || t.GetField("_restartAsk", flags).GetValue(app).ToString() != "None";
+                catch (System.Exception) { }
+                bool restartLeftDown = app.EditorSnapRound == null
+                    && !(bool)t.GetField("_restarting", flags).GetValue(app)
+                    && t.GetField("_restartAsk", flags).GetValue(app).ToString() == "None";
+                t.GetField("_gloveEdgeId", flags).SetValue(app, 11);
+                app.EditorHandleTaps = 0;
+                string boardEx = "";
+                try { Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero }); }
+                catch (System.Exception ex) { boardEx = TapFault(ex); }
+                bool board = app.EditorHandleTaps == 1
+                    && FlockFiveApp.EditorGloveTraceNow.Exit != "resume";
                 t.GetField("_splash", flags).SetValue(app, true);
                 var homeFace = t.GetField("_home", flags);
                 homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
                 bool gearLeft = FreshDownLeft(app, HudWindow(HudPlayRect(3)));
+                NoteHeld(app, -1);
+                var heldHome = new Event { type = EventType.MouseDown, mousePosition = HudWindow(home), button = 0 };
+                Event.current = heldHome;
+                Method(t, "SwallowResumePointer").Invoke(null, null);
+                bool heldEaten = heldHome.type == EventType.Used || heldHome.type != EventType.MouseDown;
                 int[] w = { 820, 402, 412 };
                 int[] h = { 1180, 874, 915 };
                 bool sized = true;
@@ -2497,10 +2507,10 @@ namespace FlockFive.Editor
                     bool garden = gardenRestart.width > 2f;
                     if (!face || (phone && !garden)) sized = false;
                 }
-                Check("resume-fresh-restart-home-gear",
-                    restartLeft && homeLeft && gearLeft && going && sized,
-                    "restart " + restartLeft + " home " + homeLeft + " gear " + gearLeft
-                    + " going " + going + " sized " + sized + actEx);
+                Check("resume-fresh-home-gear-board",
+                    homeLeft && gearLeft && heldEaten && board && sized && restartLeftDown,
+                    "home " + homeLeft + " gear " + gearLeft + " held " + heldEaten
+                    + " board " + board + " sized " + sized + " restart " + restartLeftDown + boardEx);
             }
             finally
             {
@@ -2589,7 +2599,6 @@ namespace FlockFive.Editor
                 var restart = HudPlayRect(2);
                 var at = HudWindow(restart);
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
-                NoteHeld(app, -1);
                 var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
                 Event.current = down;
                 Method(t, "SwallowResumePointer").Invoke(null, null);

@@ -6582,6 +6582,9 @@ namespace FlockFive
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             bool homeHit, restartHit;
             if (!GardenHudPoint(screen, PhoneArea.H, home, restart, out homeHit, out restartHit)) return false;
+            // A fresh Restart tap in the resume window is Brandon's call. This
+            // path leaves it down. The Restart commit fires Restart() itself.
+            if (!homeHit && GateNow < _resumeInputUntil) return true;
             if (homeHit) ShowSplash();
             else Restart();
             return true;

@@ -4106,6 +4106,12 @@ namespace FlockFive
             bool fire = which == 2 ? armedUp : (pad || armedUp);
             if (!fire) return false;
             _resumeHudArm = 0;
+            // The Restart commit reaches this. Other paths leave Restart down for the window.
+            if (which == 2)
+            {
+                Restart();
+                return true;
+            }
             if (which == 3)
             {
                 _tapWho = "gear";
@@ -7285,14 +7291,23 @@ namespace FlockFive
             // Home, Restart, and the gear arm in HitPad later this OnGUI pass.
             // Swallowing the down here leaves hotControl unset, so the release never fires.
             // A scene cover or the startup hold still swallows those buttons.
-            int hud = HudControl(e.mousePosition);
-            // Home and the gear. Restart stays swallowed until its own commit.
-            if (resumeHold && !otherHold && (hud == 1 || hud == 3))
-                return;
             var t = e.type;
-            if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
-            int heldId = HomeEventId(e, t == EventType.MouseDown, t == EventType.MouseUp);
-            if (_app != null && !_app.ResumeHolds(heldId)) return;
+            bool pointer = t == EventType.MouseDown || t == EventType.MouseUp || t == EventType.MouseDrag;
+            int heldId = pointer ? HomeEventId(e, t == EventType.MouseDown, t == EventType.MouseUp) : -1;
+            bool held = pointer && _app != null && _app.ResumeHolds(heldId);
+            int hud = HudControl(e.mousePosition);
+            // Fresh Home and gear. A finger already down at hide is swallowed.
+            // Fresh Restart stays swallowed until its own commit.
+            if (resumeHold && !otherHold && (hud == 1 || hud == 3) && !held)
+                return;
+            if (resumeHold && !otherHold && hud == 2 && pointer)
+            {
+                if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+                e.Use();
+                return;
+            }
+            if (!pointer) return;
+            if (_app != null && !held) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
             e.Use();
         }
