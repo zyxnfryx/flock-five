@@ -93,6 +93,8 @@ namespace FlockFive.Editor
             CheckHomeAndPrivacy(Check);
             CheckRestartRecue(Check);
             CheckForcePause(Check);
+            CheckHomeTouchGate(Check);
+            CheckGloveRoute(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1362,6 +1364,109 @@ namespace FlockFive.Editor
             bool settled = FlockFiveApp.ToggleMayFlip(FlockFiveApp.SettingsPanelSettled(0.25f), true, true);
             Check("privacy-toggle-needs-settled-gesture", unsettled && outside && immediate && settled,
                 "unsettled " + unsettled + " outside " + outside + " immediate " + immediate + " settled " + settled);
+        }
+
+        static void CheckHomeTouchGate(System.Action<string, bool, string> Check)
+        {
+            var mismatched = FlockFiveApp.BeginHomeGate(true, 4);
+            bool mouseClearsTouch = FlockFiveApp.HomeGateAllows(ref mismatched, false, true, -1);
+            bool stillCarried = mismatched.CarryHeld && !mouseClearsTouch;
+            bool touchClears = FlockFiveApp.HomeGateAllows(ref mismatched, false, true, 4);
+            bool fresh = !mismatched.CarryHeld && touchClears == false
+                && FlockFiveApp.HomeGateAllows(ref mismatched, true, false, 4);
+            var go = new GameObject("home-touch-gate");
+            bool liveHeld = false, focusCleared = false, resumeCleared = false;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var gate = t.GetField("_homeGate", flags);
+                var splash = t.GetField("_splash", flags);
+                var home = t.GetField("_home", flags);
+                splash.SetValue(app, true);
+                home.SetValue(app, System.Enum.ToObject(home.FieldType, 0));
+                gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
+                object[] pressArgs = { Vector2.zero };
+                t.GetMethod("Pressed", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, pressArgs);
+                var afterPress = (FlockFiveApp.HomeGate)gate.GetValue(app);
+                liveHeld = afterPress.CarryHeld && afterPress.CarryId == 4;
+                try { t.GetMethod("OnGUIBody", flags).Invoke(app, null); }
+                catch (System.Exception) { }
+                gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
+                t.GetMethod("OnApplicationFocus", flags).Invoke(app, new object[] { false });
+                focusCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).Active;
+                gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
+                t.GetMethod("OnApplicationPause", flags).Invoke(app, new object[] { false });
+                resumeCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).Active;
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+            Check("home-touch-release-clears-gate",
+                stillCarried && touchClears == false && !mismatched.CarryHeld && fresh && liveHeld && focusCleared && resumeCleared,
+                "carried " + stillCarried + " fresh " + fresh + " live " + liveHeld
+                + " focus " + focusCleared + " resume " + resumeCleared);
+        }
+
+        static void CheckGloveRoute(System.Action<string, bool, string> Check)
+        {
+            var home = new Rect(0f, 0f, 80f, 80f);
+            var glove = new Rect(0f, 0f, 120f, 120f);
+            var cuff = new Vector2(glove.xMax - 4f, glove.yMax - 4f);
+            bool hudWins = FlockFiveApp.HudBeatsGlove(cuff, home, new Rect(400f, 0f, 40f, 40f), new Rect(200f, 200f, 20f, 20f))
+                && !FlockFiveApp.GloveMayAct(true, true, false);
+            bool downSkips = !FlockFiveApp.GloveMayAct(false, false, false);
+            bool busyRefuses = !FlockFiveApp.GloveMayAct(true, false, true);
+            bool oneEdge = FlockFiveApp.GloveMayAct(true, false, false);
+            var go = new GameObject("glove-route");
+            var limb = new GameObject("glove-limb");
+            bool pickedOnly = false, stayed = false;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                var view = limb.AddComponent<BranchView>();
+                view.Index = 0;
+                var bird = new GameObject("bird");
+                bird.transform.SetParent(limb.transform, false);
+                view.Birds[0] = bird.AddComponent<SpriteRenderer>();
+                var garden = new WorldBuilder.Garden();
+                garden.Branches = new BranchView[] { view };
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                var body = t.GetField("_gloveBody", flags);
+                body.SetValue(app, new Rect(100f, 100f, 80f, 90f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                var point = new Vector2(140f, 140f);
+                t.GetMethod("TryDrawnGlove", flags).Invoke(app, new object[] { point, false });
+                int afterDown = (int)t.GetField("_sel", flags).GetValue(app);
+                t.GetMethod("TryDrawnGlove", flags).Invoke(app, new object[] { point, true });
+                int afterUp = (int)t.GetField("_sel", flags).GetValue(app);
+                pickedOnly = afterDown < 0 && afterUp == 0;
+                var turn = (OstrichTurnGate)t.GetField("_turnGate", flags).GetValue(app);
+                turn.TryBeginMove();
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
+                t.GetMethod("TryDrawnGlove", flags).Invoke(app, new object[] { point, true });
+                stayed = (int)t.GetField("_sel", flags).GetValue(app) < 0;
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(limb);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+            Check("glove-one-tap-does-not-pick-and-move", downSkips && oneEdge && pickedOnly, "down " + downSkips + " pick " + pickedOnly);
+            Check("glove-hud-beats-cuff", hudWins, "");
+            Check("glove-turn-gate-refuses", busyRefuses && stayed, "stayed " + stayed);
         }
 
         static void CheckForcePause(System.Action<string, bool, string> Check)

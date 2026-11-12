@@ -3840,7 +3840,7 @@ namespace FlockFive
                 if (Pressed(out var ruleTap))
                 {
                     var gui = new Vector2(ruleTap.x + PhoneArea.OffX, PhoneArea.H - ruleTap.y);
-                    if (TryDrawnGlove(gui, true)) return;
+                    if (TryDrawnGlove(gui, false)) return;
                     TakeRuleTipPress(ruleTap);
                 }
                 return;
@@ -3854,7 +3854,7 @@ namespace FlockFive
             if (!Pressed(out var screen)) return;
             {
                 var gui = new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y);
-                if (TryDrawnGlove(gui, true)) return;
+                if (TryDrawnGlove(gui, false)) return;
             }
             if (GardenHudAct(screen)) return;
             // Informational leaf and pest lessons eat the press before a stamp,
@@ -3908,30 +3908,45 @@ namespace FlockFive
         }
 #endif
 
-        // The whole drawn glove, cuff included, before any caption or branch reject.
-        bool TryDrawnGlove(Vector2 windowGui, bool act)
+        // One edge only: the release. Home, Restart, and the gear win over the cuff.
+        // The hit then goes through HandleTap, so CoachReject and the turn gate still apply.
+        public static bool GloveMayAct(bool releaseEdge, bool hudHit, bool turnBusy)
         {
-            if (_splash || _board == null || !_gloveVis || _cueBranch < 0) return false;
-            if (!GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX)) return false;
-            if (act && _gloveTookFrame != Time.frameCount)
-            {
-                _gloveTookFrame = Time.frameCount;
-                PerformCuedGlove();
-            }
+            if (!releaseEdge || hudHit || turnBusy) return false;
             return true;
         }
 
-        void PerformCuedGlove()
+        public static bool HudBeatsGlove(Vector2 windowGui, Rect home, Rect restart, Rect gear)
         {
-            if (_board == null || _cueBranch < 0) return;
-            if (_sel < 0)
-            {
-                if (_board.CanPick(_cueBranch)) Select(_cueBranch);
-                return;
-            }
-            int to = _coachTo >= 0 ? _coachTo : _cueBranch;
-            if (to != _sel && _board.CanMove(_sel, to, out _))
-                StartCoroutine(DoMove(_sel, to));
+            if (home.width > 2f && home.Contains(windowGui)) return true;
+            if (restart.width > 2f && restart.Contains(windowGui)) return true;
+            if (gear.width > 2f && gear.Contains(windowGui)) return true;
+            return false;
+        }
+
+        bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge)
+        {
+            if (_splash || _board == null || !_gloveVis || _cueBranch < 0) return false;
+            if (!GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX)) return false;
+            HudShaken(out var restart, out _);
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            if (HudBeatsGlove(windowGui, home, restart, gear)) return false;
+            if (!releaseEdge) return false;
+            if (!GloveMayAct(true, false, _turnGate.Busy)) return true;
+            if (_gloveTookFrame == Time.frameCount) return true;
+            _gloveTookFrame = Time.frameCount;
+            HandleTap(CueBranchWorld());
+            return true;
+        }
+
+        Vector2 CueBranchWorld()
+        {
+            if (_garden.Branches != null && (uint)_cueBranch < (uint)_garden.Branches.Length
+                && _garden.Branches[_cueBranch] != null)
+                return _garden.Branches[_cueBranch].transform.position;
+            if (_cueAimWorld.sqrMagnitude > 0.01f) return _cueAimWorld;
+            return default;
         }
 
         void HandleTap(Vector2 world)
@@ -6613,6 +6628,7 @@ namespace FlockFive
         static void ClearLevelExit()
         {
             _exitPointerHeld = false;
+            if (_app != null) _app._homeGate = default;
         }
 
         void CaptureLevelExitPointer()
@@ -6735,6 +6751,20 @@ namespace FlockFive
             e.Use();
         }
 
+        static int HomeEventId(Event e, bool down, bool up)
+        {
+            if (up)
+            {
+                int resolved = ResolveExitEventId(e);
+                if (resolved != int.MinValue) return resolved;
+                int released;
+                if (PressReleased(out released)) return released;
+            }
+            int press = PressIdNow();
+            if (down && press != int.MinValue) return press;
+            return -1;
+        }
+
         static bool FreshTouchDown()
         {
             var touch = Touchscreen.current;
@@ -6748,15 +6778,45 @@ namespace FlockFive
             return false;
         }
 
+        static bool PressReleased(out int id)
+        {
+            id = -1;
+            var touch = Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count; i++)
+                {
+                    var t = touches[i];
+                    if (t == null) continue;
+                    var phase = t.phase.ReadValue();
+                    if (phase != UnityEngine.InputSystem.TouchPhase.Ended
+                        && phase != UnityEngine.InputSystem.TouchPhase.Canceled) continue;
+                    id = t.touchId.ReadValue();
+                    return true;
+                }
+            }
+            if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
+            {
+                id = -1;
+                return true;
+            }
+            return false;
+        }
+
         static bool Pressed(out Vector2 screen)
         {
             screen = default;
             NoteFreshPress();
             if (_app != null && _app._splash && _app._homeGate.Active)
             {
-                bool down = (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-                    || FreshTouchDown();
-                if (!HomeGateAllows(ref _app._homeGate, down, false, -1))
+                int id = PressIdNow();
+                bool down = id != int.MinValue;
+                int upId;
+                bool up = PressReleased(out upId);
+                if (!down && up) id = upId;
+                else if (!down) id = -1;
+                if (!HomeGateAllows(ref _app._homeGate, down, up, id))
                     return false;
             }
             if (GateNow < _resumeInputUntil || GateNow < _sceneInputUntil) return false;
@@ -7123,7 +7183,7 @@ namespace FlockFive
             _tapWho = null;
             if (tapEdge && !_splash)
             {
-                if (TryDrawnGlove(tapEv.mousePosition, true))
+                if (TryDrawnGlove(tapEv.mousePosition, tapEv.type == EventType.MouseUp))
                 {
                     _tapWho = "glove";
                     tapEv.Use();
@@ -7133,7 +7193,8 @@ namespace FlockFive
             {
                 bool down = tapEv.type == EventType.MouseDown;
                 bool up = tapEv.type == EventType.MouseUp;
-                if (!HomeGateAllows(ref _homeGate, down, up, -1))
+                int id = HomeEventId(tapEv, down, up);
+                if (!HomeGateAllows(ref _homeGate, down, up, id))
                 {
                     GUIUtility.hotControl = 0;
                     if (_tapWho == null) _tapWho = "home-gate";
@@ -19113,7 +19174,8 @@ namespace FlockFive
 
         public static Rect PutBackHintPad(Rect hint)
         {
-            return hint;
+            if (hint.width < 2f) return hint;
+            return new Rect(hint.x - 12f, hint.y - 12f, hint.width + 24f, hint.height + 24f);
         }
 
         public static bool PutBackHintHit(Vector2 gui, Rect hint)
