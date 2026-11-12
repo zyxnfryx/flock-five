@@ -1523,14 +1523,16 @@ namespace FlockFive.Editor
                 const int settleCap = 240;
                 int settledFrames = 0;
                 bool settled = live == null;
-                if (live != null) settledFrames = PumpFrames(live, settleCap, null, out settled);
+                string stalledAt = null;
+                if (live != null) settledFrames = PumpFrames(live, settleCap, null, out settled, out stalledAt);
                 var afterBoard = (Board)t.GetField("_board", flags).GetValue(app);
                 int selAfterHop = (int)t.GetField("_sel", flags).GetValue(app);
                 int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
                 bool boardChanged = !SameBirds(boardBeforeHop, afterBoard);
                 bool stepAdvanced = moves > movesBeforeHop;
                 if (live != null && !settled)
-                    hopTrace = " move never settled after " + settleCap + " frames";
+                    hopTrace = " move never settled after " + settleCap + " frames " + stalledAt
+                        + " busy=" + GardenFit.Busy;
                 hopTrace += " movedParts board=" + (boardChanged ? "diff" : "same")
                     + " step=" + movesBeforeHop + "->" + moves
                     + " settled=" + settled + " frames=" + settledFrames
@@ -2101,8 +2103,18 @@ namespace FlockFive.Editor
 
         static int PumpFrames(System.Collections.IEnumerator root, int maxFrames, System.Action afterFirstFrame, out bool done)
         {
+            return PumpFrames(root, maxFrames, afterFirstFrame, out done, out _);
+        }
+
+        // Nested enumerators are stepped. WaitForSeconds and any other
+        // non-enumerator yield counts as one elapsed frame: the instruction
+        // itself does not hold the clock, the runner does, and there is no
+        // player loop here. A null yield is one frame.
+        static int PumpFrames(System.Collections.IEnumerator root, int maxFrames, System.Action afterFirstFrame, out bool done, out string stalledAt)
+        {
             int frames = 0;
             bool noted = false;
+            object yielded = null;
             var stack = new System.Collections.Generic.Stack<System.Collections.IEnumerator>();
             stack.Push(root);
             while (stack.Count > 0 && frames < maxFrames)
@@ -2118,6 +2130,7 @@ namespace FlockFive.Editor
                 else
                 {
                     frames++;
+                    yielded = top.Current;
                     if (!noted)
                     {
                         noted = true;
@@ -2126,7 +2139,29 @@ namespace FlockFive.Editor
                 }
             }
             done = stack.Count == 0;
+            stalledAt = done ? null : DescribeStall(yielded, stack);
             return frames;
+        }
+
+        static string DescribeStall(object yielded, System.Collections.Generic.Stack<System.Collections.IEnumerator> stack)
+        {
+            string current;
+            if (yielded == null) current = "null";
+            else
+            {
+                var yt = yielded.GetType();
+                current = yt.FullName ?? yt.Name;
+                var secs = yt.GetField("m_Seconds", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (secs != null) current += " seconds=" + secs.GetValue(yielded);
+                else current += " value=" + yielded;
+            }
+            var at = new System.Text.StringBuilder();
+            foreach (var e in stack)
+            {
+                if (at.Length > 0) at.Append(" < ");
+                at.Append(e.GetType().Name);
+            }
+            return "current=" + current + " at=" + at;
         }
 
         static void CheckRebootHolds(System.Action<string, bool, string> Check)
