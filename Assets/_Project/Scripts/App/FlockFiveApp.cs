@@ -4270,6 +4270,12 @@ namespace FlockFive
 #if UNITY_EDITOR
             EditorLiveMove = move;
             EditorGloveTraceNow.BeginMove = true;
+            // Edit mode has no coroutine tick. StartCoroutine would run this
+            // enumerator until its first wait and leave it finished, so a test
+            // pump would see zero frames and the lesson step would never run.
+            // Play mode still schedules it on the player loop.
+            if (!Application.isPlaying)
+                return;
 #endif
             StartCoroutine(move);
         }

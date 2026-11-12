@@ -1497,6 +1497,7 @@ namespace FlockFive.Editor
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
                 if (aimed >= 0) t.GetField("_gloveVis", flags).SetValue(app, true);
                 int selBeforeHop = (int)t.GetField("_sel", flags).GetValue(app);
+                int movesBeforeHop = (int)t.GetField("_coachMoves", flags).GetValue(app);
                 var boardBeforeHop = ((Board)t.GetField("_board", flags).GetValue(app)).Clone();
                 int tookBefore = (int)t.GetField("_gloveTookFrame", flags).GetValue(app);
                 t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
@@ -1527,9 +1528,12 @@ namespace FlockFive.Editor
                 int selAfterHop = (int)t.GetField("_sel", flags).GetValue(app);
                 int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
                 bool boardChanged = !SameBirds(boardBeforeHop, afterBoard);
+                bool stepAdvanced = moves > movesBeforeHop;
                 if (live != null && !settled)
                     hopTrace = " move never settled after " + settleCap + " frames";
-                hopTrace += " settled=" + settled + " frames=" + settledFrames
+                hopTrace += " movedParts board=" + (boardChanged ? "diff" : "same")
+                    + " step=" + movesBeforeHop + "->" + moves
+                    + " settled=" + settled + " frames=" + settledFrames
                     + " hop: aim=" + aimed
                     + " glove=" + hopBody.x.ToString("0") + "," + hopBody.y.ToString("0") + ","
                     + hopBody.width.ToString("0") + "," + hopBody.height.ToString("0")
@@ -1542,7 +1546,7 @@ namespace FlockFive.Editor
                     + " moves=" + moves
                     + " live=" + (live != null)
                     + " " + hopTr;
-                moved = settled && level1 && boardChanged && moves > 0;
+                moved = settled && level1 && boardChanged && stepAdvanced;
                 bool once = afterDown == 0 && taps == 1 && picked == from && moved;
 
                 var gate = t.GetField("_homeGate", flags);
