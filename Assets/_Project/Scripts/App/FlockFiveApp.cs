@@ -7295,7 +7295,7 @@ namespace FlockFive
             bool pointer = t == EventType.MouseDown || t == EventType.MouseUp || t == EventType.MouseDrag;
             int heldId = pointer ? HomeEventId(e, t == EventType.MouseDown, t == EventType.MouseUp) : -1;
             bool held = pointer && _app != null && _app.ResumeHolds(heldId);
-            int hud = HudControl(e.mousePosition);
+            int hud = _app != null ? _app.HudControl(e.mousePosition) : 0;
             // Fresh Home and gear. A finger already down at hide is swallowed.
             // Fresh Restart stays swallowed until its own commit.
             if (resumeHold && !otherHold && (hud == 1 || hud == 3) && !held)
