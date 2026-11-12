@@ -154,6 +154,9 @@ namespace FlockFive.Editor
             Gate("CheckGearFeedsOnHomeFace", () => CheckGearFeedsOnHomeFace(Check));
             Gate("CheckPointerIdExact", () => CheckPointerIdExact(Check));
             Gate("CheckPlayerGloveHop", () => CheckPlayerGloveHop(Check));
+            Gate("CheckMouseDownBesideTouch", () => CheckMouseDownBesideTouch(Check));
+            Gate("CheckOverlapOtherFinger", () => CheckOverlapOtherFinger(Check));
+            Gate("CheckPlayLeavesDaily", () => CheckPlayLeavesDaily(Check));
             Gate("CheckResumeFreshAndHeld", () => CheckResumeFreshAndHeld(Check));
             Gate("CheckFreshResumeSurfaces", () => CheckFreshResumeSurfaces(Check));
             Gate("CheckResumeBranches", () => CheckResumeBranches(Check));
@@ -2314,30 +2317,175 @@ namespace FlockFive.Editor
                 catch (System.Exception hopEx) { Check("pointer-id-exact-on-home-gate", false, ThrowText(hopEx)); }
         }
 
-        static void CheckPlayerGloveHop(System.Action<string, bool, string> Check)
+        static void CheckMouseDownBesideTouch(System.Action<string, bool, string> Check)
         {
-            var go = new GameObject("player-glove-hop");
-            GameObject limb = null, camGo = null;
+            var go = new GameObject("mouse-with-touch");
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance;
-                var garden = SeatGarden(out limb, out camGo);
-                t.GetField("_garden", flags).SetValue(app, garden);
-                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
-                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
                 t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
                 t.GetField("_splash", flags).SetValue(app, false);
                 t.GetField("_gloveVis", flags).SetValue(app, true);
                 t.GetField("_cueBranch", flags).SetValue(app, 0);
                 t.GetField("_cueForce", flags).SetValue(app, true);
-                t.GetField("_sel", flags).SetValue(app, -1);
+                var home = HudPlayRect(1);
+                var at = HudWindow(home);
+                PoseGlove(app, home.center, 72f);
+                ReadyHop(app);
+                SetEditorTaps(app, 0);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool touchDown = (bool)glove.Invoke(app, new object[] { at, false, 7 });
+                int press = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool mouseDown = (bool)glove.Invoke(app, new object[] { at, false, -1 });
+                int still = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                var screen = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { screen });
+                bool homeClosed = !(bool)t.GetField("_splash", flags).GetValue(app);
+                bool up = (bool)glove.Invoke(app, new object[] { at, true, -1 });
+                int sel = (int)t.GetField("_sel", flags).GetValue(app);
+                bool kept = touchDown && mouseDown && press == 7 && still == 7 && latched
+                    && homeClosed && up && EditorTaps(app) == 1 && sel == 0 && GloveHit() == 0
+                    && GloveExit() != "button";
+                try { Check("touch-down-ignores-synthesized-mouse-down", kept,
+                    "touch 7 mouse -1 press " + press + "->" + still
+                    + " latch " + latched + " home " + homeClosed
+                    + " up " + up + " sel " + sel + " hit " + GloveHit()
+                    + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("touch-down-ignores-synthesized-mouse-down", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckOverlapOtherFinger(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("overlap-other-finger");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                var home = HudPlayRect(1);
+                var at = HudWindow(home);
+                PoseGlove(app, home.center, 96f);
+                SetEditorTaps(app, 0);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool down = (bool)glove.Invoke(app, new object[] { at, false, 4 });
+                bool other = (bool)glove.Invoke(app, new object[] { at, true, 5 });
+                bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                int press = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool quiet = EditorTaps(app) == 0 && GloveExit() == "no-glove" && !other && down && latched && press == 4;
+                try { Check("other-finger-on-glove-home-overlap-is-no-glove", quiet,
+                    "downId 4 upId 5 exit " + GloveExit()
+                    + " other " + other + " latch " + latched + " press " + press
+                    + " taps " + EditorTaps(app) + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("other-finger-on-glove-home-overlap-is-no-glove", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckPlayLeavesDaily(System.Action<string, bool, string> Check)
+        {
+            const string key = "flockfive.coach.daily";
+            const string next = "flockfive.next";
+            bool hadKey = PlayerPrefs.HasKey(key);
+            int keepKey = PlayerPrefs.GetInt(key, 0);
+            bool hadNext = PlayerPrefs.HasKey(next);
+            int keepNext = PlayerPrefs.GetInt(next, 0);
+            bool keepShot = FlockFiveApp.EditorShotLive;
+            var go = new GameObject("play-leaves-daily");
+            try
+            {
+                PlayerPrefs.SetInt(key, 0);
+                PlayerPrefs.SetInt(next, 1);
+                FlockFiveApp.EditorShotLive = false;
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_splash", flags).SetValue(app, true);
+                var homeFace = t.GetField("_home", flags);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                t.GetField("_railInit", flags).SetValue(app, true);
+                t.GetField("_dailyIntro", flags).SetValue(app, true);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                t.GetField("_dailyIntroSaw", flags).SetValue(app, true);
+                t.GetField("_dailyShotQuiet", flags).SetValue(app, false);
+                t.GetField("_pokerPlayrun", flags).SetValue(app, false);
+                Method(t, "NoteDailyIntroLeft", typeof(bool)).Invoke(app, new object[] { true });
+                int afterPlay = PlayerPrefs.GetInt(key, 0);
+                bool cleared = !(bool)t.GetField("_dailyIntro", flags).GetValue(app)
+                    && !(bool)t.GetField("_dailyIntroSaw", flags).GetValue(app);
+                Method(t, "ArmDailyIntro").Invoke(app, null);
+                bool back = (bool)t.GetField("_dailyIntro", flags).GetValue(app) && afterPlay == 0;
+                try { Check("play-during-tap-daily-does-not-finish-it", cleared && back,
+                    "pref " + afterPlay + " cleared " + cleared + " back " + back); }
+                catch (System.Exception hopEx) { Check("play-during-tap-daily-does-not-finish-it", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                if (hadKey) PlayerPrefs.SetInt(key, keepKey);
+                else PlayerPrefs.DeleteKey(key);
+                if (hadNext) PlayerPrefs.SetInt(next, keepNext);
+                else PlayerPrefs.DeleteKey(next);
+                FlockFiveApp.EditorShotLive = keepShot;
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static bool BirdsMoved(FlockFiveApp app, Board before)
+        {
+            var live = app.EditorLiveMove;
+            if (live != null) live.MoveNext();
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            var after = (Board)typeof(FlockFiveApp).GetField("_board", flags).GetValue(app);
+            return after != null && !SameBirds(before, after);
+        }
+
+        static void CheckPlayerGloveHop(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("player-glove-hop");
+            GameObject limb = null, destGo = null, camGo = null;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var board = LevelData.Open(0);
+                bool level1 = FlockFiveApp.Level1First(board, i => false, i => false, out int from, out int to);
+                var views = new BranchView[board.Branches.Count];
+                limb = new GameObject("hop-from");
+                destGo = new GameObject("hop-to");
+                if (from >= 0 && from < views.Length) views[from] = Limb(limb, from, Vector3.zero);
+                if (to >= 0 && to < views.Length) views[to] = Limb(destGo, to, new Vector3(3f, 0f, 0f));
+                var garden = new WorldBuilder.Garden();
+                garden.Branches = views;
+                camGo = new GameObject("hop-cam");
+                garden.Cam = camGo.AddComponent<Camera>();
+                garden.Feeders = new FeederView[0];
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_board", flags).SetValue(app, board);
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                t.GetField("_cueForce", flags).SetValue(app, true);
                 t.GetField("_coach", flags).SetValue(app, true);
                 t.GetField("_coachMoves", flags).SetValue(app, 0);
-                var body = new Rect(px - 40f, py - 40f, 80f, 80f);
-                t.GetField("_gloveBody", flags).SetValue(app, body);
-                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                PoseGlove(app, new Vector2(px, py), 80f);
                 var down = new Vector2(px + PhoneArea.OffX, py);
                 var up = new Vector2(px + PhoneArea.OffX + 180f, py + 180f);
                 SetEditorTaps(app, 0);
@@ -2345,21 +2493,27 @@ namespace FlockFive.Editor
                 int hops = ReplayGlove(app, down, 7, up, -1);
                 int hopSel = (int)t.GetField("_sel", flags).GetValue(app);
                 int hopHit = GloveHit();
-                ReadyHop(app);
-                int hopsAgain = ReplayGlove(app, down, 7, up, -1);
-                int againSel = (int)t.GetField("_sel", flags).GetValue(app);
-                int againHit = GloveHit();
-                ReadyHop(app);
-                int hopsThird = ReplayGlove(app, down, 7, up, -1);
-                int thirdSel = (int)t.GetField("_sel", flags).GetValue(app);
-                int thirdHit = GloveHit();
-                bool realHops = hops == 1 && hopSel == 0 && hopHit == 0
-                    && hopsAgain == 1 && againSel == 0 && againHit == 0
-                    && hopsThird == 1 && thirdSel == 0 && thirdHit == 0;
+                var beforeMove = ((Board)t.GetField("_board", flags).GetValue(app)).Clone();
+                t.GetField("_nextTap", flags).SetValue(app, 0f);
+                t.GetField("_cueBranch", flags).SetValue(app, to);
+                PoseGlove(app, new Vector2(px, py), 80f);
+                int moveTaps = ReplayGlove(app, down, 7, up, -1);
+                int moveHit = GloveHit();
+                string moveExit = GloveExit();
+                bool moved = BirdsMoved(app, beforeMove);
+                var held = ((Board)t.GetField("_board", flags).GetValue(app)).Clone();
+                int tapsAfterMove = EditorTaps(app);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                glove.Invoke(app, new object[] { up, true, -1 });
+                bool extraQuiet = EditorTaps(app) == tapsAfterMove;
+                bool heldStill = SameBirds(held, (Board)t.GetField("_board", flags).GetValue(app));
+                bool realHops = level1 && hops == 1 && hopSel == from && hopHit == from
+                    && moveTaps == 1 && moveHit == to && moveExit == "move" && moved && extraQuiet && heldStill;
                 try { Check("player-touch-down-mouse-up-hops-once", realHops,
                     "downId 7 upId -1 hops " + hops + " sel " + hopSel + " hit " + hopHit
-                    + " again " + hopsAgain + "/" + againSel + "/" + againHit
-                    + " third " + hopsThird + "/" + thirdSel + "/" + thirdHit
+                    + " from " + from + " to " + to
+                    + " move " + moveTaps + " hit " + moveHit + " exit " + moveExit + " birds " + moved
+                    + " extraQuiet " + extraQuiet + " held " + heldStill
                     + " " + GloveFact(app)); }
                 catch (System.Exception hopEx) { Check("player-touch-down-mouse-up-hops-once", false, ThrowText(hopEx)); }
                 Rect home;
@@ -2371,30 +2525,40 @@ namespace FlockFive.Editor
                     return;
                 }
                 var onHome = HudWindow(home);
-                PoseGlove(app, home.center, 72f);
+                var stepBoard = LevelData.Open(0);
+                bool stepLevel = FlockFiveApp.Level1First(stepBoard, i => false, i => false, out int stepFrom, out int stepTo);
+                t.GetField("_board", flags).SetValue(app, stepBoard);
                 t.GetField("_coachMoves", flags).SetValue(app, 1);
+                t.GetField("_cueBranch", flags).SetValue(app, stepFrom);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                PoseGlove(app, home.center, 72f);
                 ReadyHop(app);
-                int overlap = ReplayGlove(app, onHome, 7, onHome, -1);
+                int step2 = ReplayGlove(app, onHome, 7, onHome, -1);
                 int step2Sel = (int)t.GetField("_sel", flags).GetValue(app);
                 int step2Hit = GloveHit();
-                int step2Cue = (int)t.GetField("_cueBranch", flags).GetValue(app);
-                PoseGlove(app, home.center, 72f);
+                var beforeStep = stepBoard.Clone();
+                t.GetField("_nextTap", flags).SetValue(app, 0f);
+                t.GetField("_cueBranch", flags).SetValue(app, stepTo);
                 t.GetField("_coachMoves", flags).SetValue(app, 2);
-                ReadyHop(app);
-                int overlapNext = ReplayGlove(app, onHome, 8, onHome, -1);
-                int step3Sel = (int)t.GetField("_sel", flags).GetValue(app);
+                PoseGlove(app, home.center, 72f);
+                int step3 = ReplayGlove(app, onHome, 8, onHome, -1);
                 int step3Hit = GloveHit();
+                string step3Exit = GloveExit();
+                bool stepMoved = BirdsMoved(app, beforeStep);
                 try { Check("player-glove-on-hud-hops-at-later-steps",
-                    overlap == 1 && step2Sel == 0 && step2Hit == 0 && step2Cue == 0
-                    && overlapNext == 1 && step3Sel == 0 && step3Hit == 0,
-                    "downId 7/8 upId -1 step2 " + overlap + " sel " + step2Sel + " hit " + step2Hit
-                    + " cue " + step2Cue + " step3 " + overlapNext + " sel " + step3Sel
-                    + " hit " + step3Hit + " " + GloveFact(app)); }
+                    stepLevel && step2 == 1 && step2Sel == stepFrom && step2Hit == stepFrom
+                    && step3 == 1 && step3Hit == stepTo && step3Exit == "move" && stepMoved,
+                    "downId 7 then 8 upId -1 step2 " + step2 + " sel " + step2Sel + " hit " + step2Hit
+                    + " from " + stepFrom + " step3 " + step3 + " hit " + step3Hit
+                    + " exit " + step3Exit + " birds " + stepMoved
+                    + " " + GloveFact(app)); }
                 catch (System.Exception hopEx) { Check("player-glove-on-hud-hops-at-later-steps", false, ThrowText(hopEx)); }
             }
             finally
             {
                 if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (destGo != null) UnityEngine.Object.DestroyImmediate(destGo);
                 if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
                 UnityEngine.Object.DestroyImmediate(go);
             }
@@ -2948,10 +3112,10 @@ namespace FlockFive.Editor
                 {
                     var safe = new Rect(0f, 34f, w[i], h[i] - 34f - 59f);
                     CornerAnchor.Garden(w[i], h[i], safe, out _, out _, out _, out var gardenRestart, out _);
-                    var gardenHome = CornerAnchor.TopBarHome(gardenRestart, w[i], safe);
+                    var gardenHome = CornerAnchor.TopBarHome(gardenRestart, w[i], safe, h[i]);
                     var gear = FlockFiveApp.SettingsGearRect(w[i], h[i], safe);
                     bool phone = w[i] < 500;
-                    bool face = gardenHome.width > 2f && gear.width > 2f;
+                    bool face = gardenHome.width > 2f && gear.width > 2f && !gardenHome.Overlaps(gear);
                     bool garden = gardenRestart.width > 2f;
                     if (!face || (phone && !garden)) sized = false;
                 }
@@ -3853,13 +4017,13 @@ namespace FlockFive.Editor
                 MixDesk.Boot(go);
                 bool stillScheduled = AudioGuard.ScheduledAt(bed, out _);
                 int samples = bed.timeSamples;
-                bool bedHeld = stillScheduled && samples >= 20000 && samples < 20000 + 8192
+                bool bedHeld = stillScheduled && samples == 20000
                     && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops + 1;
                 bool strayDown = !stray.isPlaying && stray.volume == 0f;
                 try { Check("second-boot-keeps-the-bed", bedHeld && strayDown,
                     "scheduled " + stillScheduled + " samples " + samples
                     + " plays " + AudioGuard.PlayCalls + " stops " + AudioGuard.StopCalls
-                    + " beforeStops " + stops + " stray " + stray.volume); }
+                    + " stray " + stray.volume); }
                 catch (System.Exception hopEx) { Check("second-boot-keeps-the-bed", false, ThrowText(hopEx)); }
             }
             finally

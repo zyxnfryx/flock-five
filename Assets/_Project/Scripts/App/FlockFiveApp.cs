@@ -4237,6 +4237,14 @@ namespace FlockFive
             }
             if (!releaseEdge)
             {
+                // iOS and Android synthesize a mouse Down for the touch that is
+                // already on the glove. That Down is not a new press: it must not
+                // drop the touch latch or open the button under the sprite.
+                if (pointerId < 0 && _glovePressLatched && _glovePressId >= 0)
+                {
+                    StampGlove("mouse-with-touch", windowGui, onGlove, hud != 0, false);
+                    return true;
+                }
                 // A new press ends the previous one, even in the same frame, and
                 // even when this down is on Home. Otherwise the old mouse -1 echo
                 // eats the next hop and the cue looks like it never re-armed.
@@ -4266,7 +4274,11 @@ namespace FlockFive
             bool owns = GloveOwnsRelease(pointerId);
             if (_glovePressLatched && !owns)
             {
-                StampGlove("other-finger", windowGui, onGlove, onHud, false);
+                // The other finger on the button, including where the glove and
+                // Home overlap at mid-screen, is that button. Anywhere else it
+                // is simply not this press.
+                bool button = onHud || hud != 0;
+                StampGlove(button ? "no-glove" : "other-finger", windowGui, onGlove, button, false);
                 return false;
             }
             if (!owns)

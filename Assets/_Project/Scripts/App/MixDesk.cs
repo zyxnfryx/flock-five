@@ -110,8 +110,10 @@ namespace FlockFive
             // voice can survive and play a second tune.
             if (Live.PlaceBedsHold())
             {
+                int[] held = Live.PinPlaceHeads();
                 KillForeignLoops();
                 Live.PruneExtraLoops();
+                Live.RestorePlaceHeads(held);
                 return;
             }
             Live.Build();
@@ -169,6 +171,39 @@ namespace FlockFive
                 if (a.isPlaying || AudioGuard.ScheduledAt(a, out start)) running++;
             }
             return bound > 0 && running == bound;
+        }
+
+        // The sample each place bed is on when a second boot starts. Restored
+        // after the stray-loop cleanup so that work cannot seek the bed.
+        int[] PinPlaceHeads()
+        {
+            int[] place = { 0, 1, 2, 3, 5 };
+            var samples = new int[place.Length];
+            for (int p = 0; p < place.Length; p++)
+            {
+                samples[p] = -1;
+                int i = place[p];
+                if (_stems == null || i >= _stems.Length) continue;
+                var a = _stems[i];
+                if (a == null || a.clip == null) continue;
+                samples[p] = a.timeSamples;
+            }
+            return samples;
+        }
+
+        void RestorePlaceHeads(int[] samples)
+        {
+            if (samples == null || _stems == null) return;
+            int[] place = { 0, 1, 2, 3, 5 };
+            for (int p = 0; p < place.Length && p < samples.Length; p++)
+            {
+                if (samples[p] < 0) continue;
+                int i = place[p];
+                if (i >= _stems.Length) continue;
+                var a = _stems[i];
+                if (a == null || a.clip == null) continue;
+                a.timeSamples = samples[p];
+            }
         }
 
         void Hush()
