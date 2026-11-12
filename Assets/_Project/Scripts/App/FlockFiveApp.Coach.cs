@@ -798,6 +798,7 @@ namespace FlockFive
             }
             _coachFade = 0f;
             _gloveVis = false;
+            DropGlovePress();
             _restVis = false;
             GloveVeilReset();
             _tutorSeatOn = false;
@@ -856,6 +857,7 @@ namespace FlockFive
             _leafKeepOn = false;
             _leafSeatOn = false;
             _gloveVis = false;
+            DropGlovePress();
             _restVis = false;
             _gloveLockOn = false;
             _gloveSettled = false;
@@ -2035,6 +2037,7 @@ namespace FlockFive
                 _gloveAlpha = 0f;
                 _gloveAct = TutorGloveAct.Hidden;
                 _gloveVis = false;
+                DropGlovePress();
                 _gloveHoldPose = false;
                 _gloveReady = false;
                 _gloveHidStep = -1;
@@ -6235,6 +6238,7 @@ namespace FlockFive
                 if (was)
                 {
                     _gloveVis = false;
+                    DropGlovePress();
                     if (string.Equals(_cueLine, HiveHomeLine)) _cueLine = null;
                 }
                 return;
@@ -6279,6 +6283,7 @@ namespace FlockFive
             if (_dailyIntro) return;
             _gloveReady = false;
             _gloveVis = false;
+            DropGlovePress();
             _coachFade = 0f;
             TickHiveIntro();
         }
@@ -6310,6 +6315,7 @@ namespace FlockFive
             _cueHand = false;
             _cueLine = null;
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             _coachFade = 0f;
             NoteLessonDismiss(step);
@@ -6480,6 +6486,7 @@ namespace FlockFive
             _gloveFadeDismissed = true;
             _gloveAlpha = 0f;
             _gloveVis = false;
+            DropGlovePress();
             _gloveHoldPose = false;
         }
 
@@ -7092,6 +7099,7 @@ namespace FlockFive
             if (!TutorialStepActive()) return;
             GloveVeilReset();
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             _glovePhase = 0f;
             _gloveDip = 0f;
@@ -7448,7 +7456,11 @@ namespace FlockFive
                 if (_pokerIntroLive && HoldLiveLesson()) return;
                 bool was = _pokerIntroLive;
                 _pokerIntroLive = false;
-                if (was) _gloveVis = false;
+                if (was)
+                {
+                    _gloveVis = false;
+                    DropGlovePress();
+                }
                 return;
             }
             if (!_pokerIntroLive)
@@ -7479,6 +7491,7 @@ namespace FlockFive
             if (_dailyIntro || _hiveIntro) return;
             _gloveReady = false;
             _gloveVis = false;
+            DropGlovePress();
             _coachFade = 0f;
             TickPokerIntro();
         }
@@ -7491,6 +7504,7 @@ namespace FlockFive
             _pokerIntroLive = false;
             _pokerIntroSaw = false;
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             _coachFade = 0f;
             NoteLessonDismiss(CoachStep.PokerIntro);
@@ -7890,7 +7904,11 @@ namespace FlockFive
                 if (_dailyIntroLive && HoldLiveLesson()) return;
                 bool was = _dailyIntroLive;
                 _dailyIntroLive = false;
-                if (was) _gloveVis = false;
+                if (was)
+                {
+                    _gloveVis = false;
+                    DropGlovePress();
+                }
                 return;
             }
             if (!_dailyIntroLive)
@@ -7927,6 +7945,7 @@ namespace FlockFive
             _dailyIntro = true;
             _gloveReady = false;
             _gloveVis = false;
+            DropGlovePress();
             _coachFade = 0f;
             TickDailyIntro();
         }
@@ -7941,6 +7960,7 @@ namespace FlockFive
             _dailyIntroSaw = false;
             _dailyGloveOnClaim = false;
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             _coachFade = 0f;
             NoteLessonDismiss(step);
@@ -8222,6 +8242,7 @@ namespace FlockFive
                 || _gloveAct == TutorGloveAct.FadeOutOnTap)
                 GloveVeilReset();
             _gloveVis = false;
+            DropGlovePress();
             _cueHolePx = 0f;
         }
 
@@ -8339,6 +8360,7 @@ namespace FlockFive
             _cueLine = null;
             _cueBranch = -1;
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             _cueHolePx = 0f;
             CoachHideGlow();
