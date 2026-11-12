@@ -31,6 +31,7 @@ namespace FlockFive
             if (_settingsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || VipOffer.IsOpen) return;
             gates.HardModal = false;
             gates.AdoptQueue = false;
+            gates.RailLesson = false;
         }
 
         // Gates that apply to every home button. The caller adds the ones that are

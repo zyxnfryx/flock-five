@@ -4237,17 +4237,32 @@ namespace FlockFive
                 // Steps 2 and 3 at 820 sit on Home or Restart. Exact id match
                 // misses the player's mouse -1 release and the hop is dropped.
                 if (onGlove && onHud && !(releaseEdge && GloveOwnsRelease(pointerId)))
+                {
+                    // Another finger on the button is that button. Say so, or the
+                    // previous stamp hides the miss.
+                    if (releaseEdge)
+                        StampGlove("no-glove", windowGui, onGlove, onHud, false);
                     return false;
+                }
             }
             if (!releaseEdge)
             {
-                // A new press ends the previous one, so its extra ups cannot hop.
+                // A new press ends the previous one, even in the same frame.
                 _gloveEchoFrame = -1;
                 _gloveEchoId = int.MinValue;
-                if (!onGlove) return false;
+                _gloveTookFrame = -1;
+                if (!onGlove)
+                {
+                    DropGlovePress();
+                    return false;
+                }
                 // A mouse press on the button under the glove is that button.
                 // A touch on the drawn glove is the lesson, at every step.
-                if (onHud && pointerId < 0) return false;
+                if (onHud && pointerId < 0)
+                {
+                    DropGlovePress();
+                    return false;
+                }
                 _glovePressLatched = true;
                 _glovePressId = pointerId;
                 _gloveSwallowedId = int.MinValue;
