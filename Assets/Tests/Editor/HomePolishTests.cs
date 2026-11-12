@@ -2320,37 +2320,48 @@ namespace FlockFive.Editor
         static void CheckMouseDownBesideTouch(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("mouse-with-touch");
+            GameObject limb = null, camGo = null;
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
                 t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
                 t.GetField("_splash", flags).SetValue(app, false);
                 t.GetField("_gloveVis", flags).SetValue(app, true);
                 t.GetField("_cueBranch", flags).SetValue(app, 0);
                 t.GetField("_cueForce", flags).SetValue(app, true);
                 var home = HudPlayRect(1);
-                var at = HudWindow(home);
-                PoseGlove(app, home.center, 72f);
+                var homeAt = HudWindow(home);
+                float below = home.yMax + 180f;
+                var glovePlay = new Vector2(home.center.x, below);
+                PoseGlove(app, glovePlay, 48f);
+                var gloveAt = new Vector2(glovePlay.x + PhoneArea.OffX, glovePlay.y);
+                var sprite = new Rect(glovePlay.x - 24f, glovePlay.y - 24f, 48f, 48f);
+                bool offSprite = !sprite.Contains(home.center);
                 ReadyHop(app);
                 SetEditorTaps(app, 0);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
-                bool touchDown = (bool)glove.Invoke(app, new object[] { at, false, 7 });
+                bool touchDown = (bool)glove.Invoke(app, new object[] { gloveAt, false, 7 });
                 int press = (int)t.GetField("_glovePressId", flags).GetValue(app);
-                bool mouseDown = (bool)glove.Invoke(app, new object[] { at, false, -1 });
+                bool mouseDown = (bool)glove.Invoke(app, new object[] { homeAt, false, -1 });
                 int still = (int)t.GetField("_glovePressId", flags).GetValue(app);
                 bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                string mouseExit = GloveExit();
                 var screen = new Vector2(home.center.x, PhoneArea.H - home.center.y);
                 Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { screen });
+                Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { screen });
                 bool homeClosed = !(bool)t.GetField("_splash", flags).GetValue(app);
-                bool up = (bool)glove.Invoke(app, new object[] { at, true, -1 });
+                bool up = (bool)glove.Invoke(app, new object[] { gloveAt, true, -1 });
                 int sel = (int)t.GetField("_sel", flags).GetValue(app);
-                bool kept = touchDown && mouseDown && press == 7 && still == 7 && latched
-                    && homeClosed && up && EditorTaps(app) == 1 && sel == 0 && GloveHit() == 0
-                    && GloveExit() != "button";
+                bool kept = offSprite && touchDown && mouseDown && press == 7 && still == 7 && latched
+                    && mouseExit == "mouse-with-touch" && homeClosed
+                    && up && EditorTaps(app) == 1 && sel == 0 && GloveHit() == 0;
                 try { Check("touch-down-ignores-synthesized-mouse-down", kept,
-                    "touch 7 mouse -1 press " + press + "->" + still
+                    "touch 7 on glove, mouse -1 off sprite press " + press + "->" + still
+                    + " off " + offSprite + " exit " + mouseExit
                     + " latch " + latched + " home " + homeClosed
                     + " up " + up + " sel " + sel + " hit " + GloveHit()
                     + " " + GloveFact(app)); }
@@ -2358,6 +2369,8 @@ namespace FlockFive.Editor
             }
             finally
             {
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
