@@ -3931,8 +3931,11 @@ namespace FlockFive
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            if (HudBeatsGlove(windowGui, home, restart, gear)) return false;
-            if (!releaseEdge) return false;
+            var playGui = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
+            if (HudBeatsGlove(playGui, home, restart, gear)) return false;
+            // The press is the glove's. Eat it so this same tap cannot also
+            // fall through to HandleTap. The release is the only edge that acts.
+            if (!releaseEdge) return true;
             if (!GloveMayAct(true, false, _turnGate.Busy)) return true;
             if (_gloveTookFrame == Time.frameCount) return true;
             _gloveTookFrame = Time.frameCount;
@@ -3951,6 +3954,9 @@ namespace FlockFive
 
         void HandleTap(Vector2 world)
         {
+#if UNITY_EDITOR
+            EditorHandleTaps++;
+#endif
             if (OstrichIntroBlocking()) return;
             if (_ruleTip != RuleTip.None || _ruleEatGesture) return;
             if (LessonTapBlocked()) return;
@@ -6678,6 +6684,10 @@ namespace FlockFive
 
         static int PressIdNow()
         {
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Down)
+                return EditorPointerInject.Id;
+#endif
             var touch = Touchscreen.current;
             if (touch != null)
             {
@@ -6751,19 +6761,41 @@ namespace FlockFive
             e.Use();
         }
 
+        // A resolved mouse id of -1 is not a finger. The touch release still counts.
+        public static int HomePointerId(int resolved, bool released, int releasedId)
+        {
+            if (resolved >= 0) return resolved;
+            if (released) return releasedId;
+            return resolved == int.MinValue ? -1 : resolved;
+        }
+
         static int HomeEventId(Event e, bool down, bool up)
         {
             if (up)
             {
                 int resolved = ResolveExitEventId(e);
-                if (resolved != int.MinValue) return resolved;
                 int released;
-                if (PressReleased(out released)) return released;
+                bool had = PressReleased(out released);
+                return HomePointerId(resolved, had, released);
             }
             int press = PressIdNow();
             if (down && press != int.MinValue) return press;
             return -1;
         }
+
+#if UNITY_EDITOR
+        public struct EditorPointer
+        {
+            public bool On;
+            public bool Down;
+            public bool Up;
+            public int Id;
+            public Vector2 Play;
+        }
+
+        public static EditorPointer EditorPointerInject;
+        public int EditorHandleTaps;
+#endif
 
         static bool FreshTouchDown()
         {
@@ -6781,6 +6813,13 @@ namespace FlockFive
         static bool PressReleased(out int id)
         {
             id = -1;
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Up)
+            {
+                id = EditorPointerInject.Id;
+                return true;
+            }
+#endif
             var touch = Touchscreen.current;
             if (touch != null)
             {
@@ -6814,11 +6853,18 @@ namespace FlockFive
                 bool down = id != int.MinValue;
                 int upId;
                 bool up = PressReleased(out upId);
-                if (!down && up) id = upId;
+                if (up) id = HomePointerId(down ? id : -1, true, upId);
                 else if (!down) id = -1;
                 if (!HomeGateAllows(ref _app._homeGate, down, up, id))
                     return false;
             }
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Down)
+            {
+                screen = EditorPointerInject.Play;
+                return true;
+            }
+#endif
             if (GateNow < _resumeInputUntil || GateNow < _sceneInputUntil) return false;
             if (StartupInputHeld) return false;
             if (LessonGuardUp()) return false;
@@ -7201,6 +7247,20 @@ namespace FlockFive
                     tapEv.Use();
                 }
             }
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && (EditorPointerInject.Down || EditorPointerInject.Up))
+            {
+                var injected = new Vector2(EditorPointerInject.Play.x + PhoneArea.OffX, PhoneArea.H - EditorPointerInject.Play.y);
+                if (!_splash && TryDrawnGlove(injected, EditorPointerInject.Up))
+                    _tapWho = "glove";
+                if (_splash && _home == HomeFace.Splash
+                    && !HomeGateAllows(ref _homeGate, EditorPointerInject.Down, EditorPointerInject.Up, EditorPointerInject.Id))
+                {
+                    GUIUtility.hotControl = 0;
+                    if (_tapWho == null) _tapWho = "home-gate";
+                }
+            }
+#endif
             // Before the swallows. A finished ostrich (or any clear) must not leave a
             // rule-eat, pest hold, fight lock or dismiss guard over the reward buttons.
             ArmSceneInputSettle();
