@@ -682,6 +682,7 @@ namespace FlockFive
             _cueLine = null;
             _cueBranch = -1;
             _gloveVis = false;
+            DropGlovePress();
         }
 
         // Same-frame hide. SnapRound and the splash set this before the glove draws.
@@ -1878,6 +1879,7 @@ namespace FlockFive
             _gloveReady = false;
             _gloveVis = false;
             _gloveHidStep = -1;
+            DropGlovePress();
         }
 
         // Freeze the drawn pose and drop alpha. A second tap does not restart it.
@@ -1894,6 +1896,7 @@ namespace FlockFive
                 _gloveVis = false;
                 _gloveHoldPose = false;
                 _gloveReady = false;
+                DropGlovePress();
                 return;
             }
             _gloveFadeFrom = _gloveAlpha;
@@ -2048,6 +2051,7 @@ namespace FlockFive
                     _gloveVis = false;
                     _gloveHoldPose = false;
                     _gloveReady = false;
+                    DropGlovePress();
                     // Claim tap: the hand stayed on the button for this fade. The spin
                     // starts now, and the lesson ends. Do not arm a return on the rail.
                     if (_dailyGloveThroughTap)
