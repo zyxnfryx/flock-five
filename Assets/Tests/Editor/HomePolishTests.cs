@@ -16,7 +16,7 @@ namespace FlockFive.Editor
             const BindingFlags flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
             var found = type.GetMethod(name, flags, null, args, null);
             if (found == null)
-                throw new System.MissingMethodException(type.FullName + "." + name);
+                throw new System.MissingMethodException("unresolved " + type.FullName + "." + name);
             return found;
         }
 
@@ -56,38 +56,46 @@ namespace FlockFive.Editor
                 }
             }
 
-            Check("back-answers-during-bet-coach",
-                FlockFiveApp.PokerBackAccepts(true, false, true), "bet coach");
-            Check("back-stays-shut-during-a-dealt-hand",
-                !FlockFiveApp.PokerBackAccepts(true, true, true), "dealt");
-            Check("back-stays-shut-for-the-rest-of-the-lesson",
-                !FlockFiveApp.PokerBackAccepts(false, false, true), "lesson");
-            Check("back-answers-when-nothing-holds-it",
-                FlockFiveApp.PokerBackAccepts(false, false, false), "free");
+            try { Check("back-answers-during-bet-coach",
+                FlockFiveApp.PokerBackAccepts(true, false, true), "bet coach"); }
+                catch (System.Exception hopEx) { Check("back-answers-during-bet-coach", false, ThrowText(hopEx)); }
+            try { Check("back-stays-shut-during-a-dealt-hand",
+                !FlockFiveApp.PokerBackAccepts(true, true, true), "dealt"); }
+                catch (System.Exception hopEx) { Check("back-stays-shut-during-a-dealt-hand", false, ThrowText(hopEx)); }
+            try { Check("back-stays-shut-for-the-rest-of-the-lesson",
+                !FlockFiveApp.PokerBackAccepts(false, false, true), "lesson"); }
+                catch (System.Exception hopEx) { Check("back-stays-shut-for-the-rest-of-the-lesson", false, ThrowText(hopEx)); }
+            try { Check("back-answers-when-nothing-holds-it",
+                FlockFiveApp.PokerBackAccepts(false, false, false), "free"); }
+                catch (System.Exception hopEx) { Check("back-answers-when-nothing-holds-it", false, ThrowText(hopEx)); }
 
             Gate("CheckBird", () => CheckBird("820", 820, 1180, Check));
             Gate("CheckBird", () => CheckBird("402", 402, 874, Check));
             Gate("CheckBird", () => CheckBird("412", 412, 915, Check));
 
-            Check("flip-hints-hide-for-upgrade-coach",
-                !FlockFiveApp.ShowFlipHints(true, false), "upgrade");
-            Check("flip-hints-hide-for-album-coach",
-                !FlockFiveApp.ShowFlipHints(false, true), "album");
-            Check("flip-hints-show-when-both-coaches-are-clear",
-                FlockFiveApp.ShowFlipHints(true, true), "clear");
+            try { Check("flip-hints-hide-for-upgrade-coach",
+                !FlockFiveApp.ShowFlipHints(true, false), "upgrade"); }
+                catch (System.Exception hopEx) { Check("flip-hints-hide-for-upgrade-coach", false, ThrowText(hopEx)); }
+            try { Check("flip-hints-hide-for-album-coach",
+                !FlockFiveApp.ShowFlipHints(false, true), "album"); }
+                catch (System.Exception hopEx) { Check("flip-hints-hide-for-album-coach", false, ThrowText(hopEx)); }
+            try { Check("flip-hints-show-when-both-coaches-are-clear",
+                FlockFiveApp.ShowFlipHints(true, true), "clear"); }
+                catch (System.Exception hopEx) { Check("flip-hints-show-when-both-coaches-are-clear", false, ThrowText(hopEx)); }
 
             Gate("CheckGlove", () => CheckGlove("402", 402, 874, Check));
             Gate("CheckGlove", () => CheckGlove("412", 412, 915, Check));
             Gate("CheckGlove", () => CheckGlove("820", 820, 1180, Check));
 
             Gate("CheckMaxxedPutBack", () => CheckMaxxedPutBack(Check));
-            Check("scene-change-holds-the-second-tap",
+            try { Check("scene-change-holds-the-second-tap",
                 !FlockFiveApp.SceneInputBlocked(10f, -1f)
                 && FlockFiveApp.SceneInputBlocked(10f, 10.40f)
                 && FlockFiveApp.SceneInputBlocked(10.39f, 10.40f)
                 && !FlockFiveApp.SceneInputBlocked(10.40f, 10.40f)
                 && Mathf.Abs(FlockFiveApp.SceneInputSettle - 0.40f) < 0.001f,
-                "400 ms");
+                "400 ms"); }
+                catch (System.Exception hopEx) { Check("scene-change-holds-the-second-tap", false, ThrowText(hopEx)); }
             Gate("CheckSafe", () => CheckSafe("820", 820, 1180, Check));
             Gate("CheckSafe", () => CheckSafe("402", 402, 874, Check));
             Gate("CheckSafe", () => CheckSafe("412", 412, 915, Check));
@@ -99,8 +107,9 @@ namespace FlockFive.Editor
             Gate("CheckBadge", () => CheckBadge("412", 412, 915, Check));
             Gate("CheckUpgradeTiming", () => CheckUpgradeTiming(Check));
             Gate("CheckFlipOccluder", () => CheckFlipOccluder(Check));
-            Check("card-render-defers-inside-camera",
-                CardStage.MustDeferRender(true) && !CardStage.MustDeferRender(false), "nested");
+            try { Check("card-render-defers-inside-camera",
+                CardStage.MustDeferRender(true) && !CardStage.MustDeferRender(false), "nested"); }
+                catch (System.Exception hopEx) { Check("card-render-defers-inside-camera", false, ThrowText(hopEx)); }
             Gate("CheckCardRender", () => CheckCardRender(Check));
             Gate("CheckFmod", () => CheckFmod(Check));
             Gate("CheckUnityOutputInit", () => CheckUnityOutputInit(Check));
@@ -269,10 +278,12 @@ namespace FlockFive.Editor
                 && !FlockFiveApp.UpgradeButtonShows(0.45f, true);
             bool later = FlockFiveApp.UpgradeButtonShows(0.7f, true)
                 && !FlockFiveApp.FlipHintsVisible(0.7f, true, true, true);
-            Check("upgrade-not-under-flip-hints", !shared && early && later, "shared " + shared);
+            try { Check("upgrade-not-under-flip-hints", !shared && early && later, "shared " + shared); }
+                catch (System.Exception hopEx) { Check("upgrade-not-under-flip-hints", false, ThrowText(hopEx)); }
             bool skipMax = !FlockFiveApp.UpgradeCoachForCard(false, true);
             bool teach = FlockFiveApp.UpgradeCoachForCard(true, true);
-            Check("maxxed-skips-upgrade-coach", skipMax && teach, "skip " + skipMax);
+            try { Check("maxxed-skips-upgrade-coach", skipMax && teach, "skip " + skipMax); }
+                catch (System.Exception hopEx) { Check("maxxed-skips-upgrade-coach", false, ThrowText(hopEx)); }
         }
 
         static void CheckMaxxedPutBack(System.Action<string, bool, string> Check)
@@ -291,8 +302,10 @@ namespace FlockFive.Editor
                 float top = FlockFiveApp.PutBackHintTop(card.yMax, DeviceFit.Ui(w[i], h[i]));
                 if (top < card.yMax + FlockFiveApp.PutBackHintClear - 0.5f) clear = false;
             }
-            Check("maxxed-put-back-includes-margins", taps, "820 jungle");
-            Check("put-back-hint-clears-the-frame", clear, "gap");
+            try { Check("maxxed-put-back-includes-margins", taps, "820 jungle"); }
+                catch (System.Exception hopEx) { Check("maxxed-put-back-includes-margins", false, ThrowText(hopEx)); }
+            try { Check("put-back-hint-clears-the-frame", clear, "gap"); }
+                catch (System.Exception hopEx) { Check("put-back-hint-clears-the-frame", false, ThrowText(hopEx)); }
         }
 
         static void CheckFlipOccluder(System.Action<string, bool, string> Check)
@@ -301,9 +314,10 @@ namespace FlockFive.Editor
             bool edge = FlockFiveApp.FlipFaceInsideOccluder(card, Mathf.PI * 0.5f);
             bool flat = FlockFiveApp.FlipFaceInsideOccluder(card, 0f);
             var occ = FlockFiveApp.FlipOccluder(card);
-            Check("flip-occluder-covers-the-gap",
+            try { Check("flip-occluder-covers-the-gap",
                 edge && flat && Mathf.Abs(occ.width - card.width) < 0.5f && Mathf.Abs(occ.height - card.height) < 0.5f,
-                occ.ToString());
+                occ.ToString()); }
+                catch (System.Exception hopEx) { Check("flip-occluder-covers-the-gap", false, ThrowText(hopEx)); }
         }
 
         static void CheckCardRender(System.Action<string, bool, string> Check)
@@ -315,14 +329,15 @@ namespace FlockFive.Editor
             CardStage.ResetRenderGuardForTest();
             bool clear = CardStage.AllowManualRender(false, false, false);
             string path = System.IO.Path.Combine(UnityEngine.Application.dataPath, "_Project/Scripts/App/CardStage.cs");
-            string src = System.IO.File.Exists(path) ? System.IO.File.ReadAllText(path) : "";
+            string src = CodeOnly(System.IO.File.Exists(path) ? System.IO.File.ReadAllText(path) : "");
             int draw = src.IndexOf("public static bool DrawFlip");
             int set = src.IndexOf("static void Set(");
             string body = draw >= 0 && set > draw ? src.Substring(draw, set - draw) : "";
             bool onGui = body.IndexOf(".Render(") < 0 && body.IndexOf("_defer = true") >= 0;
-            Check("card-render-once-and-outside-ongui",
+            try { Check("card-render-once-and-outside-ongui",
                 nested && inside && twice && clear && onGui,
-                "nested " + nested + " ongui " + onGui);
+                "nested " + nested + " ongui " + onGui); }
+                catch (System.Exception hopEx) { Check("card-render-once-and-outside-ongui", false, ThrowText(hopEx)); }
         }
 
         static void CheckFmod(System.Action<string, bool, string> Check)
@@ -353,13 +368,16 @@ namespace FlockFive.Editor
             AudioGuard.OnApplicationPause(false);
             bool resume = !AudioGuard.OutputFailed;
             bool plain = !AudioGuard.NoteFmodFailure("InvalidOperationException: already created");
-            Check("fmod-output-init-only",
+            try { Check("fmod-output-init-only",
                 load && decode && otherCode && quiet && named && plain,
-                "warnings " + AudioGuard.FmodWarnings + " failed " + AudioGuard.OutputFailed);
-            Check("fmod-output-init-warns-once", once && onceWarnings == 1, "warnings " + onceWarnings);
-            Check("fmod-output-recovers",
+                "warnings " + AudioGuard.FmodWarnings + " failed " + AudioGuard.OutputFailed); }
+                catch (System.Exception hopEx) { Check("fmod-output-init-only", false, ThrowText(hopEx)); }
+            try { Check("fmod-output-init-warns-once", once && onceWarnings == 1, "warnings " + onceWarnings); }
+                catch (System.Exception hopEx) { Check("fmod-output-init-warns-once", false, ThrowText(hopEx)); }
+            try { Check("fmod-output-recovers",
                 config && rewarn && focus && held && resume && !AudioGuard.OutputFailed,
-                "config " + config + " focus " + focus + " held " + held + " resume " + resume);
+                "config " + config + " focus " + focus + " held " + held + " resume " + resume); }
+                catch (System.Exception hopEx) { Check("fmod-output-recovers", false, ThrowText(hopEx)); }
             AudioGuard.ResetForTests();
         }
 
@@ -387,8 +405,9 @@ namespace FlockFive.Editor
             bool bare = !AudioGuard.IsFmodFailure("(60)") && !AudioGuard.NoteFmodFailure("(60)")
                 && !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0;
 
-            Check("unity-output-init-line-latches", unity && phrase && paren && bare,
-                "unity " + unity + " phrase " + phrase + " paren " + paren + " bare " + bare);
+            try { Check("unity-output-init-line-latches", unity && phrase && paren && bare,
+                "unity " + unity + " phrase " + phrase + " paren " + paren + " bare " + bare); }
+                catch (System.Exception hopEx) { Check("unity-output-init-line-latches", false, ThrowText(hopEx)); }
             AudioGuard.ResetForTests();
         }
 
@@ -407,7 +426,8 @@ namespace FlockFive.Editor
                 && AudioGuard.NoteFmodFailure("RUNNING ON EMULATED SOFTWARE OUTPUT WITH NO SOUND")
                 && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
 
-            Check("emulated-no-sound-latches", emulated && soft, "emulated " + emulated + " soft " + soft);
+            try { Check("emulated-no-sound-latches", emulated && soft, "emulated " + emulated + " soft " + soft); }
+                catch (System.Exception hopEx) { Check("emulated-no-sound-latches", false, ThrowText(hopEx)); }
             AudioGuard.ResetForTests();
         }
 
@@ -419,7 +439,8 @@ namespace FlockFive.Editor
             bool first = AudioGuard.NoteFmodFailure(unity);
             bool second = AudioGuard.NoteFmodFailure(emu);
             bool once = first && second && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
-            Check("output-init-then-emulated-warns-once", once, "warnings " + AudioGuard.FmodWarnings);
+            try { Check("output-init-then-emulated-warns-once", once, "warnings " + AudioGuard.FmodWarnings); }
+                catch (System.Exception hopEx) { Check("output-init-then-emulated-warns-once", false, ThrowText(hopEx)); }
             AudioGuard.ResetForTests();
         }
 
@@ -473,8 +494,9 @@ namespace FlockFive.Editor
                     && !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0
                     && AudioGuard.SkippedCount == 0;
 
-                Check("invalid-handle-does-not-latch", quiet && code && symbol && wide,
-                    "quiet " + quiet + " code " + code + " symbol " + symbol + " wide " + wide);
+                try { Check("invalid-handle-does-not-latch", quiet && code && symbol && wide,
+                    "quiet " + quiet + " code " + code + " symbol " + symbol + " wide " + wide); }
+                catch (System.Exception hopEx) { Check("invalid-handle-does-not-latch", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -494,7 +516,7 @@ namespace FlockFive.Editor
                 var files = System.IO.Directory.GetFiles(root, "*.cs", System.IO.SearchOption.AllDirectories);
                 for (int f = 0; f < files.Length; f++)
                 {
-                    var lines = System.IO.File.ReadAllLines(files[f]);
+                    var lines = CodeOnly(System.IO.File.ReadAllText(files[f])).Split('\n');
                     bool guard = files[f].EndsWith("AudioGuard.cs");
                     for (int i = 0; i < lines.Length; i++)
                     {
@@ -517,8 +539,9 @@ namespace FlockFive.Editor
             }
             else bypass.Add("missing " + root);
             bool ok = bypass.Count == 0 && routed >= 3 && impl == 1;
-            Check("play-scheduled-goes-through-guard", ok,
-                ok ? "routed " + routed : "routed " + routed + " impl " + impl + " " + string.Join(" ", bypass.ToArray()));
+            try { Check("play-scheduled-goes-through-guard", ok,
+                ok ? "routed " + routed : "routed " + routed + " impl " + impl + " " + string.Join(" ", bypass.ToArray())); }
+                catch (System.Exception hopEx) { Check("play-scheduled-goes-through-guard", false, ThrowText(hopEx)); }
         }
 
         static AudioClip ProbeClip(string name)
@@ -616,13 +639,17 @@ namespace FlockFive.Editor
                 desk.BadgerEntrance();
                 bool orphan = desk.OrphanCueStoppedForTests;
 
-                Check("audio-retry-only-after-a-real-failure", quiet && missed && onlySkipped,
-                    "quiet " + quiet + " missed " + missed + " only " + onlySkipped);
-                Check("audio-retry-skips-cut-result-pause-mute",
+                try { Check("audio-retry-only-after-a-real-failure", quiet && missed && onlySkipped,
+                    "quiet " + quiet + " missed " + missed + " only " + onlySkipped); }
+                catch (System.Exception hopEx) { Check("audio-retry-only-after-a-real-failure", false, ThrowText(hopEx)); }
+                try { Check("audio-retry-skips-cut-result-pause-mute",
                     cutQuiet && resultQuiet && pauseQuiet && muteQuiet,
-                    "cut " + cutQuiet + " result " + resultQuiet + " pause " + pauseQuiet + " mute " + muteQuiet);
-                Check("destroyed-source-returns-false-once", dead && once, "warnings " + AudioGuard.PlaybackWarnings);
-                Check("entrance-stops-cue-when-loop-misses", orphan, "orphan " + orphan);
+                    "cut " + cutQuiet + " result " + resultQuiet + " pause " + pauseQuiet + " mute " + muteQuiet); }
+                catch (System.Exception hopEx) { Check("audio-retry-skips-cut-result-pause-mute", false, ThrowText(hopEx)); }
+                try { Check("destroyed-source-returns-false-once", dead && once, "warnings " + AudioGuard.PlaybackWarnings); }
+                catch (System.Exception hopEx) { Check("destroyed-source-returns-false-once", false, ThrowText(hopEx)); }
+                try { Check("entrance-stops-cue-when-loop-misses", orphan, "orphan " + orphan); }
+                catch (System.Exception hopEx) { Check("entrance-stops-cue-when-loop-misses", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -696,15 +723,18 @@ namespace FlockFive.Editor
                 quiet.clip = ProbeClip("silent-bed");
                 bool silent = desk.ReassertBed() == 0;
 
-                Check("game-pause-routes-through-audioguard",
+                try { Check("game-pause-routes-through-audioguard",
                     entered && once && marked && still && cleared,
-                    "entered " + entered + " once " + once + " marked " + marked + " cleared " + cleared);
-                Check("retry-waits-until-game-resume",
+                    "entered " + entered + " once " + once + " marked " + marked + " cleared " + cleared); }
+                catch (System.Exception hopEx) { Check("game-pause-routes-through-audioguard", false, ThrowText(hopEx)); }
+                try { Check("retry-waits-until-game-resume",
                     missed && deferred && resumed,
-                    "missed " + missed + " deferred " + deferred + " resumed " + resumed);
-                Check("unmute-reasserts-the-bed",
+                    "missed " + missed + " deferred " + deferred + " resumed " + resumed); }
+                catch (System.Exception hopEx) { Check("retry-waits-until-game-resume", false, ThrowText(hopEx)); }
+                try { Check("unmute-reasserts-the-bed",
                     kept && brought && pausedStays && silent,
-                    "kept " + kept + " brought " + brought + " paused " + pausedStays + " silent " + silent);
+                    "kept " + kept + " brought " + brought + " paused " + pausedStays + " silent " + silent); }
+                catch (System.Exception hopEx) { Check("unmute-reasserts-the-bed", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -799,12 +829,17 @@ namespace FlockFive.Editor
                 AudioGuard.SetMuted(false, false);
                 bool only = desk.LastReassert == 1 && AudioGuard.WasStarted(kept) && !AudioGuard.WasStarted(other) && !AudioGuard.NeedsRestore(oneShot);
 
-                Check("mute-unmute-mid-bed-keeps-position", place,
-                    "place " + place + " planted " + planted + " samples " + mid.timeSamples);
-                Check("unmute-during-cut-starts-nothing", cut, "cut " + cut);
-                Check("unmute-after-result-starts-nothing", result, "result " + result);
-                Check("unmute-before-splash-welcome-starts-nothing", early, "early " + early);
-                Check("unmute-restores-only-the-stopped-bed", only, "only " + only + " reassert " + desk.LastReassert);
+                try { Check("mute-unmute-mid-bed-keeps-position", place,
+                    "place " + place + " planted " + planted + " samples " + mid.timeSamples); }
+                catch (System.Exception hopEx) { Check("mute-unmute-mid-bed-keeps-position", false, ThrowText(hopEx)); }
+                try { Check("unmute-during-cut-starts-nothing", cut, "cut " + cut); }
+                catch (System.Exception hopEx) { Check("unmute-during-cut-starts-nothing", false, ThrowText(hopEx)); }
+                try { Check("unmute-after-result-starts-nothing", result, "result " + result); }
+                catch (System.Exception hopEx) { Check("unmute-after-result-starts-nothing", false, ThrowText(hopEx)); }
+                try { Check("unmute-before-splash-welcome-starts-nothing", early, "early " + early); }
+                catch (System.Exception hopEx) { Check("unmute-before-splash-welcome-starts-nothing", false, ThrowText(hopEx)); }
+                try { Check("unmute-restores-only-the-stopped-bed", only, "only " + only + " reassert " + desk.LastReassert); }
+                catch (System.Exception hopEx) { Check("unmute-restores-only-the-stopped-bed", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -861,8 +896,9 @@ namespace FlockFive.Editor
                 bool retry = missedRetry && AudioGuard.WasRetried(c) && AudioGuard.WasRetried(d)
                     && SameScheduledStart(c, d) && AudioGuard.PlayCalls == plays;
 
-                Check("restored-stems-share-one-scheduled-start", unmute && retry,
-                    "unmute " + unmute + " retry " + retry);
+                try { Check("restored-stems-share-one-scheduled-start", unmute && retry,
+                    "unmute " + unmute + " retry " + retry); }
+                catch (System.Exception hopEx) { Check("restored-stems-share-one-scheduled-start", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -921,9 +957,12 @@ namespace FlockFive.Editor
                     && SameScheduledStart(dawn, mid) && SameScheduledStart(dawn, last)
                     && AudioGuard.PlayCalls == plays;
 
-                Check("schedule-together-rewinds-stale-stems", rewound, "rewound " + rewound + " n " + n);
-                Check("release-drops-schedule-log", logged && dropped && both, "logged " + logged + " dropped " + dropped);
-                Check("boot-stems-share-one-scheduled-start", boot, "boot " + boot + " n " + booted);
+                try { Check("schedule-together-rewinds-stale-stems", rewound, "rewound " + rewound + " n " + n); }
+                catch (System.Exception hopEx) { Check("schedule-together-rewinds-stale-stems", false, ThrowText(hopEx)); }
+                try { Check("release-drops-schedule-log", logged && dropped && both, "logged " + logged + " dropped " + dropped); }
+                catch (System.Exception hopEx) { Check("release-drops-schedule-log", false, ThrowText(hopEx)); }
+                try { Check("boot-stems-share-one-scheduled-start", boot, "boot " + boot + " n " + booted); }
+                catch (System.Exception hopEx) { Check("boot-stems-share-one-scheduled-start", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -985,9 +1024,12 @@ namespace FlockFive.Editor
             var restart = new Rect(700f, 40f, 64f, 64f);
             var home = CornerAnchor.TopBarHome(restart, 820f, new Rect(0f, 0f, 820f, 1180f));
             bool mirrored = Mathf.Abs(home.y - restart.y) < 0.5f && Mathf.Abs(home.width - restart.width) < 0.5f && home.x < restart.x;
-            Check("glove-tip-lands-in-the-branch", inside && clear && mirrored && bottom, "820 402 412");
-            Check("screen-glove-tap-hits-the-branch", tap, "820 402 412");
-            Check("l1-glove-center-advances", l1, "820 402 412 steps 0-4");
+            try { Check("glove-tip-lands-in-the-branch", inside && clear && mirrored && bottom, "820 402 412"); }
+                catch (System.Exception hopEx) { Check("glove-tip-lands-in-the-branch", false, ThrowText(hopEx)); }
+            try { Check("screen-glove-tap-hits-the-branch", tap, "820 402 412"); }
+                catch (System.Exception hopEx) { Check("screen-glove-tap-hits-the-branch", false, ThrowText(hopEx)); }
+            try { Check("l1-glove-center-advances", l1, "820 402 412 steps 0-4"); }
+                catch (System.Exception hopEx) { Check("l1-glove-center-advances", false, ThrowText(hopEx)); }
         }
 
         static void CheckUpgradeStack(System.Action<string, bool, string> Check)
@@ -1001,7 +1043,8 @@ namespace FlockFive.Editor
                 var card = FlockFiveApp.SeatedInspectCard(w[i], h[i], 34f, s);
                 if (!FlockFiveApp.UpgradeClearsBottom(card, h[i], 34f, s)) clear = false;
             }
-            Check("upgrade-clears-bottom-inset", clear, "820 402 412 inset 34");
+            try { Check("upgrade-clears-bottom-inset", clear, "820 402 412 inset 34"); }
+                catch (System.Exception hopEx) { Check("upgrade-clears-bottom-inset", false, ThrowText(hopEx)); }
         }
 
         static void CheckPlayerGlove(System.Action<string, bool, string> Check)
@@ -1053,11 +1096,16 @@ namespace FlockFive.Editor
             for (int f = 0; f < 270; f++)
                 held = FlockFiveApp.AdvanceRuleHold(held, 1f / 60f);
             bool gone = FlockFiveApp.RuleHoldDone(held) && !FlockFiveApp.RuleHoldDone(FlockFiveApp.AdvanceRuleHold(0f, 3.5f));
-            Check("player-glove-tap-advances", tap, "center tip near-miss");
-            Check("player-glove-bob-extent", bobOk, "peak to peak");
-            Check("upgrade-settle-inside-button", settle, "820 402 412");
-            Check("lesson-hud-acts", hud, "home restart");
-            Check("caption-gone-after-4-5s", gone, "unscaled");
+            try { Check("player-glove-tap-advances", tap, "center tip near-miss"); }
+                catch (System.Exception hopEx) { Check("player-glove-tap-advances", false, ThrowText(hopEx)); }
+            try { Check("player-glove-bob-extent", bobOk, "peak to peak"); }
+                catch (System.Exception hopEx) { Check("player-glove-bob-extent", false, ThrowText(hopEx)); }
+            try { Check("upgrade-settle-inside-button", settle, "820 402 412"); }
+                catch (System.Exception hopEx) { Check("upgrade-settle-inside-button", false, ThrowText(hopEx)); }
+            try { Check("lesson-hud-acts", hud, "home restart"); }
+                catch (System.Exception hopEx) { Check("lesson-hud-acts", false, ThrowText(hopEx)); }
+            try { Check("caption-gone-after-4-5s", gone, "unscaled"); }
+                catch (System.Exception hopEx) { Check("caption-gone-after-4-5s", false, ThrowText(hopEx)); }
         }
 
         static void CheckCoachRestart(System.Action<string, bool, string> Check)
@@ -1104,11 +1152,12 @@ namespace FlockFive.Editor
                 bool mid = (bool)t.GetField("_coach", flags).GetValue(app);
                 moved.Invoke(app, new object[] { from2, to2, 0 });
                 bool finished = !(bool)t.GetField("_coach", flags).GetValue(app);
-                Check("restart-restores-level1-first",
+                try { Check("restart-restores-level1-first",
                     level1 && first && from == wantFrom && to == wantTo && live && afterHop == 1
                     && reset == 0 && recued && from2 == wantFrom && to2 == wantTo
                     && mid && midMoves == 1 && finished,
-                    "from " + from + "->" + from2 + " moves " + afterHop + "/" + reset + "/" + midMoves);
+                    "from " + from + "->" + from2 + " moves " + afterHop + "/" + reset + "/" + midMoves); }
+                catch (System.Exception hopEx) { Check("restart-restores-level1-first", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -1162,9 +1211,12 @@ namespace FlockFive.Editor
                 if (!FlockFiveApp.GearTakesRelease(false, -1, -1, true, releaseGui, gear))
                     release = false;
             }
-            Check("real-press-glove-centre-tip-near", glove, "820 402 412 dpr");
-            Check("real-press-hud-before-caption", hud, "home restart");
-            Check("real-press-home-release-swallows-gear", release, "exit pointer");
+            try { Check("real-press-glove-centre-tip-near", glove, "820 402 412 dpr"); }
+                catch (System.Exception hopEx) { Check("real-press-glove-centre-tip-near", false, ThrowText(hopEx)); }
+            try { Check("real-press-hud-before-caption", hud, "home restart"); }
+                catch (System.Exception hopEx) { Check("real-press-hud-before-caption", false, ThrowText(hopEx)); }
+            try { Check("real-press-home-release-swallows-gear", release, "exit pointer"); }
+                catch (System.Exception hopEx) { Check("real-press-home-release-swallows-gear", false, ThrowText(hopEx)); }
         }
 
         static bool SameBirds(Board a, Board b)
@@ -1250,12 +1302,13 @@ namespace FlockFive.Editor
                 object[] cue = { -1, -1 };
                 bool picked = (bool)t.GetMethod("CoachPick", flags).Invoke(app, cue);
                 int from = (int)cue[0], to = (int)cue[1];
-                Check("kit-restart-restores-seed",
+                try { Check("kit-restart-restores-seed",
                     changed && heldPause && landed && SameBirds(now, seedNow) && moves == 0
                     && level1 && picked && from == wantFrom && to == wantTo
                     && !string.IsNullOrEmpty(line) && line != RuleTips.KitLine && !GamePause.Paused,
                     "held " + heldPause + " landed " + landed + " frames " + frames
-                    + " moves " + moves + " line " + line);
+                    + " moves " + moves + " line " + line); }
+                catch (System.Exception hopEx) { Check("kit-restart-restores-seed", false, ThrowText(hopEx)); }
 
                 GamePause.Reset();
                 bool streakChanged = false;
@@ -1273,9 +1326,10 @@ namespace FlockFive.Editor
                 if (streak != null)
                     streakFrames = PumpFrames(streak, 48, null, out streakLanded);
                 var streakBoard = (Board)t.GetField("_board", flags).GetValue(app);
-                Check("streak-finish-restart-restores-seed",
+                try { Check("streak-finish-restart-restores-seed",
                     streakChanged && streakHeld && streakLanded && SameBirds(streakBoard, seedNow) && !GamePause.Paused,
-                    "held " + streakHeld + " landed " + streakLanded + " frames " + streakFrames);
+                    "held " + streakHeld + " landed " + streakLanded + " frames " + streakFrames); }
+                catch (System.Exception hopEx) { Check("streak-finish-restart-restores-seed", false, ThrowText(hopEx)); }
 
                 GamePause.Reset();
                 t.GetField("_splash", flags).SetValue(app, false);
@@ -1299,12 +1353,14 @@ namespace FlockFive.Editor
                 bool releaseSwallowed = FlockFiveApp.SwallowLevelExit(true, -1, FlockFiveApp.PointerEdge.Release, -1);
                 bool downSwallowed = FlockFiveApp.SwallowLevelExit(true, -1, FlockFiveApp.PointerEdge.Down, -1);
                 bool gearTakes = FlockFiveApp.GearTakesRelease(true, -1, -1, true, home.center, home);
-                Check("kit-home-releases-tutor-pause",
+                try { Check("kit-home-releases-tutor-pause",
                     splash && tutor == 0 && tip != null && tip.ToString() == "None" && !GamePause.Paused,
-                    "splash " + splash + " tutor " + tutor + " tip " + tip + " paused " + GamePause.Paused);
-                Check("home-exit-release-swallows-play-down-does-not",
+                    "splash " + splash + " tutor " + tutor + " tip " + tip + " paused " + GamePause.Paused); }
+                catch (System.Exception hopEx) { Check("kit-home-releases-tutor-pause", false, ThrowText(hopEx)); }
+                try { Check("home-exit-release-swallows-play-down-does-not",
                     releaseSwallowed && !downSwallowed && !gearTakes && !blocked,
-                    "release " + releaseSwallowed + " down " + downSwallowed + " gear " + gearTakes + " blocked " + blocked);
+                    "release " + releaseSwallowed + " down " + downSwallowed + " gear " + gearTakes + " blocked " + blocked); }
+                catch (System.Exception hopEx) { Check("home-exit-release-swallows-play-down-does-not", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -1387,15 +1443,18 @@ namespace FlockFive.Editor
                 bool fingerSwallow = FlockFiveApp.SwallowLevelExit(true, 4, FlockFiveApp.PointerEdge.Release, finger);
                 bool otherSwallow = FlockFiveApp.SwallowLevelExit(true, 4, FlockFiveApp.PointerEdge.Release, other);
                 bool mouseEatsFinger = FlockFiveApp.SwallowLevelExit(true, -1, FlockFiveApp.PointerEdge.Release, mouseVsFinger);
-                Check("home-exit-clears-on-focus-loss", focusCleared && pauseCleared,
-                    "focus " + focusCleared + " pause " + pauseCleared);
-                Check("home-exit-clears-on-fresh-press", releaseKept && !leavingDown && otherFinger,
+                try { Check("home-exit-clears-on-focus-loss", focusCleared && pauseCleared,
+                    "focus " + focusCleared + " pause " + pauseCleared); }
+                catch (System.Exception hopEx) { Check("home-exit-clears-on-focus-loss", false, ThrowText(hopEx)); }
+                try { Check("home-exit-clears-on-fresh-press", releaseKept && !leavingDown && otherFinger,
                     "releaseKept " + releaseKept + " press " + pressCleared + " release " + ateRelease
-                    + " event " + eventLive + " leaving " + leavingDown + " other " + otherFinger);
-                Check("home-exit-matches-finger-id",
+                    + " event " + eventLive + " leaving " + leavingDown + " other " + otherFinger); }
+                catch (System.Exception hopEx) { Check("home-exit-clears-on-fresh-press", false, ThrowText(hopEx)); }
+                try { Check("home-exit-matches-finger-id",
                     mouse == -1 && finger == 4 && other == 9 && mouseVsFinger == 9
                     && mouseSwallow && fingerSwallow && !otherSwallow && !mouseEatsFinger,
-                    "mouse " + mouse + " finger " + finger + " other " + other + " echo " + mouseVsFinger);
+                    "mouse " + mouse + " finger " + finger + " other " + other + " echo " + mouseVsFinger); }
+                catch (System.Exception hopEx) { Check("home-exit-matches-finger-id", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -1413,18 +1472,21 @@ namespace FlockFive.Editor
             {
                 if (FlockFiveApp.HomeGateAllows(ref gate, false, true, -1)) opened = true;
             }
-            Check("home-tap-does-not-open-settings", !opened && !gate.FreshDown, "opened " + opened);
+            try { Check("home-tap-does-not-open-settings", !opened && !gate.FreshDown, "opened " + opened); }
+                catch (System.Exception hopEx) { Check("home-tap-does-not-open-settings", false, ThrowText(hopEx)); }
             bool down = FlockFiveApp.HomeGateAllows(ref gate, true, false, -1);
             bool up = FlockFiveApp.HomeGateAllows(ref gate, false, true, -1);
             var gear = new Rect(16f, 8f, 48f, 48f);
             bool gearTakes = up && FlockFiveApp.GearTakesRelease(false, -1, -1, true, gear.center, gear);
-            Check("home-fresh-down-then-release", down && up && gate.FreshDown && gearTakes, "down " + down + " up " + up);
+            try { Check("home-fresh-down-then-release", down && up && gate.FreshDown && gearTakes, "down " + down + " up " + up); }
+                catch (System.Exception hopEx) { Check("home-fresh-down-then-release", false, ThrowText(hopEx)); }
             bool unsettled = !FlockFiveApp.ToggleMayFlip(false, true, true);
             bool outside = !FlockFiveApp.ToggleMayFlip(true, false, true);
             bool immediate = !FlockFiveApp.SettingsPanelSettled(0.1f);
             bool settled = FlockFiveApp.ToggleMayFlip(FlockFiveApp.SettingsPanelSettled(0.25f), true, true);
-            Check("privacy-toggle-needs-settled-gesture", unsettled && outside && immediate && settled,
-                "unsettled " + unsettled + " outside " + outside + " immediate " + immediate + " settled " + settled);
+            try { Check("privacy-toggle-needs-settled-gesture", unsettled && outside && immediate && settled,
+                "unsettled " + unsettled + " outside " + outside + " immediate " + immediate + " settled " + settled); }
+                catch (System.Exception hopEx) { Check("privacy-toggle-needs-settled-gesture", false, ThrowText(hopEx)); }
         }
 
         static void CheckHomeTouchGate(System.Action<string, bool, string> Check)
@@ -1467,10 +1529,11 @@ namespace FlockFive.Editor
                 SetResumeUntil(keepResume);
                 UnityEngine.Object.DestroyImmediate(go);
             }
-            Check("home-touch-release-clears-gate",
+            try { Check("home-touch-release-clears-gate",
                 stillCarried && touchClears == false && !mismatched.CarryHeld && fresh && liveHeld && focusCleared && resumeCleared,
                 "carried " + stillCarried + " fresh " + fresh + " live " + liveHeld
-                + " focus " + focusCleared + " resume " + resumeCleared);
+                + " focus " + focusCleared + " resume " + resumeCleared); }
+                catch (System.Exception hopEx) { Check("home-touch-release-clears-gate", false, ThrowText(hopEx)); }
         }
 
         static void CheckGloveOneHandle(System.Action<string, bool, string> Check)
@@ -1483,7 +1546,6 @@ namespace FlockFive.Editor
                 var destGo = new GameObject("one-handle-dest");
                 var rootGo = new GameObject("one-handle-root");
                 int taps = -1;
-                bool homeWon = false;
                 bool pressCleared = false, guiCleared = false;
                 string pressTrace = "";
                 bool moved = false;
@@ -1628,79 +1690,90 @@ namespace FlockFive.Editor
 
                 splash.SetValue(app, false);
                 t.GetField("_gloveVis", flags).SetValue(app, true);
-                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                t.GetField("_cueForce", flags).SetValue(app, true);
                 object[] hud = { default(Rect), default(Rect) };
                 Method(t, "HudShaken", typeof(Rect).MakeByRefType(), typeof(Rect).MakeByRefType()).Invoke(null, hud);
                 var restart = (Rect)hud[0];
                 var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
-                t.GetField("_gloveBody", flags).SetValue(app, new Rect(home.center.x - 30f, home.center.y - 30f, 60f, 60f));
-                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                var homeWin = new Vector2(home.center.x + PhoneArea.OffX, home.center.y);
+                var homeScreen = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                PoseGlove(app, home.center, 60f);
+                ReadyHop(app);
                 SetEditorTaps(app, 0);
-                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
-                {
-                    On = true, Down = true, Id = -1,
-                    Play = new Vector2(home.center.x, PhoneArea.H - home.center.y)
-                };
-                Method(t, "UpdateBody").Invoke(app, null);
-                homeWon = (bool)splash.GetValue(app) && EditorTaps(app) == 0;
-                Check("glove-down-and-up-handle-once", once,
+                var cuff = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool cuffDown = (bool)cuff.Invoke(app, new object[] { homeWin, false, -1 });
+                int cuffPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool cuffLatched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                bool homeOnDown = (bool)splash.GetValue(app);
+                bool cuffUp = (bool)cuff.Invoke(app, new object[] { homeWin, true, -1 });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                bool homeOnUp = (bool)splash.GetValue(app);
+                int cuffSel = (int)t.GetField("_sel", flags).GetValue(app);
+                int cuffHit = GloveHit();
+                int cuffTaps = EditorTaps(app);
+                SetEditorTaps(app, 0);
+                bool cuffAgain = (bool)cuff.Invoke(app, new object[] { homeWin, true, -1 });
+                bool cuffHop = level1 && from >= 0 && cuffDown && cuffLatched && cuffPress == -1 && cuffUp
+                    && cuffTaps == 1 && cuffSel == from && cuffHit == from
+                    && !homeOnDown && !homeOnUp && !cuffAgain && EditorTaps(app) == 0 && !SnapArmed(app);
+                try { Check("glove-down-and-up-handle-once", once,
                     "down " + afterDown + " total " + taps + " sel " + picked + " moved " + moved
-                    + " " + upTrace + hopTrace);
-                Check("home-up-id-falls-through-to-release", mouseKeepsTouchRelease && noReleaseStaysMouse && namedFingerWins,
-                    "kept " + mouseKeepsTouchRelease + " mouse " + noReleaseStaysMouse + " finger " + namedFingerWins);
-                Check("home-touch-up-through-pressed-and-ongui", pressCleared && guiCleared,
-                    "press " + pressCleared + " gui " + guiCleared + " " + pressTrace);
-                Check("glove-cuff-on-home-goes-home", homeWon, "home " + homeWon + " taps " + EditorTaps(app));
+                    + " " + upTrace + hopTrace); }
+                catch (System.Exception hopEx) { Check("glove-down-and-up-handle-once", false, ThrowText(hopEx)); }
+                try { Check("home-up-id-falls-through-to-release", mouseKeepsTouchRelease && noReleaseStaysMouse && namedFingerWins,
+                    "kept " + mouseKeepsTouchRelease + " mouse " + noReleaseStaysMouse + " finger " + namedFingerWins); }
+                catch (System.Exception hopEx) { Check("home-up-id-falls-through-to-release", false, ThrowText(hopEx)); }
+                try { Check("home-touch-up-through-pressed-and-ongui", pressCleared && guiCleared,
+                    "press " + pressCleared + " gui " + guiCleared + " " + pressTrace); }
+                catch (System.Exception hopEx) { Check("home-touch-up-through-pressed-and-ongui", false, ThrowText(hopEx)); }
+                try { Check("glove-cuff-on-home-hops", cuffHop,
+                    "downId -1 upId -1 owner glove press " + cuffPress
+                    + " down " + cuffDown + " up " + cuffUp
+                    + " home " + homeOnDown + "/" + homeOnUp
+                    + " taps " + cuffTaps + " again " + cuffAgain
+                    + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("glove-cuff-on-home-hops", false, ThrowText(hopEx)); }
 
                 splash.SetValue(app, false);
                 garden.Cam = new GameObject("glove-cam-slide").AddComponent<Camera>();
                 t.GetField("_board", flags).SetValue(app, board);
                 t.GetField("_garden", flags).SetValue(app, garden);
-                t.GetField("_gloveVis", flags).SetValue(app, true);
-                t.GetField("_cueBranch", flags).SetValue(app, from);
                 t.GetField("_coach", flags).SetValue(app, true);
-                t.GetField("_sel", flags).SetValue(app, -1);
-                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
-                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
-                SetEditorTaps(app, 0);
-                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
-                {
-                    On = true, Down = true, Up = false, Id = 4,
-                    Play = new Vector2(px, PhoneArea.H - py)
-                };
-                Method(t, "UpdateBody").Invoke(app, null);
-                bool downLatched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
-                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
-                {
-                    On = true, Down = false, Up = true, Id = 4,
-                    Play = new Vector2(home.center.x, PhoneArea.H - home.center.y)
-                };
-                try { Method(t, "OnGUIBody").Invoke(app, null); }
-                catch (System.Exception) { }
-                int slidSel = (int)t.GetField("_sel", flags).GetValue(app);
-                bool slidHome = (bool)splash.GetValue(app);
-                bool slid = downLatched && EditorTaps(app) == 0 && slidSel < 0 && !slidHome;
-                splash.SetValue(app, false);
-                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueForce", flags).SetValue(app, true);
                 t.GetField("_cueBranch", flags).SetValue(app, from);
-                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
-                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                ReadyHop(app);
+                PoseGlove(app, new Vector2(px, py), 100f);
                 SetEditorTaps(app, 0);
-                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
-                {
-                    On = true, Down = true, Up = false, Id = 4,
-                    Play = new Vector2(px, PhoneArea.H - py)
-                };
-                Method(t, "UpdateBody").Invoke(app, null);
-                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
-                {
-                    On = true, Down = true, Up = false, Id = -1,
-                    Play = new Vector2(home.center.x, PhoneArea.H - home.center.y)
-                };
-                Method(t, "UpdateBody").Invoke(app, null);
-                bool freshHome = (bool)splash.GetValue(app) && EditorTaps(app) == 0;
-                Check("glove-slide-off-does-nothing", slid && freshHome,
-                    "latch " + downLatched + " slid " + slid + " fresh " + freshHome + " taps " + EditorTaps(app));
+                var slideGlove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var slideDownPt = new Vector2(px + PhoneArea.OffX, py);
+                bool slideDown = (bool)slideGlove.Invoke(app, new object[] { slideDownPt, false, 4 });
+                int slidePress = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool slideUp = (bool)slideGlove.Invoke(app, new object[] { homeWin, true, 4 });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                int slideSel = (int)t.GetField("_sel", flags).GetValue(app);
+                int slideHit = GloveHit();
+                bool slideHome = (bool)splash.GetValue(app);
+                bool slid = level1 && from >= 0 && slideDown && slidePress == 4 && slideUp && EditorTaps(app) == 1
+                    && slideSel == from && slideHit == from && !slideHome;
+                splash.SetValue(app, false);
+                ReadyHop(app);
+                PoseGlove(app, new Vector2(px, py), 80f);
+                SetEditorTaps(app, 0);
+                bool freshAte = (bool)slideGlove.Invoke(app, new object[] { homeWin, false, -1 });
+                int freshPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool freshLatch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                bool freshHome = !freshAte && !freshLatch && (bool)splash.GetValue(app) && EditorTaps(app) == 0;
+                try { Check("glove-slide-starts-on-glove-then-fresh-home", slid && freshHome,
+                    "downId 4 upId 4 owner glove press " + slidePress
+                    + " slid " + slid + " freshId -1 ate " + freshAte + " fresh " + freshHome
+                    + " freshPress " + freshPress + " freshLatch " + freshLatch
+                    + " taps " + EditorTaps(app) + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("glove-slide-starts-on-glove-then-fresh-home", false, ThrowText(hopEx)); }
 
                 splash.SetValue(app, false);
                 garden.Cam = new GameObject("glove-cam-finger").AddComponent<Camera>();
@@ -1741,8 +1814,9 @@ namespace FlockFive.Editor
                 {
                     focusEx = " " + ex.GetType().Name;
                 }
-                Check("glove-second-finger-up-does-not-act", latched && otherFinger && focusDropped,
-                    "latched " + latched + " other " + otherFinger + " focus " + focusDropped + focusEx);
+                try { Check("glove-second-finger-up-does-not-act", latched && otherFinger && focusDropped,
+                    "latched " + latched + " other " + otherFinger + " focus " + focusDropped + focusEx); }
+                catch (System.Exception hopEx) { Check("glove-second-finger-up-does-not-act", false, ThrowText(hopEx)); }
 
                 splash.SetValue(app, false);
                 t.GetField("_board", flags).SetValue(app, board);
@@ -1782,8 +1856,9 @@ namespace FlockFive.Editor
                 try { Method(t, "OnGUIBody").Invoke(app, null); }
                 catch (System.Exception) { }
                 bool splashUpQuiet = EditorTaps(app) == tapsBeforeUp;
-                Check("glove-showsplash-drops-stale-latch", splashLatched && splashDropped && splashUpQuiet,
-                    "latched " + splashLatched + " dropped " + splashDropped + " quiet " + splashUpQuiet + splashEx);
+                try { Check("glove-showsplash-drops-stale-latch", splashLatched && splashDropped && splashUpQuiet,
+                    "latched " + splashLatched + " dropped " + splashDropped + " quiet " + splashUpQuiet + splashEx); }
+                catch (System.Exception hopEx) { Check("glove-showsplash-drops-stale-latch", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -1813,7 +1888,8 @@ namespace FlockFive.Editor
                 t.GetField("_nextTap", flags).SetValue(app, mark);
                 t.GetMethod("HandleTap", flags).Invoke(app, new object[] { Vector2.zero });
                 float after = (float)t.GetField("_nextTap", flags).GetValue(app);
-                Check("freeze-reject-does-not-arm-next-tap", after == mark, "mark " + mark + " after " + after);
+                try { Check("freeze-reject-does-not-arm-next-tap", after == mark, "mark " + mark + " after " + after); }
+                catch (System.Exception hopEx) { Check("freeze-reject-does-not-arm-next-tap", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -1848,8 +1924,9 @@ namespace FlockFive.Editor
                 int cue = (int)t.GetField("_cueBranch", flags).GetValue(app);
                 bool vis = (bool)t.GetField("_gloveVis", flags).GetValue(app);
                 bool latch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
-                Check("hop2-latched-keeps-destination", cue == 4 && vis && latch,
-                    "cue " + cue + " vis " + vis + " latch " + latch);
+                try { Check("hop2-latched-keeps-destination", cue == 4 && vis && latch,
+                    "cue " + cue + " vis " + vis + " latch " + latch); }
+                catch (System.Exception hopEx) { Check("hop2-latched-keeps-destination", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -1876,7 +1953,7 @@ namespace FlockFive.Editor
                 | BindingFlags.Instance | BindingFlags.Static;
             var found = typeof(FlockFiveApp).GetField(name, flags);
             if (found == null)
-                throw new System.MissingFieldException(typeof(FlockFiveApp).FullName, name);
+                throw new System.MissingFieldException("unresolved " + typeof(FlockFiveApp).FullName + "." + name);
             return found;
         }
 
@@ -1898,7 +1975,84 @@ namespace FlockFive.Editor
         static string GloveExit()
         {
             object trace = EditorField("EditorGloveTraceNow").GetValue(null);
-            return (string)trace.GetType().GetField("Exit").GetValue(trace);
+            var exit = trace.GetType().GetField("Exit").GetValue(trace) as string;
+            return exit ?? "";
+        }
+
+        static int GloveHit()
+        {
+            object trace = EditorField("EditorGloveTraceNow").GetValue(null);
+            return (int)trace.GetType().GetField("Hit").GetValue(trace);
+        }
+
+        static string GloveFact(object app)
+        {
+            var t = typeof(FlockFiveApp);
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            int Int(string name) => (int)t.GetField(name, flags).GetValue(app);
+            bool Bit(string name) => (bool)t.GetField(name, flags).GetValue(app);
+            return "exit " + GloveExit()
+                + " press " + Int("_glovePressId") + " latch " + Bit("_glovePressLatched")
+                + " echo " + Int("_gloveEchoId") + "@" + Int("_gloveEchoFrame")
+                + " took " + Int("_gloveTookFrame")
+                + " swallow " + Int("_gloveSwallowedId") + "/" + Int("_gloveSwallowHud")
+                + " cue " + Int("_cueBranch") + " vis " + Bit("_gloveVis")
+                + " sel " + Int("_sel") + " hit " + GloveHit()
+                + " moves " + Int("_coachMoves");
+        }
+
+        static void ReadyHop(object app)
+        {
+            var t = typeof(FlockFiveApp);
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            t.GetField("_sel", flags).SetValue(app, -1);
+            t.GetField("_nextTap", flags).SetValue(app, 0f);
+        }
+
+        static void PoseGlove(object app, Vector2 play, float size)
+        {
+            var t = typeof(FlockFiveApp);
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            t.GetField("_gloveBody", flags).SetValue(app, new Rect(play.x - size * 0.5f, play.y - size * 0.5f, size, size));
+            t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+            t.GetField("_gloveShown", flags).SetValue(app, play);
+            t.GetField("_gloveVis", flags).SetValue(app, true);
+        }
+
+        static string ThrowText(System.Exception ex)
+        {
+            while (ex is System.Reflection.TargetInvocationException && ex.InnerException != null)
+                ex = ex.InnerException;
+            return "THREW " + ex.GetType().Name + ": " + ex.Message;
+        }
+
+        // Comments are not code. A negative scan must not fail on a note.
+        static string CodeOnly(string src)
+        {
+            if (string.IsNullOrEmpty(src)) return "";
+            var sb = new System.Text.StringBuilder(src.Length);
+            bool line = false, block = false;
+            for (int i = 0; i < src.Length; i++)
+            {
+                char c = src[i];
+                char n = i + 1 < src.Length ? src[i + 1] : '\0';
+                if (block)
+                {
+                    if (c == '*' && n == '/') { block = false; i++; sb.Append("  "); }
+                    else sb.Append(c == '\n' ? '\n' : ' ');
+                    continue;
+                }
+                if (line)
+                {
+                    if (c == '\n') { line = false; sb.Append('\n'); }
+                    else sb.Append(' ');
+                    continue;
+                }
+                if (c == '/' && n == '/') { line = true; sb.Append(' '); continue; }
+                if (c == '/' && n == '*') { block = true; sb.Append(' '); continue; }
+                sb.Append(c);
+            }
+            return sb.ToString();
         }
 
         static int ReplayGlove(FlockFiveApp app, Vector2 down, int downId, Vector2 up, int upId)
@@ -1970,10 +2124,11 @@ namespace FlockFive.Editor
                 int movesAfter = (int)t.GetField("_coachMoves", flags).GetValue(app);
                 bool tap = !tapLatch && selAfter == 0 && movesAfter == 0 && EditorTaps(app) == 0
                     && GloveExit() == "resume";
-                Check("resume-swallow-blocks-glove", route && tap,
+                try { Check("resume-swallow-blocks-glove", route && tap,
                     "route " + swallowed + " latch " + latch + " sel " + sel + "->" + selAfter
                     + " moves " + moves + "->" + movesAfter + " taps " + EditorTaps(app)
-                    + " exit " + GloveExit());
+                    + " exit " + GloveExit()); }
+                catch (System.Exception hopEx) { Check("resume-swallow-blocks-glove", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2018,10 +2173,11 @@ namespace FlockFive.Editor
                 bool quiet = down && downExit == "resume" && !latched
                     && up && upExit == "swallowed-up"
                     && EditorTaps(app) == 0 && sel == -1 && moves == 0;
-                Check("resume-up-after-swallowed-down-does-not-hop", quiet,
+                try { Check("resume-up-after-swallowed-down-does-not-hop", quiet,
                     "down " + down + " " + downExit + " latch " + latched
                     + " up " + up + " " + upExit + " taps " + EditorTaps(app)
-                    + " sel " + sel + " moves " + moves);
+                    + " sel " + sel + " moves " + moves); }
+                catch (System.Exception hopEx) { Check("resume-up-after-swallowed-down-does-not-hop", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2081,9 +2237,10 @@ namespace FlockFive.Editor
                 bool focusUp = ReleaseAt(off, 4, out string focusExit);
                 bool focusCleared = focusArmed && focusId == int.MinValue
                     && focusUp && focusExit == "no-press" && EditorTaps(app) == 0;
-                Check("resume-focus-loss-clears-swallow", focusCleared,
+                try { Check("resume-focus-loss-clears-swallow", focusCleared,
                     "focus " + focusArmed + " id " + focusId + " " + focusExit + focusEx
-                    + " taps " + EditorTaps(app));
+                    + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("resume-focus-loss-clears-swallow", false, ThrowText(hopEx)); }
 
                 bool homeArmed = Arm();
                 string homeEx = "";
@@ -2123,13 +2280,15 @@ namespace FlockFive.Editor
                 bool left = homeArmed && loadArmed && homeId == int.MinValue && loadId == int.MinValue
                     && homeUp && homeExit == "no-press"
                     && loadUp && loadExit == "no-press";
-                Check("resume-swallow-clears-on-home-and-load", left,
+                try { Check("resume-swallow-clears-on-home-and-load", left,
                     "home " + homeArmed + " id " + homeId + " " + homeExit + homeEx
-                    + " load " + loadArmed + " id " + loadId + " " + loadExit + loadEx);
-                Check("resume-swallow-clears-on-exit-hide-snap-cancel", stateClears,
+                    + " load " + loadArmed + " id " + loadId + " " + loadExit + loadEx); }
+                catch (System.Exception hopEx) { Check("resume-swallow-clears-on-home-and-load", false, ThrowText(hopEx)); }
+                try { Check("resume-swallow-clears-on-exit-hide-snap-cancel", stateClears,
                     "exit " + exitArmed + "/" + exitId + " hide " + hideArmed + "/" + hideId
                     + " snap " + snapArmed + "/" + snapId + snapEx
-                    + " cancel " + cancelArmed + "/" + cancelId);
+                    + " cancel " + cancelArmed + "/" + cancelId); }
+                catch (System.Exception hopEx) { Check("resume-swallow-clears-on-exit-hide-snap-cancel", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2150,8 +2309,9 @@ namespace FlockFive.Editor
             var missing = FlockFiveApp.BeginHomeGate(true, int.MinValue);
             FlockFiveApp.HomeGateAllows(ref missing, false, true, -1);
             bool missingHeld = missing.CarryHeld;
-            Check("pointer-id-exact-on-home-gate", mouseHeld && mouseCleared && missingHeld,
-                "held " + mouse.CarryHeld + " cleared " + !same.CarryHeld + " missing " + missing.CarryHeld);
+            try { Check("pointer-id-exact-on-home-gate", mouseHeld && mouseCleared && missingHeld,
+                "held " + mouse.CarryHeld + " cleared " + !same.CarryHeld + " missing " + missing.CarryHeld); }
+                catch (System.Exception hopEx) { Check("pointer-id-exact-on-home-gate", false, ThrowText(hopEx)); }
         }
 
         static void CheckPlayerGloveHop(System.Action<string, bool, string> Check)
@@ -2181,28 +2341,56 @@ namespace FlockFive.Editor
                 var down = new Vector2(px + PhoneArea.OffX, py);
                 var up = new Vector2(px + PhoneArea.OffX + 180f, py + 180f);
                 SetEditorTaps(app, 0);
+                ReadyHop(app);
                 int hops = ReplayGlove(app, down, 7, up, -1);
+                int hopSel = (int)t.GetField("_sel", flags).GetValue(app);
+                int hopHit = GloveHit();
+                ReadyHop(app);
                 int hopsAgain = ReplayGlove(app, down, 7, up, -1);
+                int againSel = (int)t.GetField("_sel", flags).GetValue(app);
+                int againHit = GloveHit();
+                ReadyHop(app);
                 int hopsThird = ReplayGlove(app, down, 7, up, -1);
-                Check("player-touch-down-mouse-up-hops-once", hops == 1 && hopsAgain == 1 && hopsThird == 1,
-                    "hops " + hops + " again " + hopsAgain + " third " + hopsThird);
+                int thirdSel = (int)t.GetField("_sel", flags).GetValue(app);
+                int thirdHit = GloveHit();
+                bool realHops = hops == 1 && hopSel == 0 && hopHit == 0
+                    && hopsAgain == 1 && againSel == 0 && againHit == 0
+                    && hopsThird == 1 && thirdSel == 0 && thirdHit == 0;
+                try { Check("player-touch-down-mouse-up-hops-once", realHops,
+                    "downId 7 upId -1 hops " + hops + " sel " + hopSel + " hit " + hopHit
+                    + " again " + hopsAgain + "/" + againSel + "/" + againHit
+                    + " third " + hopsThird + "/" + thirdSel + "/" + thirdHit
+                    + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("player-touch-down-mouse-up-hops-once", false, ThrowText(hopEx)); }
                 Rect home;
                 try { home = HudPlayRect(1); }
                 catch (System.Exception ex)
                 {
-                    Check("player-glove-on-hud-hops-at-later-steps", false, ex.Message);
+                    try { Check("player-glove-on-hud-hops-at-later-steps", false, ex.Message); }
+                catch (System.Exception hopEx) { Check("player-glove-on-hud-hops-at-later-steps", false, ThrowText(hopEx)); }
                     return;
                 }
                 var onHome = HudWindow(home);
-                t.GetField("_gloveBody", flags).SetValue(app, new Rect(home.center.x - 36f, home.center.y - 36f, 72f, 72f));
-                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                PoseGlove(app, home.center, 72f);
                 t.GetField("_coachMoves", flags).SetValue(app, 1);
+                ReadyHop(app);
                 int overlap = ReplayGlove(app, onHome, 7, onHome, -1);
+                int step2Sel = (int)t.GetField("_sel", flags).GetValue(app);
+                int step2Hit = GloveHit();
+                int step2Cue = (int)t.GetField("_cueBranch", flags).GetValue(app);
+                PoseGlove(app, home.center, 72f);
                 t.GetField("_coachMoves", flags).SetValue(app, 2);
-                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                ReadyHop(app);
                 int overlapNext = ReplayGlove(app, onHome, 8, onHome, -1);
-                Check("player-glove-on-hud-hops-at-later-steps", overlap == 1 && overlapNext == 1,
-                    "step2 " + overlap + " step3 " + overlapNext);
+                int step3Sel = (int)t.GetField("_sel", flags).GetValue(app);
+                int step3Hit = GloveHit();
+                try { Check("player-glove-on-hud-hops-at-later-steps",
+                    overlap == 1 && step2Sel == 0 && step2Hit == 0 && step2Cue == 0
+                    && overlapNext == 1 && step3Sel == 0 && step3Hit == 0,
+                    "downId 7/8 upId -1 step2 " + overlap + " sel " + step2Sel + " hit " + step2Hit
+                    + " cue " + step2Cue + " step3 " + overlapNext + " sel " + step3Sel
+                    + " hit " + step3Hit + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("player-glove-on-hud-hops-at-later-steps", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2246,11 +2434,12 @@ namespace FlockFive.Editor
                 SetEditorTaps(app, 0);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 bool heldUp = (bool)glove.Invoke(app, new object[] { point, true, 4 });
-                Check("resume-fresh-tap-hops-held-press-swallowed",
+                try { Check("resume-fresh-tap-hops-held-press-swallowed",
                     fresh == 1 && heldUp && EditorTaps(app) == 0
                     && GloveExit() == "resume",
                     "fresh " + fresh + " held " + heldUp + " " + GloveExit()
-                    + " taps " + EditorTaps(app));
+                    + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("resume-fresh-tap-hops-held-press-swallowed", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2300,14 +2489,20 @@ namespace FlockFive.Editor
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
                 SetResumeUntil(float.NegativeInfinity);
                 SetEditorTaps(app, 0);
+                ReadyHop(app);
+                PoseGlove(app, home.center, 72f);
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
-                glove.Invoke(app, new object[] { onHome, false, 7 });
+                bool ownerDown = (bool)glove.Invoke(app, new object[] { onHome, false, 7 });
+                int ownerPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
                 var screen = new Vector2(home.center.x, PhoneArea.H - home.center.y);
                 Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { screen });
                 bool downQuiet = !(bool)t.GetField("_splash", flags).GetValue(app) && !SnapArmed(app);
                 glove.Invoke(app, new object[] { onHome, true, -1 });
                 Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { screen });
-                bool owned = EditorTaps(app) == 1 && downQuiet
+                int ownerSel = (int)t.GetField("_sel", flags).GetValue(app);
+                int ownerHit = GloveHit();
+                bool owned = ownerDown && ownerPress == 7 && EditorTaps(app) == 1 && downQuiet
+                    && ownerSel == 0 && ownerHit == 0
                     && !(bool)t.GetField("_splash", flags).GetValue(app) && !SnapArmed(app);
                 t.GetField("_gloveEchoFrame", flags).SetValue(app, Time.frameCount - 8);
                 SetEditorTaps(app, 0);
@@ -2321,9 +2516,12 @@ namespace FlockFive.Editor
                     (PhoneArea.H > 0f ? PhoneArea.H : 800f) * 0.5f);
                 bool dropped = (bool)glove.Invoke(app, new object[] { off, true, -1 });
                 bool loose = toHud && dropped && EditorTaps(app) == 0;
-                Check("glove-press-owns-home-and-restart", owned && oneHop && loose,
-                    "owned " + owned + " once " + oneHop + " loose " + loose
-                    + " taps " + EditorTaps(app) + " exit " + GloveExit());
+                try { Check("glove-press-owns-home-and-restart", owned && oneHop && loose,
+                    "downId 7 upId -1 owner glove press " + ownerPress
+                    + " owned " + owned + " sel " + ownerSel + " hit " + ownerHit
+                    + " once " + oneHop + " loose " + loose
+                    + " taps " + EditorTaps(app) + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("glove-press-owns-home-and-restart", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2382,10 +2580,11 @@ namespace FlockFive.Editor
                 Method(t, "SwallowResumePointer").Invoke(null, null);
                 bool left = down.type != EventType.Used;
                 appField.SetValue(null, live);
-                Check("resume-branches-leave-restart",
+                try { Check("resume-branches-leave-restart",
                     frozen && gifted && season && left,
                     "frozen " + frozen + frozenEx + " gift " + gifted + giftEx
-                    + " season " + season + seasonEx + " null " + left);
+                    + " season " + season + seasonEx + " null " + left); }
+                catch (System.Exception hopEx) { Check("resume-branches-leave-restart", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2438,11 +2637,14 @@ namespace FlockFive.Editor
                 bool held = (bool)t.GetField("_holdRuleForLesson", flags).GetValue(app);
                 bool stale = !advanced && tip == "None" && line != null && line.IndexOf("Tap a branch") >= 0
                     && line.IndexOf("Crowns") < 0 && held;
-                Check("restart-clears-crowns-and-rearms-step-one", crowns,
-                    "crowns " + crowns);
-                Check("restart-clears-nice-and-rearms-step-one", nice, "nice " + nice);
-                Check("restart-after-fifth-red-does-not-replay-crowns", stale,
-                    "advanced " + advanced + " tip " + tip + " line " + line + " held " + held);
+                try { Check("restart-clears-crowns-and-rearms-step-one", crowns,
+                    "crowns " + crowns); }
+                catch (System.Exception hopEx) { Check("restart-clears-crowns-and-rearms-step-one", false, ThrowText(hopEx)); }
+                try { Check("restart-clears-nice-and-rearms-step-one", nice, "nice " + nice); }
+                catch (System.Exception hopEx) { Check("restart-clears-nice-and-rearms-step-one", false, ThrowText(hopEx)); }
+                try { Check("restart-after-fifth-red-does-not-replay-crowns", stale,
+                    "advanced " + advanced + " tip " + tip + " line " + line + " held " + held); }
+                catch (System.Exception hopEx) { Check("restart-after-fifth-red-does-not-replay-crowns", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2494,7 +2696,8 @@ namespace FlockFive.Editor
                 detail += w[i] + " play " + play + " gear " + gear + " apart " + apart + " bare " + noGear + " ";
             }
             bool tappable = HomeGear.AcceptsTap(new HomeGearQuery { Home = true, ForcedTap = false });
-            Check("home-chain-keeps-play-and-gear", clear && tappable, detail);
+            try { Check("home-chain-keeps-play-and-gear", clear && tappable, detail); }
+                catch (System.Exception hopEx) { Check("home-chain-keeps-play-and-gear", false, ThrowText(hopEx)); }
         }
 
         static void CheckPauseKeepsHeldId(System.Action<string, bool, string> Check)
@@ -2514,7 +2717,8 @@ namespace FlockFive.Editor
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 bool holds = (bool)Method(t, "ResumeHolds", typeof(int)).Invoke(app, new object[] { 6 });
                 bool fresh = (bool)Method(t, "ResumeHolds", typeof(int)).Invoke(app, new object[] { 9 });
-                Check("pause-keeps-the-held-pointer", holds && !fresh, "holds " + holds + " fresh " + fresh + pauseEx);
+                try { Check("pause-keeps-the-held-pointer", holds && !fresh, "holds " + holds + " fresh " + fresh + pauseEx); }
+                catch (System.Exception hopEx) { Check("pause-keeps-the-held-pointer", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2573,11 +2777,12 @@ namespace FlockFive.Editor
                 bool up = (bool)glove.Invoke(app, new object[] { homePt, true, 5 });
                 int id = (int)t.GetField("_gloveSwallowedId", flags).GetValue(app);
                 bool onHome = FlockFiveApp.HudBeatsGlove(home.center, home, new Rect(0f, 0f, 0f, 0f), new Rect(0f, 0f, 0f, 0f), false);
-                Check("resume-swallow-leaves-other-finger",
+                try { Check("resume-swallow-leaves-other-finger",
                     onHome && down && !up && GloveExit() == "no-glove"
                     && id == 4 && EditorTaps(app) == 0,
                     "down " + down + " up " + up + " "
-                    + GloveExit() + " id " + id);
+                    + GloveExit() + " id " + id); }
+                catch (System.Exception hopEx) { Check("resume-swallow-leaves-other-finger", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2624,9 +2829,10 @@ namespace FlockFive.Editor
                 bool slide = (bool)glove.Invoke(app, new object[] { homePt, true, 4 });
                 bool slideEaten = gloveDown && slide && GloveExit() == "swallowed-up"
                     && EditorTaps(app) == 0;
-                Check("resume-button-press-still-fires", began && slideEaten,
+                try { Check("resume-button-press-still-fires", began && slideEaten,
                     "down " + down + " " + downExit + " up " + up
-                    + " slide " + slide + " " + GloveExit());
+                    + " slide " + slide + " " + GloveExit()); }
+                catch (System.Exception hopEx) { Check("resume-button-press-still-fires", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2674,9 +2880,10 @@ namespace FlockFive.Editor
                 try { fired = FeedHud(app, 1, home, false, true); }
                 catch (System.Exception ex) { fireEx = TapFault(ex); }
                 bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
-                Check("resume-home-press-fires", left && !armed && splash,
+                try { Check("resume-home-press-fires", left && !armed && splash,
                     "left " + left + " type " + down.type
-                    + " armed " + armed + " fired " + fired + " splash " + splash + fireEx);
+                    + " armed " + armed + " fired " + fired + " splash " + splash + fireEx); }
+                catch (System.Exception hopEx) { Check("resume-home-press-fires", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2748,10 +2955,11 @@ namespace FlockFive.Editor
                     bool garden = gardenRestart.width > 2f;
                     if (!face || (phone && !garden)) sized = false;
                 }
-                Check("resume-fresh-home-gear-board",
+                try { Check("resume-fresh-home-gear-board",
                     homeLeft && gearLeft && heldEaten && board && sized && restartLeftDown,
                     "home " + homeLeft + " gear " + gearLeft + " held " + heldEaten
-                    + " board " + board + " sized " + sized + " restart " + restartLeftDown + boardEx);
+                    + " board " + board + " sized " + sized + " restart " + restartLeftDown + boardEx); }
+                catch (System.Exception hopEx) { Check("resume-fresh-home-gear-board", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2766,6 +2974,8 @@ namespace FlockFive.Editor
         {
             var go = new GameObject("home-chain");
             var prev = Event.current;
+            float keepResume = ResumeUntil();
+            bool keepShot = FlockFiveApp.EditorShotLive;
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
@@ -2787,6 +2997,14 @@ namespace FlockFive.Editor
                 t.GetField("_dailyIntro", flags).SetValue(app, true);
                 t.GetField("_dailyIntroLive", flags).SetValue(app, true);
                 t.GetField("_adoptLive", flags).SetValue(app, true);
+                t.GetField("_adoptGreetDone", flags).SetValue(app, false);
+                t.GetField("_dailyShotQuiet", flags).SetValue(app, false);
+                t.GetField("_pokerPlayrun", flags).SetValue(app, false);
+                t.GetField("_bgPendFrame", flags).SetValue(app, Time.frameCount);
+                t.GetField("_bgPendValue", flags).SetValue(app, 0);
+                FlockFiveApp.EditorShotLive = false;
+                GamePause.Reset();
+                SetResumeUntil(float.NegativeInfinity);
                 bool gearDuring = HomeGear.AcceptsTap((HomeGearQuery)Method(t, "HomeGearNow").Invoke(app, null));
                 var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
                 var playAt = new Vector2(level.center.x, level.center.y);
@@ -2809,17 +3027,56 @@ namespace FlockFive.Editor
                 bool greetDone = (bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
                 bool playCan = false;
                 string canEx = "";
-                try { playCan = (bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { level }); }
+                string queue = "";
+                try
+                {
+                    bool greetUp = (bool)Method(t, "AdoptGreetUp").Invoke(app, null);
+                    bool turn = (bool)Method(t, "AdoptTurn").Invoke(app, null);
+                    string line = (string)Method(t, "AdoptCaptionLine").Invoke(app, null);
+                    var stepType = t.GetNestedType("StepGate", BindingFlags.NonPublic);
+                    var stepMethod = t.GetMethod("StepTapGate", flags, null, new[] { stepType.MakeByRefType() }, null);
+                    object[] stepArgs = { null };
+                    bool gated = stepMethod != null && (bool)stepMethod.Invoke(app, stepArgs);
+                    int stepNo = -1;
+                    bool any = false;
+                    if (stepArgs[0] != null)
+                    {
+                        var gt = stepArgs[0].GetType();
+                        stepNo = (int)gt.GetField("Step").GetValue(stepArgs[0]);
+                        any = (bool)gt.GetField("AnyTap").GetValue(stepArgs[0]);
+                    }
+                    bool stepBlocks = (bool)Method(t, "StepGateBlocks", typeof(Rect)).Invoke(app, new object[] { level });
+                    var gates = Method(t, "HomePressGates", typeof(int)).Invoke(app, new object[] { -1 });
+                    var gf = gates.GetType().GetFields();
+                    var bits = new System.Text.StringBuilder();
+                    for (int i = 0; i < gf.Length; i++)
+                    {
+                        if (gf[i].FieldType != typeof(bool)) continue;
+                        if (!(bool)gf[i].GetValue(gates)) continue;
+                        if (bits.Length > 0) bits.Append(",");
+                        bits.Append(gf[i].Name);
+                    }
+                    playCan = (bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { level });
+                    queue = " line \"" + line + "\" greetUp " + greetUp + " turn " + turn
+                        + " gate " + gated + " step " + stepNo + " any " + any
+                        + " stepBlocks " + stepBlocks + " bits " + bits
+                        + " shot " + FlockFiveApp.EditorShotLive
+                        + " miss " + missAt.x.ToString("0") + "," + missAt.y.ToString("0")
+                        + " level " + level.width.ToString("0") + "x" + level.height.ToString("0");
+                }
                 catch (System.Exception ex) { canEx = TapFault(ex); }
-                Check("home-captions-queue-and-leave-play",
+                try { Check("home-captions-queue-and-leave-play",
                     greetHolds && nameHolds && gearDuring && playLeft && greetHeld && greetDone && playCan,
                     "greet " + greetHolds + " name " + nameHolds + " gear " + gearDuring
                     + " play " + playLeft + " held " + greetHeld + " done " + greetDone
-                    + " can " + playCan + playEx + canEx);
+                    + " can " + playCan + " " + queue + playEx + canEx); }
+                catch (System.Exception hopEx) { Check("home-captions-queue-and-leave-play", false, ThrowText(hopEx)); }
             }
             finally
             {
                 Event.current = prev;
+                SetResumeUntil(keepResume);
+                FlockFiveApp.EditorShotLive = keepShot;
                 GamePause.Reset();
                 UnityEngine.Object.DestroyImmediate(go);
             }
@@ -2849,8 +3106,9 @@ namespace FlockFive.Editor
                 bool going = SnapArmed(app)
                     || (bool)t.GetField("_restarting", flags).GetValue(app)
                     || t.GetField("_restartAsk", flags).GetValue(app).ToString() != "None";
-                Check("resume-restart-stays-swallowed", swallowed && !going,
-                    "type " + down.type + " going " + going);
+                try { Check("resume-restart-stays-swallowed", swallowed && !going,
+                    "type " + down.type + " going " + going); }
+                catch (System.Exception hopEx) { Check("resume-restart-stays-swallowed", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2890,9 +3148,10 @@ namespace FlockFive.Editor
                 try { fired = FeedHud(app, 3, gear, false, true); }
                 catch (System.Exception ex) { fireEx = TapFault(ex); }
                 bool open = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
-                Check("resume-gear-press-fires", left && open,
+                try { Check("resume-gear-press-fires", left && open,
                     "left " + left + " type " + down.type
-                    + " fired " + fired + " open " + open + fireEx);
+                    + " fired " + fired + " open " + open + fireEx); }
+                catch (System.Exception hopEx) { Check("resume-gear-press-fires", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2922,9 +3181,10 @@ namespace FlockFive.Editor
                 SetResumeUntil(float.NegativeInfinity);
                 bool fired = FeedHud(app, 1, home, false, true);
                 bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
-                Check("resume-hud-arm-clears-with-swallow",
+                try { Check("resume-hud-arm-clears-with-swallow",
                     !armed && arm == 1 && cleared == 0 && !fired && !splash,
-                    "arm " + arm + "->" + cleared + " fired " + fired + " splash " + splash);
+                    "arm " + arm + "->" + cleared + " fired " + fired + " splash " + splash); }
+                catch (System.Exception hopEx) { Check("resume-hud-arm-clears-with-swallow", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2955,9 +3215,10 @@ namespace FlockFive.Editor
                 SetResumeUntil(float.NegativeInfinity);
                 bool fired = FeedHud(app, 1, home, false, true);
                 bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
-                Check("resume-hud-arm-clears-on-pause",
+                try { Check("resume-hud-arm-clears-on-pause",
                     !armed && arm == 1 && after == 0 && !fired && !splash,
-                    "arm " + arm + "->" + after + " fired " + fired + " splash " + splash + pauseEx);
+                    "arm " + arm + "->" + after + " fired " + fired + " splash " + splash + pauseEx); }
+                catch (System.Exception hopEx) { Check("resume-hud-arm-clears-on-pause", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -2994,6 +3255,9 @@ namespace FlockFive.Editor
                 var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 bool inDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                bool inHeld = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                int inPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                int inSwallow = (int)t.GetField("_gloveSwallowedId", flags).GetValue(app);
                 string inExit = GloveExit();
                 int inArm = (int)t.GetField("_resumeHudArm", flags).GetValue(app);
                 bool inGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
@@ -3003,6 +3267,7 @@ namespace FlockFive.Editor
                 bool outDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
                 string outExit = GloveExit();
                 bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                int outPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
                 bool outGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
                 t.GetField("_gloveBody", flags).SetValue(app, new Rect(0f, 0f, 4f, 4f));
                 t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
@@ -3013,16 +3278,20 @@ namespace FlockFive.Editor
                 bool stillGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
                 bool beats = FlockFiveApp.HudBeatsGlove(gear.center, new Rect(0f, 0f, 0f, 0f),
                     new Rect(0f, 0f, 0f, 0f), gear, false);
-                bool inLatch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
-                Check("garden-gear-rect-goes-to-glove-or-board",
-                    inDown && inLatch && inExit != "resume-hud" && inArm == 0 && !inGear
+                bool afterMiss = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                try { Check("garden-gear-rect-goes-to-glove-or-board",
+                    inDown && inHeld && inExit != "resume-hud" && inArm == 0 && !inGear
                     && outDown && latched && outExit != "resume-hud" && !outGear
                     && !missIn && !missOut && !stillGear && !beats
                     && EditorTaps(app) == 0,
-                    "in " + inDown + " " + inExit + " arm " + inArm
-                    + " out " + outDown + " " + outExit + " latch " + latched
+                    "downId 4 owner " + inExit
+                    + " in " + inDown + " held " + inHeld + " press " + inPress
+                    + " swallow " + inSwallow + " " + inExit + " arm " + inArm
+                    + " out " + outDown + " press " + outPress + " " + outExit + " latch " + latched
+                    + " afterMiss " + afterMiss
                     + " miss " + missIn + "/" + missOut + " gear " + inGear + "/" + outGear
-                    + " beats " + beats);
+                    + " beats " + beats + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("garden-gear-rect-goes-to-glove-or-board", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -3035,22 +3304,23 @@ namespace FlockFive.Editor
         {
             bool garden = !HomeGear.Shown(new HomeGearQuery { Home = false });
             bool home = HomeGear.Shown(new HomeGearQuery { Home = true });
-            string settings = System.IO.File.ReadAllText(System.IO.Path.Combine(
-                Application.dataPath, "_Project/Scripts/App/FlockFiveApp.Settings.cs"));
+            string settings = CodeOnly(System.IO.File.ReadAllText(System.IO.Path.Combine(
+                Application.dataPath, "_Project/Scripts/App/FlockFiveApp.Settings.cs")));
             int poll = settings.IndexOf("void PollHomeGear()");
             int tick = settings.IndexOf("void TickSettingsMotion()", poll);
             string pollBody = poll >= 0 && tick > poll ? settings.Substring(poll, tick - poll) : "";
             bool splashFeeds = pollBody.Contains("FeedResumeHudButton(3");
-            string app = System.IO.File.ReadAllText(System.IO.Path.Combine(
-                Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs"));
+            string app = CodeOnly(System.IO.File.ReadAllText(System.IO.Path.Combine(
+                Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs")));
             int stamp = app.IndexOf("DrawGardenStamp(s);");
             int hive = stamp >= 0 ? app.IndexOf("if (HiveReachable())", stamp) : -1;
             string level = stamp >= 0 && hive > stamp ? app.Substring(stamp, hive - stamp) : "";
             bool levelFeedsGear = level.Contains("FeedResumeHudButton(3");
-            Check("gear-feeds-on-the-home-face",
+            try { Check("gear-feeds-on-the-home-face",
                 garden && home && splashFeeds && !levelFeedsGear,
                 "garden " + garden + " home " + home + " splash " + splashFeeds
-                + " level " + levelFeedsGear);
+                + " level " + levelFeedsGear); }
+                catch (System.Exception hopEx) { Check("gear-feeds-on-the-home-face", false, ThrowText(hopEx)); }
         }
 
         static void CheckResumeFollowups(System.Action<string, bool, string> Check)
@@ -3060,7 +3330,8 @@ namespace FlockFive.Editor
                 && !FlockFiveApp.GloveFingerMatches(int.MinValue, -1)
                 && FlockFiveApp.GloveFingerMatches(4, 4)
                 && !FlockFiveApp.GloveFingerMatches(4, 5);
-            Check("glove-finger-matches-exact-id", exact, "mouse and missing id");
+            try { Check("glove-finger-matches-exact-id", exact, "mouse and missing id"); }
+                catch (System.Exception hopEx) { Check("glove-finger-matches-exact-id", false, ThrowText(hopEx)); }
 
             var go = new GameObject("resume-follow");
             var t = typeof(FlockFiveApp);
@@ -3109,10 +3380,11 @@ namespace FlockFive.Editor
                 bool focusKeeps = armedFocus && afterFocus == 4 && focusUp
                     && GloveExit() == "swallowed-up"
                     && EditorTaps(app) == 0;
-                Check("resume-focus-gain-keeps-swallowed-id", focusKeeps,
+                try { Check("resume-focus-gain-keeps-swallowed-id", focusKeeps,
                     "armed " + armedFocus + " id " + afterFocus + " up " + focusUp
                     + " " + GloveExit() + focusEx
-                    + " taps " + EditorTaps(app));
+                    + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("resume-focus-gain-keeps-swallowed-id", false, ThrowText(hopEx)); }
 
                 Pose();
                 t.GetField("_glovePressLatched", flags).SetValue(app, true);
@@ -3136,9 +3408,10 @@ namespace FlockFive.Editor
                     && GloveExit() == "swallowed-up"
                     && EditorTaps(app) == 0
                     && (int)t.GetField("_sel", flags).GetValue(app) == -1;
-                Check("resume-held-through-pause-does-not-hop", heldQuiet,
+                try { Check("resume-held-through-pause-does-not-hop", heldQuiet,
                     "id " + held + " up " + pauseUp + " " + GloveExit()
-                    + " taps " + EditorTaps(app) + pauseEx);
+                    + " taps " + EditorTaps(app) + pauseEx); }
+                catch (System.Exception hopEx) { Check("resume-held-through-pause-does-not-hop", false, ThrowText(hopEx)); }
 
                 bool armedTap = Arm();
                 t.GetField("_gloveEdgeId", flags).SetValue(app, 4);
@@ -3149,10 +3422,11 @@ namespace FlockFive.Editor
                     && (int)t.GetField("_sel", flags).GetValue(app) == 0
                     && Swallowed() == int.MinValue
                     && GloveExit() == "swallowed-up";
-                Check("resume-handletap-gates-swallowed-id", tapAte,
+                try { Check("resume-handletap-gates-swallowed-id", tapAte,
                     "armed " + armedTap + " taps " + EditorTaps(app)
                     + " sel " + t.GetField("_sel", flags).GetValue(app)
-                    + " id " + Swallowed() + " " + GloveExit());
+                    + " id " + Swallowed() + " " + GloveExit()); }
+                catch (System.Exception hopEx) { Check("resume-handletap-gates-swallowed-id", false, ThrowText(hopEx)); }
 
                 bool armedCancel = Arm();
                 Method(t, "NoteSwallowedCancel", typeof(int)).Invoke(app, new object[] { 9 });
@@ -3171,12 +3445,14 @@ namespace FlockFive.Editor
                 Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero });
                 bool otherOpen = GloveExit() == "board" && EditorTaps(app) == 1;
                 t.GetField("_gloveCancelFrame", flags).SetValue(app, -1);
-                Check("resume-cancel-leaves-other-finger", otherOpen,
-                    "exit " + GloveExit() + " taps " + EditorTaps(app));
-                Check("resume-cancel-and-mouse-up-does-not-hop", cancelQuiet,
+                try { Check("resume-cancel-leaves-other-finger", otherOpen,
+                    "exit " + GloveExit() + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("resume-cancel-leaves-other-finger", false, ThrowText(hopEx)); }
+                try { Check("resume-cancel-and-mouse-up-does-not-hop", cancelQuiet,
                     "armed " + armedCancel + " other " + otherCancel + " up " + mouseUp
                     + " " + GloveExit()
-                    + " taps " + EditorTaps(app));
+                    + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("resume-cancel-and-mouse-up-does-not-hop", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -3287,13 +3563,16 @@ namespace FlockFive.Editor
                 UnityEngine.Object.DestroyImmediate(limb);
                 UnityEngine.Object.DestroyImmediate(go);
             }
-            Check("glove-one-tap-does-not-pick-and-move", downSkips && oneEdge && pickedOnly,
+            try { Check("glove-one-tap-does-not-pick-and-move", downSkips && oneEdge && pickedOnly,
                 "down " + downSkips + " edge " + oneEdge + " pick " + pickedOnly
-                + " hit " + downHit + "/" + upHit + " sel " + sawDown + "->" + sawUp + " " + routeTrace);
-            Check("glove-hud-beats-cuff", hudWins,
+                + " hit " + downHit + "/" + upHit + " sel " + sawDown + "->" + sawUp + " " + routeTrace); }
+                catch (System.Exception hopEx) { Check("glove-one-tap-does-not-pick-and-move", false, ThrowText(hopEx)); }
+            try { Check("glove-hud-beats-cuff", hudWins,
                 "home " + cuffInHome + " glove " + cuffInGlove + " hud " + hudPoint + " skip " + gloveSkipsHud
-                + " cuff " + cuff.x.ToString("0") + "," + cuff.y.ToString("0"));
-            Check("glove-turn-gate-refuses", busyRefuses && stayed, "stayed " + stayed);
+                + " cuff " + cuff.x.ToString("0") + "," + cuff.y.ToString("0")); }
+                catch (System.Exception hopEx) { Check("glove-hud-beats-cuff", false, ThrowText(hopEx)); }
+            try { Check("glove-turn-gate-refuses", busyRefuses && stayed, "stayed " + stayed); }
+                catch (System.Exception hopEx) { Check("glove-turn-gate-refuses", false, ThrowText(hopEx)); }
         }
 
         static void CheckForcePause(System.Action<string, bool, string> Check)
@@ -3306,8 +3585,9 @@ namespace FlockFive.Editor
             bool held = DevLevelSkip.CaptionHeld("http://x/", 0f);
             DevLevelSkip.DevPauseFlip();
             bool resumed = !DevLevelSkip.DevPauseHeld && !DevLevelSkip.CaptionHeld("http://x/", 0f);
-            Check("force-pause-timeout-and-toggle", forever && waiting && elapsed && held && resumed,
-                "forever " + forever + " waiting " + waiting + " elapsed " + elapsed + " held " + held + " resumed " + resumed);
+            try { Check("force-pause-timeout-and-toggle", forever && waiting && elapsed && held && resumed,
+                "forever " + forever + " waiting " + waiting + " elapsed " + elapsed + " held " + held + " resumed " + resumed); }
+                catch (System.Exception hopEx) { Check("force-pause-timeout-and-toggle", false, ThrowText(hopEx)); }
         }
 
         static void CheckRestartRecue(System.Action<string, bool, string> Check)
@@ -3355,7 +3635,8 @@ namespace FlockFive.Editor
                 t.GetField("_splash", flags).SetValue(app, false);
                 bool nice = RecueFrom(app, t, flags, RuleTip.Feeder);
                 bool crowns = RecueFrom(app, t, flags, RuleTip.Kit);
-                Check("restart-nice-and-crowns-recues-level1", nice && crowns, "nice " + nice + " crowns " + crowns);
+                try { Check("restart-nice-and-crowns-recues-level1", nice && crowns, "nice " + nice + " crowns " + crowns); }
+                catch (System.Exception hopEx) { Check("restart-nice-and-crowns-recues-level1", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -3459,14 +3740,15 @@ namespace FlockFive.Editor
                 bool mid = (bool)t.GetField("_coach", flags).GetValue(app);
                 moved.Invoke(app, new object[] { from2, to2, 0 });
                 bool finished = !(bool)t.GetField("_coach", flags).GetValue(app);
-                Check("restart-button-runs-snapround",
+                try { Check("restart-button-runs-snapround",
                     level1 && first && from == wantFrom && to == wantTo && afterHop == 1
                     && acted && restart.width > 2f
                     && reset == 0 && recued && from2 == wantFrom && to2 == wantTo
                     && mid && midMoves == 1 && finished
                     && landed && (frames > 0 || movesNow == 0),
                     "acted " + acted + " restart " + restart + " frames " + frames
-                    + " moves " + afterHop + "/" + reset + "/" + midMoves);
+                    + " moves " + afterHop + "/" + reset + "/" + midMoves); }
+                catch (System.Exception hopEx) { Check("restart-button-runs-snapround", false, ThrowText(hopEx)); }
             }
             finally
             {
@@ -3574,10 +3856,11 @@ namespace FlockFive.Editor
                 bool bedHeld = stillScheduled && samples >= 20000 && samples < 20000 + 8192
                     && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops + 1;
                 bool strayDown = !stray.isPlaying && stray.volume == 0f;
-                Check("second-boot-keeps-the-bed", bedHeld && strayDown,
+                try { Check("second-boot-keeps-the-bed", bedHeld && strayDown,
                     "scheduled " + stillScheduled + " samples " + samples
                     + " plays " + AudioGuard.PlayCalls + " stops " + AudioGuard.StopCalls
-                    + " beforeStops " + stops + " stray " + stray.volume);
+                    + " beforeStops " + stops + " stray " + stray.volume); }
+                catch (System.Exception hopEx) { Check("second-boot-keeps-the-bed", false, ThrowText(hopEx)); }
             }
             finally
             {

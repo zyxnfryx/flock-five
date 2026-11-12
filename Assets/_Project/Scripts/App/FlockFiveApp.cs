@@ -4234,40 +4234,34 @@ namespace FlockFive
                 var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
                 var playGui = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
                 onHud = HudBeatsGlove(playGui, home, restart, gear, HomeGear.Shown(HomeGearNow()));
-                // Steps 2 and 3 at 820 sit on Home or Restart. Exact id match
-                // misses the player's mouse -1 release and the hop is dropped.
-                if (onGlove && onHud && !(releaseEdge && GloveOwnsRelease(pointerId)))
-                {
-                    // Another finger on the button is that button. Say so, or the
-                    // previous stamp hides the miss.
-                    if (releaseEdge)
-                        StampGlove("no-glove", windowGui, onGlove, onHud, false);
-                    return false;
-                }
             }
             if (!releaseEdge)
             {
-                // A new press ends the previous one, even in the same frame.
+                // A new press ends the previous one, even in the same frame, and
+                // even when this down is on Home. Otherwise the old mouse -1 echo
+                // eats the next hop and the cue looks like it never re-armed.
                 _gloveEchoFrame = -1;
                 _gloveEchoId = int.MinValue;
                 _gloveTookFrame = -1;
                 if (!onGlove)
                 {
                     DropGlovePress();
+                    StampGlove(hud != 0 ? "button" : "off-glove", windowGui, false, hud != 0, false);
                     return false;
                 }
-                // A mouse press on the button under the glove is that button.
-                // A touch on the drawn glove is the lesson, at every step.
-                if (onHud && pointerId < 0)
-                {
-                    DropGlovePress();
-                    return false;
-                }
+                // The finger or the cuff. Home and Restart under the sprite wait.
                 _glovePressLatched = true;
                 _glovePressId = pointerId;
                 _gloveSwallowedId = int.MinValue;
                 _gloveSwallowHud = 0;
+                StampGlove("owned", windowGui, true, onHud, false);
                 return true;
+            }
+            // A release that never started on the glove is the button under it.
+            if (onGlove && onHud && !_glovePressLatched && !GloveOwnsRelease(pointerId))
+            {
+                StampGlove("no-glove", windowGui, onGlove, onHud, false);
+                return false;
             }
             bool owns = GloveOwnsRelease(pointerId);
             if (_glovePressLatched && !owns)
@@ -4279,27 +4273,19 @@ namespace FlockFive
             {
                 // A mouse -1 that is not this glove press is not a hop.
                 // On a button it stays that button. Anywhere else it is dropped.
-                StampGlove(onHud ? "no-glove" : "no-press", windowGui, onGlove, onHud, false);
-                return !onHud;
+                bool button = onHud || hud != 0;
+                StampGlove(button ? "no-glove" : "no-press", windowGui, onGlove, button, false);
+                return !button;
             }
             else
             {
                 _gloveEchoId = _glovePressId;
                 _gloveEchoFrame = Time.frameCount;
-                // The player's up is mouse -1 and often lands on the button the
-                // glove overlaps. That is still the glove tap. A same-id slide
-                // onto Home is the button, and does not hop.
+                // Started on the sprite. The up is often mouse -1 and often lands
+                // on the button the glove overlaps. That is still the one hop.
                 bool synthesized = pointerId == -1 && _glovePressId >= 0;
                 if (synthesized) _gloveEdgeId = _glovePressId;
                 DropGlovePress();
-                if (onHud && !synthesized)
-                {
-                    StampGlove("ate-hud", windowGui, onGlove, onHud, false);
-#if UNITY_EDITOR
-                    EditorGloveTraceNow.Latched = true;
-#endif
-                    return true;
-                }
             }
             if (!onGlove && !owns)
             {
