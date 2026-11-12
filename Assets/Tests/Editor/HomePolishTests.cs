@@ -1413,9 +1413,9 @@ namespace FlockFive.Editor
 
         static void CheckGloveOneHandle(System.Action<string, bool, string> Check)
         {
-            bool releaseHonored = FlockFiveApp.HomePointerId(-1, true, 4) == 4
-                && FlockFiveApp.HomePointerId(-1, false, 4) == -1
-                && FlockFiveApp.HomePointerId(4, true, 9) == 4;
+            bool mouseKeepsTouchRelease = FlockFiveApp.HomePointerId(-1, true, 4) == 4;
+            bool noReleaseStaysMouse = FlockFiveApp.HomePointerId(-1, false, 4) == -1;
+            bool namedFingerWins = FlockFiveApp.HomePointerId(4, true, 9) == 4;
             var go = new GameObject("glove-one-handle");
             var limb = new GameObject("one-handle-limb");
             int taps = -1;
@@ -1465,7 +1465,8 @@ namespace FlockFive.Editor
                 try { t.GetMethod("OnGUIBody", flags).Invoke(app, null); }
                 catch (System.Exception) { }
                 taps = app.EditorHandleTaps;
-                bool once = afterDown == 0 && taps == 1;
+                int picked = (int)t.GetField("_sel", flags).GetValue(app);
+                bool once = afterDown == 0 && taps == 1 && picked == 0;
 
                 var gate = t.GetField("_homeGate", flags);
                 var splash = t.GetField("_splash", flags);
@@ -1502,10 +1503,40 @@ namespace FlockFive.Editor
                 };
                 t.GetMethod("UpdateBody", flags).Invoke(app, null);
                 homeWon = (bool)splash.GetValue(app) && app.EditorHandleTaps == 0;
-                Check("glove-down-and-up-handle-once", once && releaseHonored, "down " + afterDown + " total " + taps);
-                Check("home-up-id-falls-through-to-release", releaseHonored, "id4 " + releaseHonored);
+                Check("glove-down-and-up-handle-once", once, "down " + afterDown + " total " + taps + " sel " + picked);
+                Check("home-up-id-falls-through-to-release", mouseKeepsTouchRelease && noReleaseStaysMouse && namedFingerWins,
+                    "kept " + mouseKeepsTouchRelease + " mouse " + noReleaseStaysMouse + " finger " + namedFingerWins);
                 Check("home-touch-up-through-pressed-and-ongui", pressCleared && guiCleared, "press " + pressCleared + " gui " + guiCleared);
                 Check("glove-cuff-on-home-goes-home", homeWon, "home " + homeWon + " taps " + app.EditorHandleTaps);
+
+                splash.SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                guard = (CoachResetGuard)reset.GetValue(app);
+                guard.Flying = true;
+                reset.SetValue(app, guard);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                app.EditorHandleTaps = 0;
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Up = false, Id = 4,
+                    Play = new Vector2(px - PhoneArea.OffX, PhoneArea.H - py)
+                };
+                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = false, Up = true, Id = 4,
+                    Play = new Vector2(20f, PhoneArea.H - 20f)
+                };
+                try { t.GetMethod("OnGUIBody", flags).Invoke(app, null); }
+                catch (System.Exception) { }
+                int slidSel = (int)t.GetField("_sel", flags).GetValue(app);
+                bool slidHome = (bool)splash.GetValue(app);
+                Check("glove-slide-off-does-nothing",
+                    app.EditorHandleTaps == 0 && slidSel < 0 && !slidHome,
+                    "taps " + app.EditorHandleTaps + " sel " + slidSel + " home " + slidHome);
             }
             finally
             {
