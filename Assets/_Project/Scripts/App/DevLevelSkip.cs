@@ -139,12 +139,42 @@ namespace FlockFive
             return QueryInt(url, ForceMaxxedKey) == 1;
         }
 
-        // DEV-ONLY inspect hook. Not a shipping-path proof. True only for
-        // ?forcePause=1. The caption timer checks it in Development builds
-        // and does not auto-advance while it is set.
+        // DEV-ONLY inspect hook. Not a shipping-path proof.
+        // ?forcePause=1 holds a caption indefinitely. ?forcePause=N (N > 1)
+        // holds it for N seconds, then the normal timer may advance it.
         public static bool ForcePauseFromUrl(string url)
         {
             return QueryInt(url, ForcePauseKey) == 1;
+        }
+
+        public static bool ForcePauseBlocks(string url, float heldSeconds)
+        {
+            int n = QueryInt(url, ForcePauseKey);
+            if (n == 1) return true;
+            if (n > 1) return heldSeconds < n;
+            return false;
+        }
+
+        // DEV-ONLY. A devConsole toggle so a held caption can be released
+        // without reloading. Release builds never read it.
+        public static bool DevPauseHeld;
+
+        public static void DevPauseFlip()
+        {
+            DevPauseHeld = !DevPauseHeld;
+        }
+
+        public static bool CaptionHeld(string url, float heldSeconds)
+        {
+            return DevPauseHeld || ForcePauseBlocks(url, heldSeconds);
+        }
+
+        public const string TapLogKey = "tapLog";
+
+        // DEV-ONLY inspect hook. Not a shipping-path proof. ?tapLog=1.
+        public static bool TapLogFromUrl(string url)
+        {
+            return QueryInt(url, TapLogKey) == 1;
         }
 
         // presented: the star wipe is down and the garden tween is idle.

@@ -90,6 +90,9 @@ namespace FlockFive.Editor
             CheckRealPress(Check);
             CheckCaptionLeave(Check);
             CheckExitGuards(Check);
+            CheckHomeAndPrivacy(Check);
+            CheckRestartRecue(Check);
+            CheckForcePause(Check);
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -1337,6 +1340,127 @@ namespace FlockFive.Editor
                 GamePause.Reset();
                 UnityEngine.Object.DestroyImmediate(go);
             }
+        }
+
+        static void CheckHomeAndPrivacy(System.Action<string, bool, string> Check)
+        {
+            var gate = FlockFiveApp.BeginHomeGate(true, -1);
+            bool opened = false;
+            for (int i = 0; i < 120; i++)
+            {
+                if (FlockFiveApp.HomeGateAllows(ref gate, false, true, -1)) opened = true;
+            }
+            Check("home-tap-does-not-open-settings", !opened && !gate.FreshDown, "opened " + opened);
+            bool down = FlockFiveApp.HomeGateAllows(ref gate, true, false, -1);
+            bool up = FlockFiveApp.HomeGateAllows(ref gate, false, true, -1);
+            var gear = new Rect(16f, 8f, 48f, 48f);
+            bool gearTakes = up && FlockFiveApp.GearTakesRelease(false, -1, -1, true, gear.center, gear);
+            Check("home-fresh-down-then-release", down && up && gate.FreshDown && gearTakes, "down " + down + " up " + up);
+            bool unsettled = !FlockFiveApp.ToggleMayFlip(false, true, true);
+            bool outside = !FlockFiveApp.ToggleMayFlip(true, false, true);
+            bool immediate = !FlockFiveApp.SettingsPanelSettled(0.1f);
+            bool settled = FlockFiveApp.ToggleMayFlip(FlockFiveApp.SettingsPanelSettled(0.25f), true, true);
+            Check("privacy-toggle-needs-settled-gesture", unsettled && outside && immediate && settled,
+                "unsettled " + unsettled + " outside " + outside + " immediate " + immediate + " settled " + settled);
+        }
+
+        static void CheckForcePause(System.Action<string, bool, string> Check)
+        {
+            bool forever = DevLevelSkip.ForcePauseBlocks("http://x/?forcePause=1", 30f);
+            bool waiting = DevLevelSkip.ForcePauseBlocks("http://x/?forcePause=4", 3f);
+            bool elapsed = !DevLevelSkip.ForcePauseBlocks("http://x/?forcePause=4", 4f);
+            DevLevelSkip.DevPauseHeld = false;
+            DevLevelSkip.DevPauseFlip();
+            bool held = DevLevelSkip.CaptionHeld("http://x/", 0f);
+            DevLevelSkip.DevPauseFlip();
+            bool resumed = !DevLevelSkip.DevPauseHeld && !DevLevelSkip.CaptionHeld("http://x/", 0f);
+            Check("force-pause-timeout-and-toggle", forever && waiting && elapsed && held && resumed,
+                "forever " + forever + " waiting " + waiting + " elapsed " + elapsed + " held " + held + " resumed " + resumed);
+        }
+
+        static void CheckRestartRecue(System.Action<string, bool, string> Check)
+        {
+            const string doneKey = "flockfive.coach.done";
+            bool hadDone = PlayerPrefs.HasKey(doneKey);
+            int keepDone = PlayerPrefs.GetInt(doneKey, 0);
+            bool hadKit = PlayerPrefs.HasKey(RuleTips.KitKey);
+            int keepKit = PlayerPrefs.GetInt(RuleTips.KitKey, 0);
+            bool hadFeeder = PlayerPrefs.HasKey(RuleTips.FeederKey);
+            int keepFeeder = PlayerPrefs.GetInt(RuleTips.FeederKey, 0);
+            int keepStreak = Purse.Streak;
+            var go = new GameObject("restart-recue");
+            var limb = new GameObject("recue-limb");
+            try
+            {
+                PlayerPrefs.DeleteKey(doneKey);
+                PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                Purse.SetStreak(0);
+                GamePause.Reset();
+                LevelData.Open(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                var seed = board.Clone();
+                var view = limb.AddComponent<BranchView>();
+                for (int s = 0; s < BranchState.Cap; s++)
+                {
+                    var seat = new GameObject("seat");
+                    seat.transform.SetParent(limb.transform, false);
+                    view.Seats[s] = seat.transform;
+                }
+                var birdGo = new GameObject("bird");
+                birdGo.transform.SetParent(limb.transform, false);
+                view.Birds[0] = birdGo.AddComponent<SpriteRenderer>();
+                var garden = new WorldBuilder.Garden();
+                garden.Branches = new BranchView[] { view };
+                garden.Cam = go.AddComponent<Camera>();
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_seed", flags).SetValue(app, seed);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_splash", flags).SetValue(app, false);
+                bool nice = RecueFrom(app, t, flags, RuleTip.Feeder);
+                bool crowns = RecueFrom(app, t, flags, RuleTip.Kit);
+                Check("restart-nice-and-crowns-recues-level1", nice && crowns, "nice " + nice + " crowns " + crowns);
+            }
+            finally
+            {
+                GamePause.Reset();
+                Purse.SetStreak(keepStreak);
+                if (hadDone) PlayerPrefs.SetInt(doneKey, keepDone);
+                else PlayerPrefs.DeleteKey(doneKey);
+                if (hadKit) PlayerPrefs.SetInt(RuleTips.KitKey, keepKit);
+                else PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                if (hadFeeder) PlayerPrefs.SetInt(RuleTips.FeederKey, keepFeeder);
+                else PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                UnityEngine.Object.DestroyImmediate(limb);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static bool RecueFrom(FlockFiveApp app, System.Type t, BindingFlags flags, RuleTip tip)
+        {
+            GamePause.Reset();
+            t.GetField("_splash", flags).SetValue(app, false);
+            t.GetField("_restarting", flags).SetValue(app, false);
+            t.GetField("_coach", flags).SetValue(app, true);
+            t.GetMethod("ShowRuleTip", flags).Invoke(app, new object[] { tip });
+            object[] hud = { default(Rect), default(Rect) };
+            t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+            var restart = (Rect)hud[0];
+            var tap = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+            t.GetMethod("TakeRuleTipPress", flags).Invoke(app, new object[] { tap });
+            var snap = (System.Collections.IEnumerator)t.GetField("EditorSnapRound", flags).GetValue(app);
+            bool landed = false;
+            if (snap != null) PumpFrames(snap, 64, null, out landed);
+            var line = (string)t.GetField("_cueLine", flags).GetValue(app);
+            bool glove = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+            var now = t.GetField("_ruleTip", flags).GetValue(app);
+            bool clear = now != null && now.ToString() == "None";
+            return landed && glove && clear && line == "Tap a branch to pick up its top birds."
+                && line != RuleTips.KitLine && line != RuleTips.FeederLine;
         }
 
         static void CheckCoachRestartPath(System.Action<string, bool, string> Check)

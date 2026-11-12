@@ -155,6 +155,7 @@ namespace FlockFive
             }
             if (HitPad(r, out _gearHeld))
             {
+                _tapWho = "gear";
                 ApplySettingsHit(SettingsMotion.Hit.Gear);
                 _hitLock = 1;
             }
@@ -267,13 +268,39 @@ namespace FlockFive
                 var screen = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
                 bool gearFire = HitPad(gearHit, out gearHeld);
                 bool close = HitPad(CloseTapRect(frame.Close), out xHeld);
+                bool settled = _settingsPhase == SettingsPhase.Open && SettingsPanelSettled(age);
+                var ev = Event.current;
+                bool evDown = ev != null && ev.type == EventType.MouseDown && ev.button == 0;
+                bool evUp = ev != null && ev.type == EventType.MouseUp && ev.button == 0;
+                var at = ev != null ? ev.mousePosition : default;
                 soundFlip = HitPad(rows.SoundToggle, out soundHeld);
+                if (evDown && settled && rows.SoundToggle.Contains(at)) _soundArmed = true;
+                if (evUp)
+                {
+                    soundFlip = ToggleMayFlip(settled, _soundArmed, rows.SoundToggle.Contains(at));
+                    _soundArmed = false;
+                }
+                else soundFlip = false;
                 slid = DragMaster(rows.SoundSlider, slid, s, out slideHeld, out slideCommit);
                 link = HitPad(rows.PrivacyLink, out linkHeld);
                 var rowHit = new Rect(rows.Label.x, rows.Label.y, rows.Toggle.xMax - rows.Label.x, rows.Label.height);
                 flip = HitPad(rowHit, out rowHeld);
+                if (evDown && settled && rowHit.Contains(at)) _dnsArmed = true;
+                if (evUp)
+                {
+                    flip = ToggleMayFlip(settled, _dnsArmed, rowHit.Contains(at));
+                    _dnsArmed = false;
+                }
+                else flip = false;
                 var animHit = new Rect(rows.AnimateLabel.x, rows.AnimateLabel.y, rows.AnimateToggle.xMax - rows.AnimateLabel.x, rows.AnimateLabel.height);
                 flipAnim = HitPad(animHit, out animHeld);
+                if (evDown && settled && animHit.Contains(at)) _animArmed = true;
+                if (evUp)
+                {
+                    flipAnim = ToggleMayFlip(settled, _animArmed, animHit.Contains(at));
+                    _animArmed = false;
+                }
+                else flipAnim = false;
                 HitPad(card, out _);
                 bool overlay = HitPad(screen, out _);
                 if (gearFire) hit = SettingsMotion.Hit.Gear;
@@ -375,6 +402,7 @@ namespace FlockFive
                 }
                 if (flip)
                 {
+                    _tapWho = "do-not-sell";
                     AdConsent.DoNotSell = !on;
                     Sfx.CardTap();
                 }
@@ -1080,9 +1108,13 @@ namespace FlockFive
             var card = _homePrompt;
             if (card.Kind == AdConsent.Sheet.None)
             {
+                _consentShownAt = -1f;
+                _consentYesArmed = false;
+                _consentNoArmed = false;
                 AudioGuard.ReleaseReason("sheet");
                 return;
             }
+            if (_consentShownAt < 0f) _consentShownAt = GateNow;
             AudioGuard.Hold("sheet");
             if (Texture2D.whiteTexture == null) return;
             if (s < 0.5f) s = 0.5f;
@@ -1101,14 +1133,26 @@ namespace FlockFive
             StampOutlined(card.Body, body, st, new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.14f)));
 
             string yes = card.Kind == AdConsent.Sheet.Att ? AdConsent.ContinueLabel : AdConsent.AllowLabel;
-            if (DrawSheetButton(card.Accept, yes, true, s))
+            bool consentSettled = SettingsPanelSettled(GateNow - _consentShownAt);
+            var cev = Event.current;
+            bool cDown = cev != null && cev.type == EventType.MouseDown && cev.button == 0;
+            bool cUp = cev != null && cev.type == EventType.MouseUp && cev.button == 0;
+            var cat = cev != null ? cev.mousePosition : default;
+            if (cDown && consentSettled && card.Accept.Contains(cat)) _consentYesArmed = true;
+            if (cDown && consentSettled && card.Decline.Contains(cat)) _consentNoArmed = true;
+            bool yesFlip = cUp && ToggleMayFlip(consentSettled, _consentYesArmed, card.Accept.Contains(cat));
+            bool noFlip = cUp && ToggleMayFlip(consentSettled, _consentNoArmed, card.Decline.Contains(cat));
+            if (cUp) { _consentYesArmed = false; _consentNoArmed = false; }
+            DrawSheetButton(card.Accept, yes, true, s);
+            DrawSheetButton(card.Decline, AdConsent.NotNowLabel, false, s);
+            if (yesFlip)
             {
                 if (card.Kind == AdConsent.Sheet.Att) AdConsent.ContinueAtt();
                 else AdConsent.AcceptGdpr();
                 Sfx.CardTap();
                 return;
             }
-            if (DrawSheetButton(card.Decline, AdConsent.NotNowLabel, false, s))
+            if (noFlip)
             {
                 if (card.Kind == AdConsent.Sheet.Att) AdConsent.NotNow(LevelData.NextPlay);
                 else AdConsent.DeclineGdpr();
