@@ -417,7 +417,40 @@ namespace FlockFive
             }
         }
 
-        void LateUpdate() => Step(Time.deltaTime, Time.time);
+        void LateUpdate()
+        {
+            SyncMark();
+            Step(Time.deltaTime, Time.time);
+        }
+
+        // b120 R2: the feeder wears its color's ColorMark (same shape as its birds' chest mark),
+        // centered on the feeder art, so a gray feeder still names its flock.
+        SpriteRenderer _mark;
+        public SpriteRenderer Mark => _mark;
+        public void SyncMark()
+        {
+            bool on = Art != null && Art.enabled && Art.sprite != null && _color != null;
+            if (!on)
+            {
+                if (_mark != null && _mark.enabled) _mark.enabled = false;
+                return;
+            }
+            var spr = ColorMark.SpriteFor(_color.Value);
+            if (_mark == null)
+            {
+                var go = WorldBuilder.Sprite("ColorMark", spr, Art.transform.position, 1f, Art.sortingOrder + 1, Art.transform);
+                go.transform.localRotation = Quaternion.identity;
+                _mark = go.GetComponent<SpriteRenderer>();
+            }
+            if (_mark.sprite != spr) _mark.sprite = spr;
+            var b = Art.sprite.bounds;
+            _mark.transform.localPosition = new Vector3(b.center.x, b.center.y, 0f);
+            _mark.transform.localScale = Vector3.one * ColorMark.Size(b.size, ColorMark.FeederShare);
+            FlockSort.Apply(_mark, Art.sortingOrder + 1);
+            var c = _mark.color; float a = Art.color.a;
+            if (!Mathf.Approximately(c.a, a)) { c.a = a; _mark.color = c; }
+            if (!_mark.enabled) _mark.enabled = true;
+        }
 
         // One frame of feeder motion (LateUpdate; tests and clips drive it directly).
         public void Step(float dt, float now)

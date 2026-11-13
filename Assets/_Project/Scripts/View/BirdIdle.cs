@@ -37,6 +37,7 @@ namespace FlockFive
         SpriteRenderer _sr;
         SpriteRenderer _face;
         SpriteRenderer _kit;
+        SpriteRenderer _mark; // b120 R2: per-color shape mark (ColorMark)
         SpriteRenderer _far;
         Sprite _farSprite;
         Sprite _poseSprite;
@@ -257,6 +258,7 @@ namespace FlockFive
         void HideDressing()
         {
             if (_kit != null && _kit.enabled) _kit.enabled = false;
+            if (_mark != null && _mark.enabled) _mark.enabled = false;
             if (_far != null && _far.enabled) _far.enabled = false;
             if (_face != null && _face.enabled) _face.enabled = false;
             _selectA = 0f;
@@ -274,6 +276,7 @@ namespace FlockFive
             if (_sr == null) _sr = GetComponent<SpriteRenderer>();
             FadeSprite(_sr, a);
             FadeSprite(_face, a);
+            FadeSprite(_mark, a);
             FadeSprite(_kit, a);
             FadeSprite(_far, a);
         }
@@ -449,6 +452,7 @@ namespace FlockFive
             if (kitOn) EnsureKit();
             PlaceKit(kitOn, wings, flapT);
             PlaceFace(mood, BirdDress.FaceOn(show, Veiled));
+            PlaceMark(show && !Shrouded && BirdDress.FaceOn(show, Veiled));
             // White silhouette only used to mean "selected". Selection is the colored
             // aura. A cheer (feeder clear, hawk wave, finale) is twinkles, including
             // while Frozen, and never that halo. Flight sets Lift with Frozen and stays dark.
@@ -1277,6 +1281,36 @@ namespace FlockFive
             var faceScale = new Vector3(fs, blink ? fs * 0.18f : fs, 1f);
             if (_face.transform.localScale != faceScale) _face.transform.localScale = faceScale;
             if (!Frozen && _face.color != UnityEngine.Color.white) _face.color = UnityEngine.Color.white;
+        }
+
+        // b120 R2: the color's shape mark rides the chest (belly center, a little low), above the
+        // body and under the kit and face. Hidden whenever the face is (veil, shroud, hidden body).
+        void PlaceMark(bool on)
+        {
+            var body = _sr != null ? _sr.sprite : null;
+            if (!on || body == null)
+            {
+                if (_mark != null && _mark.enabled) _mark.enabled = false;
+                return;
+            }
+            var spr = ColorMark.SpriteFor(Color);
+            if (_mark == null)
+            {
+                var go = WorldBuilder.Sprite("ColorMark", spr, transform.position, 1f, FlockSort.Perch + 1, transform);
+                go.transform.localRotation = Quaternion.identity;
+                _mark = go.GetComponent<SpriteRenderer>();
+            }
+            if (_mark.sprite != spr) _mark.sprite = spr;
+            var b = body.bounds;
+            float size = ColorMark.Size(b.size, ColorMark.BirdShare);
+            var lp = new Vector3(b.center.x, b.center.y - b.size.y * 0.08f, 0f);
+            if (FaceLeft) lp.x = -lp.x;
+            _mark.transform.localPosition = lp;
+            _mark.transform.localScale = Vector3.one * size;
+            FlockSort.Apply(_mark, _sr.sortingOrder + 1);
+            var c = _mark.color; float a = _sr.color.a;
+            if (!Mathf.Approximately(c.a, a)) { c.a = a; _mark.color = c; }
+            if (!_mark.enabled) _mark.enabled = true;
         }
 
         void EnsureKit()
