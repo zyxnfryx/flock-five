@@ -4291,8 +4291,11 @@ namespace FlockFive
             }
             else
             {
-                _gloveEchoId = _glovePressId;
-                _gloveEchoFrame = Time.frameCount;
+                // A touch press is echoed so its mouse -1 cannot hop twice.
+                // A mouse press has no separate id to pair, so a later -1 is
+                // not that press and must not be eaten as one.
+                _gloveEchoId = _glovePressId >= 0 ? _glovePressId : int.MinValue;
+                _gloveEchoFrame = _glovePressId >= 0 ? Time.frameCount : -1;
                 // Started on the sprite. The up is often mouse -1 and often lands
                 // on the button the glove overlaps. That is still the one hop.
                 bool synthesized = pointerId == -1 && _glovePressId >= 0;
@@ -4609,7 +4612,18 @@ namespace FlockFive
                 if (ticket == 0) yield break; // a move is already resolving: no banking
                 _turnTicket = ticket;
             }
-            try { yield return DoMoveCore(from, to); }
+            // Commit the birds before the first wait. One step of this routine
+            // has already landed the hop; what it yields is only the flight.
+            var core = DoMoveCore(from, to);
+            try
+            {
+                if (core.MoveNext())
+                {
+                    yield return core.Current;
+                    while (core.MoveNext())
+                        yield return core.Current;
+                }
+            }
             finally { if (ticket != 0) _turnGate.End(ticket); }
         }
 

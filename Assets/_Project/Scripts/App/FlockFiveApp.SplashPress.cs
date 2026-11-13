@@ -32,6 +32,10 @@ namespace FlockFive
             gates.HardModal = false;
             gates.AdoptQueue = false;
             gates.RailLesson = false;
+            // The studio cover is not one of the captions. A timed resume
+            // swallow still wins. The cover alone must not keep Play dead.
+            if (!(GateNow < _resumeInputUntil))
+                gates.ResumeSwallow = false;
         }
 
         // Gates that apply to every home button. The caller adds the ones that are
