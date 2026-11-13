@@ -3214,11 +3214,12 @@ namespace FlockFive.Editor
                 var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
                 var playAt = new Vector2(level.center.x, level.center.y);
                 var playDown = new Event { type = EventType.MouseDown, mousePosition = playAt, button = 0 };
-                Event.current = playDown;
+                var swallow = Method(t, "SwallowOffTargetTap", typeof(Event));
                 string playEx = "";
-                try { Method(t, "SwallowOffTargetTap").Invoke(app, null); }
+                bool playReached = false;
+                try { playReached = (bool)swallow.Invoke(app, new object[] { playDown }); }
                 catch (System.Exception ex) { playEx = TapFault(ex); }
-                bool playLeft = playDown.type != EventType.Used;
+                bool playLeft = playReached && playDown.type != EventType.Used;
                 bool greetHeld = !(bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
                 var missAt = new Vector2(
                     PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 200f,
@@ -3237,11 +3238,9 @@ namespace FlockFive.Editor
                     missAt = new Vector2(16f + n * 10f, 16f + n * 10f);
                 }
                 var miss = new Event { type = EventType.MouseDown, mousePosition = missAt, button = 0 };
-                Event.current = miss;
-                if (Event.current != null && Event.current.button < 0)
-                    Event.current.button = 0;
                 string missEx = "";
-                try { Method(t, "SwallowOffTargetTap").Invoke(app, null); }
+                bool missReached = false;
+                try { missReached = (bool)swallow.Invoke(app, new object[] { miss }); }
                 catch (System.Exception ex) { missEx = TapFault(ex); }
                 bool greetDone = (bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
                 bool playCan = false;
@@ -3285,9 +3284,10 @@ namespace FlockFive.Editor
                 }
                 catch (System.Exception ex) { canEx = TapFault(ex); }
                 try { Check("home-captions-queue-and-leave-play",
-                    greetHolds && nameHolds && gearDuring && playLeft && greetHeld && greetDone && playCan,
+                    greetHolds && nameHolds && gearDuring && playLeft && greetHeld && missReached && greetDone && playCan,
                     "greet " + greetHolds + " name " + nameHolds + " gear " + gearDuring
-                    + " play " + playLeft + " held " + greetHeld + " done " + greetDone
+                    + " play " + playLeft + " held " + greetHeld
+                    + " reached " + missReached + " done " + greetDone
                     + " can " + playCan + " " + queue + playEx + canEx + missEx); }
                 catch (System.Exception hopEx) { Check("home-captions-queue-and-leave-play", false, ThrowText(hopEx)); }
             }
