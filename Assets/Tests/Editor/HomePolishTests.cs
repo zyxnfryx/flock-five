@@ -123,7 +123,9 @@ namespace FlockFive.Editor
             Gate("CheckScheduledRestore", () => CheckScheduledRestore(Check));
             Gate("CheckScheduleHousekeeping", () => CheckScheduleHousekeeping(Check));
             Gate("CheckRebootHolds", () => CheckRebootHolds(Check));
+            Gate("CheckRestoreWrap", () => CheckRestoreWrap(Check));
             Gate("CheckSoftCut", () => CheckSoftCut(Check));
+            Gate("CheckMixedSoftCut", () => CheckMixedSoftCut(Check));
             Gate("CheckTapWaitGlove", () => CheckTapWaitGlove(Check));
             Gate("CheckBootSoftCut", () => CheckBootSoftCut(Check));
             Gate("CheckSoftCutDisable", () => CheckSoftCutDisable(Check));
@@ -4051,6 +4053,122 @@ namespace FlockFive.Editor
             catch (System.Exception hopEx) { Check("tap-wait-glove-shows-then-hides", false, ThrowText(hopEx)); }
         }
 
+        static void CheckRestoreWrap(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("restore-wrap");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var bed = desk.StemForTests(0);
+                int length = 88200;
+                bed.clip = ProbeClip("wrap-bed", length);
+                bed.loop = true;
+                AudioGuard.Play(bed);
+                AudioSettings.GetDSPBufferSize(out int buffer, out _);
+                if (buffer < 1) buffer = 1;
+                var restore = Method(typeof(MixDesk), "RestorePlaceHeads", typeof(int[]));
+                // One sample before the end, then the head wraps to 0. The
+                // forward distance is 1, inside one buffer, so it stays.
+                bed.timeSamples = 0;
+                restore.Invoke(desk, new object[] { new int[] { length - 1, -1, -1, -1, -1 } });
+                bool kept = bed.timeSamples == 0;
+                // A backward jump that does not fit in one buffer is still a seek.
+                bed.timeSamples = 100;
+                restore.Invoke(desk, new object[] { new int[] { 20000, -1, -1, -1, -1 } });
+                bool snapped = bed.timeSamples == 20000;
+                try { Check("restore-wrap-keeps-one-buffer", kept && snapped,
+                    "kept " + kept + " snapped " + snapped
+                    + " samples " + bed.timeSamples + " buffer " + buffer); }
+                catch (System.Exception hopEx) { Check("restore-wrap-keeps-one-buffer", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckMixedSoftCut(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("soft-cut-mixed");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.4f);
+                var heard = desk.StemForTests(0);
+                heard.clip = ProbeClip("mixed-heard", 44100);
+                heard.loop = true;
+                AudioGuard.Play(heard);
+                var set = Method(typeof(MixDesk), "SetStem", typeof(int), typeof(float));
+                set.Invoke(desk, new object[] { 0, 0.4f });
+                var paused = desk.AddLoopForTests(true);
+                paused.clip = ProbeClip("mixed-paused", 44100);
+                paused.loop = true;
+                AudioGuard.Play(paused);
+                set.Invoke(desk, new object[] { 1, 0.4f });
+                AudioGuard.Pause(paused);
+                paused.timeSamples = 3000;
+                float pausedVol = paused.volume;
+                var muted = desk.AddLoopForTests(true);
+                muted.clip = ProbeClip("mixed-muted", 44100);
+                muted.loop = true;
+                AudioGuard.Play(muted);
+                set.Invoke(desk, new object[] { 2, 0f });
+                muted.mute = true;
+                muted.timeSamples = 4000;
+                int plays = AudioGuard.PlayCalls;
+                int started = desk.BootPlaceForTests();
+                float heardFull = heard.volume;
+                desk.StepSoftCutForTests(1f / 60f);
+                set.Invoke(desk, new object[] { 0, 0.4f });
+                bool heardCut = desk.SoftCutLiveForTests && heard.volume < heardFull - 0.0001f;
+                bool othersHeld = Mathf.Abs(paused.volume - pausedVol) < 0.0001f
+                    && paused.timeSamples == 3000
+                    && muted.timeSamples == 4000
+                    && !AudioGuard.ScheduledAt(paused, out _)
+                    && !AudioGuard.ScheduledAt(muted, out _);
+                int guard = 0;
+                while (desk.SoftCutLiveForTests && guard < 8)
+                {
+                    desk.StepSoftCutForTests(1f / 60f);
+                    set.Invoke(desk, new object[] { 0, 0.4f });
+                    guard++;
+                }
+                bool onlyHeard = started == 1
+                    && heardCut && othersHeld
+                    && !desk.SoftCutLiveForTests
+                    && desk.SoftCutSchedulesForTests == 1
+                    && AudioGuard.PlayCalls == plays
+                    && AudioGuard.ScheduledAt(heard, out _)
+                    && !AudioGuard.ScheduledAt(paused, out _)
+                    && !AudioGuard.ScheduledAt(muted, out _)
+                    && paused.timeSamples == 3000
+                    && muted.timeSamples == 4000
+                    && AudioGuard.IsPaused(paused)
+                    && Mathf.Abs(paused.volume - pausedVol) < 0.0001f;
+                try { Check("soft-cut-mixed-cuts-only-the-audible", onlyHeard,
+                    "started " + started + " cut " + heardCut + " held " + othersHeld
+                    + " schedules " + desk.SoftCutSchedulesForTests
+                    + " paused " + paused.timeSamples + " muted " + muted.timeSamples
+                    + " plays " + AudioGuard.PlayCalls); }
+                catch (System.Exception hopEx) { Check("soft-cut-mixed-cuts-only-the-audible", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
         static void CheckSoftCut(System.Action<string, bool, string> Check)
         {
             AudioGuard.ResetForTests();
@@ -4284,7 +4402,7 @@ namespace FlockFive.Editor
                 int samples = bed.timeSamples;
                 AudioSettings.GetDSPBufferSize(out int dspBuffer, out _);
                 if (dspBuffer < 1) dspBuffer = 1;
-                bool bedHeld = stillScheduled && samples >= 20000 && samples < 20000 + dspBuffer
+                bool bedHeld = stillScheduled && samples >= 20000 && samples <= 20000 + dspBuffer
                     && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops + 1;
                 bool strayDown = !stray.isPlaying && stray.volume == 0f;
                 try { Check("second-boot-keeps-the-bed", bedHeld && strayDown,

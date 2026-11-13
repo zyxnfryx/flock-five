@@ -39,13 +39,25 @@ namespace FlockFive
         bool _softCutLive;
         bool _softCutDefer;
         List<AudioSource> _softCutReady;
+        List<AudioSource> _softCutFade;
         AudioClip[] _pendingPlaceClip;
         int _softCutSchedules;
         float _softCutFloor;
 
         static bool IsPlaceSlot(int i) => i == 0 || i == 1 || i == 2 || i == 3 || i == 5;
 
-        float PlaceCut(int i) => IsPlaceSlot(i) ? _softCut : 1f;
+        // The fade multiplies only the stems that were actually audible when
+        // the cut armed. A paused, muted, cut, result, or splash voice stays
+        // at unity so the ramp cannot pull it down.
+        float PlaceCut(int i)
+        {
+            if (!IsPlaceSlot(i) || _softCut >= 1f) return 1f;
+            if (_softCutFade == null || _stems == null || i < 0 || i >= _stems.Length) return 1f;
+            var a = _stems[i];
+            for (int k = 0; k < _softCutFade.Count; k++)
+                if (_softCutFade[k] == a) return _softCut;
+            return 1f;
+        }
         float[] _stemBase;
         bool _freezeThrough;
         float _freezeLast = -1f;
@@ -223,6 +235,19 @@ namespace FlockFive
                 if (a == null || a.clip == null) continue;
                 int now = a.timeSamples;
                 int delta = now - samples[p];
+                // A loop that crossed the clip end reports a negative delta.
+                // That is forward motion when the distance around the end is
+                // still inside one buffer. A longer backward jump is a seek.
+                if (delta < 0 && a.clip.samples > 0)
+                {
+                    int length = a.clip.samples;
+                    int pin = samples[p];
+                    if (pin >= 0 && pin < length)
+                    {
+                        int wrapped = length - pin + now;
+                        if (wrapped >= 0 && wrapped <= buffer) continue;
+                    }
+                }
                 if (delta < 0 || delta > buffer)
                     a.timeSamples = samples[p];
             }
@@ -1089,9 +1114,49 @@ namespace FlockFive
 
         public void FlushSoftCutForTests() => LateFlushSoftCut();
 
+        // What SetStem would write before the soft-cut ramp. Mute, the slider,
+        // and an ad zero this even when the source is still marked playing.
+        float StemGain(int i)
+        {
+            float vol = 0f;
+            if (_stemBase != null && i >= 0 && i < _stemBase.Length) vol = _stemBase[i];
+            return vol * _freezeDuck * AudioGuard.MusicScale;
+        }
+
+        bool LiveVoice(AudioSource a)
+        {
+            if (a == null) return false;
+            if (a.isPlaying) return true;
+#if UNITY_EDITOR
+            if (!Application.isPlaying && AudioGuard.WasStarted(a)) return true;
+#endif
+            return false;
+        }
+
+        // Still the playing voice, but the player cannot hear it. The soft cut
+        // must not fade it and must not stop it to reschedule.
+        bool HeldQuiet(AudioSource a, int i)
+        {
+            if (a == null) return true;
+            if (AudioGuard.IsPaused(a)) return true;
+            if (!LiveVoice(a)) return false;
+            if (a.mute || AudioGuard.Muted) return true;
+            if (StemGain(i) <= 0.001f) return true;
+            return false;
+        }
+
         bool StemAudible(AudioSource a)
         {
             if (a == null) return false;
+            if (BlocksSkippedRetry(a) || SplashStemBlocked(a)) return false;
+            int i = -1;
+            if (_stems != null)
+            {
+                for (int s = 0; s < _stems.Length; s++)
+                    if (_stems[s] == a) { i = s; break; }
+            }
+            if (i >= 0 && HeldQuiet(a, i)) return false;
+            if (i >= 0 && StemGain(i) <= 0.001f) return false;
             if (a.isPlaying) return true;
 #if UNITY_EDITOR
             // Edit mode often leaves isPlaying false after Play(). A started loop
@@ -1110,20 +1175,26 @@ namespace FlockFive
                 return _softCutReady != null ? _softCutReady.Count : 0;
             if (_stems == null) return 0;
             var ready = new List<AudioSource>();
+            var fade = new List<AudioSource>();
             int[] place = { 0, 1, 2, 3, 5 };
-            int audible = 0;
+            int quiet = 0;
             for (int p = 0; p < place.Length; p++)
             {
                 int i = place[p];
                 if (i >= _stems.Length) continue;
                 var a = _stems[i];
                 if (a == null || a.clip == null) continue;
+                // Cut, result, and splash stay where they are. So does a place
+                // stem that is still playing but paused or muted: it is not
+                // cut and it is not rescheduled.
+                if (BlocksSkippedRetry(a) || SplashStemBlocked(a)) continue;
+                if (HeldQuiet(a, i)) { quiet++; continue; }
                 ready.Add(a);
-                if (StemAudible(a)) audible++;
+                if (StemAudible(a)) fade.Add(a);
             }
             // A partial reboot is the only case that cuts a voice the player can
             // hear. All-silent and all-running batches schedule immediately.
-            bool partial = audible > 0 && audible < ready.Count;
+            bool partial = fade.Count > 0 && fade.Count < ready.Count + quiet;
             // No coroutine means the fade would stick at 0. Schedule immediately.
             if (!partial || !isActiveAndEnabled)
                 return AudioGuard.ScheduleStemsTogether(ready);
@@ -1131,6 +1202,7 @@ namespace FlockFive
             _softCutDefer = false;
             _softCut = 1f;
             _softCutReady = ready;
+            _softCutFade = fade;
             if (Application.isPlaying)
                 StartCoroutine(SoftCutPlaceBeds());
             return ready.Count;
@@ -1177,6 +1249,7 @@ namespace FlockFive
             _softCutLive = false;
             _softCutDefer = false;
             _softCutReady = null;
+            _softCutFade = null;
             ApplySoftCutGain();
         }
 
