@@ -42,7 +42,7 @@ namespace FlockFive.Editor
                 float refH = FlockFiveApp.GardenRefBandH(w, h, safe, s, 0f);
                 float by = FlockFiveApp.GardenFixedSeatY(w, h, safe, s, 0f);
                 float pad = 4f * s;
-                Check("banner covers moved restart " + tags[d], by <= rs.yMin - pad && by + refH >= rs.yMax + pad && by + refH <= h,
+                Check("banner covers moved restart " + tags[d], by <= rs.yMin - pad && by + refH >= Mathf.Min(rs.yMax + pad, h - CaptionLayout.BottomInset(w, h, safe) - pad) - 0.5f && by + refH <= h - CaptionLayout.BottomInset(w, h, safe) + 0.5f, // b120 R8: band ends at the home-indicator floor
                     "band " + by.ToString("0") + ".." + (by + refH).ToString("0") + " restart " + rs.yMin.ToString("0") + ".." + rs.yMax.ToString("0"));
                 // Control sizes as % of screen width (report) and phone = unchanged.
                 var lvl = SplashPress.LevelRect(w, h, safe);
