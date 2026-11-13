@@ -84,4 +84,46 @@ namespace FlockFive
             return IsSolved(board);
         }
     }
+
+    // Safety net for a finished set on a live feeder that nobody picked up.
+    // Collects start from KickCollects, which the player's hop and the tail of
+    // the previous collect each call once. It refuses while another collect is
+    // in flight, and when the first ready limb is locked it does not look at
+    // the others. Nothing else ever asks again, so any path that skips the
+    // tail (a lock, a coroutine that dies, a restart race) leaves the set full
+    // on its limb, feeder in view, until the next hop. Polled from Update the
+    // way TrySolvedFinish is, so a skipped kick runs the first idle frame.
+    // Pure so the timing is testable without a scene.
+    public static class CollectPoll
+    {
+        // Seconds the board must sit idle with a ready set before the poll kicks.
+        // Longer than a frame gap between a hop landing and its own kick.
+        public const float Hold = 0.6f;
+
+        // True when a set is ready and nothing else owns the board.
+        public static bool Ready(Board board, bool idle)
+        {
+            if (!idle || board == null) return false;
+            if (board.Displaced.Count > 0) return false;
+            return board.FindCollect() >= 0;
+        }
+
+        // since < 0 means not waiting. Returns true once, when Hold has passed.
+        public static bool Step(bool ready, float now, ref float since)
+        {
+            if (!ready)
+            {
+                since = -1f;
+                return false;
+            }
+            if (since < 0f)
+            {
+                since = now;
+                return false;
+            }
+            if (now - since < Hold) return false;
+            since = -1f;
+            return true;
+        }
+    }
 }
