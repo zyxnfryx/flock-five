@@ -206,7 +206,8 @@ namespace FlockFive
             if (_leaves == null) _leaves = gameObject.GetComponent<LeafCover>();
             if (_leaves == null) _leaves = gameObject.AddComponent<LeafCover>();
             _leaves.TrunkDir = FromRight ? 1f : -1f;
-            _leaves.Cover(tipLocked, Seats, state.Count);
+            // Build 89 guard: leaves draw only on a full limb (shared rule in LevelData).
+            _leaves.Cover(tipLocked && LevelData.LeafLockFullLimb(state), Seats, state.Count);
             if (lastHid >= 0)
                 _swarm.Cover(true, Seats, lastHid, state.Count);
             else

@@ -81,6 +81,24 @@ namespace FlockFive.Editor
                     (!mustWin || rep.Outlook == GardenSolve.Outlook.Winnable) && !alreadyDone,
                     "before=" + beforeRep.Outlook + "/" + beforeRep.Moves + " after=" + rep.Outlook + "/" + rep.Moves);
             }
+            // Repeat/cycled pass: the ladder cycles (Peek/Open wrap), so open every index twice over,
+            // which includes Garden 16 with its extra empty limb on both laps.
+            LevelData.LeafRuleOn = true;
+            int cycledBad = 0;
+            for (int i = 0; i < LevelData.Count * 2; i++)
+            {
+                var cb = LevelData.Open(i);
+                for (int k = 0; k < cb.Branches.Count; k++)
+                    if (!LevelData.LeafLockFullLimb(cb.Branches[k])) cycledBad++;
+                if (LevelData.DisplayNumber == 16)
+                {
+                    int empties = 0;
+                    for (int k = 0; k < cb.Branches.Count; k++) if (!cb.Branches[k].AdLocked && cb.Branches[k].Empty) empties++;
+                    Check("garden-16-extra-limb-lap" + (i / LevelData.Count) + "-" + i, empties >= 1 && LevelData.LeafLockedLimbsAreFull(cb), "emptyLimbs=" + empties);
+                }
+            }
+            Check("cycled-pass-no-partial-leaf", cycledBad == 0, "partial=" + cycledBad);
+            Check("per-limb-helper", LevelData.LeafLockFullLimb(new BranchState()) && !LevelData.LeafLockFullLimb(ShortLocked().Branches[0]), "per-limb rule");
             LevelData.LeafRuleOn = true;
             Check("helper-detector", !LevelData.LeafLockedLimbsAreFull(ShortLocked()) && LevelData.LeafLockedLimbsAreFull(new Board()),
                 "detector flags a 3-bird locked limb");

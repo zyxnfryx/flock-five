@@ -69,9 +69,14 @@ namespace FlockFive
         {
             if (b == null) return true;
             for (int i = 0; i < b.Branches.Count; i++)
-                if (b.Branches[i].TipLocked && b.Branches[i].Count != BranchState.Cap) return false;
+                if (!LeafLockFullLimb(b.Branches[i])) return false;
             return true;
         }
+
+        // The per-limb rule, one place: a limb may show leaves only if it holds exactly Cap
+        // birds (an unlocked limb has no leaves, so it passes). BranchView and the tests use it.
+        public static bool LeafLockFullLimb(BranchState br) =>
+            br == null || !br.TipLocked || br.Count == BranchState.Cap;
 
         static void OfferGift(Board b)
         {
