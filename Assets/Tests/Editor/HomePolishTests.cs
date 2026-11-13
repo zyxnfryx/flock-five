@@ -2018,6 +2018,42 @@ namespace FlockFive.Editor
                 + " moves " + Int("_coachMoves");
         }
 
+        // The dismiss guard reads AdPause.Unscaled. Move that clock forward
+        // without writing the guard, the same way a young editor finishes a beat.
+        static void NudgeAdFreeClock(float seconds)
+        {
+            var total = typeof(AdPause).GetField("_total", BindingFlags.NonPublic | BindingFlags.Static);
+            float cur = (float)total.GetValue(null);
+            total.SetValue(null, cur - seconds);
+        }
+
+        // One editor frame so the coach-ate stamp is no longer this frame.
+        // A null yield is one frame in this suite. Step the editor too when it can.
+        static void StepOneEditorFrame()
+        {
+            int before = Time.frameCount;
+            System.Collections.IEnumerator Once() { yield return null; }
+            PumpFrames(Once(), 1, null, out _);
+            try { UnityEditor.EditorApplication.Step(); }
+            catch (System.Exception) { }
+            if (Time.frameCount != before) return;
+            var flags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static;
+            var set = typeof(Time).GetMethod("SetFrameCount", flags);
+            if (set != null)
+            {
+                try { set.Invoke(null, new object[] { before + 1 }); }
+                catch (System.Exception) { }
+            }
+            if (Time.frameCount != before) return;
+            var prop = typeof(Time).GetProperty("frameCount", flags);
+            var setter = prop != null ? prop.GetSetMethod(true) : null;
+            if (setter != null)
+            {
+                try { setter.Invoke(null, new object[] { before + 1 }); }
+                catch (System.Exception) { }
+            }
+        }
+
         static bool VerdictIs(object verdict, string act)
         {
             if (verdict == null) return false;
@@ -3249,6 +3285,14 @@ namespace FlockFive.Editor
                 catch (System.Exception ex) { missEx = TapFault(ex); }
                 bool missReached = missVerdict != null && !VerdictIs(missVerdict, "Ignore");
                 bool greetDone = (bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
+                bool ateNow = (bool)Method(t, "CoachAteThisFrame").Invoke(app, null);
+                bool guardNow = (bool)Method(t, "LessonGuardUp").Invoke(null, null);
+                bool playNow = (bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { level });
+                // The dismiss eats Play on this frame on purpose. Do not clear the stamp or the guard.
+                bool sameFrameBlocked = missReached && greetDone && ateNow && guardNow && !playNow;
+                PlayClock.StepForTest(CoachDismiss.GuardSeconds + 1f / 60f);
+                NudgeAdFreeClock(CoachDismiss.GuardSeconds + 1f / 60f);
+                StepOneEditorFrame();
                 bool playCan = false;
                 string canEx = "";
                 string queue = "";
@@ -3290,11 +3334,13 @@ namespace FlockFive.Editor
                 }
                 catch (System.Exception ex) { canEx = TapFault(ex); }
                 try { Check("home-captions-queue-and-leave-play",
-                    greetHolds && nameHolds && gearDuring && playLeft && greetHeld && missReached && greetDone && playCan,
+                    greetHolds && nameHolds && gearDuring && playLeft && greetHeld && missReached && greetDone
+                    && sameFrameBlocked && playCan,
                     "greet " + greetHolds + " name " + nameHolds + " gear " + gearDuring
                     + " play " + playLeft + " held " + greetHeld
                     + " reached " + missReached + " done " + greetDone
-                    + " can " + playCan + " " + queue + playEx + canEx + missEx); }
+                    + " sameFrameBlocked " + sameFrameBlocked + " can " + playCan
+                    + " " + queue + playEx + canEx + missEx); }
                 catch (System.Exception hopEx) { Check("home-captions-queue-and-leave-play", false, ThrowText(hopEx)); }
             }
             finally
