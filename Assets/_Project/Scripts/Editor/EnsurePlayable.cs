@@ -93,6 +93,7 @@ namespace FlockFive.Editor
             Suite("build88-poker-tap", Build88PokerTapTests.Run);
             Suite("build88-dismiss", Build88DismissTests.Run);
             Suite("build88-poker-glove", Build88PokerGloveTests.Run);
+            Suite("poker-tip-clear", PokerTipClearTests.Run);
             Suite("build89-vippending", Build89VipPendingTests.Run);
             Suite("build88-adtest", Build88AdTestTests.Run);
             Suite("build89-adhold", Build89AdHoldTests.Run);
