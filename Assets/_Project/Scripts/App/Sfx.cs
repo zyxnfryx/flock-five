@@ -237,6 +237,33 @@ namespace FlockFive
             }
         }
 
+        // Game pause. Speaking voices stop with the listener. A voice that ignores
+        // the listener (none of these) is left alone. Resume is the matching unpause.
+        public static void PauseForGame()
+        {
+            HoldForGame(_planeSrc);
+            if (_voices == null) return;
+            for (int i = 0; i < _voices.Length; i++) HoldForGame(_voices[i]);
+        }
+
+        public static void ResumeForGame()
+        {
+            LiftForGame(_planeSrc);
+            if (_voices == null) return;
+            for (int i = 0; i < _voices.Length; i++) LiftForGame(_voices[i]);
+        }
+
+        static void HoldForGame(AudioSource a)
+        {
+            if (a == null || !a.isPlaying || a.ignoreListenerPause) return;
+            AudioGuard.Pause(a);
+        }
+
+        static void LiftForGame(AudioSource a)
+        {
+            if (a != null && AudioGuard.IsPaused(a)) AudioGuard.Resume(a);
+        }
+
         // GamePause mutes with AudioListener.pause. MasterLoudness is the listener gain.
         static void ShareListener(AudioSource a)
         {
@@ -256,10 +283,17 @@ namespace FlockFive
         // One-shot on the voice pool. Does not mark Lead.
         static void PlayVoice(AudioClip clip, float pitch, float vol)
         {
-            if (clip == null) return;
+            if (clip == null || AudioGuard.OutputFailed) return;
             var a = Voice();
+            if (object.ReferenceEquals(a, null)) return;
+            if (a == null)
+            {
+                AudioGuard.NoteClipFailure(clip, null);
+                return;
+            }
             a.pitch = pitch;
-            a.PlayOneShot(clip, vol);
+            try { a.PlayOneShot(clip, vol); }
+            catch (System.Exception ex) { AudioGuard.NoteClipFailure(clip, ex); }
         }
 
         static void Shot(AudioClip clip, float pitch, float vol, MixLayer layer, float leadDuck = MixDesk.DuckChirp)
@@ -305,7 +339,11 @@ namespace FlockFive
             if (_host == null) return;
             if (MixDesk.Live != null && !MixDesk.Live.AllowMid)
             {
-                if (_planeSrc != null && _planeSrc.isPlaying) _planeSrc.Stop();
+                if (_planeSrc != null && _planeSrc.isPlaying)
+                {
+                    AudioGuard.Release(_planeSrc);
+                    _planeSrc.Stop();
+                }
                 _planeHeld = true;
                 return;
             }
@@ -322,7 +360,7 @@ namespace FlockFive
             if (!_planeSrc.isPlaying)
             {
                 _planeSrc.clip = _planeClip;
-                _planeSrc.Play();
+                AudioGuard.Play(_planeSrc);
                 _planeHeld = true;
             }
             if (pan < -1f) pan = -1f;
@@ -335,7 +373,11 @@ namespace FlockFive
         public static void PlaneStop()
         {
             _planeHeld = false;
-            if (_planeSrc != null && _planeSrc.isPlaying) _planeSrc.Stop();
+            if (_planeSrc != null && _planeSrc.isPlaying)
+            {
+                AudioGuard.Release(_planeSrc);
+                _planeSrc.Stop();
+            }
         }
 
         public static void PlayProc(AudioClip clip, float pitch, float vol, MixLayer layer)
@@ -1019,6 +1061,7 @@ namespace FlockFive
             for (int i = 0; i < srcs.Length; i++)
             {
                 if (srcs[i] == null) continue;
+                AudioGuard.Release(srcs[i]);
                 srcs[i].Stop();
                 srcs[i].volume = 0f;
             }

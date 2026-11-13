@@ -127,14 +127,36 @@ namespace FlockFive
         {
             public Rect Rect;
             public Rect Extra;
+            public Rect Art;
             public bool Disc;
+            // Padding that lies on Extra (the LEVEL flower) is not a hit.
+            // The drawn Art still is, so the icon wins where the two overlap.
+            public bool CarveLevel;
 
             public bool Contains(Vector2 p)
             {
                 if (Rect.width < 1f || Rect.height < 1f) return false;
-                if (!Disc) return Rect.Contains(p);
-                return DiscContains(Rect, Extra, p);
+                if (Disc) return DiscContains(Rect, Extra, p);
+                if (!CarveLevel) return Rect.Contains(p);
+                return RailTapContains(Rect, Art, Extra, p);
             }
+        }
+
+        // Padded rail tap. When carveFlower is set, padding that sits on the LEVEL
+        // flower is not a hit, but the drawn icon still is. When LEVEL cannot
+        // take the tap, the whole pad stays a rail hit.
+        public static bool RailTapContains(Rect padded, Rect art, Rect level, Vector2 point)
+        {
+            return RailTapContains(padded, art, level, point, true);
+        }
+
+        public static bool RailTapContains(Rect padded, Rect art, Rect level, Vector2 point, bool carveFlower)
+        {
+            if (padded.width < 1f || padded.height < 1f || !padded.Contains(point)) return false;
+            if (!carveFlower) return true;
+            if (art.width > 1f && art.height > 1f && art.Contains(point)) return true;
+            if (level.width > 1f && level.height > 1f && level.Contains(point)) return false;
+            return true;
         }
 
         static readonly Hit[] Hits = new Hit[Count];
@@ -167,7 +189,26 @@ namespace FlockFive
             var hit = Hits[(int)id];
             hit.Rect = rect;
             hit.Extra = default;
+            hit.Art = default;
             hit.Disc = false;
+            hit.CarveLevel = false;
+        }
+
+        // Full padded tap. carveFlower gives the flower overlap back to LEVEL.
+        // The drawn icon is never carved. A blocked LEVEL keeps that padding on the rail.
+        public static void LayoutRail(Id id, Rect padded, Rect art, Rect level)
+        {
+            LayoutRail(id, padded, art, level, true);
+        }
+
+        public static void LayoutRail(Id id, Rect padded, Rect art, Rect level, bool carveFlower)
+        {
+            var hit = Hits[(int)id];
+            hit.Rect = padded;
+            hit.Art = art;
+            hit.Extra = level;
+            hit.Disc = false;
+            hit.CarveLevel = carveFlower;
         }
 
         public static void LayoutDisc(Id id, Rect medal, Rect ribbon)
@@ -175,7 +216,9 @@ namespace FlockFive
             var hit = Hits[(int)id];
             hit.Rect = medal;
             hit.Extra = ribbon;
+            hit.Art = default;
             hit.Disc = true;
+            hit.CarveLevel = false;
         }
 
         // Places the LEVEL square and returns the shared hit (press and launch).
@@ -262,6 +305,25 @@ namespace FlockFive
         {
             if (Claimed(id) || _claimN >= _claim.Length) return;
             _claim[_claimN++] = id;
+        }
+
+        // A home rail already owns this point. Claim every pointer on it so the
+        // LEVEL square, which can cover the cards icon on a wide portrait, cannot
+        // start the garden from a second sample of the same tap.
+        public static void Reserve(IList<Sample> samples, Hit hit, int frame)
+        {
+            NoteFrame(frame);
+            if (samples == null || hit == null) return;
+            for (int i = 0; i < samples.Count; i++)
+                if (hit.Contains(samples[i].Pos)) Claim(samples[i].TouchId);
+        }
+
+        public static void Reserve(IList<Sample> samples, Rect rect, int frame)
+        {
+            NoteFrame(frame);
+            if (samples == null || rect.width < 2f || rect.height < 2f) return;
+            for (int i = 0; i < samples.Count; i++)
+                if (rect.Contains(samples[i].Pos)) Claim(samples[i].TouchId);
         }
 
         // One finger per button. A second finger cannot start another sink or a second launch.
