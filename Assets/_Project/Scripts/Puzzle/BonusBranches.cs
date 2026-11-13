@@ -75,6 +75,15 @@ namespace FlockFive
             return -1;
         }
 
+        // b116 L51 report: the freeze card sold "Watch Ad to Continue + Bonus Branch" after both
+        // gifts were spent (claimed or burned). The ad paid, Claim had nothing to open, the thaw
+        // re-froze, and the card came back: an endless ad loop with no branch. The continue bar
+        // is offered only while a locked gift is still left to open.
+        public static bool ContinueOffered(Board b, bool[] claimed)
+        {
+            return ContinueIndex(b, claimed, -1) >= 0;
+        }
+
         // 1 = a new empty perch, 0 = that gift was already claimed (lock cleared),
         // -1 = nothing to open. The view shake and burst stay with the caller.
         public static int Claim(Board b, bool[] claimed, int i)

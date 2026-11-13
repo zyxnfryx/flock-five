@@ -4,12 +4,12 @@ namespace FlockFive
 {
     public sealed partial class FlockFiveApp
     {
-        // b132: gap in px between the bottom of the home bird's name plate and the top of the
-        // LEVEL lettering, for a named bird and an unclamped stack. It walks the same statics
+        // b132, kept in b133 for the name plate check: gap in px between the bottom of the home
+        // bird's name plate and the top of the LEVEL rect (FlowerLevelTop), for a named bird and an unclamped stack. It walks the same statics
         // PlaceHomeBranch walks (limb, seat, PerchAnchor, AvatarPlateRect), but takes the LEVEL
         // square and the screen height as arguments so a test needs no Screen. The limb is
-        // seated off FlowerLevelTop, so sliding the square slides the plate with it: the gap
-        // must not change when LevelRect is raised. Not a layout clamp, only an audit.
+        // seated off FlowerLevelTop, so sliding the square slides the plate with it. b133 lifts
+        // only the ink inside the rect, which stays below FlowerLevelTop. Not a layout clamp, only an audit.
         public static float HomePlateGapAudit(Rect level, float h, float s, out float plateBottom)
         {
             float levelTop = FlowerLevelTop(level);
