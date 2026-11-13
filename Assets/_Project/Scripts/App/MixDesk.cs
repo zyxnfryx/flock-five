@@ -482,10 +482,29 @@ namespace FlockFive
         public void ResumeForGame()
         {
             if (_stems == null) return;
+            // A paused stem is never Stopped, so it still holds the playhead from
+            // before the pause. The stems that were free to restart are already
+            // on the shared start. Copy that sample, then resume.
+            int mark = 0;
+            bool have = false;
+            int[] place = { 0, 1, 2, 3, 5 };
+            for (int p = 0; p < place.Length; p++)
+            {
+                int i = place[p];
+                if (i >= _stems.Length) continue;
+                var a = _stems[i];
+                if (a == null || a.clip == null || AudioGuard.IsPaused(a)) continue;
+                mark = a.timeSamples;
+                have = true;
+                break;
+            }
             for (int i = 0; i < _stems.Length; i++)
             {
                 var a = _stems[i];
-                if (a != null && AudioGuard.IsPaused(a)) AudioGuard.Resume(a);
+                if (a == null || !AudioGuard.IsPaused(a)) continue;
+                if (IsPlaceSlot(i) && a.clip != null)
+                    a.timeSamples = have ? mark : 0;
+                AudioGuard.Resume(a);
             }
         }
 
@@ -1133,17 +1152,19 @@ namespace FlockFive
             return false;
         }
 
-        // Still the playing voice, but the player cannot hear it. The soft cut
-        // must not fade it and must not stop it to reschedule.
-        bool HeldQuiet(AudioSource a, int i)
+        bool StemPaused(AudioSource a) => a != null && AudioGuard.IsPaused(a);
+
+        // Playing, but the mix is writing silence. It still has to take the
+        // shared start. It must not be faded, because there is nothing to hear.
+        bool StemSilent(AudioSource a, int i)
         {
-            if (a == null) return true;
-            if (AudioGuard.IsPaused(a)) return true;
-            if (!LiveVoice(a)) return false;
+            if (a == null || StemPaused(a) || !LiveVoice(a)) return false;
             if (a.mute || AudioGuard.Muted) return true;
-            if (StemGain(i) <= 0.001f) return true;
-            return false;
+            return StemGain(i) <= 0.001f;
         }
+
+        // Paused, or playing under mute / zero gain. Not a voice to fade.
+        bool HeldQuiet(AudioSource a, int i) => StemPaused(a) || StemSilent(a, i);
 
         bool StemAudible(AudioSource a)
         {
@@ -1177,24 +1198,24 @@ namespace FlockFive
             var ready = new List<AudioSource>();
             var fade = new List<AudioSource>();
             int[] place = { 0, 1, 2, 3, 5 };
-            int quiet = 0;
             for (int p = 0; p < place.Length; p++)
             {
                 int i = place[p];
                 if (i >= _stems.Length) continue;
                 var a = _stems[i];
                 if (a == null || a.clip == null) continue;
-                // Cut, result, and splash stay where they are. So does a place
-                // stem that is still playing but paused or muted: it is not
-                // cut and it is not rescheduled.
-                if (BlocksSkippedRetry(a) || SplashStemBlocked(a)) continue;
-                if (HeldQuiet(a, i)) { quiet++; continue; }
+                // Cut, result, and splash stay where they are. A paused stem is
+                // left playing on its own playhead: ScheduleStemsTogether would
+                // Stop it. Mute and zero gain still join the shared start, silently.
+                if (BlocksSkippedRetry(a) || SplashStemBlocked(a) || StemPaused(a)) continue;
                 ready.Add(a);
                 if (StemAudible(a)) fade.Add(a);
             }
             // A partial reboot is the only case that cuts a voice the player can
             // hear. All-silent and all-running batches schedule immediately.
-            bool partial = fade.Count > 0 && fade.Count < ready.Count + quiet;
+            // An ad freeze or a global mute makes every stem silent, so this
+            // path schedules them together instead of leaving the old playheads.
+            bool partial = fade.Count > 0 && fade.Count < ready.Count;
             // No coroutine means the fade would stick at 0. Schedule immediately.
             if (!partial || !isActiveAndEnabled)
                 return AudioGuard.ScheduleStemsTogether(ready);

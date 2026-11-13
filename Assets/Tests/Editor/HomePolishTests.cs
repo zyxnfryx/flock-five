@@ -126,6 +126,7 @@ namespace FlockFive.Editor
             Gate("CheckRestoreWrap", () => CheckRestoreWrap(Check));
             Gate("CheckSoftCut", () => CheckSoftCut(Check));
             Gate("CheckMixedSoftCut", () => CheckMixedSoftCut(Check));
+            Gate("CheckPlacePhase", () => CheckPlacePhase(Check));
             Gate("CheckTapWaitGlove", () => CheckTapWaitGlove(Check));
             Gate("CheckBootSoftCut", () => CheckBootSoftCut(Check));
             Gate("CheckSoftCutDisable", () => CheckSoftCutDisable(Check));
@@ -4142,16 +4143,18 @@ namespace FlockFive.Editor
                     set.Invoke(desk, new object[] { 0, 0.4f });
                     guard++;
                 }
-                bool onlyHeard = started == 1
+                bool mutedJoined = AudioGuard.ScheduledAt(muted, out _)
+                    && muted.timeSamples == heard.timeSamples
+                    && Mathf.Abs(muted.volume) < 0.0001f;
+                bool onlyHeard = started == 2
                     && heardCut && othersHeld
                     && !desk.SoftCutLiveForTests
                     && desk.SoftCutSchedulesForTests == 1
                     && AudioGuard.PlayCalls == plays
                     && AudioGuard.ScheduledAt(heard, out _)
+                    && mutedJoined
                     && !AudioGuard.ScheduledAt(paused, out _)
-                    && !AudioGuard.ScheduledAt(muted, out _)
                     && paused.timeSamples == 3000
-                    && muted.timeSamples == 4000
                     && AudioGuard.IsPaused(paused)
                     && Mathf.Abs(paused.volume - pausedVol) < 0.0001f;
                 try { Check("soft-cut-mixed-cuts-only-the-audible", onlyHeard,
@@ -4166,6 +4169,126 @@ namespace FlockFive.Editor
                 AudioGuard.ResetForTests();
                 if (desk != null) MixDesk.DetachForTests(desk);
                 UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void PlantPhaseTrio(MixDesk desk, out AudioSource a, out AudioSource b, out AudioSource c)
+        {
+            desk.PlantStemForTests(0.4f);
+            a = desk.StemForTests(0);
+            a.clip = ProbeClip("phase-a", 88200);
+            a.loop = true;
+            while (desk.StemForTests(2) == null) desk.AddLoopForTests(true);
+            b = desk.StemForTests(1);
+            c = desk.StemForTests(2);
+            b.clip = ProbeClip("phase-b", 88200);
+            c.clip = ProbeClip("phase-c", 88200);
+            b.loop = true;
+            c.loop = true;
+            AudioGuard.Play(a);
+            AudioGuard.Play(b);
+            AudioGuard.Play(c);
+            var set = Method(typeof(MixDesk), "SetStem", typeof(int), typeof(float));
+            set.Invoke(desk, new object[] { 0, 0.4f });
+            set.Invoke(desk, new object[] { 1, 0.4f });
+            set.Invoke(desk, new object[] { 2, 0.4f });
+            a.timeSamples = 100;
+            b.timeSamples = 9000;
+            c.timeSamples = 20000;
+        }
+
+        static bool PlaceHeadsLocked(MixDesk desk, out string detail)
+        {
+            AudioSettings.GetDSPBufferSize(out int buffer, out _);
+            if (buffer < 1) buffer = 1;
+            int[] place = { 0, 1, 2 };
+            int lo = int.MaxValue;
+            int hi = int.MinValue;
+            int n = 0;
+            for (int p = 0; p < place.Length; p++)
+            {
+                var a = desk.StemForTests(place[p]);
+                if (a == null || a.clip == null) continue;
+                n++;
+                if (a.timeSamples < lo) lo = a.timeSamples;
+                if (a.timeSamples > hi) hi = a.timeSamples;
+            }
+            bool ok = n == 3 && hi >= lo && hi - lo <= buffer;
+            detail = "n " + n + " lo " + lo + " hi " + hi + " buffer " + buffer;
+            return ok;
+        }
+
+        static void CheckPlacePhase(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var unmuteGo = new UnityEngine.GameObject("phase-unmute");
+            MixDesk unmute = null;
+            try
+            {
+                unmute = unmuteGo.AddComponent<MixDesk>();
+                unmute.AttachForTests();
+                PlantPhaseTrio(unmute, out _, out _, out _);
+                AudioGuard.SetMuted(true, false);
+                unmute.BootPlaceForTests();
+                AudioGuard.SetMuted(false, false);
+                bool locked = PlaceHeadsLocked(unmute, out string detail);
+                try { Check("place-phase-after-unmute", locked, detail); }
+                catch (System.Exception hopEx) { Check("place-phase-after-unmute", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (unmute != null) MixDesk.DetachForTests(unmute);
+                UnityEngine.Object.DestroyImmediate(unmuteGo);
+            }
+
+            var adGo = new UnityEngine.GameObject("phase-ad");
+            MixDesk ad = null;
+            try
+            {
+                ad = adGo.AddComponent<MixDesk>();
+                ad.AttachForTests();
+                PlantPhaseTrio(ad, out _, out _, out _);
+                ad.ForceDuckForTests(0f, 1f, 1f, 0f);
+                ad.BootPlaceForTests();
+                ad.ForceDuckForTests(1f, 1f, 1f, 0f);
+                bool locked = PlaceHeadsLocked(ad, out string detail);
+                try { Check("place-phase-after-ad", locked, detail); }
+                catch (System.Exception hopEx) { Check("place-phase-after-ad", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (ad != null) MixDesk.DetachForTests(ad);
+                UnityEngine.Object.DestroyImmediate(adGo);
+            }
+
+            var resumeGo = new UnityEngine.GameObject("phase-resume");
+            MixDesk resume = null;
+            try
+            {
+                resume = resumeGo.AddComponent<MixDesk>();
+                resume.AttachForTests();
+                PlantPhaseTrio(resume, out var a, out var b, out var c);
+                AudioGuard.Pause(a);
+                AudioGuard.Pause(b);
+                AudioGuard.Pause(c);
+                a.timeSamples = 100;
+                b.timeSamples = 9000;
+                c.timeSamples = 20000;
+                resume.BootPlaceForTests();
+                bool held = a.timeSamples == 100 && b.timeSamples == 9000 && c.timeSamples == 20000
+                    && AudioGuard.IsPaused(a) && AudioGuard.IsPaused(b) && AudioGuard.IsPaused(c);
+                resume.ResumeForGame();
+                bool locked = PlaceHeadsLocked(resume, out string detail);
+                try { Check("place-phase-after-resume", held && locked, "held " + held + " " + detail); }
+                catch (System.Exception hopEx) { Check("place-phase-after-resume", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (resume != null) MixDesk.DetachForTests(resume);
+                UnityEngine.Object.DestroyImmediate(resumeGo);
             }
         }
 
