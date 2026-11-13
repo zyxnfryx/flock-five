@@ -6813,92 +6813,107 @@ namespace FlockFive
             return true;
         }
 
+        // What the off-target gate decided. Ignore means the event was not a
+        // pointer. Pass means the handler saw it and left it for the control
+        // underneath. Use means eat it. ClearHotControl is only set on a Use
+        // that used to zero hotControl, which is a mouse-up.
+        internal struct OffTargetVerdict
+        {
+            internal enum Act { Ignore, Pass, Use }
+            internal Act Kind;
+            internal bool ClearHotControl;
+
+            internal static OffTargetVerdict Ignore()
+                => new OffTargetVerdict { Kind = Act.Ignore };
+            internal static OffTargetVerdict Pass()
+                => new OffTargetVerdict { Kind = Act.Pass };
+            internal static OffTargetVerdict Consume(EventType type)
+                => new OffTargetVerdict { Kind = Act.Use, ClearHotControl = type == EventType.MouseUp };
+        }
+
         // Called at the top of OnGUI, after the pause early-out, like SwallowResumePointer.
-        // The parameterless entry is what OnGUI calls. It passes Event.current.
         void SwallowOffTargetTap()
         {
             SwallowOffTargetTap(Event.current);
         }
 
-        // True when e was a pointer event the gate looked at. False when there
-        // was nothing to handle. Side effects match the OnGUI path for the same
-        // event: a null current still returns before any caption changes.
+        // Applies the verdict to a live IMGUI event. A null current still
+        // returns before any caption changes.
         bool SwallowOffTargetTap(Event e)
         {
             if (e == null) return false;
-            var t = e.type;
-            if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return false;
+            var v = JudgeOffTargetTap(e.type, e.mousePosition, e.button);
+            if (v.Kind == OffTargetVerdict.Act.Ignore) return false;
+            if (v.ClearHotControl) GUIUtility.hotControl = 0;
+            if (v.Kind == OffTargetVerdict.Act.Use) e.Use();
+            return true;
+        }
+
+        // Same decisions as the OnGUI wrapper, without touching Event.current.
+        // A left press is button 0 only. A negative button does not advance.
+        internal OffTargetVerdict JudgeOffTargetTap(EventType type, Vector2 pos, int button)
+        {
+            if (type != EventType.MouseDown && type != EventType.MouseUp && type != EventType.MouseDrag)
+                return OffTargetVerdict.Ignore();
             // The name plate's chips, colors, and Done sit under this gate. A lesson
             // that eats every other press must leave the plate alone.
-            if (RenamePlateOwns(_avatarRename, _avatarRenameR, e.mousePosition, PhoneArea.OffX)) return true;
+            if (RenamePlateOwns(_avatarRename, _avatarRenameR, pos, PhoneArea.OffX))
+                return OffTargetVerdict.Pass();
             // The bet coach's glove gate used to eat Back before the medal's own
             // handler ran, so a new player could not leave. The same predicate the
             // tests call lets that tap through. A dealt hand still does not.
             bool betCoach = PokerBetCoachOpen(_pokerPageOn || _pokerDealHint, BirdPoker.PhaseNow == BirdPoker.Phase.Idle, !PokerMotionBusy());
             var backMedal = BackMedalRect(DeviceFit.Ui(), TopHud());
-            if (CoachVeilLetsBackThrough(e.mousePosition, betCoach, PokerHandHoldsBack(BirdPoker.PhaseNow), backMedal))
-                return true;
+            if (CoachVeilLetsBackThrough(pos, betCoach, PokerHandHoldsBack(BirdPoker.PhaseNow), backMedal))
+                return OffTargetVerdict.Pass();
             // A press already advanced an informational step this frame (IMGUI or the
             // Input System). Eat the rest of it, including the mouse-up, so the next
             // step does not take the same tap and a button underneath does not fire.
             if (CoachAteThisFrame())
-            {
-                if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-                e.Use();
-                return true;
-            }
+                return OffTargetVerdict.Consume(type);
             if (!StepTapGate(out var gate))
             {
                 // Hand-armed (hit function) gloves: VIP pitch, adopt look, cue targets.
                 if (_gloveTapHit != null && GloveFocusLive())
                 {
-                    var p0 = e.mousePosition;
-                    bool inside = GloveTapHits(new Vector2(p0.x, PhoneArea.H - p0.y));
-                    if (!GloveFocusAllows(true, true, inside, HomeGearExempt(p0) || GiftCloseExempt(p0) || PlayExempt(p0)))
-                    {
-                        if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-                        e.Use();
-                    }
+                    bool inside = GloveTapHits(new Vector2(pos.x, PhoneArea.H - pos.y));
+                    if (!GloveFocusAllows(true, true, inside, HomeGearExempt(pos) || GiftCloseExempt(pos) || PlayExempt(pos)))
+                        return OffTargetVerdict.Consume(type);
                 }
-                return true;
+                return OffTargetVerdict.Pass();
             }
-            var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
+            var kind = type == EventType.MouseDown ? GatePointer.Down : type == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
             // b115 (Brandon): the ad offer's X is never gated. The ad-hand glove arms a tap RECT (Watch), so the gate
             // lands here and the hand-armed exemption above never ran: the X was eaten and the player was stuck.
-            if (GateExemptsGiftClose(gate.Step, GiftCloseExempt(e.mousePosition))) return true;
-            if (gate.Step == GateBadgerGuide && BadgerFrozenUi.PressPasses(e.mousePosition, default, _bgGateToggle, _bgGateFreeze)) return true;
+            if (GateExemptsGiftClose(gate.Step, GiftCloseExempt(pos)))
+                return OffTargetVerdict.Pass();
+            if (gate.Step == GateBadgerGuide && BadgerFrozenUi.PressPasses(pos, default, _bgGateToggle, _bgGateFreeze))
+                return OffTargetVerdict.Pass();
             if (gate.AnyTap)
             {
-                if (HomeGearExempt(e.mousePosition) || PlayExempt(e.mousePosition)) return true;
+                if (HomeGearExempt(pos) || PlayExempt(pos))
+                    return OffTargetVerdict.Pass();
                 // b123: lessons 1-3 ignore back, the power row and combs: eaten, no advance.
-                if (gate.Step == GateBadgerLesson && BadgerLessonIgnores(e.mousePosition))
-                {
-                    if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-                    e.Use();
-                    return true;
-                }
-                if (TutorialHeal.GateAdvances(kind, true, e.button))
+                if (gate.Step == GateBadgerLesson && BadgerLessonIgnores(pos))
+                    return OffTargetVerdict.Consume(type);
+                if (TutorialHeal.GateAdvances(kind, true, button))
                 {
                     if (!gate.Pass) MarkCoachAte();
                     CompleteGatedStep(gate.Step);
                 }
-                if (gate.Pass) return true;
-                if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-                e.Use();
-                return true;
+                if (gate.Pass) return OffTargetVerdict.Pass();
+                return OffTargetVerdict.Consume(type);
             }
-            var at = e.mousePosition;
-            bool inSwipe = gate.SwipeArea.width > 2f && gate.SwipeArea.Contains(at);
+            bool inSwipe = gate.SwipeArea.width > 2f && gate.SwipeArea.Contains(pos);
             bool swipeTaken = false;
-            if (t == EventType.MouseUp && gate.SwipeArea.width > 2f && _pageSwipe.Tracking)
+            if (type == EventType.MouseUp && gate.SwipeArea.width > 2f && _pageSwipe.Tracking)
             {
                 float s = DeviceFit.Ui();
-                swipeTaken = PageSwipeDir(at - _pageSwipe.Origin, AlbumSwipeMin(s), out _);
+                swipeTaken = PageSwipeDir(pos - _pageSwipe.Origin, AlbumSwipeMin(s), out _);
             }
-            if (TutorialHeal.GateLets(kind, gate.Target.Contains(at), inSwipe, swipeTaken)) return true;
-            if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-            e.Use();
-            return true;
+            if (TutorialHeal.GateLets(kind, gate.Target.Contains(pos), inSwipe, swipeTaken))
+                return OffTargetVerdict.Pass();
+            return OffTargetVerdict.Consume(type);
         }
 
         // The posing step armed this rect within the last frame (CoachGloveAt → GloveArmTap).

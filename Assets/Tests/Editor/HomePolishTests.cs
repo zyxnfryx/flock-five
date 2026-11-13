@@ -2018,6 +2018,13 @@ namespace FlockFive.Editor
                 + " moves " + Int("_coachMoves");
         }
 
+        static bool VerdictIs(object verdict, string act)
+        {
+            if (verdict == null) return false;
+            var kind = verdict.GetType().GetField("Kind", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
+            return kind != null && kind.GetValue(verdict).ToString() == act;
+        }
+
         static void ClearLocks(object app)
         {
             var locked = typeof(FlockFiveApp).GetField("_locked", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(app);
@@ -3213,13 +3220,12 @@ namespace FlockFive.Editor
                 bool gearDuring = HomeGear.AcceptsTap((HomeGearQuery)Method(t, "HomeGearNow").Invoke(app, null));
                 var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
                 var playAt = new Vector2(level.center.x, level.center.y);
-                var playDown = new Event { type = EventType.MouseDown, mousePosition = playAt, button = 0 };
-                var swallow = Method(t, "SwallowOffTargetTap", typeof(Event));
+                var judge = Method(t, "JudgeOffTargetTap", typeof(EventType), typeof(Vector2), typeof(int));
                 string playEx = "";
-                bool playReached = false;
-                try { playReached = (bool)swallow.Invoke(app, new object[] { playDown }); }
+                object playVerdict = null;
+                try { playVerdict = judge.Invoke(app, new object[] { EventType.MouseDown, playAt, 0 }); }
                 catch (System.Exception ex) { playEx = TapFault(ex); }
-                bool playLeft = playReached && playDown.type != EventType.Used;
+                bool playLeft = VerdictIs(playVerdict, "Pass");
                 bool greetHeld = !(bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
                 var missAt = new Vector2(
                     PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 200f,
@@ -3237,11 +3243,11 @@ namespace FlockFive.Editor
                     if (!onPlay && !onGear) break;
                     missAt = new Vector2(16f + n * 10f, 16f + n * 10f);
                 }
-                var miss = new Event { type = EventType.MouseDown, mousePosition = missAt, button = 0 };
                 string missEx = "";
-                bool missReached = false;
-                try { missReached = (bool)swallow.Invoke(app, new object[] { miss }); }
+                object missVerdict = null;
+                try { missVerdict = judge.Invoke(app, new object[] { EventType.MouseDown, missAt, 0 }); }
                 catch (System.Exception ex) { missEx = TapFault(ex); }
+                bool missReached = missVerdict != null && !VerdictIs(missVerdict, "Ignore");
                 bool greetDone = (bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
                 bool playCan = false;
                 string canEx = "";
