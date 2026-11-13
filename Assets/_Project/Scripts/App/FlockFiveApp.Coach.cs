@@ -4907,6 +4907,7 @@ namespace FlockFive
                 float room = (inner - CaptionLayout.WidestRow(st, BannerText ?? text, bandPx)) * 0.5f;
                 if (room < ring) ring = Mathf.Max(2, Mathf.FloorToInt(Mathf.Max(0f, room)));
                 var words = new Rect(ix, band.y - CaptionLayout.BannerInkLift(bandPx), inner, band.height);
+                DrawTapWaitGlove(BannerText ?? text, words, band, fade);
                 StampBannerText(words, BannerText ?? text, st, fade, true, ring);
                 GUI.color = prevC;
                 KeepCaptionOnTop(1, band, words, BannerText ?? text, bandPx, fade, ring);
@@ -4952,6 +4953,7 @@ namespace FlockFive
                 // top and bottom, at every text size.
                 var inkText = drawText;
                 inkText.y -= CaptionLayout.BannerInkLift(_coachSizedPx);
+                DrawTapWaitGlove(_coachShown ?? text, inkText, plate, fade);
                 StampBannerText(inkText, _coachShown ?? text, st, fade, true);
                 KeepCaptionOnTop(2, plate, inkText, _coachShown ?? text, _coachSizedPx, fade, -1);
                 return;
@@ -4965,6 +4967,7 @@ namespace FlockFive
             }
             NoteTutorPlate(CoachPanelRect(plateBox, platePad));
             DrawCoachPanel(plateBox, fade, platePad, opaque);
+            DrawTapWaitGlove(_coachShown ?? text, drawText, CoachPanelRect(plateBox, platePad), fade);
             StampBannerText(drawText, _coachShown ?? text, st, fade, true);
             KeepCaptionOnTop(3, CoachPanelRect(plateBox, platePad), drawText, _coachShown ?? text, _coachSizedPx, fade, -1);
         }
@@ -4988,6 +4991,24 @@ namespace FlockFive
         bool _capRepainting;
         public static int CaptionRepaints;
         public static int CaptionGloveHit = -1;
+
+        // Under the words. The step glove is the lesson hand, and this cue stays off it.
+        void DrawTapWaitGlove(string shown, Rect text, Rect plate, float fade)
+        {
+            if (fade < 0.04f || !TapWaitGlove.Shows(shown)) return;
+            var step = _gloveVis ? OnScreenGlove() : default;
+            float w = PhoneArea.W > 2f ? PhoneArea.W : 820f;
+            float h = PhoneArea.H > 2f ? PhoneArea.H : 1180f;
+            var slot = TapWaitGlove.CueSlot(text, plate, step, w, h);
+            var frame = TapWaitGlove.Frame(slot, PlayClock.Now);
+            if (frame.width < 2f) return;
+            var tex = CoachGloveCurl(TapWaitGlove.Dip(PlayClock.Now));
+            if (tex == null) return;
+            var prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, fade);
+            GUI.DrawTexture(frame, tex, ScaleMode.ScaleToFit, true);
+            GUI.color = prev;
+        }
 
         void KeepCaptionOnTop(int kind, Rect plate, Rect text, string shown, int px, float fade, int ring)
         {

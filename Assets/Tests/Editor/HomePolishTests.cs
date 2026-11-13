@@ -124,6 +124,7 @@ namespace FlockFive.Editor
             Gate("CheckScheduleHousekeeping", () => CheckScheduleHousekeeping(Check));
             Gate("CheckRebootHolds", () => CheckRebootHolds(Check));
             Gate("CheckSoftCut", () => CheckSoftCut(Check));
+            Gate("CheckTapWaitGlove", () => CheckTapWaitGlove(Check));
             Gate("CheckBootSoftCut", () => CheckBootSoftCut(Check));
             Gate("CheckSoftCutDisable", () => CheckSoftCutDisable(Check));
             Gate("CheckGardenGlove", () => CheckGardenGlove(Check));
@@ -4008,6 +4009,46 @@ namespace FlockFive.Editor
                 at.Append(e.GetType().Name);
             }
             return "current=" + current + " at=" + at;
+        }
+
+        static void CheckTapWaitGlove(System.Action<string, bool, string> Check)
+        {
+            bool onlyWait = true;
+            string miss = "";
+            foreach (CoachStep step in System.Enum.GetValues(typeof(CoachStep)))
+            {
+                string cap = CoachTap.Caption(step);
+                bool show = TapWaitGlove.Shows(cap);
+                if (show != CoachTap.AnyTap(step))
+                {
+                    onlyWait = false;
+                    miss = step + " show " + show;
+                    break;
+                }
+            }
+            bool hid = !TapWaitGlove.Shows(CoachTap.Caption(CoachStep.DailyRail))
+                && !TapWaitGlove.Shows("");
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool laid = true;
+            bool loop = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                var text = new Rect(w[i] * 0.14f, h[i] * 0.40f, w[i] * 0.72f, 64f);
+                var stepGlove = new Rect(text.xMax - 30f, text.yMax - 8f, 100f, 130f);
+                var slot = TapWaitGlove.CueSlot(text, text, stepGlove, w[i], h[i]);
+                if (slot.width < 2f || slot.Overlaps(text) || slot.Overlaps(stepGlove)
+                    || slot.x < 0f || slot.y < 0f || slot.xMax > w[i] || slot.yMax > h[i])
+                    laid = false;
+                var a = TapWaitGlove.Frame(slot, 0f);
+                var b = TapWaitGlove.Frame(slot, TapWaitGlove.LoopSeconds * 0.25f);
+                if (a.width < 2f || b.width < 2f || Mathf.Abs(a.y - b.y) < 0.5f
+                    || a.Overlaps(text) || b.Overlaps(text) || a.Overlaps(stepGlove) || b.Overlaps(stepGlove))
+                    loop = false;
+            }
+            try { Check("tap-wait-glove-shows-then-hides", onlyWait && hid && laid && loop,
+                "only " + onlyWait + " " + miss + " hid " + hid + " laid " + laid + " loop " + loop); }
+            catch (System.Exception hopEx) { Check("tap-wait-glove-shows-then-hides", false, ThrowText(hopEx)); }
         }
 
         static void CheckSoftCut(System.Action<string, bool, string> Check)
