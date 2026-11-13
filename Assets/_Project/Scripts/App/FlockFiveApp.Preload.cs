@@ -123,7 +123,7 @@ namespace FlockFive
             _jingleSrc.spatialBlend = 0f;
             _jingleSrc.volume = 1.0f;
             _jingleSrc.clip = clip;
-            _jingleSrc.Play();
+            AudioGuard.Play(_jingleSrc);
             Object.Destroy(go, clip.length + 0.5f);
         }
 

@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -14,6 +15,9 @@ namespace FlockFive
         Board _ruleBoardRef;
         BirdColor?[] _ruleLive;
         bool _ruleTurned;
+        // WebGL forceNap only. Zzz may draw, but the plate stays down until that
+        // pose has been on an open stage. Normal play leaves this false.
+        bool _devNapHold;
 
         static bool RuleSeen(RuleTip t) => PlayerPrefs.GetInt(RuleTips.Key(t), 0) != 0;
 
@@ -38,12 +42,35 @@ namespace FlockFive
             {
                 var br = _board.Branches[i];
                 if (br == null || br.Broken) continue;
-                if (!b.AnySleeping && _board.IsSleeping(i)) b.AnySleeping = true;
+                bool asleep = _board.IsSleeping(i);
+                if (asleep)
+                {
+                    b.AnySleeping = true;
+                    if (!b.NapBegun && !_devNapHold && BranchNapBegun(i)) b.NapBegun = true;
+                }
                 if (!b.HasKit)
                     for (int k = 0; k < br.Count; k++)
                         if (br.Birds[k].Kit != BirdKit.Plain) { b.HasKit = true; break; }
             }
             return b;
+        }
+
+        // True once a seated bird on this limb has drawn Zzz for the current nap.
+        bool BranchNapBegun(int branch)
+        {
+            var views = _garden.Branches;
+            if (views == null || (uint)branch >= (uint)views.Length) return false;
+            var view = views[branch];
+            if (view == null) return false;
+            var birds = view.Birds;
+            for (int i = 0; i < birds.Length; i++)
+            {
+                var sr = birds[i];
+                if (sr == null || !sr.gameObject.activeInHierarchy) continue;
+                var idle = sr.GetComponent<BirdIdle>();
+                if (idle != null && idle.Sleeping && idle.NapBegun) return true;
+            }
+            return false;
         }
 
         // Unpaused coach tick, after the first-garden coach. True while a tip owns the stage.
@@ -70,16 +97,40 @@ namespace FlockFive
         // when the capture looks for the line.
         // A branch just became five of a colour no feeder wants. Not gated on the
         // coach being finished or on a pest line (the L5 bee plate was covering it).
+        // The board is asleep at the commit. Zzz is drawn in LateUpdate, so the
+        // move waits (RaiseSleepTipWhenNapping) instead of showing this on the tap.
         void RaiseRuleSleepTip()
         {
             if (_board == null) return;
             bool sleeping = false;
+            bool napBegun = false;
             for (int i = 0; i < _board.Branches.Count; i++)
-                if (_board.IsSleeping(i)) { sleeping = true; break; }
+            {
+                if (!_board.IsSleeping(i)) continue;
+                sleeping = true;
+                if (BranchNapBegun(i)) { napBegun = true; break; }
+            }
             bool blocked = _splash || _won || _restarting || SeasonReveal.HoldsPlay;
-            if (!RuleTips.SleepReady(sleeping, RuleSeen(RuleTip.Sleep), _ruleTip != RuleTip.None, blocked))
+            if (!RuleTips.SleepReady(sleeping, napBegun, RuleSeen(RuleTip.Sleep), _ruleTip != RuleTip.None, blocked))
                 return;
             ShowRuleTip(RuleTip.Sleep);
+        }
+
+        // Hop has landed. Sync may have marked the row asleep in this same call,
+        // before LateUpdate tucks the birds and draws Zzz. Wait for that frame,
+        // then raise. The coach tick uses the same NapBegun gate, so the caption
+        // cannot pause the hop on the commit.
+        IEnumerator RaiseSleepTipWhenNapping(int branch, int gen)
+        {
+            float waited = 0f;
+            while (gen == _motionGen && !BranchNapBegun(branch) && waited < RuleTips.NapWait)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            if (gen != _motionGen) yield break;
+            if (BranchNapBegun(branch)) RaiseRuleSleepTip();
+            CheckOver();
         }
 
         void RaiseRuleFeederTip()

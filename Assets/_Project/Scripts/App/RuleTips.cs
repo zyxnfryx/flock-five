@@ -25,6 +25,10 @@ namespace FlockFive
         // Longest a frozen tip may hold the garden before it clears itself.
         public const float HoldMax = 30f;
 
+        // How long the move may wait for the first Zzz before it gives up.
+        // The caption still requires the pose; this only stops the waiter.
+        public const float NapWait = 1.5f;
+
         public struct Seen
         {
             public bool Kit, Feeder, Sleep;
@@ -33,14 +37,21 @@ namespace FlockFive
         public struct Board
         {
             public bool HasKit, FeederTurned, AnySleeping;
+            // A bird on a sleeping stack has drawn Zzz. Board sleep alone is the
+            // commit, which is still the hop.
+            public bool NapBegun;
         }
 
         // First unseen rule that is on the board now. Feeder and sleep are what just
         // happened, so they win over the kit tip, which is always on the board.
+        // Sleep is on the board the instant the stack commits. The caption waits
+        // until NapBegun, and until then it holds the slot so the kit tip cannot
+        // pause the hop in its place.
         public static RuleTip Due(Seen seen, Board b)
         {
             if (b.FeederTurned && !seen.Feeder) return RuleTip.Feeder;
-            if (b.AnySleeping && !seen.Sleep) return RuleTip.Sleep;
+            if (b.AnySleeping && !seen.Sleep)
+                return b.NapBegun ? RuleTip.Sleep : RuleTip.None;
             if (b.HasKit && !seen.Kit) return RuleTip.Kit;
             return RuleTip.None;
         }
@@ -58,9 +69,11 @@ namespace FlockFive
         }
 
         // First nap in any garden. Not tied to a level name.
-        public static bool SleepReady(bool sleeping, bool seen, bool tipUp, bool blocked)
+        // napBegun: a bird on that stack has drawn Zzz. The board can be asleep
+        // while the hop is still in the air; the caption pauses time, so it waits.
+        public static bool SleepReady(bool sleeping, bool napBegun, bool seen, bool tipUp, bool blocked)
         {
-            return sleeping && !seen && !tipUp && !blocked;
+            return sleeping && napBegun && !seen && !tipUp && !blocked;
         }
 
         public static string Line(RuleTip t)
