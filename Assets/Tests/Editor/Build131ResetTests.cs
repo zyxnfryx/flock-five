@@ -39,7 +39,9 @@ namespace FlockFive.Editor
                 CornerAnchor.Garden(w, h, safe, out _, out float hudTop, out _, out var rs, out var hv);
                 float field = CornerAnchor.PlayfieldTopGui(w, h);
                 CornerAnchor.AdRowBand(w, h, out var sl, out var sr, out var bl, out var br, out _, out _);
-                bool offField = rs.yMax <= field && rs.yMax <= hudTop;
+                // b120 R5: Restart moved back to the bottom-left (Brandon's standing rule), mirroring the hive.
+                // "Off the playfield top" now means: below the top safe band and in the bottom half.
+                bool offField = rs.yMin >= h - safe.yMax && rs.yMin > h * 0.5f;
                 bool offAd = !rs.Overlaps(sl) && !rs.Overlaps(sr) && !rs.Overlaps(bl) && !rs.Overlaps(br);
                 bool inSafe = rs.yMin >= h - safe.yMax - 0.01f && rs.xMin >= safe.xMin && rs.xMax <= safe.xMax + 0.01f;
                 bool bigEnough = rs.width >= CornerAnchor.MinTapPx(0f) && rs.height >= CornerAnchor.MinTapPx(0f);

@@ -28,6 +28,10 @@ namespace FlockFive
         Board _seed;
         bool _keepStreak;
         enum RestartAsk { None, Sure, Keep }
+        // b120 R5: the plain (no streak at stake) "Restart level?" confirm reuses the Sure card.
+        bool _restartPlain;
+        public const string RestartLevelAsk = "Restart level?";
+        public const string RestartLabelText = "Restart";
         RestartAsk _restartAsk;
         // Seconds into the kept-badge heal. Negative means the chip is still at risk.
         float _streakHealAge = -1f;
@@ -758,6 +762,7 @@ namespace FlockFive
             {
                 if (!GatePopup(PopupKind.Streak, true)) return;
                 _restartSavedMul = StreakTier.Normalize(Purse.Streak);
+                _restartPlain = false;
                 _restartAsk = RestartAsk.Sure;
                 _streakHealAge = -1f;
                 _gift = GiftFace.None;
@@ -765,7 +770,13 @@ namespace FlockFive
                 Sfx.CardTap();
                 return;
             }
-            StartCoroutine(SnapRound());
+            // b120 R5: one tap no longer wipes the board; always ask first.
+            if (!GatePopup(PopupKind.Streak, true)) return;
+            _restartPlain = true;
+            _restartAsk = RestartAsk.Sure;
+            _gift = GiftFace.None;
+            _freezeOffer = false;
+            Sfx.CardTap();
         }
 
         void ShowSplash()
@@ -6774,6 +6785,7 @@ namespace FlockFive
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
             else
                 GUI.Box(restart, "↩");
+            DrawRestartLabel(restart, s);
             if (HiveReachable())
                 DrawHiveButton(hive, s, orbit: true, pop: true);
             else
@@ -9241,6 +9253,17 @@ namespace FlockFive
             DrawRewardStamp(r, StreakTier.Display(Purse.Streak), 1f, age, 0.48f);
         }
 
+        static GUIStyle _restartLabelStyle;
+        // b120 R5: the swirl gets a visible word, >= 12 px, white with a dark outline (on-style with HUD chips).
+        static void DrawRestartLabel(Rect restart, float s)
+        {
+            var r = CornerAnchor.RestartLabel(restart, PhoneArea.H, PhoneArea.Safe, s);
+            if (_restartLabelStyle == null)
+                _restartLabelStyle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false, clipping = TextClipping.Overflow };
+            _restartLabelStyle.fontSize = Mathf.Max(13, Mathf.RoundToInt(19f * s));
+            StampOutlined(r, RestartLabelText, _restartLabelStyle, new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(2, Mathf.RoundToInt(_restartLabelStyle.fontSize * 0.14f)));
+        }
+
         void DrawRestartAsk(float s)
         {
             if (_restartAsk == RestartAsk.None) return;
@@ -9262,7 +9285,7 @@ namespace FlockFive
             float bh = Mathf.Max(PopupBarHeight(s, w) * 1.28f, 56f * s);
             if (sure)
             {
-                const string ask = "Are you sure you want to restart?";
+                string ask = _restartPlain ? RestartLevelAsk : "Are you sure you want to restart?";
                 var titleR = new Rect(inner.x, inner.y, inner.width, Mathf.Max(40f, inner.height - bh - 12f * s));
                 st.wordWrap = true;
                 int hi = Mathf.Max(20, Mathf.RoundToInt(36f * s));
@@ -9276,7 +9299,15 @@ namespace FlockFive
                 DrawPopupButton(yesR, yesHeld, PopupTint.Green);
                 DrawPopupWord(noR, "No", st, s);
                 DrawPopupWord(yesR, "Yes", st, s);
-                if (no) { _restartAsk = RestartAsk.None; Sfx.CardTap(); return; }
+                if (no) { _restartAsk = RestartAsk.None; _restartPlain = false; Sfx.CardTap(); return; }
+                if (yes && _restartPlain)
+                {
+                    _restartAsk = RestartAsk.None;
+                    _restartPlain = false;
+                    Sfx.CardTap();
+                    StartCoroutine(SnapRound());
+                    return;
+                }
                 if (yes)
                 {
                     Purse.BreakStreak();
