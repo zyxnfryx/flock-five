@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using UnityEngine;
 
@@ -40,6 +41,283 @@ namespace FlockFive
 
         public static int ActivateCalls { get; private set; }
         public static int LiveTokens => _n;
+        public static int FmodWarnings { get; private set; }
+        public static bool OutputFailed => _fmodNoted;
+
+        public static int PlaybackWarnings { get; private set; }
+        public static int RetryPlayCount { get; private set; }
+        public static int PauseRoutes { get; private set; }
+        public static int ResumeRoutes { get; private set; }
+        public static bool RetryDeferred => _retryDeferred;
+        public static int SkippedCount => _skipped.Count;
+        public static int RestoreCount => _restore.Count;
+        public static int PlayCalls { get; private set; }
+        public static int StopCalls { get; private set; }
+
+        // Test seam: the next PlayScheduled on this source returns false once.
+        public static AudioSource RejectScheduled;
+
+        static readonly List<AudioSource> _skipped = new List<AudioSource>(8);
+        static readonly List<AudioSource> _restore = new List<AudioSource>(8);
+        static readonly List<AudioSource> _started = new List<AudioSource>(8);
+        static readonly List<int> _paused = new List<int>(8);
+        static readonly List<int> _retried = new List<int>(8);
+        static readonly List<int> _schedIds = new List<int>(8);
+        static readonly List<double> _schedAt = new List<double>(8);
+        static readonly List<string> _logged = new List<string>(8);
+        static bool _retryDeferred;
+        static bool _reassertPending;
+
+        // Playback after a failed output init. Never throws: a destroyed source
+        // or a clip error logs once and returns false so Update keeps going.
+        public static bool Play(AudioSource source)
+        {
+            if (!Alive(source))
+            {
+                NoteDestroyed(source);
+                return false;
+            }
+            if (OutputFailed)
+            {
+                RememberSkip(source);
+                if (source.loop) HoldRestore(source);
+                return false;
+            }
+            try
+            {
+                PlayCalls++;
+                source.Play();
+                Release(source);
+                if (source.loop) NoteStarted(source);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                NotePlayback(source, ex);
+                return false;
+            }
+        }
+
+        // Same gate as Play. A failed output remembers the source; a later reset retries only that set.
+        public static bool PlayScheduled(AudioSource source, double time)
+        {
+            if (!Alive(source))
+            {
+                NoteDestroyed(source);
+                return false;
+            }
+            if (!ReferenceEquals(RejectScheduled, null) && RejectScheduled == source)
+            {
+                RejectScheduled = null;
+                return false;
+            }
+            if (OutputFailed)
+            {
+                RememberSkip(source);
+                if (source.loop) HoldRestore(source);
+                return false;
+            }
+            try
+            {
+                source.PlayScheduled(time);
+                Release(source);
+                if (source.loop) NoteStarted(source);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                NotePlayback(source, ex);
+                return false;
+            }
+        }
+
+        // One dspTime for every stem in the batch, so the layers stay sample-locked.
+        // Each voice still goes through PlayScheduled: catch, log once, and hold
+        // the bed again if the output is still dead.
+        public static int ScheduleStemsTogether(IEnumerable<AudioSource> sources)
+        {
+            if (sources == null) return 0;
+            var batch = new List<AudioSource>();
+            foreach (var src in sources)
+            {
+                if (Alive(src)) batch.Add(src);
+            }
+            if (batch.Count == 0) return 0;
+            for (int i = 0; i < batch.Count; i++)
+            {
+                try { batch[i].timeSamples = 0; }
+                catch (Exception ex) { NotePlayback(batch[i], ex); }
+            }
+            double start = AudioSettings.dspTime + 0.05;
+            int n = 0;
+            for (int i = 0; i < batch.Count; i++)
+            {
+                if (!PlayScheduled(batch[i], start)) continue;
+                RememberSchedule(batch[i], start);
+                n++;
+            }
+            return n;
+        }
+
+        public static bool ScheduledAt(AudioSource source, out double start)
+        {
+            start = 0;
+            int id = Identity(source);
+            if (id == 0) return false;
+            for (int i = _schedIds.Count - 1; i >= 0; i--)
+            {
+                if (_schedIds[i] != id) continue;
+                start = _schedAt[i];
+                return true;
+            }
+            return false;
+        }
+
+        static void DropSchedule(int id)
+        {
+            if (id == 0) return;
+            for (int i = _schedIds.Count - 1; i >= 0; i--)
+            {
+                if (_schedIds[i] != id) continue;
+                _schedIds.RemoveAt(i);
+                if (i < _schedAt.Count) _schedAt.RemoveAt(i);
+            }
+        }
+
+        static void RememberSchedule(AudioSource source, double start)
+        {
+            int id = Identity(source);
+            if (id == 0) return;
+            DropSchedule(id);
+            _schedIds.Add(id);
+            _schedAt.Add(start);
+            for (int i = 0; i < _retried.Count; i++)
+                if (_retried[i] == id) return;
+            _retried.Add(id);
+        }
+
+        // Stop, cut, swap, or a place change. The source is not started again.
+        public static void Release(AudioSource source)
+        {
+            if (ReferenceEquals(source, null)) return;
+            int id = Identity(source);
+            DropFrom(_skipped, source, id);
+            DropFrom(_restore, source, id);
+            DropFrom(_started, source, id);
+            DropSchedule(id);
+        }
+
+        public static void HoldRestore(AudioSource source)
+        {
+            if (!Alive(source) || !source.loop) return;
+            if (!Listed(_restore, source)) _restore.Add(source);
+        }
+
+        public static void DropRestore(AudioSource source)
+        {
+            if (ReferenceEquals(source, null)) return;
+            int id = Identity(source);
+            DropFrom(_restore, source, id);
+            DropFrom(_started, source, id);
+            DropSchedule(id);
+        }
+
+        public static bool NeedsRestore(AudioSource source) => Listed(_restore, source);
+
+        public static bool WasStarted(AudioSource source) => Listed(_started, source);
+
+        public static void NoteStarted(AudioSource source)
+        {
+            if (!Alive(source) || !source.loop) return;
+            if (!Listed(_started, source)) _started.Add(source);
+        }
+
+        public static void ForgetStarted(AudioSource source)
+        {
+            if (ReferenceEquals(source, null)) return;
+            DropFrom(_started, source, Identity(source));
+        }
+
+        public static void NoteStopped()
+        {
+            StopCalls++;
+        }
+
+        // Game pause. One path: mark the sources that are actually speaking, then
+        // GamePause freezes the listener. A tutor bed that ignores the listener stays up.
+        public static void Pause()
+        {
+            PauseRoutes++;
+            if (MixDesk.Live != null) MixDesk.Live.PauseForGame();
+            Sfx.PauseForGame();
+        }
+
+        // Resume clears the pause set and plays a retry that waited out the pause.
+        public static void Resume()
+        {
+            ResumeRoutes++;
+            if (MixDesk.Live != null) MixDesk.Live.ResumeForGame();
+            Sfx.ResumeForGame();
+            _paused.Clear();
+            if (_reassertPending && !Muted && !GamePause.Paused)
+            {
+                _reassertPending = false;
+                if (MixDesk.Live != null) MixDesk.Live.ReassertBed();
+            }
+            if (_retryDeferred && !Muted && !GamePause.Paused)
+            {
+                _retryDeferred = false;
+                RetrySkipped();
+            }
+        }
+
+        public static bool IsPaused(AudioSource source) => HeldPaused(source);
+
+        // A single source, paused on purpose. Recovery must not Play() it back to 0.
+        public static void Pause(AudioSource source)
+        {
+            if (!Alive(source)) return;
+            int id = Identity(source);
+            if (id != 0)
+            {
+                bool seen = false;
+                for (int i = 0; i < _paused.Count; i++)
+                    if (_paused[i] == id) { seen = true; break; }
+                if (!seen) _paused.Add(id);
+            }
+            Release(source);
+            try { source.Pause(); }
+            catch (Exception ex) { NotePlayback(source, ex); }
+        }
+
+        public static void Resume(AudioSource source)
+        {
+            if (!Alive(source)) return;
+            int id = Identity(source);
+            if (id != 0)
+            {
+                for (int i = _paused.Count - 1; i >= 0; i--)
+                    if (_paused[i] == id) _paused.RemoveAt(i);
+            }
+            try { source.UnPause(); }
+            catch (Exception ex) { NotePlayback(source, ex); }
+        }
+
+        public static bool WasRetried(AudioSource source)
+        {
+            int id = Identity(source);
+            if (id == 0) return false;
+            for (int i = 0; i < _retried.Count; i++)
+                if (_retried[i] == id) return true;
+            return false;
+        }
+
+        public static void NoteClipFailure(AudioClip clip, Exception ex)
+        {
+            string name = clip != null && !string.IsNullOrEmpty(clip.name) ? clip.name : "clip";
+            if (ex != null && NoteFmodFailure(ex.Message)) return;
+            LogOnce("clip:" + name, "AudioGuard skipped " + name + ".");
+        }
 
         struct Tok
         {
@@ -53,6 +331,12 @@ namespace FlockFive
         static readonly Tok[] _tok = new Tok[MaxTok];
         static int _n;
         static int _seq;
+        static bool _fmodNoted;
+        static bool _fmodHooked;
+        static bool _configHooked;
+        static int _fmodFrame = -1;
+        static int _otherErrorFrame = -1;
+        static bool _consoleOwnedByError;
 
         public static float TokenScale => _n > 0 ? DuckGain : 1f;
 
@@ -82,6 +366,7 @@ namespace FlockFive
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
         {
+            UnhookOutputRecovery();
             _n = 0;
             _seq = 0;
             MusicEnabled = true;
@@ -91,6 +376,12 @@ namespace FlockFive
             MasterVolume = 1f;
             Clock = null;
             ActivateCalls = 0;
+            FmodWarnings = 0;
+            _fmodNoted = false;
+            _fmodFrame = -1;
+            _otherErrorFrame = -1;
+            _consoleOwnedByError = false;
+            ClearSkipBook();
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -100,6 +391,292 @@ namespace FlockFive
             LoadVolume();
             EnsureHost();
             InstallNative();
+            HookOutputRecovery();
+        }
+
+        // Log hook plus the route-change callback. Idempotent. OnDisable and domain
+        // reload both call Unhook so a destroyed host does not keep the delegate.
+        public static void HookOutputRecovery()
+        {
+            if (!_fmodHooked)
+            {
+                Application.logMessageReceived += OnAudioLog;
+                _fmodHooked = true;
+            }
+            if (!_configHooked)
+            {
+                AudioSettings.OnAudioConfigurationChanged += OnAudioConfigurationChanged;
+                _configHooked = true;
+            }
+        }
+
+        public static void UnhookOutputRecovery()
+        {
+            if (_fmodHooked)
+            {
+                Application.logMessageReceived -= OnAudioLog;
+                _fmodHooked = false;
+            }
+            if (_configHooked)
+            {
+                AudioSettings.OnAudioConfigurationChanged -= OnAudioConfigurationChanged;
+                _configHooked = false;
+            }
+        }
+
+        // Output init only. Unity logs the phrase, or "(60)" on an FMOD line.
+        // Code 36 is FMOD_ERR_INVALID_HANDLE. A bad handle, a clip load, a decode
+        // error, or any other FMOD code must not silence the session. 600 and 6
+        // are not 60. An emulated output with no sound is the same outage: the
+        // retry should run when a route comes back.
+        public static bool IsFmodFailure(string message)
+        {
+            if (string.IsNullOrEmpty(message)) return false;
+            if (message.IndexOf("FMOD_ERR_OUTPUT_INIT", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (message.IndexOf("failed to initialize the output device", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (message.IndexOf("failed to initialize any audio devices", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (message.IndexOf("running on emulated software output with no sound", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (ErrorCodeIs(message, "60")) return true;
+            return FmodParenCodeIs(message, "60");
+        }
+
+        static bool ErrorCodeIs(string message, string code)
+        {
+            const string key = "error code ";
+            int from = 0;
+            while (from < message.Length)
+            {
+                int i = message.IndexOf(key, from, StringComparison.OrdinalIgnoreCase);
+                if (i < 0) return false;
+                int s = i + key.Length;
+                int e = s;
+                while (e < message.Length && char.IsDigit(message[e])) e++;
+                if (e - s == code.Length && string.CompareOrdinal(message, s, code, 0, code.Length) == 0)
+                    return true;
+                from = i + key.Length;
+            }
+            return false;
+        }
+
+        // "(60)" on a line that is about FMOD. "(600)", "(36)" and "(6)" are not.
+        static bool FmodParenCodeIs(string message, string code)
+        {
+            if (message.IndexOf("FMOD", StringComparison.OrdinalIgnoreCase) < 0) return false;
+            int from = 0;
+            while (from < message.Length)
+            {
+                int i = message.IndexOf('(', from);
+                if (i < 0) return false;
+                int s = i + 1;
+                int e = s;
+                while (e < message.Length && char.IsDigit(message[e])) e++;
+                if (e < message.Length && message[e] == ')'
+                    && e - s == code.Length
+                    && string.CompareOrdinal(message, s, code, 0, code.Length) == 0)
+                    return true;
+                from = i + 1;
+            }
+            return false;
+        }
+
+        public static bool NoteFmodFailure(string message)
+        {
+            if (!IsFmodFailure(message)) return false;
+            _fmodFrame = Time.frameCount;
+            if (!_fmodNoted)
+            {
+                _fmodNoted = true;
+                FmodWarnings++;
+                Debug.LogWarning("FMOD audio failed (error code " + FmodCode(message) + "). Sound stays off until the output returns.");
+            }
+            SettleDevConsole();
+            return true;
+        }
+
+        // Headphones, a route change, or coming back to the app. Retry only when
+        // this run had actually given up on the output, and only the sources that missed.
+        public static void OnAudioConfigurationChanged(bool deviceWasChanged) => ClearOutputFailure();
+
+        public static void OnApplicationFocus(bool focus)
+        {
+            if (focus) ClearOutputFailure();
+        }
+
+        public static void OnApplicationPause(bool paused)
+        {
+            if (!paused) ClearOutputFailure();
+        }
+
+        public static void ClearOutputFailure()
+        {
+            bool wasDown = _fmodNoted;
+            _fmodNoted = false;
+            _fmodFrame = -1;
+            if (!wasDown) return;
+            RetrySkipped();
+        }
+
+        static void RetrySkipped()
+        {
+            _retried.Clear();
+            if (GamePause.Paused || Muted)
+            {
+                _retryDeferred = true;
+                return;
+            }
+            _retryDeferred = false;
+            var batch = new List<AudioSource>(_skipped);
+            _skipped.Clear();
+            var ready = new List<AudioSource>();
+            for (int i = 0; i < batch.Count; i++)
+            {
+                var s = batch[i];
+                if (!Alive(s) || !s.loop) continue;
+                if (s.isPlaying) continue;
+                if (HeldPaused(s)) continue;
+                if (MixDesk.Live != null && (MixDesk.Live.BlocksSkippedRetry(s) || MixDesk.Live.SplashStemBlocked(s))) continue;
+                ready.Add(s);
+            }
+            RetryPlayCount += ScheduleStemsTogether(ready);
+        }
+
+        static void RememberSkip(AudioSource source)
+        {
+            if (!Alive(source)) return;
+            if (!Listed(_skipped, source)) _skipped.Add(source);
+        }
+
+        static bool Listed(List<AudioSource> list, AudioSource source)
+        {
+            if (!Alive(source)) return false;
+            for (int i = 0; i < list.Count; i++)
+                if (list[i] == source) return true;
+            return false;
+        }
+
+        static void DropFrom(List<AudioSource> list, AudioSource source, int id)
+        {
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var s = list[i];
+                if (ReferenceEquals(s, null) || s == null || s == source || (id != 0 && Identity(s) == id))
+                    list.RemoveAt(i);
+            }
+        }
+
+        static bool HeldPaused(AudioSource source)
+        {
+            int id = Identity(source);
+            if (id == 0) return false;
+            for (int i = 0; i < _paused.Count; i++)
+                if (_paused[i] == id) return true;
+            return false;
+        }
+
+        static bool Alive(AudioSource source)
+        {
+            return !ReferenceEquals(source, null) && source != null;
+        }
+
+        static int Identity(AudioSource source)
+        {
+            if (ReferenceEquals(source, null)) return 0;
+            try { return source.GetInstanceID(); }
+            catch (Exception) { return 0; }
+        }
+
+        static void NoteDestroyed(AudioSource source)
+        {
+            if (ReferenceEquals(source, null)) return;
+            int id = Identity(source);
+            string key = id != 0 ? "destroyed:" + id.ToString(CultureInfo.InvariantCulture) : "destroyed";
+            LogOnce(key, "AudioGuard skipped a destroyed source.");
+        }
+
+        static void NotePlayback(AudioSource source, Exception ex)
+        {
+            if (ex != null && NoteFmodFailure(ex.Message)) return;
+            if (!Alive(source))
+            {
+                NoteDestroyed(source);
+                return;
+            }
+            string name = "source";
+            try
+            {
+                if (source.clip != null && !string.IsNullOrEmpty(source.clip.name))
+                    name = source.clip.name;
+            }
+            catch (Exception) { name = "source"; }
+            LogOnce("clip:" + name, "AudioGuard skipped " + name + ".");
+        }
+
+        static void LogOnce(string key, string message)
+        {
+            for (int i = 0; i < _logged.Count; i++)
+                if (_logged[i] == key) return;
+            _logged.Add(key);
+            PlaybackWarnings++;
+            Debug.LogWarning(message);
+        }
+
+        static void ClearSkipBook()
+        {
+            _skipped.Clear();
+            _restore.Clear();
+            _started.Clear();
+            _paused.Clear();
+            _retried.Clear();
+            _schedIds.Clear();
+            _schedAt.Clear();
+            _logged.Clear();
+            RejectScheduled = null;
+            PlaybackWarnings = 0;
+            RetryPlayCount = 0;
+            PlayCalls = 0;
+            StopCalls = 0;
+            PauseRoutes = 0;
+            ResumeRoutes = 0;
+            _retryDeferred = false;
+            _reassertPending = false;
+        }
+
+        public static void SettleDevConsole()
+        {
+#if DEVELOPMENT_BUILD
+            // Keep the Development Console shut after a non-fatal FMOD init failure.
+            // A later real exception takes the console back and we stop hiding it.
+            if (!_fmodNoted || _consoleOwnedByError) return;
+            if (_otherErrorFrame == Time.frameCount) return;
+            Debug.developerConsoleVisible = false;
+#endif
+        }
+
+        static string FmodCode(string message)
+        {
+            if (message.IndexOf("FMOD_ERR_OUTPUT_INIT", StringComparison.OrdinalIgnoreCase) >= 0) return "60";
+            const string key = "error code ";
+            int i = message.IndexOf(key, StringComparison.OrdinalIgnoreCase);
+            if (i >= 0)
+            {
+                int s = i + key.Length;
+                int e = s;
+                while (e < message.Length && char.IsDigit(message[e])) e++;
+                if (e > s) return message.Substring(s, e - s);
+            }
+            return "60";
+        }
+
+        static void OnAudioLog(string condition, string stackTrace, LogType type)
+        {
+            if (type != LogType.Error && type != LogType.Exception && type != LogType.Assert) return;
+            if (IsFmodFailure(condition) || IsFmodFailure(stackTrace))
+                NoteFmodFailure(string.IsNullOrEmpty(condition) ? stackTrace : condition);
+            else
+            {
+                _otherErrorFrame = Time.frameCount;
+                _consoleOwnedByError = true;
+            }
         }
 
         // One shared mute. The Settings sheet is the only control that writes it.
@@ -130,6 +707,21 @@ namespace FlockFive
             MusicEnabled = !m;
             SfxEnabled = !m;
             if (persist) { PlayerPrefs.SetInt(MuteKey, m ? 1 : 0); PlayerPrefs.Save(); }
+            // Volume only. MusicScale is already 0 while MusicEnabled is off, so a
+            // playing bed keeps its place in the loop. Nothing is stopped.
+            if (was && !m)
+            {
+                if (GamePause.Paused) _reassertPending = true;
+                else
+                {
+                    if (MixDesk.Live != null) MixDesk.Live.ReassertBed();
+                    if (_retryDeferred)
+                    {
+                        _retryDeferred = false;
+                        RetrySkipped();
+                    }
+                }
+            }
             if (was != m) MutedChanged?.Invoke(m);
         }
 
@@ -158,6 +750,12 @@ namespace FlockFive
             MasterVolume = 1f;
             Clock = null;
             ActivateCalls = 0;
+            FmodWarnings = 0;
+            _fmodNoted = false;
+            _fmodFrame = -1;
+            _otherErrorFrame = -1;
+            _consoleOwnedByError = false;
+            ClearSkipBook();
         }
 
         static double Now()
@@ -429,7 +1027,27 @@ namespace FlockFive
     // UnitySendMessage target. The GameObject name is AudioGuard.
     public sealed class AudioGuardHost : MonoBehaviour
     {
+        static AudioGuardHost _alive;
+
         public void OnAudioInterruption(string kind) => AudioGuard.OnAudioInterruption(kind);
+
+        void OnEnable()
+        {
+            if (_alive != null && _alive != this) return;
+            _alive = this;
+            AudioGuard.HookOutputRecovery();
+        }
+
+        void OnDisable()
+        {
+            if (_alive != this) return;
+            _alive = null;
+            AudioGuard.UnhookOutputRecovery();
+        }
+
+        void OnApplicationFocus(bool focus) => AudioGuard.OnApplicationFocus(focus);
+
+        void OnApplicationPause(bool paused) => AudioGuard.OnApplicationPause(paused);
 
         void Update() => AudioGuard.Tick();
     }

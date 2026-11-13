@@ -10,6 +10,17 @@ namespace FlockFive
         // No ad available (not loaded, cooldown, grace): one green Collect only.
         public const string RewardDoubleWord = "2X";
         public const string RewardCollectWord = "Collect";
+        // Stage-clear 2X pays the coin prize again. Cards on that board are not doubled.
+        // Daily keeps the shorter RewardDoubleWord.
+        public const string RewardCoinsDoubleWord = "2X COINS";
+
+        public static bool DoublesCoinsOnly(string word)
+        {
+            if (string.IsNullOrEmpty(word)) return false;
+            bool coins = word.IndexOf("COIN", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            bool cards = word.IndexOf("CARD", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            return coins && !cards;
+        }
 
         // 0 waiting, 1 ad running, 2 chosen.
         int _rewardChoice;
@@ -93,11 +104,83 @@ namespace FlockFive
 
         public bool RewardChoiceUp => _rewardAtHold && _streakSlide >= 0f && _rewardChoice == 0;
 
+        // Stable press for the two buttons. HitPad's control id moved while the
+        // clear's juice was still settling, so the first click never matched.
+        readonly SplashPress.Gesture _rewardWatchPress = new SplashPress.Gesture();
+        readonly SplashPress.Gesture _rewardCollectPress = new SplashPress.Gesture();
+
+        // Buttons are on screen: past the intro, not paying out, not inside an ad.
+        bool RewardChoiceButtonsDue()
+        {
+            if (Ads.IsShowing) return false;
+            if (!_splash || _home != HomeFace.Splash) return false;
+            if (_clearReward || _streakSlide < 0f || _rewardChoice != 0) return false;
+            if (_rewardFace.width < 4f) return false;
+            int streak;
+            int fromPay;
+            int toPay;
+            RewardPays(out streak, out fromPay, out toPay);
+            var beat = RewardBeats(RewardMulOn(streak, fromPay, toPay));
+            float dur = beat.SeqDur > 0.05f ? beat.SeqDur : 0.05f;
+            float t = _streakSlide * dur;
+            return t >= beat.ChoiceAt - 0.001f && !RewardPayBusy();
+        }
+
+        RewardChoiceInput.Leftovers RewardChoiceLeftovers()
+        {
+            return new RewardChoiceInput.Leftovers
+            {
+                FightHold = _ostrichFight || _turnGate.Busy,
+                PestHold = _pestCue != 0,
+                RuleEat = _ruleEatGesture || _ruleTip != RuleTip.None,
+                LessonGuard = LessonGuardUp(),
+            };
+        }
+
+        void ApplyRewardChoiceLeftovers(RewardChoiceInput.Leftovers g)
+        {
+            if (!g.FightHold)
+            {
+                _ostrichFight = false;
+                if (_turnGate.Busy) _turnGate.Reset();
+            }
+            if (!g.PestHold && _pestCue != 0) PestIntroHide();
+            if (!g.RuleEat)
+            {
+                _ruleEatGesture = false;
+                if (_ruleTip != RuleTip.None)
+                {
+                    if (RuleTips.IsLine(_cueLine)) _cueLine = null;
+                    _ruleTip = RuleTip.None;
+                    _ruleHeld = 0f;
+                    ReleaseTutorPause();
+                }
+            }
+            if (!g.LessonGuard) _lessonGuardUntil = 0f;
+        }
+
+        // Called at the top of OnGUI, before any swallow. Ostrich clears were leaving
+        // a rule-eat (no timeout) and, on the first ostrich, a pest hold. Those ate
+        // every tap until a later poke happened to clear them.
+        void ReleaseRewardChoiceGates()
+        {
+            if (!RewardChoiceButtonsDue()) return;
+            var held = RewardChoiceLeftovers();
+            var after = RewardChoiceInput.Drop(true, held);
+            ApplyRewardChoiceLeftovers(after);
+        }
+
+        void IdleRewardPress()
+        {
+            RewardChoiceInput.Resolve(false, false, false, false, default, default,
+                _rewardWatchPress, _rewardCollectPress, null, false, false, Time.frameCount);
+        }
+
         // Drawn last, over the LEVEL flower and the badger, as a modal: the home dims
         // around the REWARD card and only the choice buttons take taps.
         void DrawRewardChoiceTop()
         {
-            if (!_splash || _home != HomeFace.Splash) { _rewardAtHold = false; return; }
+            if (!_splash || _home != HomeFace.Splash) { _rewardAtHold = false; IdleRewardPress(); return; }
             DrawRewardChoice(DeviceFit.Ui());
         }
 
@@ -119,13 +202,14 @@ namespace FlockFive
         void DrawRewardChoice(float s)
         {
             _rewardAtHold = false;
-            if (_clearReward || _streakSlide < 0f || _rewardChoice != 0) { _rewardChoiceBorn = -1f; return; }
-            if (_rewardFace.width < 4f) return;
+            if (Ads.IsShowing) { IdleRewardPress(); return; }
+            if (_clearReward || _streakSlide < 0f || _rewardChoice != 0) { _rewardChoiceBorn = -1f; IdleRewardPress(); return; }
+            if (_rewardFace.width < 4f) { IdleRewardPress(); return; }
             int streak; int fromPay; int toPay;
             RewardPays(out streak, out fromPay, out toPay);
             var beat = RewardBeats(RewardMulOn(streak, fromPay, toPay));
             float t = _streakSlide * (beat.SeqDur > 0.05f ? beat.SeqDur : 0.05f);
-            if (t < beat.ChoiceAt - 0.001f || RewardPayBusy()) { _rewardChoiceBorn = -1f; return; }
+            if (t < beat.ChoiceAt - 0.001f || RewardPayBusy()) { _rewardChoiceBorn = -1f; IdleRewardPress(); return; }
             _rewardAtHold = true;
             if (_rewardChoiceBorn < 0f) _rewardChoiceBorn = AdPause.Unscaled;
             float a = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((AdPause.Unscaled - _rewardChoiceBorn) / 0.22f));
@@ -153,28 +237,39 @@ namespace FlockFive
                     _stampRepaint = false;
                 }
             }
-            bool priHeld, secHeld = false;
-            bool priHit = HitPad(lay.Primary, out priHeld);
-            bool secHit = hasAd && HitPad(lay.Secondary, out secHeld);
+            // As soon as the buttons are drawn. The old half-fade discard threw away
+            // the tap that landed while they were already visibly on screen, and
+            // HitPad lost the rest whenever a garden swallow had Used the event.
+            ReadHomePointers(_homeSamples, out bool pointerLive);
+            var ev = Event.current;
+            var evType = ev != null ? ev.type : EventType.Ignore;
+            int evButton = ev != null ? ev.button : -1;
+            bool canBegin = SplashPress.CanBegin(evType, evButton, _homeSamples);
+            bool resumeHold = GateNow < _resumeInputUntil;
+            var press = RewardChoiceInput.Resolve(
+                true, hasAd, resumeHold, StartupInputHeld,
+                lay.Primary, lay.Secondary,
+                _rewardWatchPress, _rewardCollectPress,
+                _homeSamples, canBegin, pointerLive, Time.frameCount);
             var keep = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, a);
-            DrawOfferChoice(lay, hasAd, priHeld, secHeld, a, s, RewardCollectWord);
+            DrawOfferChoice(lay, hasAd, press.PrimaryHeld, press.SecondaryHeld, a, s, RewardCollectWord, RewardCoinsDoubleWord);
             GUI.color = keep;
-            if (a < 0.5f) return;
-            if (hasAd && priHit) StartCoroutine(WatchRewardRepeat());
-            else if ((!hasAd && priHit) || secHit) _rewardChoice = 2;
+            if (press.Action == RewardChoiceInput.Tap.Watch) StartCoroutine(WatchRewardRepeat());
+            else if (press.Action == RewardChoiceInput.Tap.Collect) _rewardChoice = 2;
         }
 
-        // Shared Watch-Ad-2X / Collect choice painter. Used by the REWARD popup and the DAILY
-        // popup so both have the same buttons, icon+label group, pulse, sheen and popup style.
-        // Primary = green WATCH AD 2X (or lone green Collect when no ad); Secondary = wood Collect.
+        // Shared 2X / Collect choice painter. The REWARD popup and the DAILY popup both
+        // use it, so the film mark, the single line, the pulse and the sheen stay matched.
+        // Primary = green film-strip 2X (or lone green Collect when no ad); Secondary = wood Collect.
+        // `doubleWord` is the big line. Reward passes "2X COINS"; daily leaves it null and gets "2X".
         // Caller owns hit testing and alpha (GUI.color); `a` only scales the sheen.
-        void DrawOfferChoice(OfferButtonsLayout lay, bool hasAd, bool priHeld, bool secHeld, float a, float s, string collectWord)
+        void DrawOfferChoice(OfferButtonsLayout lay, bool hasAd, bool priHeld, bool secHeld, float a, float s, string collectWord, string doubleWord = null)
         {
+            if (string.IsNullOrEmpty(doubleWord)) doubleWord = RewardDoubleWord;
             if (_choiceWord == null)
                 _choiceWord = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
-            // b87: the 2X button reads as "Watch Ad": video icon, "WATCH AD" over a big 2X,
-            // a gentle breathe and the shared PushButton sheen at half speed.
+            // Gentle breathe and the shared PushButton sheen at half speed.
             var priR = lay.Primary;
             float pk = 1f;
             if (hasAd && !priHeld)
@@ -190,20 +285,13 @@ namespace FlockFive
                 // b110: label is laid out and fitted at rest size, then scaled with the plate by the same pulse value.
                 var m0 = PushButton.BeginPulse(priR.center, pk);
                 face = PushButton.ScaledAbout(face, priR.center, 1f / pk);
-                // b111 (Brandon): icon + words are one group centered on the button, inside the same
-                // inner padding the Collect / Pay Double buttons use (DrawPopupWord).
-                float ic = face.height * 0.58f;
-                float gap = face.height * 0.08f;
-                float padX = face.width * PopupWordPadX;
-                float slotW = Mathf.Max(8f, face.width - 2f * padX - ic - gap);
-                var slotLab = new Rect(0f, face.y + face.height * PopupWordPadY * 0.5f, slotW, face.height * (1f - PopupWordPadY));
-                float textW = MeasureWatchAdWords(slotLab, s);
-                float groupW = ic + gap + textW;
-                float gx = face.center.x - groupW * 0.5f;
-                var icR = new Rect(gx, face.center.y - ic * 0.5f, ic, ic);
-                DrawPlayAdIcon(icR);
-                var txt = new Rect(icR.xMax + gap, slotLab.y, textW, slotLab.height);
-                DrawWatchAdWords(txt, s);
+                // Film strip + one line, one group, inside the same padding as Collect / Pay Double.
+                var full = LayoutFilmOffer(face, 0f);
+                float textW = FitDoubleWord(full.Label, s, doubleWord);
+                var mark = LayoutFilmOffer(face, textW);
+                DrawFilmPlayMark(mark.Icon);
+                int ink = Mathf.Clamp(Mathf.RoundToInt(_choiceWord.fontSize * 0.16f), 2, 8);
+                StampOutlined(mark.Label, doubleWord, _choiceWord, Color.white, 0, ink);
                 PushButton.EndPulse(m0);
                 var sf = DrawPopupButton(lay.Secondary, secHeld, PopupTint.Wood);
                 DrawPopupWord(sf, collectWord, _choiceWord, s);
@@ -211,41 +299,63 @@ namespace FlockFive
             else DrawPopupWord(face, collectWord, _choiceWord, s);
         }
 
-        public const string WatchAdWord = "WATCH AD";
         public const float WatchAdPulse = 0.03f;
         public const float WatchAdPulsePeriod = 1.6f;
-        GUIStyle _watchSmall;
+        // Film height as a fraction of the button face, and film width as a fraction of the padded row.
+        // The width cap is what keeps "2X COINS" readable on the 402 / 412 glass.
+        public const float FilmOfferHeightFrac = 0.70f;
+        public const float FilmOfferWidthFrac = 0.42f;
 
-        // Fits both lines to the slot (same FitFont/outline rule as DrawPopupWord) and returns the widest line,
-        // so the icon + words group can be centered on the button.
-        float MeasureWatchAdWords(Rect slot, float s)
+        public struct FilmOfferLayout
         {
-            FitWatchAdWords(slot, s, out _, out _);
-            var c1 = new GUIContent(WatchAdWord);
-            var c2 = new GUIContent(RewardDoubleWord);
-            float w1 = _watchSmall.CalcSize(c1).x;
-            float w2 = _choiceWord.CalcSize(c2).x;
-            return Mathf.Min(slot.width, Mathf.Max(w1, w2));
+            public Rect Icon;
+            public Rect Label;
         }
 
-        void FitWatchAdWords(Rect r, float s, out Rect top, out Rect big)
+        // `textW` <= 0 uses the whole remaining slot (the fit pass). A measured width
+        // recenters the film + word as one group. The rect is the button face DrawPopupButton returns.
+        public static FilmOfferLayout LayoutFilmOffer(Rect face, float textW)
         {
-            if (_watchSmall == null)
-                _watchSmall = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false };
-            top = new Rect(r.x, r.y, r.width, r.height * 0.36f);
-            big = new Rect(r.x, r.y + r.height * 0.34f, r.width, r.height * 0.66f);
-            _watchSmall.wordWrap = false; _watchSmall.alignment = TextAnchor.MiddleCenter; _watchSmall.fontStyle = FontStyle.Bold;
-            _watchSmall.fontSize = FitFont(_watchSmall, WatchAdWord, top.width, top.height, 9, Mathf.Max(12, Mathf.RoundToInt(18f * s)));
-            _choiceWord.wordWrap = false; _choiceWord.alignment = TextAnchor.MiddleCenter; _choiceWord.fontStyle = FontStyle.Bold;
-            _choiceWord.fontSize = FitFont(_choiceWord, RewardDoubleWord, big.width, big.height, 14, Mathf.Max(18, Mathf.RoundToInt(34f * s)));
+            float padX = face.width * PopupWordPadX;
+            float innerW = Mathf.Max(8f, face.width - 2f * padX);
+            float innerH = Mathf.Max(8f, face.height * (1f - 2f * PopupWordPadY));
+            float gap = Mathf.Max(4f, face.height * 0.06f);
+            float filmH = face.height * FilmOfferHeightFrac;
+            float filmW = filmH * FilmPlayMark.Aspect;
+            float capW = innerW * FilmOfferWidthFrac;
+            if (filmW > capW)
+            {
+                filmW = capW;
+                filmH = filmW / FilmPlayMark.Aspect;
+            }
+            float labelW = Mathf.Max(8f, innerW - filmW - gap);
+            if (textW > 0f && textW < labelW) labelW = textW;
+            float groupW = filmW + gap + labelW;
+            float gx = face.center.x - groupW * 0.5f;
+            var lay = new FilmOfferLayout();
+            lay.Icon = new Rect(gx, face.center.y - filmH * 0.5f, filmW, filmH);
+            lay.Label = new Rect(gx + filmW + gap, face.center.y - innerH * 0.5f, labelW, innerH);
+            return lay;
         }
 
-        // White fill, dark outline: same stamp as DrawPopupWord on Collect / Pay Double.
-        void DrawWatchAdWords(Rect r, float s)
+        // Fits the one line to the slot (same FitFont / outline rule as DrawPopupWord) and returns its width.
+        float FitDoubleWord(Rect slot, float s, string word)
         {
-            FitWatchAdWords(r, s, out var top, out var big);
-            StampOutlined(top, WatchAdWord, _watchSmall, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(_watchSmall.fontSize * 0.16f), 2, 8));
-            StampOutlined(big, RewardDoubleWord, _choiceWord, Color.white, 0, Mathf.Clamp(Mathf.RoundToInt(_choiceWord.fontSize * 0.16f), 2, 8));
+            _choiceWord.wordWrap = false;
+            _choiceWord.alignment = TextAnchor.MiddleCenter;
+            _choiceWord.fontStyle = FontStyle.Bold;
+            int cap = Mathf.Max(18, Mathf.RoundToInt(34f * s));
+            _choiceWord.fontSize = FitFont(_choiceWord, word, slot.width, slot.height, 14, cap);
+            float w = _choiceWord.CalcSize(new GUIContent(word)).x;
+            return Mathf.Min(slot.width, Mathf.Max(8f, w));
+        }
+
+        static void DrawFilmPlayMark(Rect r)
+        {
+            if (r.width < 4f || r.height < 4f) return;
+            var tex = FilmPlayMark.Texture();
+            if (tex == null) return;
+            GUI.DrawTexture(r, tex, ScaleMode.ScaleToFit, true);
         }
 
         IEnumerator WatchRewardRepeat()
