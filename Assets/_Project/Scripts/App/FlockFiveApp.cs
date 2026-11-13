@@ -575,6 +575,8 @@ namespace FlockFive
         void OnEnable()
         {
             _app = this;
+            // A new instance must not inherit another session's dismiss guard.
+            _lessonGuardUntil = 0f;
             RewardedGrant.TryApply = ApplyRewardedTicket;
             RewardedGrant.Boot();
         }

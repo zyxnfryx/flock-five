@@ -32,6 +32,11 @@ namespace FlockFive
             gates.HardModal = false;
             gates.AdoptQueue = false;
             gates.RailLesson = false;
+            // The caption veil and the short dismiss guard are for the garden.
+            // Play stays up through greet, naming, and Tap Daily. Restart is
+            // still swallowed for the timed resume window below.
+            gates.LessonGuard = false;
+            gates.Consent = false;
             // The studio cover is not one of the captions. A timed resume
             // swallow still wins. The cover alone must not keep Play dead.
             if (!(GateNow < _resumeInputUntil))

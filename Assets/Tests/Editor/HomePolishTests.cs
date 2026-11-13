@@ -1548,6 +1548,7 @@ namespace FlockFive.Editor
 
         static void CheckGloveOneHandle(System.Action<string, bool, string> Check)
         {
+            FlockFiveApp.ClearLessonGuard();
             bool mouseKeepsTouchRelease = FlockFiveApp.HomePointerId(-1, true, 4) == 4;
             bool noReleaseStaysMouse = FlockFiveApp.HomePointerId(-1, false, 4) == -1;
             bool namedFingerWins = FlockFiveApp.HomePointerId(4, true, 9) == 4;
@@ -1752,7 +1753,10 @@ namespace FlockFive.Editor
 
                 splash.SetValue(app, false);
                 garden.Cam = new GameObject("glove-cam-slide").AddComponent<Camera>();
-                t.GetField("_board", flags).SetValue(app, board);
+                // The settled hop above already moved `board` and may still hold
+                // its locks. The slide is a new pick, so it needs a fresh level.
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                ClearLocks(app);
                 t.GetField("_garden", flags).SetValue(app, garden);
                 t.GetField("_coach", flags).SetValue(app, true);
                 t.GetField("_cueForce", flags).SetValue(app, true);
@@ -2012,6 +2016,12 @@ namespace FlockFive.Editor
                 + " cue " + Int("_cueBranch") + " vis " + Bit("_gloveVis")
                 + " sel " + Int("_sel") + " hit " + GloveHit()
                 + " moves " + Int("_coachMoves");
+        }
+
+        static void ClearLocks(object app)
+        {
+            var locked = typeof(FlockFiveApp).GetField("_locked", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(app);
+            locked.GetType().GetMethod("Clear", System.Type.EmptyTypes).Invoke(locked, null);
         }
 
         static void ReadyHop(object app)
@@ -2329,6 +2339,7 @@ namespace FlockFive.Editor
 
         static void CheckMouseDownBesideTouch(System.Action<string, bool, string> Check)
         {
+            FlockFiveApp.ClearLessonGuard();
             var go = new GameObject("mouse-with-touch");
             GameObject limb = null, camGo = null;
             try
@@ -2479,6 +2490,7 @@ namespace FlockFive.Editor
 
         static void CheckPlayerGloveHop(System.Action<string, bool, string> Check)
         {
+            FlockFiveApp.ClearLessonGuard();
             var go = new GameObject("player-glove-hop");
             GameObject limb = null, destGo = null, camGo = null;
             try
@@ -2551,6 +2563,8 @@ namespace FlockFive.Editor
                 var stepBoard = LevelData.Open(0);
                 bool stepLevel = FlockFiveApp.Level1First(stepBoard, i => false, i => false, out int stepFrom, out int stepTo);
                 t.GetField("_board", flags).SetValue(app, stepBoard);
+                // The hop above locked its limbs and edit mode never finishes the flight.
+                ClearLocks(app);
                 t.GetField("_coachMoves", flags).SetValue(app, 1);
                 t.GetField("_cueBranch", flags).SetValue(app, stepFrom);
                 t.GetField("_cueForce", flags).SetValue(app, true);
@@ -2652,6 +2666,7 @@ namespace FlockFive.Editor
 
         static void CheckGlovePressOwner(System.Action<string, bool, string> Check)
         {
+            FlockFiveApp.ClearLessonGuard();
             var go = new GameObject("glove-press-owner");
             float keep = ResumeUntil();
             var prev = Event.current;
@@ -3159,6 +3174,7 @@ namespace FlockFive.Editor
 
         static void CheckHomeChainOneAtATime(System.Action<string, bool, string> Check)
         {
+            FlockFiveApp.ClearLessonGuard();
             var go = new GameObject("home-chain");
             var prev = Event.current;
             float keepResume = ResumeUntil();
@@ -3209,6 +3225,17 @@ namespace FlockFive.Editor
                     PhoneArea.H > 0f ? PhoneArea.H * 0.42f : 300f);
                 if (level.width > 2f && level.Contains(missAt))
                     missAt = new Vector2(missAt.x, level.yMin - 24f);
+                // Gear and Play are allowed through the caption, so a point on
+                // either does not dismiss the greet. Walk until the miss is neither.
+                var playExempt = Method(t, "PlayExempt", typeof(Vector2));
+                var gearExempt = Method(t, "HomeGearExempt", typeof(Vector2));
+                for (int n = 0; n < 6; n++)
+                {
+                    bool onPlay = (bool)playExempt.Invoke(app, new object[] { missAt });
+                    bool onGear = (bool)gearExempt.Invoke(app, new object[] { missAt });
+                    if (!onPlay && !onGear) break;
+                    missAt = new Vector2(16f + n * 10f, 16f + n * 10f);
+                }
                 var miss = new Event { type = EventType.MouseDown, mousePosition = missAt, button = 0 };
                 Event.current = miss;
                 try { Method(t, "SwallowOffTargetTap").Invoke(app, null); }

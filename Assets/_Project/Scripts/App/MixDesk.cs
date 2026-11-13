@@ -6,6 +6,10 @@ namespace FlockFive
 {
     public enum MixLayer { Bed, Mid, Lead }
 
+    // Edit-mode tests deactivate the desk with SetActive. Without this, the
+    // editor does not dispatch OnDisable, so a held soft cut never schedules.
+    // LateUpdate stays play-mode only.
+    [ExecuteAlways]
     public sealed class MixDesk : MonoBehaviour
     {
         public static MixDesk Live;
@@ -1483,6 +1487,7 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            if (!Application.isPlaying) return;
             LateFlushSoftCut();
             TickFreezeDuck();
             // GamePause returns before the bed is rewritten. An ad still has to
