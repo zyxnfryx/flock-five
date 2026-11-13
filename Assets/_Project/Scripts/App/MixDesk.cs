@@ -38,6 +38,7 @@ namespace FlockFive
         float _softCut = 1f;
         bool _softCutLive;
         bool _softCutDefer;
+        bool _realignPaused;
         List<AudioSource> _softCutReady;
         List<AudioSource> _softCutFade;
         AudioClip[] _pendingPlaceClip;
@@ -481,29 +482,36 @@ namespace FlockFive
 
         public void ResumeForGame()
         {
+            // Ordinary pause, including an ad pause, pauses every playing stem
+            // and reschedules none of them. They resume on the playhead they
+            // already have. Realign only after a reboot skipped a paused stem,
+            // and only onto a voice that is actually playing or scheduled.
+            bool realign = _realignPaused;
+            _realignPaused = false;
             if (_stems == null) return;
-            // A paused stem is never Stopped, so it still holds the playhead from
-            // before the pause. The stems that were free to restart are already
-            // on the shared start. Copy that sample, then resume.
             int mark = 0;
             bool have = false;
-            int[] place = { 0, 1, 2, 3, 5 };
-            for (int p = 0; p < place.Length; p++)
+            if (realign)
             {
-                int i = place[p];
-                if (i >= _stems.Length) continue;
-                var a = _stems[i];
-                if (a == null || a.clip == null || AudioGuard.IsPaused(a)) continue;
-                mark = a.timeSamples;
-                have = true;
-                break;
+                int[] place = { 0, 1, 2, 3, 5 };
+                for (int p = 0; p < place.Length; p++)
+                {
+                    int i = place[p];
+                    if (i >= _stems.Length) continue;
+                    var a = _stems[i];
+                    if (a == null || a.clip == null || AudioGuard.IsPaused(a)) continue;
+                    if (!LiveVoice(a) && !AudioGuard.ScheduledAt(a, out _)) continue;
+                    mark = a.timeSamples;
+                    have = true;
+                    break;
+                }
             }
             for (int i = 0; i < _stems.Length; i++)
             {
                 var a = _stems[i];
                 if (a == null || !AudioGuard.IsPaused(a)) continue;
-                if (IsPlaceSlot(i) && a.clip != null)
-                    a.timeSamples = have ? mark : 0;
+                if (realign && have && IsPlaceSlot(i) && a.clip != null && a.clip.samples > 0)
+                    a.timeSamples = mark % a.clip.samples;
                 AudioGuard.Resume(a);
             }
         }
@@ -1207,7 +1215,12 @@ namespace FlockFive
                 // Cut, result, and splash stay where they are. A paused stem is
                 // left playing on its own playhead: ScheduleStemsTogether would
                 // Stop it. Mute and zero gain still join the shared start, silently.
-                if (BlocksSkippedRetry(a) || SplashStemBlocked(a) || StemPaused(a)) continue;
+                if (BlocksSkippedRetry(a) || SplashStemBlocked(a)) continue;
+                if (StemPaused(a))
+                {
+                    _realignPaused = true;
+                    continue;
+                }
                 ready.Add(a);
                 if (StemAudible(a)) fade.Add(a);
             }

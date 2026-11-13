@@ -4280,8 +4280,9 @@ namespace FlockFive.Editor
                 bool held = a.timeSamples == 100 && b.timeSamples == 9000 && c.timeSamples == 20000
                     && AudioGuard.IsPaused(a) && AudioGuard.IsPaused(b) && AudioGuard.IsPaused(c);
                 resume.ResumeForGame();
-                bool locked = PlaceHeadsLocked(resume, out string detail);
-                try { Check("place-phase-after-resume", held && locked, "held " + held + " " + detail); }
+                bool back = a.timeSamples == 100 && b.timeSamples == 9000 && c.timeSamples == 20000;
+                try { Check("place-phase-after-resume", held && back,
+                    "held " + held + " " + a.timeSamples + " " + b.timeSamples + " " + c.timeSamples); }
                 catch (System.Exception hopEx) { Check("place-phase-after-resume", false, ThrowText(hopEx)); }
             }
             finally
@@ -4289,6 +4290,72 @@ namespace FlockFive.Editor
                 AudioGuard.ResetForTests();
                 if (resume != null) MixDesk.DetachForTests(resume);
                 UnityEngine.Object.DestroyImmediate(resumeGo);
+            }
+
+            var plainGo = new UnityEngine.GameObject("phase-plain");
+            MixDesk plain = null;
+            try
+            {
+                plain = plainGo.AddComponent<MixDesk>();
+                plain.AttachForTests();
+                PlantPhaseTrio(plain, out var a, out var b, out var c);
+                AudioGuard.Pause(a);
+                AudioGuard.Pause(b);
+                AudioGuard.Pause(c);
+                plain.ResumeForGame();
+                bool own = a.timeSamples == 100 && b.timeSamples == 9000 && c.timeSamples == 20000;
+                try { Check("place-pause-keeps-its-head", own,
+                    a.timeSamples + " " + b.timeSamples + " " + c.timeSamples); }
+                catch (System.Exception hopEx) { Check("place-pause-keeps-its-head", false, ThrowText(hopEx)); }
+                a.timeSamples = 30000;
+                b.timeSamples = 30000;
+                c.timeSamples = 30000;
+                AudioGuard.Pause(a);
+                AudioGuard.Pause(b);
+                AudioGuard.Pause(c);
+                plain.ResumeForGame();
+                bool synced = a.timeSamples == 30000 && b.timeSamples == 30000 && c.timeSamples == 30000;
+                try { Check("place-pause-keeps-a-shared-head", synced,
+                    a.timeSamples + " " + b.timeSamples + " " + c.timeSamples); }
+                catch (System.Exception hopEx) { Check("place-pause-keeps-a-shared-head", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (plain != null) MixDesk.DetachForTests(plain);
+                UnityEngine.Object.DestroyImmediate(plainGo);
+            }
+
+            var markGo = new UnityEngine.GameObject("phase-mark");
+            MixDesk mark = null;
+            try
+            {
+                mark = markGo.AddComponent<MixDesk>();
+                mark.AttachForTests();
+                PlantPhaseTrio(mark, out var a, out var b, out var c);
+                var shortClip = ProbeClip("phase-short", 8000);
+                c.clip = shortClip;
+                AudioGuard.Pause(b);
+                AudioGuard.Pause(c);
+                b.timeSamples = 100;
+                c.timeSamples = 9000;
+                a.timeSamples = 30000;
+                mark.BootPlaceForTests();
+                a.timeSamples = 50000;
+                mark.ResumeForGame();
+                int wantB = 50000 % b.clip.samples;
+                int wantC = 50000 % c.clip.samples;
+                bool landed = a.timeSamples == 50000 && b.timeSamples == wantB && c.timeSamples == wantC;
+                try { Check("place-phase-reboot-lands-on-mark", landed,
+                    "a " + a.timeSamples + " b " + b.timeSamples + " want " + wantB
+                    + " c " + c.timeSamples + " want " + wantC); }
+                catch (System.Exception hopEx) { Check("place-phase-reboot-lands-on-mark", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (mark != null) MixDesk.DetachForTests(mark);
+                UnityEngine.Object.DestroyImmediate(markGo);
             }
         }
 
