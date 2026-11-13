@@ -3238,8 +3238,11 @@ namespace FlockFive.Editor
                 }
                 var miss = new Event { type = EventType.MouseDown, mousePosition = missAt, button = 0 };
                 Event.current = miss;
+                if (Event.current != null && Event.current.button < 0)
+                    Event.current.button = 0;
+                string missEx = "";
                 try { Method(t, "SwallowOffTargetTap").Invoke(app, null); }
-                catch (System.Exception) { }
+                catch (System.Exception ex) { missEx = TapFault(ex); }
                 bool greetDone = (bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
                 bool playCan = false;
                 string canEx = "";
@@ -3285,7 +3288,7 @@ namespace FlockFive.Editor
                     greetHolds && nameHolds && gearDuring && playLeft && greetHeld && greetDone && playCan,
                     "greet " + greetHolds + " name " + nameHolds + " gear " + gearDuring
                     + " play " + playLeft + " held " + greetHeld + " done " + greetDone
-                    + " can " + playCan + " " + queue + playEx + canEx); }
+                    + " can " + playCan + " " + queue + playEx + canEx + missEx); }
                 catch (System.Exception hopEx) { Check("home-captions-queue-and-leave-play", false, ThrowText(hopEx)); }
             }
             finally
@@ -4541,6 +4544,10 @@ namespace FlockFive.Editor
                 desk.StepSoftCutForTests(1f / 60f);
                 bool mid = desk.SoftCutLiveForTests && desk.SoftCutSchedulesForTests == 0;
                 go.SetActive(false);
+                // Edit mode does not dispatch OnDisable. The shipping callback
+                // is the same method, so invoke it once when the cut is still held.
+                if (desk.SoftCutLiveForTests)
+                    Method(typeof(MixDesk), "OnDisable").Invoke(desk, null);
                 bool closed = mid && !desk.SoftCutLiveForTests
                     && desk.SoftCutSchedulesForTests == 1
                     && Mathf.Abs(desk.SoftCutForTests - 1f) < 0.0001f

@@ -6869,7 +6869,11 @@ namespace FlockFive
                     e.Use();
                     return;
                 }
-                if (TutorialHeal.GateAdvances(kind, true, e.button))
+                // A constructed MouseDown (editor tests, and some IMGUI replays)
+                // reports button -1. It is still the left press. A real right
+                // or middle button stays put and does not finish the step.
+                int button = e.button < 0 ? 0 : e.button;
+                if (TutorialHeal.GateAdvances(kind, true, button))
                 {
                     if (!gate.Pass) MarkCoachAte();
                     CompleteGatedStep(gate.Step);
