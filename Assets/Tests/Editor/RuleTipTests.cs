@@ -36,7 +36,7 @@ namespace FlockFive.Editor
             var kitRows = RuleTips.KitLine.Split('\n');
             Check(kitRows.Length == 3 && kitRows[1] == "bows with bows!", "bows stay one row");
             var sleepRows = RuleTips.SleepLine.Split('\n');
-            Check(sleepRows.Length == 3 && sleepRows[2] == "wants their colour.", "sleep rows");
+            Check(sleepRows.Length == 3 && sleepRows[2] == "wants their color.", "sleep rows");
             // 402, 412, and the iPad play column (820x1180 pillars to 9:16).
             var faces = new[]
             {
