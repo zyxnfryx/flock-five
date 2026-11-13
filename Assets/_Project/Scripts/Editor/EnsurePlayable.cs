@@ -35,6 +35,7 @@ namespace FlockFive.Editor
             Suite("reset-guard", CoachResetGuardTests.Run);
             Suite("glove-snug", GloveSnugTests.Run);
             Suite("rule-tips", RuleTipTests.Run);
+            Suite("reward-choice-input", RewardChoiceInputTests.Run);
             Suite("ad-clock-skew", AdClockSkewTests.Run);
             Suite("poker-bet", PokerBetTests.Run);
             Suite("money-compact", MoneyCompactTests.Run);
