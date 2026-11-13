@@ -164,14 +164,22 @@ namespace FlockFive.Editor
                 coach.Contains("string.Equals(_cueLine, DailyClaimLine) || string.Equals(_cueLine, AlbumUpgradeLine)")
                 && coach.Contains("_gloveTip = ClaimGloveStart(_gloveTip, aimGui, faceDh, CoachSafeGui(8f * s));"), "");
             Check("upgrade-bow-loops-claim-pins",
-                coach.Contains("bool buttonArc = claimTravel || string.Equals(_gloveStepLine, AlbumUpgradeLine)")
-                && coach.Contains("if (buttonArc)")
+                coach.Contains("bool claimCue = string.Equals(_gloveStepLine, DailyClaimLine);")
+                && coach.Contains("bool upgradeCue = string.Equals(_gloveStepLine, AlbumUpgradeLine);")
+                && coach.Contains("if (claimCue)")
+                && coach.Contains("travel = ClaimGloveTravelAt(posePhase);")
+                && coach.Contains("arcPos = ClaimGlovePose(_gloveTip, aim, posePhase, GloveDh(s) * 0.55f);")
+                && coach.Contains("else if (upgradeCue)")
                 && coach.Contains("arcPos = ClaimGloveArc(_gloveTip, aim, travel, GloveDh(s) * 0.55f);"), "");
-            int pin = coach.IndexOf("if (claimTravel && _gloveAct == TutorGloveAct.Live && ClaimGloveTravelDone");
-            int pinEnd = pin >= 0 ? coach.IndexOf("GloveArmTap(tapRect, tapHit);", pin) : -1;
+            int pin = coach.IndexOf("if (claimCue)");
+            int pinEnd = pin >= 0 ? coach.IndexOf("else if (upgradeCue)", pin) : -1;
             string pinBody = pin >= 0 && pinEnd > pin ? coach.Substring(pin, pinEnd - pin) : "";
             Check("upgrade-does-not-pin-on-the-button",
-                pin >= 0 && pinBody.IndexOf("AlbumUpgrade") < 0, "");
+                pin >= 0
+                && pinBody.Contains("ClaimGloveTravelAt")
+                && pinBody.Contains("ClaimGlovePose")
+                && pinBody.IndexOf("AlbumUpgrade") < 0
+                && pinBody.IndexOf("upgradeCue") < 0, "");
             Check("upgrade-tap-is-only-the-button",
                 CoachTap.Kind(CoachStep.AlbumUpgrade) == CoachTapKind.Required
                 && !CoachTap.AnyTap(CoachStep.AlbumUpgrade)

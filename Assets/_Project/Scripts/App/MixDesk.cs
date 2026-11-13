@@ -491,6 +491,7 @@ namespace FlockFive
             if (_stems == null) return;
             int mark = 0;
             bool have = false;
+            int open = 0;
             if (realign)
             {
                 int[] place = { 0, 1, 2, 3, 5 };
@@ -500,17 +501,19 @@ namespace FlockFive
                     if (i >= _stems.Length) continue;
                     var a = _stems[i];
                     if (a == null || a.clip == null || AudioGuard.IsPaused(a)) continue;
-                    if (!LiveVoice(a) && !AudioGuard.ScheduledAt(a, out _)) continue;
+                    open++;
+                    if (have || (!LiveVoice(a) && !AudioGuard.ScheduledAt(a, out _))) continue;
                     mark = a.timeSamples;
                     have = true;
-                    break;
                 }
             }
             for (int i = 0; i < _stems.Length; i++)
             {
                 var a = _stems[i];
                 if (a == null || !AudioGuard.IsPaused(a)) continue;
-                if (realign && have && IsPlaceSlot(i) && a.clip != null && a.clip.samples > 0)
+                // No unpaused place stem means nothing was rescheduled. Leave
+                // the playhead alone. Do not write 0.
+                if (open > 0 && realign && have && IsPlaceSlot(i) && a.clip != null && a.clip.samples > 0)
                     a.timeSamples = mark % a.clip.samples;
                 AudioGuard.Resume(a);
             }

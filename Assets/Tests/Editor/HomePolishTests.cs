@@ -4270,17 +4270,18 @@ namespace FlockFive.Editor
                 resume = resumeGo.AddComponent<MixDesk>();
                 resume.AttachForTests();
                 PlantPhaseTrio(resume, out var a, out var b, out var c);
+                int beforeA = a.timeSamples;
+                int beforeB = b.timeSamples;
+                int beforeC = c.timeSamples;
                 AudioGuard.Pause(a);
                 AudioGuard.Pause(b);
                 AudioGuard.Pause(c);
-                a.timeSamples = 100;
-                b.timeSamples = 9000;
-                c.timeSamples = 20000;
                 resume.BootPlaceForTests();
-                bool held = a.timeSamples == 100 && b.timeSamples == 9000 && c.timeSamples == 20000
+                bool held = a.timeSamples == beforeA && b.timeSamples == beforeB && c.timeSamples == beforeC
                     && AudioGuard.IsPaused(a) && AudioGuard.IsPaused(b) && AudioGuard.IsPaused(c);
                 resume.ResumeForGame();
-                bool back = a.timeSamples == 100 && b.timeSamples == 9000 && c.timeSamples == 20000;
+                bool back = a.timeSamples == beforeA && b.timeSamples == beforeB && c.timeSamples == beforeC
+                    && beforeA == 100 && beforeB == 9000 && beforeC == 20000;
                 try { Check("place-phase-after-resume", held && back,
                     "held " + held + " " + a.timeSamples + " " + b.timeSamples + " " + c.timeSamples); }
                 catch (System.Exception hopEx) { Check("place-phase-after-resume", false, ThrowText(hopEx)); }
@@ -4299,22 +4300,30 @@ namespace FlockFive.Editor
                 plain = plainGo.AddComponent<MixDesk>();
                 plain.AttachForTests();
                 PlantPhaseTrio(plain, out var a, out var b, out var c);
+                int beforeA = a.timeSamples;
+                int beforeB = b.timeSamples;
+                int beforeC = c.timeSamples;
                 AudioGuard.Pause(a);
                 AudioGuard.Pause(b);
                 AudioGuard.Pause(c);
                 plain.ResumeForGame();
-                bool own = a.timeSamples == 100 && b.timeSamples == 9000 && c.timeSamples == 20000;
+                bool own = a.timeSamples == beforeA && b.timeSamples == beforeB && c.timeSamples == beforeC
+                    && beforeA == 100 && beforeB == 9000 && beforeC == 20000;
                 try { Check("place-pause-keeps-its-head", own,
                     a.timeSamples + " " + b.timeSamples + " " + c.timeSamples); }
                 catch (System.Exception hopEx) { Check("place-pause-keeps-its-head", false, ThrowText(hopEx)); }
                 a.timeSamples = 30000;
                 b.timeSamples = 30000;
                 c.timeSamples = 30000;
+                int syncA = a.timeSamples;
+                int syncB = b.timeSamples;
+                int syncC = c.timeSamples;
                 AudioGuard.Pause(a);
                 AudioGuard.Pause(b);
                 AudioGuard.Pause(c);
                 plain.ResumeForGame();
-                bool synced = a.timeSamples == 30000 && b.timeSamples == 30000 && c.timeSamples == 30000;
+                bool synced = a.timeSamples == syncA && b.timeSamples == syncB && c.timeSamples == syncC
+                    && syncA == 30000 && syncB == 30000 && syncC == 30000;
                 try { Check("place-pause-keeps-a-shared-head", synced,
                     a.timeSamples + " " + b.timeSamples + " " + c.timeSamples); }
                 catch (System.Exception hopEx) { Check("place-pause-keeps-a-shared-head", false, ThrowText(hopEx)); }
