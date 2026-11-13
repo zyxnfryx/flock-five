@@ -267,6 +267,37 @@ namespace FlockFive
 
         public static void SetReadyOverride(int mode) => _readyOverride = mode;
 
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // The stage-clear Watch Ad / 2X button reads RewardRepeatReady: the
+        // rewarded unit reports ready, and lifetime clears are no longer inside
+        // the new-player grace (clears < 6). WebGL has no LevelPlay fill, and a
+        // fresh save is still in grace, so this reports the unit ready and
+        // lifts grace to the first clear that may offer the repeat. A cooldown
+        // left by an earlier inspect is cleared too. It does not grant No Ads
+        // and does not write flockfive.noads. It also arms the rewarded stub:
+        // a later reward_repeat show completes through RewardedGrant instead of
+        // waiting on LevelPlay. Shipping no-fill is unchanged when this is off.
+        public static bool InspectRewardStubArmed { get; private set; }
+
+        public static void ArmInspectRewardOffer()
+        {
+            InspectRewardStubArmed = true;
+            SetReadyOverride(1);
+            if (SessionClears < InterstitialGraceClears)
+            {
+                SessionClears = InterstitialGraceClears;
+                PlayerPrefs.SetInt(PrefClears, SessionClears);
+            }
+            if (Cooling(AdClock, _lastAnyAd))
+            {
+                _lastAnyAd = 0;
+                PlayerPrefs.DeleteKey(PrefLastAd);
+            }
+            PlayerPrefs.Save();
+        }
+#endif
+
         // Drops a displayed-interstitial bit left by another suite. Does not touch VIP.
         public static void ResetTransientForTests() => _intDisplayed = false;
         public static bool IsBusy => IsLoading || IsShowing;
@@ -478,6 +509,9 @@ namespace FlockFive
             LastEarned = false;
             ActivePlacement = PlacementBonus;
             _readyOverride = -1;
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            InspectRewardStubArmed = false;
+#endif
             SessionClears = PlayerPrefs.GetInt(PrefClears, 0);
             IsLoading = false;
             _showDepth = 0;
@@ -726,6 +760,27 @@ namespace FlockFive
                 yield break;
             }
             RewardedGrant.Begin(PlaceFor(ActivePlacement), payload, tutorialGoal, LevelData.DisplayNumber);
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            // WebGL Development inspect hook only. Not a shipping-path change.
+            // forceRewards arms this. WebGL has no LevelPlay fill, so RunRewarded
+            // waits on SDK init and fails, and the tap pays 1x. Begin already
+            // opened the ticket. Displayed, then Rewarded, then Flush is the
+            // real grant. The Repeat payload is the same prize again. Shipping
+            // no-fill stays on the path below when the hook is not armed.
+            if (InspectRewardStubArmed && ActivePlacement == PlacementRewardRepeat)
+            {
+                DeliverDisplayedCallback();
+                DeliverRewardedCallback();
+                DeliverClosedCallback();
+                LastEarned = RewardedGrant.Earned;
+                LastGranted = RewardedGrant.Earned;
+                RewardedGrant.Flush();
+                Debug.Log("FF_DEV_FORCE rewardStub=1 placement=" + ActivePlacement
+                    + " earned=" + (RewardedGrant.Earned ? 1 : 0)
+                    + " payload=" + payload);
+                yield break;
+            }
+#endif
             Ensure();
             if (_host == null)
             {
