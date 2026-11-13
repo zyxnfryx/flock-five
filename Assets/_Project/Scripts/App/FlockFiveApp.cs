@@ -13559,6 +13559,10 @@ namespace FlockFive
             float tabH = Mathf.Clamp(62f * s, 55f, 78f) * k;
             float frac = Mathf.Lerp(PokerPayTabPhoneWidthFrac, PokerPayTabTabletWidthFrac, DeviceFit.Wide(window));
             if (tabW > w * frac) { tabH *= w * frac / tabW; tabW = w * frac; }
+            // b120 R6: 44 pt tall and wide enough for "PAY TABLE" at the 12 pt text floor.
+            float tap = PokerTapFloorPx(s);
+            tabH = Mathf.Max(tabH, tap);
+            tabW = Mathf.Max(tabW, tap * 2.3f);
             return new Vector2(tabW, tabH);
         }
 
@@ -13578,12 +13582,37 @@ namespace FlockFive
         // DEAL / DRAW disc side. Phones unchanged; tablets take the shared control cap.
         public static float PokerActSize(float w, float s) => Mathf.Min(w * 0.46f, 200f * s) * DeviceFit.ControlK();
 
+        // b120 R6 (Readability floors): screen px per point (CSS px on WebGL, where Screen.dpi is 96 x dpr).
+        public static float PokerPtPx(float s)
+        {
+            float dpi = Screen.dpi;
+            float pt = dpi > 1f ? dpi / (PhoneArea.Pillar ? 132f : 163f) : Mathf.Max(1f, s);
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (dpi > 1f) pt = Mathf.Max(pt, dpi / 96f);
+#endif
+            return Mathf.Max(1f, pt);
+        }
+        public const float PokerTextFloorPt = 12f;
+        public const float PokerTapFloorPt = 44f;
+        // Top band the chrome must clear (status bar / island): 59 pt, or the real inset when larger.
+        public const float PokerTopBandPt = 59f;
+        public static int PokerTextFloorPx(float s) => Mathf.CeilToInt(PokerTextFloorPt * PokerPtPx(s));
+        public static float PokerTapFloorPx(float s) => PokerTapFloorPt * PokerPtPx(s);
+        public static float PokerTopFloor(float h, Rect safe, float s)
+        {
+            float inset = (safe.width < 2f || safe.height < 2f) ? 0f : Mathf.Max(0f, h - safe.yMax);
+            return Mathf.Max(inset, PokerTopBandPt * PokerPtPx(s));
+        }
+
         public static PokerChrome LayoutPokerChrome(float w, float h, Rect safe, float s)
         {
             if (safe.width < 2f || safe.height < 2f)
                 safe = new Rect(0f, 0f, w, h);
-            float top = TopHudBox(h, safe, 0f);
+            // b120 R6: Back and the balance sit below the 59 pt top band (WebGL / iPad report a small or 0 inset).
+            float top = Mathf.Max(TopHudBox(h, safe, 0f), PokerTopFloor(h, safe, s));
             var back = BackMedalBox(s, top, safe);
+            float backMin = PokerTapFloorPx(s);
+            if (back.width < backMin) back = new Rect(back.x, back.y, backMin, backMin);
             float right = w - Mathf.Max(12f, w - safe.xMax + 10f);
             float icon = CoinBalanceIcon(w, s);
             float cy = Mathf.Max(back.center.y, top + icon * 0.5f);
@@ -14038,7 +14067,8 @@ namespace FlockFive
             if (jewelKey != _payJewelKey)
             {
                 _payJewelKey = jewelKey;
-                _payJewelPx = FitFont(labSt, lab, chip.width * 0.90f, chip.height * 0.72f, 14, 26);
+                int floorPx = PokerTextFloorPx(s);
+                _payJewelPx = Mathf.Max(floorPx, FitFont(labSt, lab, chip.width * 0.90f, chip.height * 0.72f, Mathf.Max(14, floorPx), Mathf.Max(26, floorPx)));
             }
             labSt.fontSize = _payJewelPx;
             StampLight(chip, lab, labSt, new Color(1f, 0.94f, 0.72f));
@@ -16726,6 +16756,7 @@ namespace FlockFive
             // Compact stepper: [−] $xx [+] aligned with DEAL's ochre disc.
             // BET $XXX type stays fixed; chip size is independent so shrinking +/− does not shrink the label.
             float side = Mathf.Clamp(30f * s, 26f, 36f * s);
+            side = Mathf.Max(side, PokerTapFloorPx(s)); // b120 R6: 44 pt steppers
             float gap = 6f * s;
             float betW = Mathf.Clamp(slot.width - side * 2f - gap * 2f, 110f * s, 240f * s);
             float clusterW = side + gap + betW + gap + side;
@@ -16749,11 +16780,20 @@ namespace FlockFive
             _pokerPlusR = plus;
 
             var led = PokerBold(ref _pokerLed, TextAnchor.MiddleCenter);
-            led.fontSize = FitFont(led, PokerBetText(), amount.width, amount.height, 8, type);
+            int betFloor = PokerTextFloorPx(s);
+            led.fontSize = FitFont(led, PokerBetText(), amount.width, amount.height, betFloor, Mathf.Max(type, betFloor));
+            // b120 R6: light gold on a dark plate (>= 4.5:1), not straight on the bright wash.
+            if (GuiPaint())
+            {
+                GUI.color = PokerBetPlate;
+                GUI.DrawTexture(amount, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
             StampLight(amount, PokerBetText(), led, PokerLabelGold);
 
             bool live = steppers && !busy;
-            if (DrawBetStepper(minus, "−", live && BirdPoker.CanNudge(-1)) && live)
+            // b120 R6: ASCII minus. U+2212 is not in the bundled font and drew a blank box.
+            if (DrawBetStepper(minus, PokerMinusGlyph, live && BirdPoker.CanNudge(-1)) && live)
             {
                 if (BirdPoker.NudgeBet(-1)) Sfx.BetDown();
                 else Sfx.Deny();
@@ -16764,6 +16804,11 @@ namespace FlockFive
                 else Sfx.Deny();
             }
         }
+
+        public const string PokerMinusGlyph = "-";
+        public static readonly Color PokerBetPlate = new Color(0.20f, 0.11f, 0.05f, 0.90f);
+        // b120 R6: DEAL/DRAW ink on the ochre flower disc. Was (0.36, 0.18, 0.07): 3.2:1.
+        public static readonly Color PokerDiscInk = new Color(0.12f, 0.06f, 0.02f);
 
         bool DrawBetStepper(Rect r, string glyph, bool on)
         {
@@ -16853,7 +16898,7 @@ namespace FlockFive
                 _pokerHeroPx = FitFont(st, label, maxW, maxH, lo, hi);
             }
             st.fontSize = _pokerHeroPx;
-            StampLight(disc, label, st, new Color(0.36f, 0.18f, 0.07f));
+            StampLight(disc, label, st, PokerDiscInk);
             return fire;
         }
 

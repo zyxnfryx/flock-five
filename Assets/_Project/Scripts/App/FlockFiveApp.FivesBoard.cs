@@ -33,10 +33,14 @@ namespace FlockFive
         // PAY TABLE's own gap from the top of the safe area.
         // b119 Keep (Brandon): trophy "nudged down a smidge away from the pay table button" (~14-16px on device).
         public const float FivesIconExtraGap = 2.5f;
+        public const float FivesIconFloorPt = 48f;
+        // b120 R6: one short line under the badge says what found/16 counts.
+        public const string FivesBadgeHint = "Fives found";
 
         public static Rect PokerFivesIconBox(Rect payTab, float s, float screenW)
         {
-            float d = FivesIconPt * s;
+            // b120 R6: 48 pt floor so the found/16 pill holds 12 pt type and the tap stays >= 44 pt.
+            float d = Mathf.Max(FivesIconPt * s, FivesIconFloorPt * PokerPtPx(s));
             // Snug, uniform padding: PAY->icon gap equals PAY TABLE's right inset.
             float gap = Mathf.Max(0f, screenW - payTab.xMax) + FivesIconExtraGap * s;
             return new Rect(payTab.xMax - d, payTab.yMax + gap, d, d);
@@ -110,10 +114,23 @@ namespace FlockFive
             if (_fivesChipSt == null)
                 _fivesChipSt = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false, clipping = TextClipping.Overflow };
             string lab = FivesBadgeLabel(BirdPoker.FivesFound());
-            _fivesChipSt.fontSize = FitFont(_fivesChipSt, lab, pw * 0.78f, ph * 0.70f, 6, 40);
+            int floorPx = PokerTextFloorPx(s);
+            _fivesChipSt.fontSize = Mathf.Max(floorPx, FitFont(_fivesChipSt, lab, pw * 0.78f, ph * 0.70f, floorPx, Mathf.Max(40, floorPx)));
             _fivesChipSt.normal.textColor = new Color(1f, 0.95f, 0.80f, a);
             GUI.Label(pill, lab, _fivesChipSt);
+            var hint = FivesHintRect(box, floorPx);
+            var hintSt = PokerBold(ref _fivesHintSt, TextAnchor.UpperRight);
+            hintSt.fontSize = floorPx;
+            StampLight(hint, FivesBadgeHint, hintSt, new Color(1f, 0.95f, 0.80f, a));
             GUI.color = Color.white;
+        }
+
+        GUIStyle _fivesHintSt;
+        // Right-aligned with the badge, just under it.
+        public static Rect FivesHintRect(Rect box, int floorPx)
+        {
+            float hw = floorPx * 7.5f, hh = floorPx * 1.4f;
+            return new Rect(box.xMax - hw, box.yMax + floorPx * 0.25f, hw, hh);
         }
 
         static Texture2D _fivesMedalTex, _fivesPillTex;

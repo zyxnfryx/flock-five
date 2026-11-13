@@ -24,6 +24,7 @@ namespace FlockFive.Editor
 
         static void RunEditorSuites()
         {
+            Suite("build120-pokerfloors", Build120PokerFloorsTests.Run);
             Suite("board", BoardLayoutTests.Run);
             Suite("badger", BadgerFightTests.Run);
             Suite("badger-show", BadgerShowTests.Run);
