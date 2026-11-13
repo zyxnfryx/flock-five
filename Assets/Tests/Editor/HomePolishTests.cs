@@ -124,6 +124,8 @@ namespace FlockFive.Editor
             Gate("CheckScheduleHousekeeping", () => CheckScheduleHousekeeping(Check));
             Gate("CheckRebootHolds", () => CheckRebootHolds(Check));
             Gate("CheckSoftCut", () => CheckSoftCut(Check));
+            Gate("CheckBootSoftCut", () => CheckBootSoftCut(Check));
+            Gate("CheckSoftCutDisable", () => CheckSoftCutDisable(Check));
             Gate("CheckGardenGlove", () => CheckGardenGlove(Check));
             Gate("CheckUpgradeStack", () => CheckUpgradeStack(Check));
             Gate("CheckPlayerGlove", () => CheckPlayerGlove(Check));
@@ -1693,6 +1695,9 @@ namespace FlockFive.Editor
                 guiCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).CarryHeld;
 
                 splash.SetValue(app, false);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                var locked = t.GetField("_locked", flags).GetValue(app);
+                locked.GetType().GetMethod("Clear", System.Type.EmptyTypes).Invoke(locked, null);
                 t.GetField("_gloveVis", flags).SetValue(app, true);
                 t.GetField("_cueBranch", flags).SetValue(app, from);
                 t.GetField("_cueForce", flags).SetValue(app, true);
@@ -3183,6 +3188,8 @@ namespace FlockFive.Editor
                 FlockFiveApp.EditorShotLive = false;
                 GamePause.Reset();
                 SetResumeUntil(float.NegativeInfinity);
+                // The name check parked the step on Off. The greet sentence is Fly.
+                step.SetValue(app, System.Enum.ToObject(step.FieldType, 1));
                 bool gearDuring = HomeGear.AcceptsTap((HomeGearQuery)Method(t, "HomeGearNow").Invoke(app, null));
                 var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
                 var playAt = new Vector2(level.center.x, level.center.y);
@@ -4069,6 +4076,134 @@ namespace FlockFive.Editor
                     "again " + again + " schedules " + desk.SoftCutSchedulesForTests
                     + " plays " + AudioGuard.PlayCalls); }
                 catch (System.Exception hopEx) { Check("soft-cut-second-start-does-not-reschedule", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckBootSoftCut(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("boot-soft-cut");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.5f);
+                var bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("boot-place-0", 44100);
+                bed.loop = true;
+                AudioGuard.Play(bed);
+                while (desk.StemForTests(3) == null) desk.AddLoopForTests(true);
+                var combo = desk.StemForTests(3);
+                combo.clip = ProbeClip("boot-place-3", 44100);
+                combo.loop = true;
+                combo.volume = 0f;
+                int plays = AudioGuard.PlayCalls;
+                int stops = AudioGuard.StopCalls;
+                MixDesk.Boot(go);
+                bool armed = desk.SoftCutLiveForTests && desk.SoftCutSchedulesForTests == 0;
+                int stopsDuring = AudioGuard.StopCalls;
+                int guard = 0;
+                while (desk.SoftCutLiveForTests && guard < 8)
+                {
+                    desk.StepSoftCutForTests(1f / 60f);
+                    guard++;
+                }
+                bool once = !desk.SoftCutLiveForTests
+                    && desk.SoftCutSchedulesForTests == 1
+                    && AudioGuard.PlayCalls == plays
+                    && AudioGuard.ScheduledAt(desk.StemForTests(0), out _);
+                try { Check("boot-soft-cut-waits-for-silence",
+                    armed && stopsDuring == stops && once,
+                    "armed " + armed + " stops " + stops + "->" + stopsDuring
+                    + " schedules " + desk.SoftCutSchedulesForTests
+                    + " plays " + AudioGuard.PlayCalls + " steps " + guard); }
+                catch (System.Exception hopEx) { Check("boot-soft-cut-waits-for-silence", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckSoftCutDisable(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("soft-cut-disable");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.4f);
+                var bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("disable-bed", 44100);
+                bed.loop = true;
+                AudioGuard.Play(bed);
+                var mate = desk.AddLoopForTests(true);
+                mate.clip = ProbeClip("disable-mate", 44100);
+                mate.volume = 0f;
+                int plays = AudioGuard.PlayCalls;
+                desk.BootPlaceForTests();
+                desk.StepSoftCutForTests(1f / 60f);
+                bool mid = desk.SoftCutLiveForTests && desk.SoftCutSchedulesForTests == 0;
+                go.SetActive(false);
+                bool closed = mid && !desk.SoftCutLiveForTests
+                    && desk.SoftCutSchedulesForTests == 1
+                    && Mathf.Abs(desk.SoftCutForTests - 1f) < 0.0001f
+                    && AudioGuard.PlayCalls == plays
+                    && AudioGuard.ScheduledAt(bed, out _);
+                try { Check("soft-cut-disable-schedules-once", closed,
+                    "mid " + mid + " live " + desk.SoftCutLiveForTests
+                    + " gain " + desk.SoftCutForTests.ToString("0.000")
+                    + " schedules " + desk.SoftCutSchedulesForTests
+                    + " plays " + AudioGuard.PlayCalls); }
+                catch (System.Exception hopEx) { Check("soft-cut-disable-schedules-once", false, ThrowText(hopEx)); }
+
+                GamePause.Reset();
+                var go2 = new UnityEngine.GameObject("soft-cut-pause");
+                MixDesk paused = null;
+                try
+                {
+                    paused = go2.AddComponent<MixDesk>();
+                    paused.AttachForTests();
+                    paused.PlantStemForTests(0.4f);
+                    var voice = paused.StemForTests(0);
+                    voice.clip = ProbeClip("pause-bed", 44100);
+                    voice.loop = true;
+                    AudioGuard.Play(voice);
+                    var quiet = paused.AddLoopForTests(true);
+                    quiet.clip = ProbeClip("pause-mate", 44100);
+                    quiet.volume = 0f;
+                    int before = AudioGuard.PlayCalls;
+                    paused.BootPlaceForTests();
+                    GamePause.Push();
+                    paused.StepSoftCutForTests(1f);
+                    bool held = paused.SoftCutLiveForTests && paused.SoftCutSchedulesForTests == 0;
+                    GamePause.Pop();
+                    paused.FlushSoftCutForTests();
+                    bool resumed = held && !paused.SoftCutLiveForTests
+                        && paused.SoftCutSchedulesForTests == 1
+                        && AudioGuard.PlayCalls == before;
+                    try { Check("soft-cut-waits-for-resume", resumed,
+                        "held " + held + " schedules " + paused.SoftCutSchedulesForTests
+                        + " plays " + AudioGuard.PlayCalls); }
+                    catch (System.Exception hopEx) { Check("soft-cut-waits-for-resume", false, ThrowText(hopEx)); }
+                }
+                finally
+                {
+                    GamePause.Reset();
+                    if (paused != null) MixDesk.DetachForTests(paused);
+                    UnityEngine.Object.DestroyImmediate(go2);
+                }
             }
             finally
             {
