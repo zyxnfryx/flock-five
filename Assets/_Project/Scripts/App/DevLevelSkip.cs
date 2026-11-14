@@ -1,16 +1,36 @@
 namespace FlockFive
 {
-    // Temporary inspector hook. The boot that reads this and loads a garden is
-    // compiled only for WebGL development builds (see MaybeDevLevelSkip). This
-    // parser has no side effects. Release player builds never call it.
+    // WebGL Development inspect hook only. Not a shipping-path change.
+    // The boot that reads these flags is compiled only for WebGL development
+    // builds (see MaybeDevLevelSkip). This parser has no side effects.
+    // Device, iOS, Android, and release player builds never call it.
     public static class DevLevelSkip
     {
         public const string QueryKey = "fflevel";
+        // WebGL Development inspect hook only. Not a shipping-path change.
         public const string OnboardingKey = "skipOnboarding";
         public const string KeepTipsKey = "keepTips";
         public const string ForceFeederKey = "forceFeeder";
         public const string ForceNapKey = "forceNap";
         public const string OpenPokerKey = "openPoker";
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        public const string ForceClearKey = "forceClear";
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // Honored only with skipOnboarding=1, and it acts only once forceClear
+        // has already waited out the wipe and any ostrich entrance.
+        public const string ForceRewardsKey = "forceRewards";
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // ?forceMaxxed=1 draws the open album card as MAXXED so Inspector can
+        // see "Tap outside to put back". It does not write the album.
+        public const string ForceMaxxedKey = "forceMaxxed";
+        public const string ForcePauseKey = "forcePause";
+        // A garden that never shows the entrance still has to finish the star
+        // wipe. An ostrich who stays idle without ever striding (the entrance
+        // did not start) is given up after this, so Inspector is not stuck.
+        public const float ForceClearIdleCap = 8f;
+        // He is still in the entrance. Do not cover him. This only fires if
+        // the act never returns to idle.
+        public const float ForceClearMoveCap = 20f;
         // 1-based. Garden 2 is the first board where restart and the hive can
         // both show. Garden 1 may hide the hive until collection progress.
         // Bee Thicket opens on Gold and Teal feeders and still has full Ruby
@@ -40,6 +60,22 @@ namespace FlockFive
             public bool ForceFeeder;
             public bool ForceNap;
             public bool OpenPoker;
+            // WebGL Development inspect hook only. Not a shipping-path change.
+            // True only with skipOnboarding=1. After the star wipe, and after
+            // an ostrich entrance has returned to idle, the boot clears the
+            // board through the live win latch (TryScoreGarden), which is the
+            // same latch a StageClearingCollect reaches. That opens the real
+            // Collect / Watch Ad card. Absent the flag, nothing is cleared.
+            public bool ForceClear;
+            // WebGL Development inspect hook only. Not a shipping-path change.
+            // True only with skipOnboarding=1. Does not change when forceClear
+            // fires. After that wait, the boot makes Watch Ad / 2X offerable,
+            // grants one album card, and unlocks the album Upgrade glove.
+            // It does not grant No Ads. A later Watch Ad tap, while this hook
+            // stays armed, completes through the real RewardedGrant path
+            // (Begin, displayed, rewarded, flush) because WebGL has no LevelPlay
+            // fill. That stub is not a shipping no-fill change.
+            public bool ForceRewards;
         }
 
         // 1-based garden from ?fflevel=, or 0 when the page did not ask.
@@ -48,6 +84,7 @@ namespace FlockFive
             return QueryInt(url, QueryKey);
         }
 
+        // WebGL Development inspect hook only. Not a shipping-path change.
         // True only for ?skipOnboarding=1. Any other value is not a request.
         public static bool OnboardingFromUrl(string url)
         {
@@ -79,6 +116,115 @@ namespace FlockFive
             return QueryInt(url, OpenPokerKey) == 1;
         }
 
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // True only for ?forceClear=1. Any other value is not a request.
+        public static bool ForceClearFromUrl(string url)
+        {
+            return QueryInt(url, ForceClearKey) == 1;
+        }
+
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // True only for ?forceRewards=1. Any other value is not a request.
+        public static bool ForceRewardsFromUrl(string url)
+        {
+            return QueryInt(url, ForceRewardsKey) == 1;
+        }
+
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // True only for ?forceMaxxed=1. Any other value is not a request.
+        // The draw site is compiled only for WebGL development builds. This
+        // does not write the album or grant an upgrade.
+        public static bool ForceMaxxedFromUrl(string url)
+        {
+            return QueryInt(url, ForceMaxxedKey) == 1;
+        }
+
+        // DEV-ONLY inspect hook. Not a shipping-path proof.
+        // ?forcePause=1 holds a caption indefinitely. ?forcePause=N (N > 1)
+        // holds it for N seconds, then the normal timer may advance it.
+        public static bool ForcePauseFromUrl(string url)
+        {
+            return QueryInt(url, ForcePauseKey) == 1;
+        }
+
+        public static bool ForcePauseBlocks(string url, float heldSeconds)
+        {
+            int n = QueryInt(url, ForcePauseKey);
+            if (n == 1) return true;
+            if (n > 1) return heldSeconds < n;
+            return false;
+        }
+
+        // DEV-ONLY. A devConsole toggle so a held caption can be released
+        // without reloading. Release builds never read it.
+        public static bool DevPauseHeld;
+
+        public static void DevPauseFlip()
+        {
+            DevPauseHeld = !DevPauseHeld;
+        }
+
+        public static bool CaptionHeld(string url, float heldSeconds)
+        {
+            return DevPauseHeld || ForcePauseBlocks(url, heldSeconds);
+        }
+
+        public const string TapLogKey = "tapLog";
+
+        // DEV-ONLY inspect hook. Not a shipping-path proof. ?tapLog=1.
+        public static bool TapLogFromUrl(string url)
+        {
+            return QueryInt(url, TapLogKey) == 1;
+        }
+
+        // presented: the star wipe is down and the garden tween is idle.
+        // ostrich: this board has a live ostrich. moving: he is not idle
+        // (stride, honk, shake, or the plant, which stays on the stride act
+        // until the entrance ends). sawMove: that non-idle act has been seen,
+        // so a first idle frame before he walks on is not "done".
+        // No ostrich: ready as soon as the garden is presented.
+        // Ostrich: ready once the entrance movement has been seen and he is idle.
+        public static bool ForceClearReady(bool presented, bool ostrich, bool moving, bool idle, bool sawMove, float waited)
+        {
+            if (!presented) return false;
+            if (!ostrich) return true;
+            if (moving || !idle) return waited >= ForceClearMoveCap;
+            if (sawMove) return true;
+            return waited >= ForceClearIdleCap;
+        }
+
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // Held stage pay plus the repeat payload once the grant is earned.
+        // Purse.AddOwed is what the Repeat ticket does. Not earned leaves the 1x.
+        public static int InspectRepeatTotal(int owed, int extra, bool earned)
+        {
+            if (owed < 0) owed = 0;
+            if (extra < 0) extra = 0;
+            if (!earned || extra == 0) return owed;
+            return owed + extra;
+        }
+
+        // How long Zzz must be on the open garden before forceNap may raise the
+        // plate. One frame is not enough at 412: the stage gate can open while
+        // the star wipe is still the picture, and that frame was being counted.
+        public const float NapPlateOpenSeconds = 0.4f;
+
+        // True while the star wipe still owns the screen. StageHeld's realtime
+        // failsafe can drop on a narrow phone before the paint clock finishes,
+        // so a live rainbow still counts as covered.
+        public static bool NapWipeCovers(bool rainbowLive, bool stageHeld)
+        {
+            return rainbowLive || stageHeld;
+        }
+
+        // forceNap draws Zzz under the level rainbow. The plate waits until that
+        // pose has been drawn and the garden has been the picture (wipe gone)
+        // for NapPlateOpenSeconds. openSeconds is that open-garden time.
+        public static bool NapPlateReady(bool napBegun, bool stageHeld, float openSeconds)
+        {
+            return napBegun && !stageHeld && openSeconds >= NapPlateOpenSeconds;
+        }
+
         // How many coins to add so the purse reaches OnboardingCoins.
         // Already at or above that stake adds nothing.
         public static int CoinsToSeed(int have)
@@ -96,9 +242,12 @@ namespace FlockFive
         // ?keepTips=1 on that same skip also leaves the kit and feeder rule
         // plates owed. keepTips without skipOnboarding leaves KeepTips false,
         // so a plain ?fflevel= load still stamps those plates.
-        // forceFeeder, forceNap, and openPoker are the same: only a
-        // skipOnboarding=1 load sets them. Absent the flag, the plate still
-        // waits for a real feeder turn, a real nap, or a real walk to poker.
+        // forceFeeder, forceNap, openPoker, forceClear, and forceRewards are the
+        // same: only a skipOnboarding=1 load sets them. Absent the flag, the
+        // plate still waits for a real feeder turn, a real nap, or a real walk
+        // to poker, and a clear still waits for a real solve. forceRewards does
+        // not move the forceClear wait. All of these are WebGL Development
+        // inspect hooks only, not shipping-path changes.
         public static Choice Plan(string url, int levelCount)
         {
             int display = DisplayFromUrl(url);
@@ -116,6 +265,8 @@ namespace FlockFive
                 ForceFeeder = skip && ForceFeederFromUrl(url),
                 ForceNap = skip && ForceNapFromUrl(url),
                 OpenPoker = skip && OpenPokerFromUrl(url),
+                ForceClear = skip && ForceClearFromUrl(url),
+                ForceRewards = skip && ForceRewardsFromUrl(url),
             };
         }
 

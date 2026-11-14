@@ -209,7 +209,7 @@ namespace FlockFive
             if (honey < 0) honey = step == 3 ? 5 : 0;
             bool inspect = step >= 2;
             bool honeyOn = step == 3;
-            CardText.LessonBands(focus, inspect, honeyOn, honeyOn, out var title, out var body, out var flavor, out var icons);
+            CardText.LessonBands(focus, inspect, honeyOn, honeyOn, out var title, out var body, out var flavor, out var icons, honey);
             var text = new CoachSeat.FocusText { Title = title, Body = body, Flavor = flavor };
             float s = DeviceFit.UiH(screenH);
             var hang = CaptionLayout.BoxPad(screenH);
@@ -237,7 +237,7 @@ namespace FlockFive
             int cellN = 0;
             if (honeyOn && honey > 0 && icons.width > 2f)
             {
-                cells = new Rect[5];
+                cells = new Rect[HoneyPoke.Cap];
                 cellN = CardText.HoneyCells(icons, honey, inspect, cells);
             }
             ResolveLessonGlove(focus, icons, plate, text, s, screenW, screenH, cells, cellN, out var aim, out float approach, out var glove, step);
@@ -309,6 +309,37 @@ namespace FlockFive
         {
             var big = CardText.InspectCard(screenW, screenH);
             return new Rect((screenW - big.x) * 0.5f, (screenH - big.y) * 0.42f, big.x, big.y);
+        }
+
+        // Card plus the put-back hint and the FREE / MAXXED plate. The plate used
+        // to run past the home indicator. This card ends the stack 8 px above it.
+        public static Rect SeatedInspectCard(float screenW, float screenH, float bottomInset, float s)
+        {
+            float btnH = Mathf.Max(84f, 92f * Mathf.Min(s, 1.35f));
+            float hintH = Mathf.Clamp(32f * s, 28f, 56f) * 2.45f;
+            float below = 12f * Mathf.Max(0.5f, s) + PutBackHintClear + hintH + Mathf.Max(18f, 20f * s) + btnH + 16f;
+            float limit = screenH - Mathf.Max(0f, bottomInset) - 8f;
+            float maxW = screenW * 0.86f;
+            float h = Mathf.Max(120f, limit - 12f - below);
+            float w = h / 1.4f;
+            if (w > maxW) { w = maxW; h = w * 1.4f; }
+            float y = limit - below - h;
+            if (y < 8f)
+            {
+                h -= 8f - y;
+                if (h < 120f) h = 120f;
+                w = h / 1.4f;
+                y = 8f;
+            }
+            return new Rect((screenW - w) * 0.5f, y, w, h);
+        }
+
+        public static bool UpgradeClearsBottom(Rect card, float screenH, float bottomInset, float s)
+        {
+            float btnH = Mathf.Max(84f, 92f * Mathf.Min(s, 1.35f));
+            float hintH = Mathf.Clamp(32f * s, 28f, 56f) * 2.45f;
+            float stack = card.yMax + 12f * Mathf.Max(0.5f, s) + PutBackHintClear + hintH + Mathf.Max(18f, 20f * s) + btnH;
+            return stack <= screenH - bottomInset - 8f + 0.6f;
         }
 
         public static Rect AlbumGridRect(float screenW, float screenH, Rect safe, int slot)

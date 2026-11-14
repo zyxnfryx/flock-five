@@ -517,11 +517,21 @@ namespace FlockFive
         public static int UpgradeOf(int kind, BeeFinish finish) =>
             UpgradeOfSlot(SlotOf(kind, finish));
 
+        // One comb per upgrade, on top of the rarity floor. Caps stay 1 / 2 / 3,
+        // so a maxed card is normal 3, foil 5, inverse 8.
+        public static int HoneyAfterUpgrades(BeeFinish finish, int upgrades)
+        {
+            int cap = MaxUpgrades(finish);
+            if (upgrades < 0) upgrades = 0;
+            if (upgrades > cap) upgrades = cap;
+            return HoneyOfFinish(finish) + upgrades;
+        }
+
         // Live honey for album + badger: base finish value + purchased upgrades.
         public static int HoneyOfSlot(int slot)
         {
             Warm();
-            return HoneyOfFinish(FinishOfSlot(slot)) + UpgradeOfSlot(slot);
+            return HoneyAfterUpgrades(FinishOfSlot(slot), UpgradeOfSlot(slot));
         }
 
         public static int HoneyOf(int kind, BeeFinish finish) =>

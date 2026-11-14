@@ -36,7 +36,7 @@ namespace FlockFive.Editor
 
         static void CheckHoney(System.Action<string, bool, string> Check)
         {
-            const string sentence = "Honeycombs show the card's value based on rarity.";
+            const string sentence = "Honeycombs show the card's rarity.";
             string block = CaptionLayout.AlbumHoneyBlock;
             bool exact = block.StartsWith(sentence + "\n")
                 && block.IndexOf("Tap to flip!") > 0

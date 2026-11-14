@@ -120,4 +120,79 @@ namespace FlockFive
             GUI.color = prev;
         }
     }
+
+    // Brandon: tap-wait captions (any tap, or the plate's own timer) get the
+    // pointing glove, small, looping, under the words and clear of the step glove.
+    // The white tick stays off. This cue does not change when a tap advances.
+    public static class TapWaitGlove
+    {
+        public const float LoopSeconds = 1.6f;
+
+        public static bool Shows(string shown)
+        {
+            if (string.IsNullOrEmpty(shown)) return false;
+            foreach (CoachStep step in System.Enum.GetValues(typeof(CoachStep)))
+            {
+                if (!CoachTap.AnyTap(step)) continue;
+                string cap = CoachTap.Caption(step);
+                if (string.IsNullOrEmpty(cap)) continue;
+                if (shown == cap || shown == cap.Replace("\n", " ")) return true;
+                if (shown == CaptionLayout.HeadlineGap(cap)) return true;
+            }
+            return false;
+        }
+
+        // The keep-out for the whole loop. The drawn frame bobs inside it.
+        public static Rect CueSlot(Rect text, Rect plate, Rect stepGlove, float screenW, float screenH)
+        {
+            if (text.width < 8f || text.height < 8f || screenW < 8f || screenH < 8f) return default;
+            float s = DeviceFit.Ui(screenW, screenH);
+            float dh = Mathf.Clamp(20f * s, 16f, 34f);
+            float dw = dh * (220f / 300f);
+            float bob = 4f;
+            float gap = Mathf.Max(6f, 4f * s);
+            var seat = new Rect(text.xMax - dw * 0.2f, text.yMax + gap, dw, dh + bob * 2f);
+            seat = Fit(seat, text, stepGlove, screenW, screenH, dw, gap);
+            if (seat.width < 2f) return default;
+            if (seat.Overlaps(text)) return default;
+            if (stepGlove.width > 2f && seat.Overlaps(stepGlove)) return default;
+            return seat;
+        }
+
+        static Rect Fit(Rect seat, Rect text, Rect stepGlove, float screenW, float screenH, float dw, float gap)
+        {
+            if (Blocked(seat, text, stepGlove))
+                seat.x = text.xMin - dw - gap;
+            if (Blocked(seat, text, stepGlove))
+                seat = new Rect(text.xMin, text.yMin - seat.height - gap, seat.width, seat.height);
+            if (seat.x < 4f) seat.x = 4f;
+            if (seat.y < 4f) seat.y = 4f;
+            if (seat.xMax > screenW - 4f) seat.x = screenW - 4f - seat.width;
+            if (seat.yMax > screenH - 4f) seat.y = screenH - 4f - seat.height;
+            if (Blocked(seat, text, stepGlove)) return default;
+            return seat;
+        }
+
+        static bool Blocked(Rect seat, Rect text, Rect stepGlove)
+        {
+            if (seat.Overlaps(text)) return true;
+            return stepGlove.width > 2f && seat.Overlaps(stepGlove);
+        }
+
+        // One gentle bob inside the slot. The fingertip never leaves the keep-out.
+        public static Rect Frame(Rect slot, float time)
+        {
+            if (slot.width < 2f) return default;
+            float bob = 3f;
+            float u = Mathf.Sin(time / LoopSeconds * Mathf.PI * 2f);
+            float y = slot.y + bob + u * bob;
+            return new Rect(slot.x, y, slot.width, Mathf.Max(8f, slot.height - bob * 2f));
+        }
+
+        public static float Dip(float time)
+        {
+            float u = Mathf.Repeat(time, LoopSeconds) / LoopSeconds;
+            return 0.12f + 0.2f * Mathf.Sin(u * Mathf.PI);
+        }
+    }
 }

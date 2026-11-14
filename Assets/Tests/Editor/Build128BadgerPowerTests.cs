@@ -74,7 +74,11 @@ namespace FlockFive.Editor
 
             // ---- #170 nits: tight gate rects, 4-arg PressPasses wired into the app ----
             string coach = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs");
-            Check("gate-uses-4arg-press-passes", coach.Contains("BadgerFrozenUi.PressPasses(e.mousePosition, default, _bgGateToggle, _bgGateFreeze)")
+            int judgeAt = coach.IndexOf("OffTargetVerdict JudgeOffTargetTap(", System.StringComparison.Ordinal);
+            int judgeEnd = judgeAt >= 0 ? coach.IndexOf("bool GloveArmedOn(", judgeAt, System.StringComparison.Ordinal) : -1;
+            string judgeBody = judgeAt >= 0 && judgeEnd > judgeAt ? coach.Substring(judgeAt, judgeEnd - judgeAt) : "";
+            Check("gate-uses-4arg-press-passes",
+                judgeBody.Contains("BadgerFrozenUi.PressPasses(pos, default, _bgGateToggle, _bgGateFreeze)")
                 && coach.Contains("_bgGateFreeze = BadgerGateFreezeRect();"), "");
             Check("gate-no-union-rect", !badger.Contains("one rect over both") && !badger.Contains("Mathf.Min(hs.xMin, fz.xMin)"), "");
             var hot = new Rect(130, 520, 80, 70); var fz = new Rect(218, 520, 80, 70); var between = new Vector2(214, 555);

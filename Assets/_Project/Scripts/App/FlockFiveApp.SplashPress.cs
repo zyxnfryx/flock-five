@@ -24,6 +24,25 @@ namespace FlockFive
             soft = _streakSlide >= 0f || RewardPayBusy();
         }
 
+        // Play is not one of the queued captions. A real card still covers it.
+        void ReleasePlayForChain(ref SplashPress.Gates gates)
+        {
+            if (!HomeChainOpen()) return;
+            if (_settingsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || VipOffer.IsOpen) return;
+            gates.HardModal = false;
+            gates.AdoptQueue = false;
+            gates.RailLesson = false;
+            // The caption veil and the short dismiss guard are for the garden.
+            // Play stays up through greet, naming, and Tap Daily. Restart is
+            // still swallowed for the timed resume window below.
+            gates.LessonGuard = false;
+            gates.Consent = false;
+            // The studio cover is not one of the captions. A timed resume
+            // swallow still wins. The cover alone must not keep Play dead.
+            if (!(GateNow < _resumeInputUntil))
+                gates.ResumeSwallow = false;
+        }
+
         // Gates that apply to every home button. The caller adds the ones that are
         // its own (adopt queue, the bird, a popup that would refuse the open).
         SplashPress.Gates HomePressGates(int rail)
@@ -81,6 +100,7 @@ namespace FlockFive
         {
             if (!StepTapGate(out var gate)) return false;
             if (gate.Pass) return false;
+            if (HomeChainOpen() && PlayRect(button)) return false;
             if (gate.AnyTap) return true;
             if (button.width < 2f || button.height < 2f) return true;
             return !gate.Target.Contains(button.center);

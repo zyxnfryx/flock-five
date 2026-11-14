@@ -15,11 +15,35 @@ namespace FlockFive.Editor
         const string PlayCmd = "/tmp/flock-five-play";
 
         // One batch entry for the edit-mode suites. Unity -executeMethod FlockFive.Editor.EnsurePlayable.RunEditorTests
+        // -suite home-polish runs only that suite. RunHomePolishOnly is the same entry without the arg.
         public static void RunEditorTests()
         {
             // Suites write PlayerPrefs; keep the real prefs untouched (snapshot + restore).
             using (TestPrefsSandbox.Begin())
+            {
+                string only = SuiteArg();
+                if (only == "home-polish")
+                {
+                    Suite("home-polish", HomePolishTests.Run);
+                    return;
+                }
                 RunEditorSuites();
+            }
+        }
+
+        // Fast Mac gate for the glove and home checks. Tests only.
+        public static void RunHomePolishOnly()
+        {
+            using (TestPrefsSandbox.Begin())
+                Suite("home-polish", HomePolishTests.Run);
+        }
+
+        static string SuiteArg()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+                if (args[i] == "-suite") return args[i + 1];
+            return null;
         }
 
         static void RunEditorSuites()
@@ -35,6 +59,7 @@ namespace FlockFive.Editor
             Suite("reset-guard", CoachResetGuardTests.Run);
             Suite("glove-snug", GloveSnugTests.Run);
             Suite("rule-tips", RuleTipTests.Run);
+            Suite("reward-choice-input", RewardChoiceInputTests.Run);
             Suite("ad-clock-skew", AdClockSkewTests.Run);
             Suite("poker-bet", PokerBetTests.Run);
             Suite("money-compact", MoneyCompactTests.Run);
@@ -68,6 +93,9 @@ namespace FlockFive.Editor
             Suite("build83c1", Build83TestsC1.Run);
             Suite("build83c2", Build83TestsC2.Run);
             Suite("build83c3", Build83TestsC3.Run);
+            Suite("reward-film-mark", RewardFilmMarkTests.Run);
+            Suite("home-rail-priority", HomeRailPriorityTests.Run);
+            Suite("home-polish", HomePolishTests.Run);
             Suite("build83d", Build83TestsD.Run);
             Suite("build83p2", Build83TestsP2.Run);
             Suite("build84-feeder", Build84TestsFeeder.Run);
@@ -101,6 +129,7 @@ namespace FlockFive.Editor
             Suite("storm-glass", StormGlassTests.Run);
             Suite("sky", SkyCycleTests.Run);
             Suite("bee-cards", BeeCardQueueTests.Run);
+            Suite("build121-bee-cards", Build121BeeCardTests.Run);
             Suite("build110-lightning-fire", Build110LightningFireTests.Run);
             Suite("build126-tap-cue", Build126TapCueTests.Run);
             Suite("build126-clear-garden-1", Build126ClearGardenOneTests.Run);
@@ -114,6 +143,7 @@ namespace FlockFive.Editor
             Suite("build115-ostrich-neck", Build115OstrichNeckTests.Run);
             Suite("build115-ostrich-ground", Build115OstrichGroundTests.Run);
             Suite("build116-ostrich-pace", Build116OstrichPaceTests.Run);
+            Suite("build121-ostrich-presentation", Build121OstrichPresentationTests.Run);
             Suite("build119-collection-banner", Build119CollectionBannerTests.Run);
             Suite("season-scene", SeasonSceneTests.Run);
             Suite("glove-travel", GloveTravelTests.Run);
@@ -122,6 +152,7 @@ namespace FlockFive.Editor
             Suite("build129-badger-gap", Build129BadgerGapTests.Run);
             Suite("build130-badger-stack", Build130BadgerStackTests.Run);
             Suite("build131-reset", Build131ResetTests.Run);
+            Suite("restart-hive-inset", RestartHiveInsetTests.Run);
             Suite("usa-plane-day", UsaPlaneDayTests.Run);
             Suite("build119-fives", Build119FivesBoardTests.Run);
             Suite("build119-playtest", Build119PlaytestTests.Run);

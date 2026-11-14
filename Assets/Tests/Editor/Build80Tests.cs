@@ -526,7 +526,7 @@ namespace FlockFive.Editor
                 && settings.IndexOf("HomeGear.AboveDimmer") >= 0
                 && settings.IndexOf("HomeGear.AcceptsTap") >= 0
                 && settings.IndexOf("HomeStepRail()") >= 0
-                && settings.IndexOf("AdoptStep.Look") >= 0
+                && settings.IndexOf("!HomeChainOpen()") >= 0
                 && settings.IndexOf("_dailyIntroLive && _dailyOpen") >= 0
                 && settings.IndexOf("HomeCover.KeepMultiplier") >= 0
                 && settings.IndexOf("HomeCover.Streak") >= 0;
