@@ -6514,9 +6514,23 @@ namespace FlockFive
         // Resume, a fresh round, and an ad close are not a lesson dismiss.
         public static void ClearLessonGuard() => _lessonGuardUntil = 0f;
 
-        void MarkCoachAte() => _coachAteFrame = Time.frameCount;
+#if UNITY_EDITOR
+        internal static int CoachFrameOffsetForTests;
+        static int CoachFrameNow => Time.frameCount + CoachFrameOffsetForTests;
+#endif
+        void MarkCoachAte() => _coachAteFrame =
+#if UNITY_EDITOR
+            CoachFrameNow;
+#else
+            Time.frameCount;
+#endif
 
-        bool CoachAteThisFrame() => _coachAteFrame == Time.frameCount;
+        bool CoachAteThisFrame() => _coachAteFrame ==
+#if UNITY_EDITOR
+            CoachFrameNow;
+#else
+            Time.frameCount;
+#endif
 
         static bool LessonGuardUp() => CoachDismiss.GuardBlocks(AdPause.Unscaled, _lessonGuardUntil);
 

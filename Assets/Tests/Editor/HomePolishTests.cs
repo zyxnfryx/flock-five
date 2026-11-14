@@ -2027,31 +2027,10 @@ namespace FlockFive.Editor
             total.SetValue(null, cur - seconds);
         }
 
-        // One editor frame so the coach-ate stamp is no longer this frame.
-        // A null yield is one frame in this suite. Step the editor too when it can.
-        static void StepOneEditorFrame()
+        static void StepCoachFrame()
         {
-            int before = Time.frameCount;
-            System.Collections.IEnumerator Once() { yield return null; }
-            PumpFrames(Once(), 1, null, out _);
-            try { UnityEditor.EditorApplication.Step(); }
-            catch (System.Exception) { }
-            if (Time.frameCount != before) return;
-            var flags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static;
-            var set = typeof(Time).GetMethod("SetFrameCount", flags);
-            if (set != null)
-            {
-                try { set.Invoke(null, new object[] { before + 1 }); }
-                catch (System.Exception) { }
-            }
-            if (Time.frameCount != before) return;
-            var prop = typeof(Time).GetProperty("frameCount", flags);
-            var setter = prop != null ? prop.GetSetMethod(true) : null;
-            if (setter != null)
-            {
-                try { setter.Invoke(null, new object[] { before + 1 }); }
-                catch (System.Exception) { }
-            }
+            var frame = EditorField("CoachFrameOffsetForTests");
+            frame.SetValue(null, (int)frame.GetValue(null) + 1);
         }
 
         static bool VerdictIs(object verdict, string act)
@@ -3292,7 +3271,7 @@ namespace FlockFive.Editor
                 bool sameFrameBlocked = missReached && greetDone && ateNow && guardNow && !playNow;
                 PlayClock.StepForTest(CoachDismiss.GuardSeconds + 1f / 60f);
                 NudgeAdFreeClock(CoachDismiss.GuardSeconds + 1f / 60f);
-                StepOneEditorFrame();
+                StepCoachFrame();
                 bool playCan = false;
                 string canEx = "";
                 string queue = "";
@@ -3345,6 +3324,7 @@ namespace FlockFive.Editor
             }
             finally
             {
+                EditorField("CoachFrameOffsetForTests").SetValue(null, 0);
                 Event.current = prev;
                 SetResumeUntil(keepResume);
                 FlockFiveApp.EditorShotLive = keepShot;
