@@ -626,6 +626,8 @@ namespace FlockFive
                     _app.FreshTutorGlove();
                     // The suspend may have cut a step off. Settle it before the first tap lands.
                     _app.HealInterruptedTutorials();
+                    // A finger still down is a resume-origin press. Its Up must not restart.
+                    _app.StampHeldResumeOrigins();
                 }
             }
             finally
@@ -3987,9 +3989,8 @@ namespace FlockFive
             _downAtHide.Add(id);
         }
 
-        void CapturePointersDownAtHide()
+        void ForPointersDown(System.Action<int> note)
         {
-            _downAtHide.Clear();
             var touch = UnityEngine.InputSystem.Touchscreen.current;
             if (touch != null)
             {
@@ -3998,12 +3999,25 @@ namespace FlockFive
                 {
                     var hit = touches[i];
                     if (hit == null || !hit.press.isPressed) continue;
-                    NoteDownAtHide(hit.touchId.ReadValue());
+                    note(hit.touchId.ReadValue());
                 }
             }
             if (Mouse.current != null && Mouse.current.leftButton.isPressed)
-                NoteDownAtHide(-1);
-            if (_glovePressLatched) NoteDownAtHide(_glovePressId);
+                note(-1);
+            // The latched glove press is that same held contact.
+            if (_glovePressLatched) note(_glovePressId);
+        }
+
+        void CapturePointersDownAtHide()
+        {
+            _downAtHide.Clear();
+            ForPointersDown(NoteDownAtHide);
+        }
+
+        // On resume, every pointer still down is a resume-origin press.
+        void StampHeldResumeOrigins()
+        {
+            ForPointersDown(id => _resumeOriginIds.Add(ResumeFinger(id)));
         }
 
         bool ResumeHolds(int pointerId)
@@ -8060,6 +8074,15 @@ namespace FlockFive
             _resumeOriginRelease = false;
         }
 
+        // Garden presses always reach the glove. On the home face, Home and the
+        // gear still do, including a finger that was held across resume.
+        bool ResumeGloveEdge(Vector2 windowGui)
+        {
+            if (!_splash) return true;
+            int which = HudControl(windowGui);
+            return which == 1 || which == 3;
+        }
+
         // Pointer edges only. No GUI draw, so an editor test can call this
         // outside a real OnGUI. OnGUIBody paints after it.
         void TakeGuiPointer()
@@ -8072,7 +8095,7 @@ namespace FlockFive
             _tapAt = tapEv != null ? tapEv.mousePosition : default;
             bool tapEdge = _tapEdge;
             _tapWho = null;
-            if (tapEdge && !_splash)
+            if (tapEdge && ResumeGloveEdge(tapEv.mousePosition))
             {
                 int gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
                 if (TryDrawnGlove(tapEv.mousePosition, tapEv.type == EventType.MouseUp, gloveId))
@@ -8097,7 +8120,7 @@ namespace FlockFive
             if (EditorPointerInject.On && (EditorPointerInject.Down || EditorPointerInject.Up))
             {
                 var injected = new Vector2(EditorPointerInject.Play.x + PhoneArea.OffX, PhoneArea.H - EditorPointerInject.Play.y);
-                if (!_splash && TryDrawnGlove(injected, EditorPointerInject.Up, EditorPointerInject.Id))
+                if (ResumeGloveEdge(injected) && TryDrawnGlove(injected, EditorPointerInject.Up, EditorPointerInject.Id))
                     _tapWho = "glove";
                 if (_splash && _home == HomeFace.Splash
                     && !HomeGateAllows(ref _homeGate, EditorPointerInject.Down, EditorPointerInject.Up, EditorPointerInject.Id))
