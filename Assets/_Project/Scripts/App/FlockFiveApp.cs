@@ -3736,9 +3736,11 @@ namespace FlockFive
             else
             {
                 // Taken before resume heal. A held finger stays swallowed so its
-                // release after the new window cannot hop.
+                // release after the new window cannot hop. Stamp first: the resume
+                // heal can throw, and this instance may not be the static _app.
                 int keep = _glovePressLatched ? _glovePressId : _gloveSwallowedId;
                 int keepHud = _gloveSwallowHud;
+                StampHeldResumeOrigins();
                 NoteAppResume();
                 DailyReminder.OnAppForeground();
                 ResumeDailyReminder();
@@ -3772,6 +3774,7 @@ namespace FlockFive
                 // finger, and a finger still down becomes swallowed too.
                 int keep = _glovePressLatched ? _glovePressId : _gloveSwallowedId;
                 int keepHud = _gloveSwallowHud;
+                StampHeldResumeOrigins();
                 NoteAppResume();
                 SyncDailyDay();
                 ForgetLevelPointer();
@@ -4301,6 +4304,8 @@ namespace FlockFive
             bool resumeOriginUp = false;
             if (!releaseEdge && !(pointerId < 0 && _glovePressLatched && _glovePressId >= 0))
             {
+                // A new Down is not the glove hop from earlier in this frame.
+                _gloveTookFrame = -1;
                 RememberResumeOrigin(pointerId);
                 if (!(GateNow < _resumeInputUntil)) _resumeOriginRelease = false;
             }
@@ -11777,7 +11782,7 @@ namespace FlockFive
                 held = false;
                 return false;
             }
-            int id = GUIUtility.GetControlID(FocusType.Passive);
+            int id = GuiPadId(r);
             var e = Event.current;
             bool inside = r.Contains(e.mousePosition);
             bool fired = false;
@@ -11804,6 +11809,18 @@ namespace FlockFive
             }
             held = GUIUtility.hotControl == id;
             return fired;
+        }
+
+        // OnGUI uses the IMGUI id. An editor batch has no window, so the same
+        // rect keeps one id and no texture is drawn.
+        static int GuiPadId(Rect r)
+        {
+            int id = 0;
+            try { id = GUIUtility.GetControlID(FocusType.Passive); }
+            catch (System.Exception) { id = 0; }
+            if (id != 0) return id;
+            int h = (int)(r.x * 3f + r.y * 5f + r.width * 7f + r.height * 11f);
+            return h == 0 ? 1 : h;
         }
 
         // One gesture for any paged screen. The caller keeps the state.
@@ -21492,6 +21509,24 @@ namespace FlockFive
         // A release outside the drawn hand is not swallowed. X closes here.
         bool CoachControlYields(Vector2 windowGui, bool releaseEdge)
         {
+            int which = HudControl(windowGui);
+            // The real Home, gear, and Restart buttons win over the gift card's X
+            // when the point is on them. Home and the gear stay usable.
+            if (which == 1)
+            {
+                if (releaseEdge) ShowSplash();
+                return true;
+            }
+            if (which == 3)
+            {
+                if (releaseEdge) ApplySettingsHit(SettingsMotion.Hit.Gear);
+                return true;
+            }
+            if (which == 2)
+            {
+                if (releaseEdge) ActRestart();
+                return true;
+            }
             if (GiftCloseExempt(windowGui))
             {
                 if (releaseEdge) CloseGift();
@@ -21509,24 +21544,6 @@ namespace FlockFive
                     if (releaseEdge) StartWatchGift();
                     return true;
                 }
-            }
-            int which = HudControl(windowGui);
-            // Home stays usable through the resume window. Deliberate.
-            // The gear does too. Restart does not: ActRestart still swallows it.
-            if (which == 1)
-            {
-                if (releaseEdge) ShowSplash();
-                return true;
-            }
-            if (which == 3)
-            {
-                if (releaseEdge) ApplySettingsHit(SettingsMotion.Hit.Gear);
-                return true;
-            }
-            if (which == 2)
-            {
-                if (releaseEdge) ActRestart();
-                return true;
             }
             // The glove only steps aside. Claim, Deal, Upgrade, adopt, and the rails
             // run their own handlers, and those handlers finish the lesson.

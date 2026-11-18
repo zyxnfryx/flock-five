@@ -29,10 +29,11 @@ namespace FlockFive
         {
             if (!HomeChainOpen()) return;
             if (_settingsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || VipOffer.IsOpen) return;
-            // Naming, a home coach caption, or a dialog stays on the splash.
-            // The greet and the look caption still use the chain below.
-            if (_avatarRename || _dailyAskOpen || _welcomeOpen
-                || (_dailyIntroLive && !_dailyOpen) || _hiveIntroLive || _pokerIntroLive)
+            // Hive and poker captions, and the name dialog, keep Play down.
+            // The greet, the look, and Tap Daily are this chain: Play stays up.
+            bool chainCaption = _adoptLive || _adoptStep != AdoptStep.Off
+                || ((_dailyIntro || _dailyIntroLive) && !_dailyOpen);
+            if (!chainCaption && (_avatarRename || _hiveIntroLive || _pokerIntroLive))
             {
                 gates.HardModal = true;
                 return;

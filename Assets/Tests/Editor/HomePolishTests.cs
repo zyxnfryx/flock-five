@@ -4136,6 +4136,8 @@ namespace FlockFive.Editor
         // game reads, not a device recording.
         static void PressHud(FlockFiveApp app, System.Type t, Vector2 play, int id, bool down)
         {
+            // The editor batch stays on one frame, so a glove hop must not own the next press.
+            t.GetField("_gloveTookFrame", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(app, -1);
             FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
             {
                 On = true,
@@ -4351,6 +4353,7 @@ namespace FlockFive.Editor
                     try { Check(name, quiet, "restarted " + RestartBegan(app, t, flags)); }
                     catch (System.Exception hopEx) { Check(name, false, ThrowText(hopEx)); }
                 }
+                Offer("resume-window-restart-does-not-snap", true, 4, false);
                 Offer("resume-restart-inside-glove-touch", true, 5, false);
                 Offer("resume-restart-inside-glove-mouse", true, -1, false);
                 Offer("resume-restart-outside-glove-touch", false, 6, false);
@@ -4437,20 +4440,11 @@ namespace FlockFive.Editor
             }
         }
 
-        sealed class DealPadHost : UnityEditor.EditorWindow
-        {
-            public FlockFiveApp App;
-            void OnGUI()
-            {
-                if (App != null) App.PokerPageDealHit();
-            }
-        }
-
         static void CheckDealPad(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("deal-pad");
             int hands = UnityEngine.PlayerPrefs.GetInt("flockfive.ads.pokerhands", 0);
-            DealPadHost host = null;
+            var prev = Event.current;
             try
             {
                 UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", 0);
@@ -4467,14 +4461,14 @@ namespace FlockFive.Editor
                 int before = Purse.Coins;
                 int bet = BirdPoker.Bet;
                 GUIUtility.hotControl = 0;
-                host = UnityEngine.ScriptableObject.CreateInstance<DealPadHost>();
-                host.App = app;
                 var rect = app.PokerDealButtonRect();
-                host.SendEvent(new Event { type = EventType.MouseDown, mousePosition = rect.center, button = 0 });
+                Event.current = new Event { type = EventType.MouseDown, mousePosition = rect.center, button = 0 };
+                app.PokerPageDealHit();
                 bool armed = (bool)t.GetField("_pokerDealHint", flags).GetValue(app)
                     && BirdPoker.PhaseNow == BirdPoker.Phase.Idle
                     && Purse.Coins == before;
-                host.SendEvent(new Event { type = EventType.MouseUp, mousePosition = rect.center, button = 0 });
+                Event.current = new Event { type = EventType.MouseUp, mousePosition = rect.center, button = 0 };
+                app.PokerPageDealHit();
                 bool dealt = armed
                     && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt
                     && Purse.Coins == before - bet
@@ -4486,7 +4480,7 @@ namespace FlockFive.Editor
             }
             finally
             {
-                if (host != null) UnityEngine.Object.DestroyImmediate(host);
+                Event.current = prev;
                 GUIUtility.hotControl = 0;
                 UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", hands);
                 GamePause.Reset();
@@ -4498,6 +4492,8 @@ namespace FlockFive.Editor
         {
             var go = new GameObject("yield-advances");
             float keep = ResumeUntil();
+            var prevEvent = Event.current;
+            Event.current = new Event { type = EventType.Layout };
             int hands = UnityEngine.PlayerPrefs.GetInt("flockfive.ads.pokerhands", 0);
             string claimStamp = UnityEngine.PlayerPrefs.GetString("flockfive.daily.last24", "");
             int adopted = UnityEngine.PlayerPrefs.GetInt("flockfive.avatar.adopted", 0);
@@ -4667,6 +4663,7 @@ namespace FlockFive.Editor
                 UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.adopted", adopted);
                 UnityEngine.PlayerPrefs.SetInt("flockfive.coach.pokerback", backPref);
                 DailyBonus.TestRelease();
+                Event.current = prevEvent;
                 FlockFiveApp.EditorPointerInject = default;
                 SetResumeUntil(keep);
                 GamePause.Reset();
@@ -4694,7 +4691,8 @@ namespace FlockFive.Editor
                 t.GetField("_dailyIntroLive", flags).SetValue(app, true);
                 int taps = app.EditorHandleTaps;
                 bool onButton = !(bool)glove.Invoke(app, new object[] { target.center, true, 2 });
-                bool outside = !(bool)glove.Invoke(app, new object[] { new Vector2(8f, 8f), true, 2 });
+                var offHand = new Vector2(PhoneArea.W > 2f ? PhoneArea.W - 6f : 390f, PhoneArea.H > 2f ? PhoneArea.H - 6f : 790f);
+                bool outside = !(bool)glove.Invoke(app, new object[] { offHand, true, 2 });
                 try { Check("coach-glove-yields-its-button", onButton && app.EditorHandleTaps == taps,
                     "yield " + onButton + " taps " + app.EditorHandleTaps); }
                 catch (System.Exception hopEx) { Check("coach-glove-yields-its-button", false, ThrowText(hopEx)); }
@@ -4738,6 +4736,9 @@ namespace FlockFive.Editor
                 catch (System.Exception hopEx) { Check("play-blocked-while-dialog", false, ThrowText(hopEx)); }
 
                 t.GetField("_welcomeOpen", flags).SetValue(app, false);
+                var warm = t.GetField("_warmCoverOff", BindingFlags.NonPublic | BindingFlags.Static);
+                bool warmWas = warm != null && (bool)warm.GetValue(null);
+                if (warm != null) warm.SetValue(null, true);
                 t.GetField("_cueLine", flags).SetValue(app, "Tap Daily for\nyour bonus!");
                 t.GetField("_gloveVis", flags).SetValue(app, true);
                 t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
@@ -4745,6 +4746,7 @@ namespace FlockFive.Editor
                 bool cleared = t.GetField("_cueLine", flags).GetValue(app) == null
                     && !(bool)t.GetField("_gloveVis", flags).GetValue(app)
                     && !(bool)t.GetField("_gloveTapRectOn", flags).GetValue(app);
+                if (warm != null) warm.SetValue(null, warmWas);
                 try { Check("caption-cleared-before-wipe", cleared, "line " + t.GetField("_cueLine", flags).GetValue(app)); }
                 catch (System.Exception hopEx) { Check("caption-cleared-before-wipe", false, ThrowText(hopEx)); }
 
@@ -4820,6 +4822,7 @@ namespace FlockFive.Editor
                 string Tap(Vector2 gui)
                 {
                     Offer();
+                    t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
                     var play = new Vector2(gui.x - PhoneArea.OffX, PhoneArea.H - gui.y);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
