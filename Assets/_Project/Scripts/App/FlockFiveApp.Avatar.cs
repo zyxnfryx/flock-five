@@ -420,7 +420,12 @@ namespace FlockFive
             _adoptOwed = false;
             _adoptPick = -1;
             CloseAvatarRename();
-            if (_chainLookOwed)
+            var boot = AdoptResume.Plan(LevelData.NextPlay, AvatarAdopted(),
+                PlayerPrefs.GetInt(AvatarNamedPref, -1),
+                ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0);
+            // Saved adopt state wins over the in-memory park, so a kill mid-garden
+            // still resumes the look before garden 1 is cleared.
+            if (boot == AdoptBoot.ResumeLook || _chainLookOwed)
             {
                 ResumeAdoptLook();
                 _chainLookOwed = false;
@@ -428,16 +433,7 @@ namespace FlockFive
             }
             if (LevelData.NextPlay < 1)
             {
-                if (_adoptStep == AdoptStep.Look) return;
                 _birdSettledOnBranch = true;
-                return;
-            }
-            var boot = AdoptResume.Plan(LevelData.NextPlay, AvatarAdopted(),
-                PlayerPrefs.GetInt(AvatarNamedPref, -1),
-                ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0);
-            if (boot == AdoptBoot.ResumeLook)
-            {
-                ResumeAdoptLook();
                 return;
             }
             if (AvatarAdopted())

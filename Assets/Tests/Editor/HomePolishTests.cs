@@ -3299,9 +3299,12 @@ namespace FlockFive.Editor
                 foreach (bool clear in new[] { true, false })
                 {
                     string tag = clear ? "clear-g1" : "leave-g1";
-                    PlayChainCase(Check, "greet", tag, clear, true, true);
-                    PlayChainCase(Check, "look", tag, clear, true, true);
-                    PlayChainCase(Check, "daily", tag, clear, false, true);
+                    PlayChainCase(Check, "greet", tag, clear, true, true, false);
+                    PlayChainCase(Check, "look", tag, clear, true, true, false);
+                    PlayChainCase(Check, "daily", tag, clear, false, true, false);
+                    PlayChainCase(Check, "greet", tag + "-relaunch", clear, true, true, true);
+                    PlayChainCase(Check, "look", tag + "-relaunch", clear, true, true, true);
+                    PlayChainCase(Check, "daily", tag + "-relaunch", clear, false, true, true);
                 }
             }
             finally
@@ -3313,7 +3316,7 @@ namespace FlockFive.Editor
             }
         }
 
-        static void PlayChainCase(System.Action<string, bool, string> Check, string where, string tag, bool clear, bool wantLook, bool wantDaily)
+        static void PlayChainCase(System.Action<string, bool, string> Check, string where, string tag, bool clear, bool wantLook, bool wantDaily, bool relaunch)
         {
             var go = new GameObject("play-chain-" + where + "-" + tag);
             try
@@ -3353,9 +3356,31 @@ namespace FlockFive.Editor
                 bool garden = !(bool)t.GetField("_splash", flags).GetValue(app);
                 UnityEngine.PlayerPrefs.SetInt("flockfive.next", clear ? 1 : 0);
                 FlockFiveApp.EditorShotLive = false;
-                Method(t, "ShowSplash").Invoke(app, null);
-                t.GetField("_railInit", flags).SetValue(app, true);
-                t.GetField("_splash", flags).SetValue(app, true);
+                FlockFiveApp homeApp = app;
+                GameObject homeGo = null;
+                if (relaunch)
+                {
+                    UnityEngine.Object.DestroyImmediate(go);
+                    go = null;
+                    homeGo = new GameObject("play-chain-relaunch");
+                    go = homeGo;
+                    homeApp = homeGo.AddComponent<FlockFiveApp>();
+                    try { Method(t, "Start").Invoke(homeApp, null); }
+                    catch (System.Exception) { }
+                }
+                else
+                {
+                    object[] hud = { default(Rect), default(Rect) };
+                    t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                    var restart = (Rect)hud[0];
+                    var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                    var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                    PressHud(app, t, homePlay, 2, false);
+                }
+                t = typeof(FlockFiveApp);
+                t.GetField("_railInit", flags).SetValue(homeApp, true);
+                t.GetField("_splash", flags).SetValue(homeApp, true);
+                app = homeApp;
                 int looks = (int)t.GetField("_chainLookRuns", flags).GetValue(app);
                 var stepNow = t.GetField("_adoptStep", flags).GetValue(app).ToString();
                 bool lookOnce = wantLook ? looks == 1 && stepNow == "Look" : looks == 0;

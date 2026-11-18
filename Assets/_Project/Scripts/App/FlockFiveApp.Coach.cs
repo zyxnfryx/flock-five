@@ -6499,11 +6499,19 @@ namespace FlockFive
             return true;
         }
 
+        // Saved: the greet adopted the bird and Tap Daily is not stamped yet.
+        // The in-memory flag covers the same session before a kill.
+        bool DailyChainOwed()
+        {
+            if (_chainDailyOwed) return true;
+            return AdoptResume.DailyOwed(AvatarAdopted(), PlayerPrefs.GetInt(CoachDailyKey, 0) != 0);
+        }
+
         // Glove and caption wait until the adopted bird is perched on the branch.
         bool SplashDailyTurn()
         {
             if (!SplashLessonRoom() || !_dailyIntro) return false;
-            if (LevelData.NextPlay < 1 && !_chainDailyOwed) return false;
+            if (LevelData.NextPlay < 1 && !DailyChainOwed()) return false;
             if (AdoptHoldsQueue() || !BirdSettledOnBranch() || WelcomeOwnsTurn()) return false;
             return true;
         }
@@ -8289,7 +8297,7 @@ namespace FlockFive
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive) return;
 #endif
-            if (LevelData.NextPlay < 1 && !_chainDailyOwed) return;
+            if (LevelData.NextPlay < 1 && !DailyChainOwed()) return;
             if (PlayerPrefs.GetInt(CoachDailyKey, 0) != 0) return;
             _dailyIntro = true;
             _gloveReady = false;

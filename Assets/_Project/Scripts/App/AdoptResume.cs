@@ -30,11 +30,25 @@ namespace FlockFive
             return !hasName;
         }
 
+        // The look is still owed when the greet adopted the bird and the look
+        // (the name) has not been done. That is true before garden 1 is cleared.
+        public static bool LookOwed(bool adopted, int namedFlag, bool hasName)
+        {
+            return adopted && NeedsName(namedFlag, hasName);
+        }
+
+        // Tap Daily is owed once the greet has been seen and the coach is not stamped.
+        public static bool DailyOwed(bool greetSeen, bool dailyCoachDone)
+        {
+            return greetSeen && !dailyCoachDone;
+        }
+
         public static AdoptBoot Plan(int nextPlay, bool adopted, int namedFlag, bool hasName)
         {
+            if (LookOwed(adopted, namedFlag, hasName)) return AdoptBoot.ResumeLook;
             if (nextPlay < 1) return AdoptBoot.None;
             if (!adopted) return AdoptBoot.Begin;
-            return NeedsName(namedFlag, hasName) ? AdoptBoot.ResumeLook : AdoptBoot.None;
+            return AdoptBoot.None;
         }
 
         // Daily intro caption width: the band the rails leave, never wider than the safe text width
