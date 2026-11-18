@@ -141,6 +141,7 @@ namespace FlockFive.Editor
             Gate("CheckHomeAndPrivacy", () => CheckHomeAndPrivacy(Check));
             Gate("CheckRestartRecue", () => CheckRestartRecue(Check));
             Gate("CheckRestartActRound", () => CheckRestartActRound(Check));
+            Gate("CheckHudSameFrameHop", () => CheckHudSameFrameHop(Check));
             Gate("CheckForcePause", () => CheckForcePause(Check));
             Gate("CheckHomeTouchGate", () => CheckHomeTouchGate(Check));
             Gate("CheckGloveRoute", () => CheckGloveRoute(Check));
@@ -4025,8 +4026,8 @@ namespace FlockFive.Editor
             try
             {
                 PlayerPrefs.SetInt(doneKey, 1);
-                PlayerPrefs.DeleteKey(RuleTips.KitKey);
-                PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                PlayerPrefs.SetInt(RuleTips.KitKey, 1);
+                PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
                 Purse.SetStreak(0);
                 GamePause.Reset();
                 SetResumeUntil(float.NegativeInfinity);
@@ -4058,7 +4059,7 @@ namespace FlockFive.Editor
                 string nice = "";
                 try
                 {
-                    crowns = ActRound(app, t, flags, RuleTip.Kit, null);
+                    crowns = ActRound(app, t, flags, RuleTip.Kit, RuleTips.FeederLine);
                     nice = ActRound(app, t, flags, RuleTip.Feeder, RuleTips.KitLine);
                 }
                 catch (System.Exception ex) { crowns = TapFault(ex); }
@@ -4082,8 +4083,8 @@ namespace FlockFive.Editor
             }
         }
 
-        // Real Restart: ActRestart starts SnapRound, the pump runs the parade,
-        // and CoachAdvance is the reseat after the birds are home.
+        // Real Restart: ActRestart starts SnapRound. The cue is read when the
+        // parade finishes, before CoachAdvance, so Due cannot raise it later.
         static string ActRound(FlockFiveApp app, System.Type t, BindingFlags flags, RuleTip tip, string stale)
         {
             GamePause.Reset();
@@ -4093,20 +4094,76 @@ namespace FlockFive.Editor
             t.GetField("_coach", flags).SetValue(app, false);
             var ask = t.GetField("_restartAsk", flags);
             ask.SetValue(app, System.Enum.ToObject(ask.FieldType, 0));
+            var live = (Board)t.GetField("_board", flags).GetValue(app);
+            var seed = (Board)t.GetField("_seed", flags).GetValue(app);
+            if (SameBirds(live, seed))
+            {
+                for (int i = 0; i < live.Branches.Count; i++)
+                {
+                    if (live.Branches[i] == null || live.Branches[i].Count <= 0) continue;
+                    live.Branches[i].Birds.RemoveAt(live.Branches[i].Count - 1);
+                    break;
+                }
+            }
+            bool differed = !SameBirds(live, seed);
             Method(t, "ShowRuleTip", typeof(RuleTip)).Invoke(app, new object[] { tip });
-            if (stale != null) t.GetField("_cueLine", flags).SetValue(app, stale);
+            t.GetField("_cueLine", flags).SetValue(app, stale);
             Method(t, "ActRestart").Invoke(app, null);
             var snap = (System.Collections.IEnumerator)t.GetField("EditorSnapRound", flags).GetValue(app);
             bool landed = false;
             if (snap != null) PumpFrames(snap, 64, null, out landed);
-            Method(t, "CoachAdvance").Invoke(app, null);
+            var after = (Board)t.GetField("_board", flags).GetValue(app);
+            bool reseated = SameBirds(after, seed);
             string line = (string)t.GetField("_cueLine", flags).GetValue(app) ?? "";
             string now = t.GetField("_ruleTip", flags).GetValue(app).ToString();
             string want = tip == RuleTip.Kit ? "Kit" : "Feeder";
             string step1 = tip == RuleTip.Kit ? RuleTips.KitLine : RuleTips.FeederLine;
             bool staleGone = line.IndexOf("Crowns go with crowns") < 0 || tip == RuleTip.Kit;
-            if (landed && now == want && line == step1 && staleGone) return null;
-            return "landed " + landed + " tip " + now + " line \"" + line + "\"";
+            if (differed && landed && reseated && now == want && line == step1 && staleGone) return null;
+            return "differed " + differed + " landed " + landed + " reseated " + reseated
+                + " tip " + now + " line \"" + line + "\"";
+        }
+
+        static void CheckHudSameFrameHop(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("hud-same-frame");
+            float keepResume = ResumeUntil();
+            try
+            {
+                SetResumeUntil(float.NegativeInfinity);
+                var app = go.AddComponent<FlockFiveApp>();
+                int taps = app.EditorHandleTaps;
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var board = LevelData.Open(0);
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                t.GetField("_glovePressId", flags).SetValue(app, 4);
+                t.GetField("_gloveTookFrame", flags).SetValue(app, Time.frameCount);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var point = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                bool swallowed = (bool)Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int))
+                    .Invoke(app, new object[] { point, true, 4 });
+                int sel = (int)t.GetField("_sel", flags).GetValue(app);
+                int took = (int)t.GetField("_gloveTookFrame", flags).GetValue(app);
+                string exit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                bool blocked = swallowed && sel < 0 && took == Time.frameCount
+                    && app.EditorHandleTaps == taps && exit == "same-frame";
+                try { Check("hud-same-frame-blocks-hop", blocked,
+                    "swallowed " + swallowed + " sel " + sel + " took " + took
+                    + " taps " + app.EditorHandleTaps + " exit " + exit); }
+                catch (System.Exception hopEx) { Check("hud-same-frame-blocks-hop", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keepResume);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckCoachRestartPath(System.Action<string, bool, string> Check)

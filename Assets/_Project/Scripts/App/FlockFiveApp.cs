@@ -3956,9 +3956,6 @@ namespace FlockFive
         {
             _glovePressLatched = false;
             _glovePressId = -1;
-            // SnapRound yields inside one editor frame. A took-frame from before
-            // the parade would still equal Time.frameCount and keep eating Restart.
-            _gloveTookFrame = -1;
         }
 
         readonly System.Collections.Generic.HashSet<int> _downAtHide = new System.Collections.Generic.HashSet<int>();

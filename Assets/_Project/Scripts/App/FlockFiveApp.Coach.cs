@@ -908,6 +908,10 @@ namespace FlockFive
             _cueForce = false;
             _gloveVis = false;
             DropGlovePress();
+            // The parade yields inside one editor frame. Drop the hop stamp here,
+            // not in DropGlovePress: that runs before the same-frame hop check,
+            // and clearing it there lets a second hop through on a HUD release.
+            _gloveTookFrame = -1;
             _tutorSeatOn = false;
             _tutorPlateOn = false;
             _coachLineHeld = false;
