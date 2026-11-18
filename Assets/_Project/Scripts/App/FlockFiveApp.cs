@@ -17318,6 +17318,7 @@ namespace FlockFive
 
         static void TouchPokerSprite(Sprite spr)
         {
+            if (!GuiPaint()) return;
             if (spr == null || spr.texture == null) return;
             var prev = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, 0.004f);
@@ -17406,8 +17407,11 @@ namespace FlockFive
             float lift = _pokerDash * (betR.height + 48f * s);
             var bet = new Rect(betR.x, betR.y + lift, betR.width, betR.height);
             var actBox = actR;
-            DrawPokerBetBar(bet, s, busy, steppers);
-            DrawPokerWinBanner(betR, actR, s);
+            if (GuiPaint())
+            {
+                DrawPokerBetBar(bet, s, busy, steppers);
+                DrawPokerWinBanner(betR, actR, s);
+            }
             if (string.IsNullOrEmpty(act) || PokerFirstHandResultHoldsBetBar()) return false; // the dealer button does not return
             bool fire = DrawFloralBtn(actBox, act, s, true);
             return fire;

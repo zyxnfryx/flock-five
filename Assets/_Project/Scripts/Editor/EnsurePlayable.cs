@@ -16,18 +16,52 @@ namespace FlockFive.Editor
 
         // One batch entry for the edit-mode suites. Unity -executeMethod FlockFive.Editor.EnsurePlayable.RunEditorTests
         // -suite home-polish runs only that suite. RunHomePolishOnly is the same entry without the arg.
+        static int _suiteFail;
+        static int _suiteThrew;
+
+        // Every suite log reports here. A FAIL line or a THREW line makes the batch exit 1.
+        static void CountSuiteLog(string condition, string stackTrace, LogType type)
+        {
+            if (string.IsNullOrEmpty(condition)) return;
+            if (condition.IndexOf(" THREW ", System.StringComparison.Ordinal) >= 0)
+                _suiteThrew++;
+            if (condition.IndexOf("] FAIL", System.StringComparison.Ordinal) >= 0
+                || condition.IndexOf(" FAIL  ", System.StringComparison.Ordinal) >= 0
+                || condition.IndexOf("HOME_POLISH_FAIL", System.StringComparison.Ordinal) >= 0
+                || condition.IndexOf("_FAIL", System.StringComparison.Ordinal) >= 0)
+                _suiteFail++;
+        }
+
+        static void FinishEditorSuites(bool printDone)
+        {
+            Application.logMessageReceived -= CountSuiteLog;
+            if (printDone) Debug.Log("EDITOR_SUITES_DONE");
+            Debug.Log("EDITOR_SUITES_RESULT fail=" + _suiteFail + " threw=" + _suiteThrew);
+            EditorApplication.Exit(_suiteFail > 0 || _suiteThrew > 0 ? 1 : 0);
+        }
+
         public static void RunEditorTests()
         {
-            // Suites write PlayerPrefs; keep the real prefs untouched (snapshot + restore).
-            using (TestPrefsSandbox.Begin())
+            _suiteFail = 0;
+            _suiteThrew = 0;
+            Application.logMessageReceived += CountSuiteLog;
+            bool full = true;
+            try
             {
-                string only = SuiteArg();
-                if (only == "home-polish")
+                // Suites write PlayerPrefs; keep the real prefs untouched (snapshot + restore).
+                using (TestPrefsSandbox.Begin())
                 {
-                    Suite("home-polish", HomePolishTests.Run);
-                    return;
+                    string only = SuiteArg();
+                    full = only != "home-polish";
+                    if (!full)
+                        Suite("home-polish", HomePolishTests.Run);
+                    else
+                        RunEditorSuites();
                 }
-                RunEditorSuites();
+            }
+            finally
+            {
+                FinishEditorSuites(full);
             }
         }
 
@@ -156,7 +190,6 @@ namespace FlockFive.Editor
             Suite("usa-plane-day", UsaPlaneDayTests.Run);
             Suite("build119-fives", Build119FivesBoardTests.Run);
             Suite("build119-playtest", Build119PlaytestTests.Run);
-            Debug.Log("EDITOR_SUITES_DONE");
         }
 
         // Badger editor suites for this branch. Skips the ostrich suites in RunEditorTests.
