@@ -169,6 +169,7 @@ namespace FlockFive.Editor
             Gate("CheckResumeBranches", () => CheckResumeBranches(Check));
             Gate("CheckGlovePressOwner", () => CheckGlovePressOwner(Check));
             Gate("CheckRestartClearsCaptions", () => CheckRestartClearsCaptions(Check));
+            Gate("CheckRestartRearmsEveryLesson", () => CheckRestartRearmsEveryLesson(Check));
             Gate("CheckHomeControlsAtSizes", () => CheckHomeControlsAtSizes(Check));
             Gate("CheckHomeChainOneAtATime", () => CheckHomeChainOneAtATime(Check));
             Gate("CheckPauseKeepsHeldId", () => CheckPauseKeepsHeldId(Check));
@@ -2895,6 +2896,82 @@ namespace FlockFive.Editor
             bool cue = (int)t.GetField("_cueBranch", flags).GetValue(app) >= 0;
             return tip == "None" && line != null && line.IndexOf("Tap a branch") >= 0
                 && line.IndexOf("Crowns") < 0 && line.IndexOf("Nice!") < 0 && vis && cue;
+        }
+
+        static void CheckRestartRearmsEveryLesson(System.Action<string, bool, string> Check)
+        {
+            const string doneKey = "flockfive.coach.done";
+            bool had = PlayerPrefs.HasKey(doneKey);
+            int keep = PlayerPrefs.GetInt(doneKey, 0);
+            float keepResume = ResumeUntil();
+            var go = new GameObject("restart-every-lesson");
+            try
+            {
+                PlayerPrefs.DeleteKey(doneKey);
+                LevelData.Open(0);
+                GamePause.Reset();
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var steps = CoachTap.All;
+                bool covered = LessonRestart.CoversAll();
+                bool ok = covered;
+                string detail = covered ? "" : "a lesson step has no stage ";
+                int n = 0;
+                var restart = Method(t, "EditorRestartLesson", typeof(CoachStep), typeof(string));
+                for (int i = 0; i < steps.Length; i++)
+                {
+                    var step = steps[i];
+                    string want = LessonRestart.Line(step);
+                    bool gloveWant = LessonRestart.ArmsGlove(step);
+                    string stale = LessonRestart.Of(step) == LessonRestart.Stage.Crowns
+                        ? RuleTips.FeederLine : RuleTips.KitLine;
+                    restart.Invoke(app, new object[] { step, stale });
+                    string line = (string)t.GetField("_cueLine", flags).GetValue(app);
+                    bool glove = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+                    bool step1 = line == want && glove == gloveWant && !LessonRestart.Foreign(step, line);
+                    if (LessonRestart.Of(step) == LessonRestart.Stage.BadgerLesson)
+                        step1 = step1 && (int)t.GetField("_bgLessonStep", flags).GetValue(app) == 0;
+                    if (LessonRestart.Of(step) == LessonRestart.Stage.Album)
+                        step1 = step1 && (int)t.GetField("_albumTutorStep", flags).GetValue(app) == 0;
+                    if (LessonRestart.Of(step) == LessonRestart.Stage.Garden)
+                        step1 = step1 && (int)t.GetField("_coachMoves", flags).GetValue(app) == 0;
+                    if (!step1)
+                    {
+                        ok = false;
+                        detail += step + " line \"" + line + "\" want \"" + want + "\" glove " + glove + "/" + gloveWant + " ";
+                        break;
+                    }
+                    n++;
+                }
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool blocked = (bool)Method(t, "ResumeSwallowsRestart").Invoke(app, null);
+                SetResumeUntil(float.NegativeInfinity);
+                bool open = (bool)Method(t, "ResumeSwallowsRestart").Invoke(app, null);
+                try { Check("restart-rearms-every-lesson-step",
+                    ok && n == steps.Length,
+                    "steps " + n + "/" + steps.Length + " " + detail); }
+                catch (System.Exception hopEx) { Check("restart-rearms-every-lesson-step", false, ThrowText(hopEx)); }
+                try { Check("restart-stays-blocked-in-resume-window",
+                    blocked && !open, "blocked " + blocked + " open " + open); }
+                catch (System.Exception hopEx) { Check("restart-stays-blocked-in-resume-window", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keepResume);
+                var rel = typeof(FlockFiveApp).GetMethod("ReleaseTutorPause", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (rel != null && go != null)
+                {
+                    var live = go.GetComponent<FlockFiveApp>();
+                    if (live != null) rel.Invoke(live, null);
+                }
+                GamePause.Reset();
+                if (had) PlayerPrefs.SetInt(doneKey, keep);
+                else PlayerPrefs.DeleteKey(doneKey);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckHomeControlsAtSizes(System.Action<string, bool, string> Check)

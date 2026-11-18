@@ -6345,8 +6345,8 @@ namespace FlockFive
             // lands here. The tip's pause freezes FlyOffAll, and the seed is copied
             // only after that flight, so the release has to happen before the first yield.
             ClearSwallowedGlove();
-            ReleaseCaptionPause();
-            DropGlovePress();
+            NoteRestartLesson();
+            SuspendCaptionForRestart();
             _lessonGuardUntil = 0f;
             ResetLiveCoachStep();
             if (_restarting)
@@ -6435,7 +6435,7 @@ namespace FlockFive
             // Formation is home. This frame stays dark; the interrupted step fades in next.
             _restarting = false;
             TickCoachReset(false, true);
-            SettleRestartLesson();
+            ApplyRestartRecue();
             StillBirds(false);
             _busy = false;
             ArmGardenStamp();

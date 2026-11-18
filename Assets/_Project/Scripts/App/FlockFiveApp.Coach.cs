@@ -447,6 +447,8 @@ namespace FlockFive
         SpriteRenderer[] _ripples;
         float[] _rippleAge;
         bool _holdRuleForLesson;
+        // Lesson that was up when Restart began. -1 if none. The caption is not this.
+        int _restartFrom = -1;
         bool _coachLineHeld;
         float _coachLineHold;
         float _coachLineHoldX;
@@ -853,6 +855,232 @@ namespace FlockFive
             _coachTo = to;
             _cueBranch = from;
         }
+
+        LessonRestart.Marks LessonMarksNow()
+        {
+            return new LessonRestart.Marks
+            {
+                Rule = _ruleTip,
+                Coach = _coach,
+                Pest = _pestCue,
+                Leaf = _leafIntro,
+                HiveGarden = _hiveLevelLive,
+                HiveHome = _hiveIntroLive,
+                Gift = _cueGift,
+                BadgerLesson = _bgLessonLive,
+                BadgerGuide = _bgCoachFight,
+                BadgerPower = _bgPowerGuideOn,
+                BreakFree = _bgBreakFreeOn,
+                Album = _albumTutorOn,
+                Upgrade = _upgradeTutorOn,
+                Daily = _dailyIntroLive,
+                Adopt = _adoptLive,
+                PokerIntro = _pokerIntroLive,
+                PokerTable = _pokerPageOn,
+                PokerDeal = _pokerDealHint,
+                PokerBack = _pokerBackGloveHeld,
+                AdHand = _adHand,
+                Vip = _welcomeOpen || _welcomeGlove,
+                RestartAsk = (int)_restartAsk,
+            };
+        }
+
+        // Read before the caption is cleared. A second Restart during the parade keeps the first read.
+        void NoteRestartLesson()
+        {
+            if (_restarting) return;
+            var stage = LessonRestart.Identify(LessonMarksNow());
+            _restartFrom = stage == LessonRestart.Stage.None ? -1 : (int)stage;
+        }
+
+        // Drop the plate and the pause without marking the lesson seen.
+        // DismissRuleTip would finish Crowns or Nice, and the fresh board would
+        // then raise whichever other tip was still due.
+        void SuspendCaptionForRestart()
+        {
+            _ruleTip = RuleTip.None;
+            _ruleHeld = 0f;
+            _ruleEatGesture = false;
+            _ruleTurned = false;
+            _cueLine = null;
+            _cueSpoken = null;
+            _cueHand = false;
+            _cueForce = false;
+            _gloveVis = false;
+            DropGlovePress();
+            _tutorSeatOn = false;
+            _tutorPlateOn = false;
+            _coachLineHeld = false;
+            _coachHoldXOn = false;
+            ReleaseTutorPause();
+        }
+
+        void ClearRestartLessons()
+        {
+            _ruleTip = RuleTip.None;
+            _ruleHeld = 0f;
+            _ruleEatGesture = false;
+            _ruleTurned = false;
+            _holdRuleForLesson = false;
+            _pestCue = 0;
+            _leafIntro = false;
+            _hiveLevelLive = false;
+            _hiveIntroLive = false;
+            _cueGift = false;
+            _bgLessonLive = false;
+            _bgLessonStep = 0;
+            _bgCoachFight = false;
+            _bgPowerGuideOn = false;
+            _bgBreakFreeOn = false;
+            _albumTutorOn = false;
+            _albumTutorStep = 0;
+            _upgradeTutorOn = false;
+            _dailyIntroLive = false;
+            _dailyOpen = false;
+            _adoptLive = false;
+            _adoptStep = AdoptStep.Off;
+            _pokerIntroLive = false;
+            _pokerPageOn = false;
+            _pokerDealHint = false;
+            _pokerBackGloveHeld = false;
+            _adHand = false;
+            _welcomeOpen = false;
+            _welcomeGlove = false;
+            _coach = false;
+            _coachMoves = 0;
+            _sel = -1;
+            _restartAsk = RestartAsk.None;
+            _cueLine = null;
+            _cueSpoken = null;
+            _cueHand = false;
+            _cueForce = false;
+            _gloveVis = false;
+            _gloveReady = false;
+            DropGlovePress();
+            _tutorSeatOn = false;
+            _coachLineHeld = false;
+        }
+
+        // Flags only. The caption may still be the previous lesson's line.
+        void SeatRestartStage(LessonRestart.Stage stage)
+        {
+            ClearRestartLessons();
+            switch (stage)
+            {
+                case LessonRestart.Stage.Garden: _coach = true; break;
+                case LessonRestart.Stage.Crowns: _ruleTip = RuleTip.Kit; break;
+                case LessonRestart.Stage.Nice: _ruleTip = RuleTip.Feeder; break;
+                case LessonRestart.Stage.Sleep: _ruleTip = RuleTip.Sleep; break;
+                case LessonRestart.Stage.Sparrow: _pestCue = PestCueSparrow; break;
+                case LessonRestart.Stage.Hawk: _pestCue = PestCueHawk; break;
+                case LessonRestart.Stage.Bee: _pestCue = PestCueBee; break;
+                case LessonRestart.Stage.Ostrich: _pestCue = PestCueOstrich; break;
+                case LessonRestart.Stage.Fire: _pestCue = PestCueFire; break;
+                case LessonRestart.Stage.Leaf: _leafIntro = true; break;
+                case LessonRestart.Stage.HiveGarden: _hiveLevelLive = true; break;
+                case LessonRestart.Stage.HiveHome: _hiveIntroLive = true; break;
+                case LessonRestart.Stage.Gift: _cueGift = true; break;
+                case LessonRestart.Stage.BadgerLesson: _bgLessonLive = true; break;
+                case LessonRestart.Stage.BadgerGuide: _bgCoachFight = true; break;
+                case LessonRestart.Stage.BadgerPower: _bgPowerGuideOn = true; break;
+                case LessonRestart.Stage.BreakFree: _bgBreakFreeOn = true; break;
+                case LessonRestart.Stage.Album: _albumTutorOn = true; break;
+                case LessonRestart.Stage.Upgrade: _upgradeTutorOn = true; break;
+                case LessonRestart.Stage.Daily: _dailyIntroLive = true; break;
+                case LessonRestart.Stage.Adopt: _adoptLive = true; break;
+                case LessonRestart.Stage.PokerIntro: _pokerIntroLive = true; break;
+                case LessonRestart.Stage.PokerTable: _pokerPageOn = true; break;
+                case LessonRestart.Stage.PokerDeal: _pokerDealHint = true; break;
+                case LessonRestart.Stage.PokerBack: _pokerBackGloveHeld = true; break;
+                case LessonRestart.Stage.AdHand: _adHand = true; break;
+                case LessonRestart.Stage.Vip: _welcomeGlove = true; break;
+                case LessonRestart.Stage.RestartAsk: _restartAsk = RestartAsk.Sure; break;
+            }
+        }
+
+        void ArmRestartStep1(LessonRestart.Stage stage)
+        {
+            if (stage == LessonRestart.Stage.None)
+            {
+                _cueLine = null;
+                _cueSpoken = null;
+                _gloveVis = false;
+                _cueHand = false;
+                return;
+            }
+            _coachReset = default;
+            _coachResetVerb = CoachResetVerb.None;
+            _coachResetWant = false;
+            var first = LessonRestart.Step1(stage);
+            SeatRestartStage(stage);
+            if (stage == LessonRestart.Stage.Garden)
+            {
+                _coachMoves = 0;
+                _coachFrom = -1;
+                _coachTo = -1;
+                _sel = -1;
+            }
+            else if (stage == LessonRestart.Stage.BadgerLesson)
+                _bgLessonStep = 0;
+            else if (stage == LessonRestart.Stage.Album)
+                _albumTutorStep = 0;
+            else if (stage == LessonRestart.Stage.Daily)
+                _dailyOpen = false;
+            else if (stage == LessonRestart.Stage.Adopt)
+                _adoptStep = AdoptStep.Fly;
+            else if (stage == LessonRestart.Stage.Crowns)
+            {
+                ShowRuleTip(RuleTip.Kit);
+                return;
+            }
+            else if (stage == LessonRestart.Stage.Nice)
+            {
+                ShowRuleTip(RuleTip.Feeder);
+                return;
+            }
+            else if (stage == LessonRestart.Stage.Sleep)
+            {
+                ShowRuleTip(RuleTip.Sleep);
+                return;
+            }
+            bool glove = LessonRestart.ArmsGlove(first);
+            _cueLine = CoachTap.Caption(first);
+            _cueSpoken = _cueLine;
+            _coachFade = 1f;
+            _cueHand = glove;
+            _cueForce = glove;
+            _gloveVis = glove;
+            _gloveReady = glove;
+        }
+
+        // Unfinished level-1 coach still comes back as its own step 1.
+        // Every other live lesson comes back as that lesson's step 1, and the
+        // previous lesson's caption does not stay on the new board.
+        void ApplyRestartRecue()
+        {
+            bool garden = _coach && PlayerPrefs.GetInt(CoachKey, 0) == 0 && LevelData.DisplayNumber == 1;
+            if (garden)
+            {
+                SettleRestartLesson();
+                return;
+            }
+            var stage = _restartFrom < 0 ? LessonRestart.Stage.None : (LessonRestart.Stage)_restartFrom;
+            ArmRestartStep1(stage);
+        }
+
+#if UNITY_EDITOR
+        // Edit-mode gate. Seats the lesson, leaves a foreign caption, then runs the restart re-cue.
+        internal void EditorRestartLesson(CoachStep step, string stale)
+        {
+            ReleaseTutorPause();
+            SeatRestartStage(LessonRestart.Of(step));
+            _cueLine = stale;
+            _restarting = false;
+            NoteRestartLesson();
+            SuspendCaptionForRestart();
+            ApplyRestartRecue();
+        }
+#endif
 
         void FreshCoachResume()
         {
