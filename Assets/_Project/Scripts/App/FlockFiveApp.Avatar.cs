@@ -218,9 +218,7 @@ namespace FlockFive
         // Greet caption has been dismissed. The look line is up while the bird
         // may still be flying to the tip. A LEVEL tap sets this and does not Load.
         bool _adoptGreetDone;
-        // Play left the home chain early. Look, then Tap Daily, resume on the next Home.
-        bool _chainLookOwed;
-        bool _chainDailyOwed;
+        // How many times this session resumed the look, then Tap Daily.
         int _chainLookRuns;
         int _chainDailyRuns;
         Rect _adoptBirdR;
@@ -401,16 +399,11 @@ namespace FlockFive
             right = R;
         }
 
-        // Play during greet or look. The step is not marked done.
+        // Play during the greet, the look, or Tap Daily does not finish them.
+        // The save is the record: look while the bird is adopted and unnamed,
+        // Tap Daily while the greet has been seen and the coach key is still 0.
         void ParkHomeChainForPlay()
         {
-            if (_avatarRename || !HomeChainOpen()) return;
-            bool look = _adoptLive && (_adoptStep == AdoptStep.Fly || _adoptStep == AdoptStep.Look);
-            if (look) _chainLookOwed = true;
-            bool daily = (_dailyIntro || _dailyIntroLive) && !_dailyOpen
-                && PlayerPrefs.GetInt(CoachDailyKey, 0) == 0;
-            if (daily || (look && PlayerPrefs.GetInt(CoachDailyKey, 0) == 0))
-                _chainDailyOwed = true;
         }
 
         void ArmAdopt()
@@ -425,10 +418,9 @@ namespace FlockFive
                 ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0);
             // Saved adopt state wins over the in-memory park, so a kill mid-garden
             // still resumes the look before garden 1 is cleared.
-            if (boot == AdoptBoot.ResumeLook || _chainLookOwed)
+            if (boot == AdoptBoot.ResumeLook)
             {
                 ResumeAdoptLook();
-                _chainLookOwed = false;
                 return;
             }
             if (LevelData.NextPlay < 1)

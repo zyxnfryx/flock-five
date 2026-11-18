@@ -6499,12 +6499,25 @@ namespace FlockFive
             return true;
         }
 
-        // Saved: the greet adopted the bird and Tap Daily is not stamped yet.
-        // The in-memory flag covers the same session before a kill.
+        // Look is owed while the greet adopted the bird and the name is not done.
+        bool ChainLookOwed()
+        {
+            return AdoptResume.LookOwed(AvatarAdopted(),
+                PlayerPrefs.GetInt(AvatarNamedPref, -1),
+                ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0);
+        }
+
+        // Tap Daily is owed only while the greet has been seen and the coach key is 0.
+        // Same rule after an early Play in this session and after a kill.
         bool DailyChainOwed()
         {
-            if (_chainDailyOwed) return true;
             return AdoptResume.DailyOwed(AvatarAdopted(), PlayerPrefs.GetInt(CoachDailyKey, 0) != 0);
+        }
+
+        // The badger flower waits while either of those is still owed.
+        bool HomeChainOwed()
+        {
+            return ChainLookOwed() || DailyChainOwed();
         }
 
         // Glove and caption wait until the adopted bird is perched on the branch.

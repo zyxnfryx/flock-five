@@ -182,6 +182,7 @@ namespace FlockFive.Editor
             Gate("CheckHomeControlsAtSizes", () => CheckHomeControlsAtSizes(Check));
             Gate("CheckHomeChainOneAtATime", () => CheckHomeChainOneAtATime(Check));
             Gate("CheckPlayLeavesHomeChain", () => CheckPlayLeavesHomeChain(Check));
+            Gate("CheckDailyFinishOffersBadger", () => CheckDailyFinishOffersBadger(Check));
             Gate("CheckPauseKeepsHeldId", () => CheckPauseKeepsHeldId(Check));
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
@@ -3400,6 +3401,115 @@ namespace FlockFive.Editor
                 string name = "play-at-" + where + "-" + tag + "-resumes-chain-once";
                 try { Check(name, garden && lookOnce && dailyOnce && dailyKey,
                     "garden " + garden + " look " + looks + " " + stepNow + " daily " + dailies + "/" + again); }
+                catch (System.Exception hopEx) { Check(name, false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        // Same session, no relaunch. Finishing Tap Daily has to match the save:
+        // the badger flower is offered, and the next Home does not arm Daily again.
+        static void CheckDailyFinishOffersBadger(System.Action<string, bool, string> Check)
+        {
+            int next = UnityEngine.PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = UnityEngine.PlayerPrefs.HasKey("flockfive.next");
+            int badger = BadgerSave.PendingFor(true);
+            bool badgerOn = BadgerSchedule.Enabled;
+            var warm = typeof(FlockFiveApp).GetField("_warmCoverOff", BindingFlags.NonPublic | BindingFlags.Static);
+            bool warmWas = warm != null && (bool)warm.GetValue(null);
+            if (warm != null) warm.SetValue(null, true);
+            bool shot = FlockFiveApp.EditorShotLive;
+            FlockFiveApp.EditorShotLive = false;
+            BadgerSchedule.Enabled = true;
+            try
+            {
+                FinishDailyThenOffer(Check, "greet");
+                FinishDailyThenOffer(Check, "daily");
+            }
+            finally
+            {
+                FlockFiveApp.EditorShotLive = shot;
+                BadgerSchedule.Enabled = badgerOn;
+                if (badger > 0) BadgerSave.Set(badger, true);
+                else BadgerSave.Clear();
+                if (warm != null) warm.SetValue(null, warmWas);
+                if (hadNext) UnityEngine.PlayerPrefs.SetInt("flockfive.next", next);
+                else UnityEngine.PlayerPrefs.DeleteKey("flockfive.next");
+            }
+        }
+
+        static void FinishDailyThenOffer(System.Action<string, bool, string> Check, string where)
+        {
+            var go = new GameObject("daily-finish-" + where);
+            try
+            {
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.adopted");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.named");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.name");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.coach.daily");
+                UnityEngine.PlayerPrefs.SetInt("flockfive.next", 0);
+                BadgerSave.Set(15, true);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_railInit", flags).SetValue(app, true);
+                if (where == "daily")
+                {
+                    UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.adopted", 1);
+                    UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.named", 1);
+                    UnityEngine.PlayerPrefs.SetString("flockfive.avatar.name", "Pip");
+                    t.GetField("_birdSettledOnBranch", flags).SetValue(app, true);
+                    t.GetField("_dailyIntro", flags).SetValue(app, true);
+                    t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                }
+                else
+                {
+                    Method(t, "BeginAdopt").Invoke(app, null);
+                    t.GetField("_adoptLive", flags).SetValue(app, true);
+                }
+                Method(t, "PressLevelButton").Invoke(app, null);
+                bool garden = !(bool)t.GetField("_splash", flags).GetValue(app);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                PressHud(app, t, homePlay, 2, false);
+                t.GetField("_railInit", flags).SetValue(app, true);
+                t.GetField("_splash", flags).SetValue(app, true);
+                if (where == "greet")
+                {
+                    t.GetField("_avatarRenameText", flags).SetValue(app, "Pip");
+                    Method(t, "CommitAvatarRename").Invoke(app, null);
+                }
+                string name = where == "greet"
+                    ? "play-at-greet-finish-daily-offers-badger"
+                    : "play-at-daily-finish-daily-offers-badger";
+                bool saw = false, flower = false, quiet = false;
+                int key = 0;
+                try
+                {
+                    Method(t, "TickDailyIntro").Invoke(app, null);
+                    saw = (bool)t.GetField("_dailyIntroSaw", flags).GetValue(app);
+                    Method(t, "DismissDailyIntro").Invoke(app, null);
+                    key = UnityEngine.PlayerPrefs.GetInt("flockfive.coach.daily", 0);
+                    t.GetField("_bgPendFrame", flags).SetValue(app, -1);
+                    BadgerSave.Set(15, true);
+                    t.GetField("_splash", flags).SetValue(app, true);
+                    Method(t, "PressLevelButton").Invoke(app, null);
+                    flower = (bool)t.GetField("_splash", flags).GetValue(app);
+                    PressHud(app, t, homePlay, 3, false);
+                    t.GetField("_railInit", flags).SetValue(app, true);
+                    quiet = !(bool)t.GetField("_dailyIntro", flags).GetValue(app)
+                        && !(bool)t.GetField("_dailyIntroLive", flags).GetValue(app);
+                    Check(name, garden && saw && key == 1 && flower && quiet,
+                        "garden " + garden + " saw " + saw + " key " + key
+                        + " flower " + flower + " quiet " + quiet);
+                }
                 catch (System.Exception hopEx) { Check(name, false, ThrowText(hopEx)); }
             }
             finally

@@ -659,7 +659,7 @@ namespace FlockFive
             if (StartupInputHeld) return false; // b112: cover holds input
             ParkHomeChainForPlay();
             ClearCaptionForWipe();
-            if (!(_chainLookOwed || _chainDailyOwed) && TakeBadgerFlower())
+            if (!HomeChainOwed() && TakeBadgerFlower())
             {
                 if (!LevelCurtain.LoadStarted) LevelCurtain.Clear();
                 return true;
