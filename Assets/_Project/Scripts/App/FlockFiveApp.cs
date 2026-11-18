@@ -3952,6 +3952,9 @@ namespace FlockFive
         int _glovePressId = -1;
         // Down swallowed by the resume gate. Its Up must not hop after the window.
         int _gloveSwallowedId = int.MinValue;
+        // The finger that went down while the resume window was open. Its Up never
+        // restarts or retries, even after the window has closed. A later Down clears it.
+        int _resumeOriginId = int.MinValue;
         // 0 began on the glove. 1 Home, 2 Restart, 3 gear.
         int _gloveSwallowHud;
         // The frame a swallowed touch was canceled, and that touch's id.
@@ -4014,6 +4017,16 @@ namespace FlockFive
         {
             return _gloveSwallowedId != int.MinValue
                 && GloveFingerMatches(_gloveSwallowedId, pointerId);
+        }
+
+        // True for the Up of a press that started inside the resume window.
+        // A mouse -1 release is that same contact when the Down was a touch.
+        bool ResumeOriginBlocks(int pointerId)
+        {
+            if (_resumeOriginId == int.MinValue) return false;
+            if (pointerId == int.MinValue) pointerId = -1;
+            if (GloveFingerMatches(_resumeOriginId, pointerId)) return true;
+            return pointerId == -1 && _resumeOriginId >= 0;
         }
 
         bool CancelBlocksHop(int pointerId)
@@ -4182,14 +4195,21 @@ namespace FlockFive
             // so a glove edge in that 0.35 s would otherwise become a move. Drop
             // the latch too, and remember the pointer: the Up after the window
             // is still on the glove and used to reach HandleTap with no latch.
-            // A press that begins on Home, Restart, or the gear is that button's
-            // gesture. It is not swallowed, so the release can still fire it.
+            // A press that begins on Home or the gear still fires on release.
+            // Restart does not: a Down inside this window never restarts.
             // A WebGL up is mouse -1 for the touch that went down. Match that
             // press, not the synthesized id, or a fresh tap is eaten because
             // the mouse was the thing down at hide.
             int resumeId = pointerId;
             if (releaseEdge && pointerId == -1 && _glovePressLatched && _glovePressId >= 0)
                 resumeId = _glovePressId;
+            // Remember a Down that starts inside the window. A fresh Down after it clears.
+            // The synthesized mouse Down beside a touch is not a new press.
+            if (!releaseEdge && !(pointerId < 0 && _glovePressLatched && _glovePressId >= 0))
+            {
+                int origin = pointerId == int.MinValue ? -1 : pointerId;
+                _resumeOriginId = GateNow < _resumeInputUntil ? origin : int.MinValue;
+            }
             if (ResumeHolds(resumeId))
             {
                 if (!releaseEdge && hud != 0)
@@ -4219,7 +4239,17 @@ namespace FlockFive
                     return true;
                 }
             }
-            // After the resume swallow. A coach glove over a button yields.
+            // Press origin before any yield. A Down inside the resume window must
+            // not restart or retry on its Up, including after the window closes.
+            // Home and the gear stay allowed.
+            bool resumePress = releaseEdge && (SwallowedUp(pointerId) || ResumeOriginBlocks(pointerId));
+            if (resumePress && hud != 1 && hud != 3 && (hud == 2 || SwallowedUp(pointerId)))
+            {
+                if (SwallowedUp(pointerId)) ClearSwallowedGlove();
+                StampGlove("swallowed-up", windowGui, onGlove, hud != 0, false);
+                return true;
+            }
+            // After that check. A coach glove over a button yields.
             // Outside the drawn hand, the release is never a glove tap.
             if (CoachControlYields(windowGui, releaseEdge))
             {
@@ -7808,7 +7838,10 @@ namespace FlockFive
 
         bool ActRestart()
         {
-            if (ResumeSwallowsRestart() || GloveOwnsHudPress()) return true;
+            // Time window, a glove-owned press, or a press that started in the window.
+            // Retry uses this same entry, so it keeps the same rule.
+            if (ResumeSwallowsRestart() || GloveOwnsHudPress() || ResumeOriginBlocks(_gloveEdgeId))
+                return true;
             _tapWho = "restart";
             Restart();
             return true;
@@ -21300,6 +21333,28 @@ namespace FlockFive
                 || _albumTutorOn || _adoptLive || PokerBackGateLive();
         }
 
+        // The glove let go of the control. The lesson's own finish runs.
+        void AdvanceYieldedLesson()
+        {
+            if (_dailyOpen && _dailyGloveThroughTap)
+            {
+                FinishClaimGloveTap();
+                return;
+            }
+            if (_adoptLive && _adoptStep == AdoptStep.Look)
+            {
+                BeginSettle();
+                return;
+            }
+            if (_pokerDealHint)
+            {
+                BeginPokerDeal();
+                return;
+            }
+            if (_upgradeTutorOn)
+                FinishUpgradeTutor();
+        }
+
         // True when this pointer must reach the control under the glove.
         // A release outside the drawn hand is not swallowed. X closes here.
         bool CoachControlYields(Vector2 windowGui, bool releaseEdge)
@@ -21341,7 +21396,10 @@ namespace FlockFive
                 return true;
             }
             if (_gloveTapRectOn && _gloveTapRect.Contains(windowGui))
+            {
+                if (releaseEdge) AdvanceYieldedLesson();
                 return true;
+            }
             if (!releaseEdge) return false;
             var drawn = OnScreenGlove();
             bool onHand = _gloveVis && drawn.width > 2f && GloveWindowHit(windowGui, drawn, PhoneArea.OffX);
