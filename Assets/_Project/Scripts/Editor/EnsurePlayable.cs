@@ -68,8 +68,18 @@ namespace FlockFive.Editor
         // Fast Mac gate for the glove and home checks. Tests only.
         public static void RunHomePolishOnly()
         {
-            using (TestPrefsSandbox.Begin())
-                Suite("home-polish", HomePolishTests.Run);
+            _suiteFail = 0;
+            _suiteThrew = 0;
+            Application.logMessageReceived += CountSuiteLog;
+            try
+            {
+                using (TestPrefsSandbox.Begin())
+                    Suite("home-polish", HomePolishTests.Run);
+            }
+            finally
+            {
+                FinishEditorSuites(false);
+            }
         }
 
         static string SuiteArg()

@@ -6502,7 +6502,8 @@ namespace FlockFive
         // Glove and caption wait until the adopted bird is perched on the branch.
         bool SplashDailyTurn()
         {
-            if (!SplashLessonRoom() || !_dailyIntro || LevelData.NextPlay < 1) return false;
+            if (!SplashLessonRoom() || !_dailyIntro) return false;
+            if (LevelData.NextPlay < 1 && !_chainDailyOwed) return false;
             if (AdoptHoldsQueue() || !BirdSettledOnBranch() || WelcomeOwnsTurn()) return false;
             return true;
         }
@@ -8265,6 +8266,7 @@ namespace FlockFive
                 _dailyGloveOnClaim = false;
                 _glovePhase = 0f;
                 _tapSent = false;
+                _chainDailyRuns++;
             }
             _dailyIntroLive = true;
             _dailyIntroSaw = true;
@@ -8287,7 +8289,7 @@ namespace FlockFive
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive) return;
 #endif
-            if (LevelData.NextPlay < 1) return;
+            if (LevelData.NextPlay < 1 && !_chainDailyOwed) return;
             if (PlayerPrefs.GetInt(CoachDailyKey, 0) != 0) return;
             _dailyIntro = true;
             _gloveReady = false;

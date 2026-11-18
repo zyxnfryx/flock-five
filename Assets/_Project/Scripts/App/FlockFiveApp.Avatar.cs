@@ -218,6 +218,11 @@ namespace FlockFive
         // Greet caption has been dismissed. The look line is up while the bird
         // may still be flying to the tip. A LEVEL tap sets this and does not Load.
         bool _adoptGreetDone;
+        // Play left the home chain early. Look, then Tap Daily, resume on the next Home.
+        bool _chainLookOwed;
+        bool _chainDailyOwed;
+        int _chainLookRuns;
+        int _chainDailyRuns;
         Rect _adoptBirdR;
 
         bool _avatarRename;
@@ -396,6 +401,18 @@ namespace FlockFive
             right = R;
         }
 
+        // Play during greet or look. The step is not marked done.
+        void ParkHomeChainForPlay()
+        {
+            if (_avatarRename || !HomeChainOpen()) return;
+            bool look = _adoptLive && (_adoptStep == AdoptStep.Fly || _adoptStep == AdoptStep.Look);
+            if (look) _chainLookOwed = true;
+            bool daily = (_dailyIntro || _dailyIntroLive) && !_dailyOpen
+                && PlayerPrefs.GetInt(CoachDailyKey, 0) == 0;
+            if (daily || (look && PlayerPrefs.GetInt(CoachDailyKey, 0) == 0))
+                _chainDailyOwed = true;
+        }
+
         void ArmAdopt()
         {
             _adoptLive = false;
@@ -403,8 +420,15 @@ namespace FlockFive
             _adoptOwed = false;
             _adoptPick = -1;
             CloseAvatarRename();
+            if (_chainLookOwed)
+            {
+                ResumeAdoptLook();
+                _chainLookOwed = false;
+                return;
+            }
             if (LevelData.NextPlay < 1)
             {
+                if (_adoptStep == AdoptStep.Look) return;
                 _birdSettledOnBranch = true;
                 return;
             }
@@ -446,6 +470,8 @@ namespace FlockFive
             _avatarLandGlove = false;
             _avatarPerchHold = 0f;
             _adoptGreetDone = true;
+            _adoptLive = true;
+            _chainLookRuns++;
             _adoptBirdR = default;
             _birdSettledOnBranch = false;
             _coachFade = 0f;

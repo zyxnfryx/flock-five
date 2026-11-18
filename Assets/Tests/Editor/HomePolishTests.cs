@@ -181,6 +181,7 @@ namespace FlockFive.Editor
             Gate("CheckRestartRearmsEveryLesson", () => CheckRestartRearmsEveryLesson(Check));
             Gate("CheckHomeControlsAtSizes", () => CheckHomeControlsAtSizes(Check));
             Gate("CheckHomeChainOneAtATime", () => CheckHomeChainOneAtATime(Check));
+            Gate("CheckPlayLeavesHomeChain", () => CheckPlayLeavesHomeChain(Check));
             Gate("CheckPauseKeepsHeldId", () => CheckPauseKeepsHeldId(Check));
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
@@ -3284,6 +3285,104 @@ namespace FlockFive.Editor
             }
         }
 
+        static void CheckPlayLeavesHomeChain(System.Action<string, bool, string> Check)
+        {
+            int next = UnityEngine.PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = UnityEngine.PlayerPrefs.HasKey("flockfive.next");
+            var warm = typeof(FlockFiveApp).GetField("_warmCoverOff", BindingFlags.NonPublic | BindingFlags.Static);
+            bool warmWas = warm != null && (bool)warm.GetValue(null);
+            if (warm != null) warm.SetValue(null, true);
+            bool shot = FlockFiveApp.EditorShotLive;
+            FlockFiveApp.EditorShotLive = false;
+            try
+            {
+                foreach (bool clear in new[] { true, false })
+                {
+                    string tag = clear ? "clear-g1" : "leave-g1";
+                    PlayChainCase(Check, "greet", tag, clear, true, true);
+                    PlayChainCase(Check, "look", tag, clear, true, true);
+                    PlayChainCase(Check, "daily", tag, clear, false, true);
+                }
+            }
+            finally
+            {
+                FlockFiveApp.EditorShotLive = shot;
+                if (warm != null) warm.SetValue(null, warmWas);
+                if (hadNext) UnityEngine.PlayerPrefs.SetInt("flockfive.next", next);
+                else UnityEngine.PlayerPrefs.DeleteKey("flockfive.next");
+            }
+        }
+
+        static void PlayChainCase(System.Action<string, bool, string> Check, string where, string tag, bool clear, bool wantLook, bool wantDaily)
+        {
+            var go = new GameObject("play-chain-" + where + "-" + tag);
+            try
+            {
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.adopted");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.named");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.name");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.coach.daily");
+                UnityEngine.PlayerPrefs.SetInt("flockfive.next", 0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_railInit", flags).SetValue(app, true);
+                if (where == "daily")
+                {
+                    UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.adopted", 1);
+                    UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.named", 1);
+                    UnityEngine.PlayerPrefs.SetString("flockfive.avatar.name", "Pip");
+                    t.GetField("_birdSettledOnBranch", flags).SetValue(app, true);
+                    t.GetField("_dailyIntro", flags).SetValue(app, true);
+                    t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                }
+                else
+                {
+                    Method(t, "BeginAdopt").Invoke(app, null);
+                    t.GetField("_adoptLive", flags).SetValue(app, true);
+                    if (where == "look")
+                    {
+                        var step = t.GetField("_adoptStep", flags);
+                        step.SetValue(app, System.Enum.ToObject(step.FieldType, 2));
+                        t.GetField("_adoptGreetDone", flags).SetValue(app, true);
+                    }
+                }
+                Method(t, "PressLevelButton").Invoke(app, null);
+                bool garden = !(bool)t.GetField("_splash", flags).GetValue(app);
+                UnityEngine.PlayerPrefs.SetInt("flockfive.next", clear ? 1 : 0);
+                FlockFiveApp.EditorShotLive = false;
+                Method(t, "ShowSplash").Invoke(app, null);
+                t.GetField("_railInit", flags).SetValue(app, true);
+                t.GetField("_splash", flags).SetValue(app, true);
+                int looks = (int)t.GetField("_chainLookRuns", flags).GetValue(app);
+                var stepNow = t.GetField("_adoptStep", flags).GetValue(app).ToString();
+                bool lookOnce = wantLook ? looks == 1 && stepNow == "Look" : looks == 0;
+                if (wantLook)
+                {
+                    t.GetField("_adoptLive", flags).SetValue(app, false);
+                    t.GetField("_adoptStep", flags).SetValue(app, System.Enum.ToObject(t.GetField("_adoptStep", flags).FieldType, 0));
+                    t.GetField("_birdSettledOnBranch", flags).SetValue(app, true);
+                    t.GetField("_adoptOwed", flags).SetValue(app, false);
+                }
+                Method(t, "TickDailyIntro").Invoke(app, null);
+                int dailies = (int)t.GetField("_chainDailyRuns", flags).GetValue(app);
+                Method(t, "TickDailyIntro").Invoke(app, null);
+                int again = (int)t.GetField("_chainDailyRuns", flags).GetValue(app);
+                bool dailyOnce = wantDaily ? dailies == 1 && again == 1 : dailies == 0;
+                bool dailyKey = UnityEngine.PlayerPrefs.GetInt("flockfive.coach.daily", 0) == 0;
+                string name = "play-at-" + where + "-" + tag + "-resumes-chain-once";
+                try { Check(name, garden && lookOnce && dailyOnce && dailyKey,
+                    "garden " + garden + " look " + looks + " " + stepNow + " daily " + dailies + "/" + again); }
+                catch (System.Exception hopEx) { Check(name, false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
         static void CheckHomeChainOneAtATime(System.Action<string, bool, string> Check)
         {
             FlockFiveApp.ClearLessonGuard();
@@ -4535,7 +4634,14 @@ namespace FlockFive.Editor
                 t.GetField("_pokerMotion", flags).SetValue(app, System.Enum.ToObject(t.GetField("_pokerMotion", flags).FieldType, 0));
                 Release();
                 bool held = BirdPoker.PhaseNow == BirdPoker.Phase.Idle && Purse.Coins == before;
-                Method(t, "OnPokerDealPressed").Invoke(app, null);
+                var dealRect = app.PokerDealButtonRect();
+                var dealEvent = Event.current;
+                GUIUtility.hotControl = 0;
+                Event.current = new Event { type = EventType.MouseDown, mousePosition = dealRect.center, button = 0 };
+                app.PokerPageDealHit();
+                Event.current = new Event { type = EventType.MouseUp, mousePosition = dealRect.center, button = 0 };
+                app.PokerPageDealHit();
+                Event.current = dealEvent;
                 bool dealt = held && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt && Purse.Coins == before - bet;
                 try { Check("yield-deal-deals-once", dealt,
                     "phase " + BirdPoker.PhaseNow + " coins " + Purse.Coins + " before " + before + " bet " + bet); }

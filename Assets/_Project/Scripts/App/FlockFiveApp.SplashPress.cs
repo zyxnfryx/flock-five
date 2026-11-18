@@ -31,9 +31,14 @@ namespace FlockFive
             if (_settingsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || VipOffer.IsOpen) return;
             // Hive and poker captions, and the name dialog, keep Play down.
             // The greet, the look, and Tap Daily are this chain: Play stays up.
+            if (_avatarRename)
+            {
+                gates.HardModal = true;
+                return;
+            }
             bool chainCaption = _adoptLive || _adoptStep != AdoptStep.Off
                 || ((_dailyIntro || _dailyIntroLive) && !_dailyOpen);
-            if (!chainCaption && (_avatarRename || _hiveIntroLive || _pokerIntroLive))
+            if (!chainCaption && (_hiveIntroLive || _pokerIntroLive))
             {
                 gates.HardModal = true;
                 return;
@@ -42,7 +47,7 @@ namespace FlockFive
             gates.AdoptQueue = false;
             gates.RailLesson = false;
             // The caption veil and the short dismiss guard are for the garden.
-            // Play stays up through greet, naming, and Tap Daily. Restart is
+            // Play stays up through the greet, the look, and Tap Daily. Restart is
             // still swallowed for the timed resume window below.
             gates.LessonGuard = false;
             gates.Consent = false;

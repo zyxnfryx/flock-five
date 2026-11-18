@@ -657,6 +657,10 @@ namespace FlockFive
         bool PressLevelButton()
         {
             if (StartupInputHeld) return false; // b112: nothing starts while the studio card / cover is up
+            // Play is live during the greet, the look, and Tap Daily. Leaving does
+            // not finish those steps or mark them done. Home brings back whatever
+            // is still ahead, in order, once each. Naming never reaches here.
+            ParkHomeChainForPlay();
             ClearCaptionForWipe();
             if (TakeBadgerFlower())
             {
