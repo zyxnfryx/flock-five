@@ -146,6 +146,7 @@ namespace FlockFive.Editor
             Gate("CheckInspectorGates", () => CheckInspectorGates(Check));
             Gate("CheckResumeYield", () => CheckResumeYield(Check));
             Gate("CheckYieldAdvances", () => CheckYieldAdvances(Check));
+            Gate("CheckDealPad", () => CheckDealPad(Check));
             Gate("CheckForcePause", () => CheckForcePause(Check));
             Gate("CheckHomeTouchGate", () => CheckHomeTouchGate(Check));
             Gate("CheckGloveRoute", () => CheckGloveRoute(Check));
@@ -4263,11 +4264,80 @@ namespace FlockFive.Editor
                 try { Check("resume-window-home-and-gear-work", homeOk && gearOk,
                     "home " + homeOk + " gear " + gearOk); }
                 catch (System.Exception hopEx) { Check("resume-window-home-and-gear-work", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, false);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                PressHud(app, t, play, 15, true);
+                Method(t, "NoteSwallowedCancel", typeof(int)).Invoke(app, new object[] { 15 });
+                SetResumeUntil(AdPause.Unscaled - 1f);
+                PressHud(app, t, play, -1, true);
+                PressHud(app, t, play, -1, false);
+                bool afterCancel = RestartBegan(app, t, flags);
+                try { Check("resume-cancel-then-fresh-press-restarts", afterCancel, "restarted " + afterCancel); }
+                catch (System.Exception hopEx) { Check("resume-cancel-then-fresh-press-restarts", false, ThrowText(hopEx)); }
             }
             finally
             {
                 FlockFiveApp.EditorPointerInject = default;
                 SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        sealed class DealPadHost : UnityEditor.EditorWindow
+        {
+            public FlockFiveApp App;
+            void OnGUI()
+            {
+                if (App != null) App.PokerPageDealHit();
+            }
+        }
+
+        static void CheckDealPad(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("deal-pad");
+            int hands = UnityEngine.PlayerPrefs.GetInt("flockfive.ads.pokerhands", 0);
+            DealPadHost host = null;
+            try
+            {
+                UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", 0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_pokerDealHint", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 2));
+                BirdPoker.ResetRound();
+                BirdPoker.Boot();
+                if (Purse.Coins < 500) Purse.Credit(500 - Purse.Coins);
+                BirdPoker.SyncBet();
+                int before = Purse.Coins;
+                int bet = BirdPoker.Bet;
+                GUIUtility.hotControl = 0;
+                host = UnityEngine.ScriptableObject.CreateInstance<DealPadHost>();
+                host.App = app;
+                var rect = app.PokerDealButtonRect();
+                host.SendEvent(new Event { type = EventType.MouseDown, mousePosition = rect.center, button = 0 });
+                bool armed = (bool)t.GetField("_pokerDealHint", flags).GetValue(app)
+                    && BirdPoker.PhaseNow == BirdPoker.Phase.Idle
+                    && Purse.Coins == before;
+                host.SendEvent(new Event { type = EventType.MouseUp, mousePosition = rect.center, button = 0 });
+                bool dealt = armed
+                    && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt
+                    && Purse.Coins == before - bet
+                    && !(bool)t.GetField("_pokerDealHint", flags).GetValue(app);
+                try { Check("deal-pad-down-up-deals-once", dealt,
+                    "phase " + BirdPoker.PhaseNow + " coins " + Purse.Coins + " before " + before + " bet " + bet
+                    + " hint " + t.GetField("_pokerDealHint", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("deal-pad-down-up-deals-once", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                if (host != null) UnityEngine.Object.DestroyImmediate(host);
+                GUIUtility.hotControl = 0;
+                UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", hands);
                 GamePause.Reset();
                 UnityEngine.Object.DestroyImmediate(go);
             }

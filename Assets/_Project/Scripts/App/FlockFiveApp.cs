@@ -973,6 +973,7 @@ namespace FlockFive
         void Load(int index)
         {
             ClearSwallowedGlove();
+            ClearResumeOrigins();
             AudioGuard.OnSceneOrPopupClosed();
             // Before the garden (and its season banner) is built. A solved board
             // that is still browsing the inspect does not come through here.
@@ -3725,7 +3726,10 @@ namespace FlockFive
                 _gloveSwallowHud = keepHud;
                 // The held finger stays swallowed. A HUD button armed before the
                 // pause must not fire on the release after it.
+                // A lost press is not a resume-origin Up. Drop those stamps so a
+                // later mouse Restart is not refused. The new window still blocks.
                 _resumeHudArm = 0;
+                ClearResumeOrigins();
             }
             else
             {
@@ -3758,6 +3762,7 @@ namespace FlockFive
             {
                 CapturePointersDownAtHide();
                 ClearSwallowedGlove();
+                ClearResumeOrigins();
             }
             if (focus)
             {
@@ -4066,10 +4071,19 @@ namespace FlockFive
             return pointerId == _gloveCancelId || pointerId == -1;
         }
 
-        // A cancel never arrives as a glove Up. Remember the frame so a mouse
-        // release beside it cannot hop once the id is cleared.
+        void ClearResumeOrigins()
+        {
+            _resumeOriginIds.Clear();
+            _resumeOriginRelease = false;
+        }
+
+        // TouchPhase.Canceled. The finger never lifts, so the Up path cannot drop
+        // its stamp. Drop it here. A press still inside the window is blocked by
+        // the window itself. A cancel never arrives as a glove Up.
         void NoteSwallowedCancel(int pointerId)
         {
+            LiftResumeOrigin(pointerId);
+            _resumeOriginRelease = false;
             if (_gloveSwallowedId == int.MinValue) return;
             if (!GloveFingerMatches(_gloveSwallowedId, pointerId)) return;
             _gloveCancelFrame = Time.frameCount;
@@ -4079,7 +4093,6 @@ namespace FlockFive
 
         void ClearSwallowedOnCancel()
         {
-            if (_gloveSwallowedId == int.MinValue) return;
             var touch = UnityEngine.InputSystem.Touchscreen.current;
             if (touch == null) return;
             var touches = touch.touches;
@@ -4089,7 +4102,6 @@ namespace FlockFive
                 if (t == null) continue;
                 if (t.phase.ReadValue() != UnityEngine.InputSystem.TouchPhase.Canceled) continue;
                 NoteSwallowedCancel(t.touchId.ReadValue());
-                if (_gloveSwallowedId == int.MinValue) return;
             }
         }
 
@@ -15468,27 +15480,7 @@ namespace FlockFive
             float clusterL = Mathf.Max(12f, safe.xMin + 10f);
             var betR = new Rect(clusterL, btnY, Mathf.Max(80f, actR.x - 10f * s - clusterL), btnSize);
 
-            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f || _fivesOpen || _fivesAnim > 0.35f;
-            if (GuiPaint()) TickPokerWin();
-            bool winFlying = PokerWinFlying();
-            bool busy = PokerMotionBusy() || _pokerStamp || payBlocked || winFlying;
-            // A settled Drawn hand is not a deal yet (CanDeal is false). Settle it
-            // back to Idle once nothing is playing and the back lesson is not holding
-            // the result, so DEAL appears only when a deal can actually start.
-            // The result cards stay face-up until the next deal's own motion.
-            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && !busy && !PokerBackGateLive())
-                BirdPoker.Settle();
-            if (GuiPaint()) TickPokerDash(s);
-            TickPokerStamp();
-            if (winFlying && !_pokerStamp && !payBlocked) SkipPokerWinOnTap();
-            string act = PokerActLabel();
-            // Between hands (idle or showing a result) the bet steers the next DEAL.
-            bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
-            if (steppers) BirdPoker.SyncBet();
-            // Always paint the bet bar and the win banner. The floral control
-            // itself stays out until ActLabel has a word (DEAL or DRAW).
-            if (DrawPokerDash(betR, actR, s, busy, steppers, act))
-                OnPokerDealPressed();
+            TakePokerDealPress(betR, actR, s);
             DrawPokerBrokeHint(betR, actR, s);
             NotePokerTutorAims(actR, rowBox, cardW, gap);
             float holdCeil = payTab.yMax;
@@ -17278,6 +17270,59 @@ namespace FlockFive
         // b124: on the first hand the result caption owns the bet controls' seat until Back is tapped; the bar stays tucked away.
         bool PokerFirstHandResultHoldsBetBar()
             => _home == HomeFace.Poker && !PokerBackDone() && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn;
+
+        // Same DEAL control the poker page hits. Event.current is the press.
+        public Rect PokerDealButtonRect()
+        {
+            float s = DeviceFit.Ui();
+            var safe = PhoneArea.Safe;
+            if (safe.width < 2f || safe.height < 2f)
+                safe = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
+            float btnSize = PokerActSize(PhoneArea.W, s);
+            float botPad = Mathf.Max(12f, safe.yMin + 6f);
+            float btnY = PhoneArea.H - botPad - btnSize;
+            float actX = PhoneArea.W - Mathf.Max(10f, PhoneArea.W - safe.xMax + 8f) - btnSize;
+            return new Rect(actX, btnY, btnSize, btnSize);
+        }
+
+        // The page's DEAL HitPad. A Down only arms it. The Up deals.
+        public void PokerPageDealHit()
+        {
+            float s = DeviceFit.Ui();
+            var safe = PhoneArea.Safe;
+            if (safe.width < 2f || safe.height < 2f)
+                safe = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
+            var actR = PokerDealButtonRect();
+            float clusterL = Mathf.Max(12f, safe.xMin + 10f);
+            var betR = new Rect(clusterL, actR.y, Mathf.Max(80f, actR.x - 10f * s - clusterL), actR.height);
+            TakePokerDealPress(betR, actR, s);
+        }
+
+        bool TakePokerDealPress(Rect betR, Rect actR, float s)
+        {
+            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f || _fivesOpen || _fivesAnim > 0.35f;
+            if (GuiPaint()) TickPokerWin();
+            bool winFlying = PokerWinFlying();
+            bool busy = PokerMotionBusy() || _pokerStamp || payBlocked || winFlying;
+            // A settled Drawn hand is not a deal yet (CanDeal is false). Settle it
+            // back to Idle once nothing is playing and the back lesson is not holding
+            // the result, so DEAL appears only when a deal can actually start.
+            // The result cards stay face-up until the next deal's own motion.
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && !busy && !PokerBackGateLive())
+                BirdPoker.Settle();
+            if (GuiPaint()) TickPokerDash(s);
+            TickPokerStamp();
+            if (winFlying && !_pokerStamp && !payBlocked) SkipPokerWinOnTap();
+            string act = PokerActLabel();
+            // Between hands (idle or showing a result) the bet steers the next DEAL.
+            bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
+            if (steppers) BirdPoker.SyncBet();
+            // Always paint the bet bar and the win banner. The floral control
+            // itself stays out until ActLabel has a word (DEAL or DRAW).
+            if (!DrawPokerDash(betR, actR, s, busy, steppers, act)) return false;
+            OnPokerDealPressed();
+            return true;
+        }
 
         bool DrawPokerDash(Rect betR, Rect actR, float s, bool busy, bool steppers, string act)
         {
