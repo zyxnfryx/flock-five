@@ -830,7 +830,15 @@ namespace FlockFive
             bool birdHit = HitHomeFirst(r, out _);
             bool plateHit = plate.width > 2f && HitHomeFirst(plate, out _);
             if (!birdHit && !plateHit) return;
+            NoteAdoptLook();
+        }
+
+        // The look tap. Opens the closer look once. A second tap does not settle the bird.
+        void NoteAdoptLook()
+        {
+            if (!_adoptLive || _avatarRename) return;
             int i = _adoptPick;
+            if (i < 0 || i > 4) return;
             _adoptHop[i] = 1f;
             Sfx.Chirp(_adoptCol);
             OpenAvatarRename();

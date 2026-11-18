@@ -3952,9 +3952,12 @@ namespace FlockFive
         int _glovePressId = -1;
         // Down swallowed by the resume gate. Its Up must not hop after the window.
         int _gloveSwallowedId = int.MinValue;
-        // The finger that went down while the resume window was open. Its Up never
-        // restarts or retries, even after the window has closed. A later Down clears it.
-        int _resumeOriginId = int.MinValue;
+        // Fingers that went down while the resume window was open. Each id is its own
+        // stamp, so a second finger cannot erase the first. A lift drops that finger.
+        readonly System.Collections.Generic.HashSet<int> _resumeOriginIds = new System.Collections.Generic.HashSet<int>();
+        // The Up now in this OnGUI still belongs to one of those fingers. ActRestart
+        // reads it after the id has been lifted, then the pass clears it.
+        bool _resumeOriginRelease;
         // 0 began on the glove. 1 Home, 2 Restart, 3 gear.
         int _gloveSwallowHud;
         // The frame a swallowed touch was canceled, and that touch's id.
@@ -4019,14 +4022,40 @@ namespace FlockFive
                 && GloveFingerMatches(_gloveSwallowedId, pointerId);
         }
 
+        static int ResumeFinger(int pointerId) => pointerId == int.MinValue ? -1 : pointerId;
+
+        void RememberResumeOrigin(int pointerId)
+        {
+            int id = ResumeFinger(pointerId);
+            if (GateNow < _resumeInputUntil) _resumeOriginIds.Add(id);
+            else _resumeOriginIds.Remove(id);
+        }
+
+        // Drop this finger. A mouse -1 up is the lift of the touch that went down,
+        // so that touch stamp cannot keep blocking later mouse clicks.
+        void LiftResumeOrigin(int pointerId)
+        {
+            int id = ResumeFinger(pointerId);
+            if (id >= 0)
+            {
+                _resumeOriginIds.Remove(id);
+                return;
+            }
+            _resumeOriginIds.Remove(-1);
+            _resumeOriginIds.RemoveWhere(n => n >= 0);
+        }
+
         // True for the Up of a press that started inside the resume window.
         // A mouse -1 release is that same contact when the Down was a touch.
         bool ResumeOriginBlocks(int pointerId)
         {
-            if (_resumeOriginId == int.MinValue) return false;
-            if (pointerId == int.MinValue) pointerId = -1;
-            if (GloveFingerMatches(_resumeOriginId, pointerId)) return true;
-            return pointerId == -1 && _resumeOriginId >= 0;
+            if (_resumeOriginRelease) return true;
+            int id = ResumeFinger(pointerId);
+            if (_resumeOriginIds.Contains(id)) return true;
+            if (id != -1) return false;
+            foreach (int stamped in _resumeOriginIds)
+                if (stamped >= 0) return true;
+            return false;
         }
 
         bool CancelBlocksHop(int pointerId)
@@ -4203,12 +4232,20 @@ namespace FlockFive
             int resumeId = pointerId;
             if (releaseEdge && pointerId == -1 && _glovePressLatched && _glovePressId >= 0)
                 resumeId = _glovePressId;
-            // Remember a Down that starts inside the window. A fresh Down after it clears.
-            // The synthesized mouse Down beside a touch is not a new press.
+            // Remember a Down that starts inside the window, per finger. A fresh Down
+            // of that finger drops only its own stamp. The synthesized mouse Down
+            // beside a touch is not a new press.
+            bool resumeOriginUp = false;
             if (!releaseEdge && !(pointerId < 0 && _glovePressLatched && _glovePressId >= 0))
             {
-                int origin = pointerId == int.MinValue ? -1 : pointerId;
-                _resumeOriginId = GateNow < _resumeInputUntil ? origin : int.MinValue;
+                RememberResumeOrigin(pointerId);
+                if (!(GateNow < _resumeInputUntil)) _resumeOriginRelease = false;
+            }
+            else if (releaseEdge)
+            {
+                resumeOriginUp = ResumeOriginBlocks(pointerId);
+                if (resumeOriginUp) _resumeOriginRelease = true;
+                LiftResumeOrigin(pointerId);
             }
             if (ResumeHolds(resumeId))
             {
@@ -4242,7 +4279,7 @@ namespace FlockFive
             // Press origin before any yield. A Down inside the resume window must
             // not restart or retry on its Up, including after the window closes.
             // Home and the gear stay allowed.
-            bool resumePress = releaseEdge && (SwallowedUp(pointerId) || ResumeOriginBlocks(pointerId));
+            bool resumePress = releaseEdge && (SwallowedUp(pointerId) || resumeOriginUp);
             if (resumePress && hud != 1 && hud != 3 && (hud == 2 || SwallowedUp(pointerId)))
             {
                 if (SwallowedUp(pointerId)) ClearSwallowedGlove();
@@ -7840,8 +7877,11 @@ namespace FlockFive
         {
             // Time window, a glove-owned press, or a press that started in the window.
             // Retry uses this same entry, so it keeps the same rule.
-            if (ResumeSwallowsRestart() || GloveOwnsHudPress() || ResumeOriginBlocks(_gloveEdgeId))
+            if (ResumeSwallowsRestart() || GloveOwnsHudPress() || _resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId))
+            {
+                _resumeOriginRelease = false;
                 return true;
+            }
             _tapWho = "restart";
             Restart();
             return true;
@@ -8004,6 +8044,8 @@ namespace FlockFive
         {
             TakeGuiPointer();
             PaintAfterPointer();
+            // The resume-origin Up has had its pass, including Retry's ActRestart.
+            _resumeOriginRelease = false;
         }
 
         // Pointer edges only. No GUI draw, so an editor test can call this
@@ -15290,6 +15332,35 @@ namespace FlockFive
             };
         }
 
+        // The back medal's own action. The lesson ends here, after the table is left.
+        void LeavePokerFromBack()
+        {
+            if (_home != HomeFace.Poker) return;
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn || _pokerShowPay)
+                MarkPokerBackDone();
+            BirdPoker.ResetRound();
+            ClearPokerHeldPay();
+            _pokerMotion = PokerMotion.None;
+            _pokerFan = false;
+            _pokerChained = false;
+            _pokerShowPay = false;
+            _pokerWinT = -1f;
+            _pokerDash = 0f;
+            _pokerStamp = false;
+            _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
+            _pokerPayAnim = 0f;
+            _pokerKeepHint = false;
+            _pokerDealHint = false;
+            _pokerDealAimOk = false;
+            _gloveVis = false;
+            _gloveReady = false;
+            _pokerPageOn = false;
+            if (_pokerPageStep > 0) _pokerPageStep = 0;
+            _pokerHover = -1;
+            _home = HomeFace.Splash;
+        }
+
         void DrawPokerPage()
         {
             float s = DeviceFit.Ui();
@@ -15307,32 +15378,7 @@ namespace FlockFive
             bool betCoach = PokerBetCoachOpen(_pokerPageOn || _pokerDealHint, BirdPoker.PhaseNow == BirdPoker.Phase.Idle, !PokerMotionBusy());
             if (backFire && !PokerBackAccepts(betCoach, PokerHandHoldsBack(BirdPoker.PhaseNow), PokerLessonHoldsBack()))
                 backFire = false;
-            if (backFire)
-            {
-                if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn || _pokerShowPay)
-                    MarkPokerBackDone();
-                BirdPoker.ResetRound();
-                ClearPokerHeldPay();
-                _pokerMotion = PokerMotion.None;
-                _pokerFan = false;
-                _pokerChained = false;
-                _pokerShowPay = false;
-                _pokerWinT = -1f;
-                _pokerDash = 0f;
-                _pokerStamp = false;
-                _pokerPayOpen = false;
-            _fivesOpen = false; _fivesAnim = 0f;
-                _pokerPayAnim = 0f;
-                _pokerKeepHint = false;
-                _pokerDealHint = false;
-                _pokerDealAimOk = false;
-                _gloveVis = false;
-                _gloveReady = false;
-                _pokerPageOn = false;
-                if (_pokerPageStep > 0) _pokerPageStep = 0;
-                _pokerHover = -1;
-                _home = HomeFace.Splash;
-            }
+            if (backFire) LeavePokerFromBack();
             DrawPokerPurse(chrome, s);
 
             float logoTop = chrome.Title.y;
@@ -18888,6 +18934,16 @@ namespace FlockFive
             CueLine(AlbumUpgradeLine);
         }
 
+        // The upgrade button. The lesson ends only after the upgrade lands.
+        bool ApplyBeeUpgrade(int slot)
+        {
+            if (!Hive.TryUpgrade(slot)) return false;
+            Sfx.CardBump();
+            Haptics.Play(Haptics.Tier.Light);
+            if (_upgradeTutorOn) FinishUpgradeTutor();
+            return true;
+        }
+
         void FinishUpgradeTutor()
         {
             bool was = _upgradeTutorOn;
@@ -19846,13 +19902,7 @@ namespace FlockFive
             // and nothing plays.
             if (hit && !maxxed)
             {
-                if (Hive.TryUpgrade(slot))
-                {
-                    Sfx.CardBump();
-                    Haptics.Play(Haptics.Tier.Light);
-                    if (_upgradeTutorOn) FinishUpgradeTutor();
-                }
-                else
+                if (!ApplyBeeUpgrade(slot))
                 {
                     Sfx.Deny();
                     // Retap restarts the shake + message; never stacks.
@@ -21333,28 +21383,6 @@ namespace FlockFive
                 || _albumTutorOn || _adoptLive || PokerBackGateLive();
         }
 
-        // The glove let go of the control. The lesson's own finish runs.
-        void AdvanceYieldedLesson()
-        {
-            if (_dailyOpen && _dailyGloveThroughTap)
-            {
-                FinishClaimGloveTap();
-                return;
-            }
-            if (_adoptLive && _adoptStep == AdoptStep.Look)
-            {
-                BeginSettle();
-                return;
-            }
-            if (_pokerDealHint)
-            {
-                BeginPokerDeal();
-                return;
-            }
-            if (_upgradeTutorOn)
-                FinishUpgradeTutor();
-        }
-
         // True when this pointer must reach the control under the glove.
         // A release outside the drawn hand is not swallowed. X closes here.
         bool CoachControlYields(Vector2 windowGui, bool releaseEdge)
@@ -21395,11 +21423,10 @@ namespace FlockFive
                 if (releaseEdge) ActRestart();
                 return true;
             }
+            // The glove only steps aside. Claim, Deal, Upgrade, adopt, and the rails
+            // run their own handlers, and those handlers finish the lesson.
             if (_gloveTapRectOn && _gloveTapRect.Contains(windowGui))
-            {
-                if (releaseEdge) AdvanceYieldedLesson();
                 return true;
-            }
             if (!releaseEdge) return false;
             var drawn = OnScreenGlove();
             bool onHand = _gloveVis && drawn.width > 2f && GloveWindowHit(windowGui, drawn, PhoneArea.OffX);
@@ -21430,6 +21457,8 @@ namespace FlockFive
         void StartWatchGift()
         {
             if (_watchGiftLive) return;
+            _watchGiftLive = true;
+            _watchStarts++;
             StartCoroutine(WatchGift());
         }
 

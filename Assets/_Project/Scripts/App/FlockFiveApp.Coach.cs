@@ -7325,6 +7325,7 @@ namespace FlockFive
 
         // True while the WatchGift coroutine (the ad stage behind the Watch lesson) is alive.
         bool _watchGiftLive;
+        int _watchStarts;
 
         // THE interruption check, shared by every tutorial. A lesson that is backgrounded,
         // closed, or cut off half-way can leave a flag, a pause, an ad stage or a tap gate

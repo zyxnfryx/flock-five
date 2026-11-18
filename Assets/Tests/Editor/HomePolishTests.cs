@@ -4128,6 +4128,9 @@ namespace FlockFive.Editor
                 + " tip " + now + " line \"" + line + "\"";
         }
 
+        // EditorPointerInject drives these presses. The cases are inspect-only:
+        // edit mode has no touch screen, so this is the real Down then Up the
+        // game reads, not a device recording.
         static void PressHud(FlockFiveApp app, System.Type t, Vector2 play, int id, bool down)
         {
             FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
@@ -4210,6 +4213,28 @@ namespace FlockFive.Editor
                 try { Check("resume-restart-fresh-press", fresh, "restarted " + fresh); }
                 catch (System.Exception hopEx) { Check("resume-restart-fresh-press", false, ThrowText(hopEx)); }
 
+                ClearRestart(app, t, flags);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                t.GetField("_freezeOffer", flags).SetValue(app, true);
+                var neutral = new Vector2(play.x, 80f);
+                PressHud(app, t, neutral, 13, true);
+                SetResumeUntil(AdPause.Unscaled - 1f);
+                PressHud(app, t, neutral, -1, false);
+                Method(t, "ActRestart").Invoke(app, null);
+                bool retryQuiet = !RestartBegan(app, t, flags);
+                try { Check("resume-freeze-retry-does-not-restart", retryQuiet, "restarted " + !retryQuiet); }
+                catch (System.Exception hopEx) { Check("resume-freeze-retry-does-not-restart", false, ThrowText(hopEx)); }
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+
+                ClearRestart(app, t, flags);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                PressHud(app, t, play, 14, true);
+                SetResumeUntil(AdPause.Unscaled - 1f);
+                PressHud(app, t, play, -1, false);
+                bool pairQuiet = !RestartBegan(app, t, flags);
+                try { Check("resume-touch-down-mouse-up", pairQuiet, "restarted " + !pairQuiet); }
+                catch (System.Exception hopEx) { Check("resume-touch-down-mouse-up", false, ThrowText(hopEx)); }
+
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 t.GetField("_adHand", flags).SetValue(app, false);
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 0));
@@ -4252,6 +4277,10 @@ namespace FlockFive.Editor
         {
             var go = new GameObject("yield-advances");
             float keep = ResumeUntil();
+            int hands = UnityEngine.PlayerPrefs.GetInt("flockfive.ads.pokerhands", 0);
+            string claimStamp = UnityEngine.PlayerPrefs.GetString("flockfive.daily.last24", "");
+            int adopted = UnityEngine.PlayerPrefs.GetInt("flockfive.avatar.adopted", 0);
+            int backPref = UnityEngine.PlayerPrefs.GetInt("flockfive.coach.pokerback", 0);
             try
             {
                 SetResumeUntil(-1f);
@@ -4264,48 +4293,159 @@ namespace FlockFive.Editor
                 float w = PhoneArea.W > 2f ? PhoneArea.W : 400f;
                 var play = new Vector2(w * 0.5f, 80f);
                 var window = new Vector2(play.x + PhoneArea.OffX, h - play.y);
-                var spot = new Rect(window.x - 32f, window.y - 32f, 64f, 64f);
-                t.GetField("_gloveTapRect", flags).SetValue(app, spot);
-                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
-                t.GetField("_gloveVis", flags).SetValue(app, true);
+                void Arm()
+                {
+                    t.GetField("_splash", flags).SetValue(app, false);
+                    t.GetField("_gloveTapRect", flags).SetValue(app, new Rect(window.x - 36f, window.y - 36f, 72f, 72f));
+                    t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                    t.GetField("_gloveVis", flags).SetValue(app, true);
+                }
                 void Release()
                 {
+                    Arm();
                     PressHud(app, t, play, 3, true);
                     PressHud(app, t, play, 3, false);
                 }
-                t.GetField("_dailyOpen", flags).SetValue(app, true);
-                t.GetField("_dailyIntro", flags).SetValue(app, true);
-                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
-                t.GetField("_dailyGloveThroughTap", flags).SetValue(app, true);
-                Release();
-                bool claim = !(bool)t.GetField("_dailyIntroLive", flags).GetValue(app);
-                try { Check("yield-advances-daily-claim", claim, "live " + t.GetField("_dailyIntroLive", flags).GetValue(app)); }
-                catch (System.Exception hopEx) { Check("yield-advances-daily-claim", false, ThrowText(hopEx)); }
 
+                UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", 0);
+                BirdPoker.ResetRound();
+                BirdPoker.Boot();
+                if (Purse.Coins < 500) Purse.Credit(500 - Purse.Coins);
+                BirdPoker.SyncBet();
+                int before = Purse.Coins;
+                int bet = BirdPoker.Bet;
+                t.GetField("_pokerDealHint", flags).SetValue(app, true);
+                t.GetField("_pokerMotion", flags).SetValue(app, System.Enum.ToObject(t.GetField("_pokerMotion", flags).FieldType, 0));
+                Release();
+                bool held = BirdPoker.PhaseNow == BirdPoker.Phase.Idle && Purse.Coins == before;
+                Method(t, "OnPokerDealPressed").Invoke(app, null);
+                bool dealt = held && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt && Purse.Coins == before - bet;
+                try { Check("yield-deal-deals-once", dealt,
+                    "phase " + BirdPoker.PhaseNow + " coins " + Purse.Coins + " before " + before + " bet " + bet); }
+                catch (System.Exception hopEx) { Check("yield-deal-deals-once", false, ThrowText(hopEx)); }
+                t.GetField("_pokerDealHint", flags).SetValue(app, false);
+
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.daily.last24");
+                DailyBonus.TestRelease();
+                DailyBonus.Boot();
+                t.GetField("_dailyOpen", flags).SetValue(app, true);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                Release();
+                int quiet = DailyBonus.SpinCoins;
+                Method(t, "StartDailySpin").Invoke(app, null);
+                int once = DailyBonus.SpinCoins;
+                Method(t, "StartDailySpin").Invoke(app, null);
+                bool claim = quiet == 0 && once > 0 && DailyBonus.SpinCoins == once;
+                try { Check("yield-claim-grants-once", claim, "quiet " + quiet + " once " + once + " again " + DailyBonus.SpinCoins); }
+                catch (System.Exception hopEx) { Check("yield-claim-grants-once", false, ThrowText(hopEx)); }
                 t.GetField("_dailyOpen", flags).SetValue(app, false);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, false);
+
+                UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.adopted", 1);
                 t.GetField("_adoptLive", flags).SetValue(app, true);
+                t.GetField("_adoptPick", flags).SetValue(app, 1);
                 var step = t.GetField("_adoptStep", flags);
                 step.SetValue(app, System.Enum.ToObject(step.FieldType, 2));
+                t.GetField("_avatarRename", flags).SetValue(app, false);
                 Release();
-                bool adopt = step.GetValue(app).ToString() == "Settle";
-                try { Check("yield-advances-adopt", adopt, "step " + step.GetValue(app)); }
-                catch (System.Exception hopEx) { Check("yield-advances-adopt", false, ThrowText(hopEx)); }
-
+                bool stillLook = step.GetValue(app).ToString() == "Look" && !(bool)t.GetField("_avatarRename", flags).GetValue(app);
+                Method(t, "NoteAdoptLook").Invoke(app, null);
+                bool looked = stillLook && (bool)t.GetField("_avatarRename", flags).GetValue(app) && step.GetValue(app).ToString() == "Look";
+                Method(t, "NoteAdoptLook").Invoke(app, null);
+                looked = looked && (bool)t.GetField("_avatarRename", flags).GetValue(app) && step.GetValue(app).ToString() == "Look";
+                try { Check("yield-adopt-look-once", looked, "step " + step.GetValue(app) + " rename " + t.GetField("_avatarRename", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("yield-adopt-look-once", false, ThrowText(hopEx)); }
                 t.GetField("_adoptLive", flags).SetValue(app, false);
-                t.GetField("_pokerDealHint", flags).SetValue(app, true);
-                Release();
-                bool deal = !(bool)t.GetField("_pokerDealHint", flags).GetValue(app);
-                try { Check("yield-advances-deal", deal, "hint " + t.GetField("_pokerDealHint", flags).GetValue(app)); }
-                catch (System.Exception hopEx) { Check("yield-advances-deal", false, ThrowText(hopEx)); }
 
+                if (!BadgerCopy.CoachDone()) BadgerCopy.MarkCoach();
+                BadgerSchedule.Enabled = true;
+                if (Purse.Coins < Hive.UpgradeCost) Purse.Credit(Hive.UpgradeCost - Purse.Coins + 50);
+                int slot = -1;
+                for (int i = 0; i < Hive.AlbumSlots; i++)
+                    if (Hive.CanUpgrade(i)) { slot = i; break; }
+                int level = slot >= 0 ? Hive.UpgradeOfSlot(slot) : -1;
                 t.GetField("_upgradeTutorOn", flags).SetValue(app, true);
                 Release();
-                bool up = !(bool)t.GetField("_upgradeTutorOn", flags).GetValue(app);
-                try { Check("yield-advances-upgrade", up, "on " + t.GetField("_upgradeTutorOn", flags).GetValue(app)); }
-                catch (System.Exception hopEx) { Check("yield-advances-upgrade", false, ThrowText(hopEx)); }
+                bool untouched = slot >= 0 && Hive.UpgradeOfSlot(slot) == level;
+                if (slot >= 0) Method(t, "ApplyBeeUpgrade", typeof(int)).Invoke(app, new object[] { slot });
+                bool upgraded = untouched && Hive.UpgradeOfSlot(slot) == level + 1
+                    && !(bool)t.GetField("_upgradeTutorOn", flags).GetValue(app);
+                try { Check("yield-upgrade-applies-once", upgraded, "slot " + slot + " level " + (slot >= 0 ? Hive.UpgradeOfSlot(slot) : -1) + " was " + level); }
+                catch (System.Exception hopEx) { Check("yield-upgrade-applies-once", false, ThrowText(hopEx)); }
+
+                t.GetField("_adHand", flags).SetValue(app, true);
+                var gift = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(gift, 1));
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                object[] placed = { DeviceFit.Ui(), default(Rect), default(Rect) };
+                Method(t, "GiftCardPlaced", typeof(float), typeof(Rect).MakeByRefType(), typeof(Rect).MakeByRefType()).Invoke(app, placed);
+                var flower = (Rect)placed[2];
+                var watch = (Rect)t.GetMethod("FlowerHit", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { flower, DeviceFit.Ui() });
+                var watchPlay = new Vector2(watch.center.x - PhoneArea.OffX, h - watch.center.y);
+                PressHud(app, t, watchPlay, 4, true);
+                PressHud(app, t, watchPlay, 4, false);
+                PressHud(app, t, watchPlay, 4, true);
+                PressHud(app, t, watchPlay, 4, false);
+                int starts = (int)t.GetField("_watchStarts", flags).GetValue(app);
+                try { Check("yield-watch-starts-once", starts == 1, "starts " + starts); }
+                catch (System.Exception hopEx) { Check("yield-watch-starts-once", false, ThrowText(hopEx)); }
+                t.GetField("_adHand", flags).SetValue(app, false);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(gift, 0));
+
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                t.GetField("_dailyOpen", flags).SetValue(app, false);
+                Release();
+                bool shut = !(bool)t.GetField("_dailyOpen", flags).GetValue(app);
+                var homeFace = t.GetField("_home", flags);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                t.GetField("_splash", flags).SetValue(app, true);
+                Method(t, "OpenDailyCard").Invoke(app, null);
+                bool opened = shut && (bool)t.GetField("_dailyOpen", flags).GetValue(app);
+                float pop = (float)t.GetField("_dailyPopAt", flags).GetValue(app);
+                Method(t, "OpenDailyCard").Invoke(app, null);
+                bool rail = opened && (float)t.GetField("_dailyPopAt", flags).GetValue(app) == pop;
+                try { Check("yield-daily-rail-opens-once", rail, "open " + t.GetField("_dailyOpen", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("yield-daily-rail-opens-once", false, ThrowText(hopEx)); }
+                t.GetField("_dailyOpen", flags).SetValue(app, false);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, false);
+                t.GetField("_splash", flags).SetValue(app, false);
+
+                t.GetField("_hiveIntroLive", flags).SetValue(app, true);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                Release();
+                bool notHive = homeFace.GetValue(app).ToString() != "Hive";
+                Method(t, "OpenHiveAlbum").Invoke(app, null);
+                bool hive = notHive && homeFace.GetValue(app).ToString() == "Hive";
+                Method(t, "OpenHiveAlbum").Invoke(app, null);
+                hive = hive && homeFace.GetValue(app).ToString() == "Hive";
+                try { Check("yield-hive-rail-opens-once", hive, "home " + homeFace.GetValue(app)); }
+                catch (System.Exception hopEx) { Check("yield-hive-rail-opens-once", false, ThrowText(hopEx)); }
+                t.GetField("_hiveIntroLive", flags).SetValue(app, false);
+
+                FlockFiveApp.EditorShotLive = false;
+                UnityEngine.PlayerPrefs.SetInt("flockfive.coach.pokerback", 0);
+                t.GetField("_pokerBackKnown", flags).SetValue(app, false);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 2));
+                t.GetField("_pokerShowPay", flags).SetValue(app, true);
+                t.GetField("_pokerPageOn", flags).SetValue(app, true);
+                Release();
+                bool stayed = homeFace.GetValue(app).ToString() == "Poker";
+                Method(t, "LeavePokerFromBack").Invoke(app, null);
+                bool left = stayed && homeFace.GetValue(app).ToString() == "Splash"
+                    && UnityEngine.PlayerPrefs.GetInt("flockfive.coach.pokerback", 0) == 1;
+                Method(t, "LeavePokerFromBack").Invoke(app, null);
+                left = left && homeFace.GetValue(app).ToString() == "Splash";
+                try { Check("yield-poker-back-leaves-once", left, "home " + homeFace.GetValue(app)); }
+                catch (System.Exception hopEx) { Check("yield-poker-back-leaves-once", false, ThrowText(hopEx)); }
             }
             finally
             {
+                UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", hands);
+                if (claimStamp.Length == 0) UnityEngine.PlayerPrefs.DeleteKey("flockfive.daily.last24");
+                else UnityEngine.PlayerPrefs.SetString("flockfive.daily.last24", claimStamp);
+                UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.adopted", adopted);
+                UnityEngine.PlayerPrefs.SetInt("flockfive.coach.pokerback", backPref);
+                DailyBonus.TestRelease();
                 FlockFiveApp.EditorPointerInject = default;
                 SetResumeUntil(keep);
                 GamePause.Reset();
