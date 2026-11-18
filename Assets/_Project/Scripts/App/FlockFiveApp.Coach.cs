@@ -979,7 +979,7 @@ namespace FlockFive
                 case LessonRestart.Stage.Leaf: _leafIntro = true; break;
                 case LessonRestart.Stage.HiveGarden: _hiveLevelLive = true; break;
                 case LessonRestart.Stage.HiveHome: _hiveIntroLive = true; break;
-                case LessonRestart.Stage.Gift: _cueGift = true; break;
+                case LessonRestart.Stage.Gift: _cueGift = stage == LessonRestart.Stage.Gift; break;
                 case LessonRestart.Stage.BadgerLesson: _bgLessonLive = true; break;
                 case LessonRestart.Stage.BadgerGuide: _bgCoachFight = true; break;
                 case LessonRestart.Stage.BadgerPower: _bgPowerGuideOn = true; break;

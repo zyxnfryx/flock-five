@@ -140,6 +140,7 @@ namespace FlockFive.Editor
             Gate("CheckExitGuards", () => CheckExitGuards(Check));
             Gate("CheckHomeAndPrivacy", () => CheckHomeAndPrivacy(Check));
             Gate("CheckRestartRecue", () => CheckRestartRecue(Check));
+            Gate("CheckRestartActRound", () => CheckRestartActRound(Check));
             Gate("CheckForcePause", () => CheckForcePause(Check));
             Gate("CheckHomeTouchGate", () => CheckHomeTouchGate(Check));
             Gate("CheckGloveRoute", () => CheckGloveRoute(Check));
@@ -2037,8 +2038,12 @@ namespace FlockFive.Editor
         static bool VerdictIs(object verdict, string act)
         {
             if (verdict == null) return false;
-            var kind = verdict.GetType().GetField("Kind", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
-            return kind != null && kind.GetValue(verdict).ToString() == act;
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance;
+            var verdictType = typeof(FlockFiveApp).GetNestedType("OffTargetVerdict", flags);
+            var kind = verdictType != null ? verdictType.GetField("Kind", flags) : null;
+            if (kind == null || kind.DeclaringType != verdict.GetType()) return false;
+            var value = kind.GetValue(verdict);
+            return value != null && value.ToString() == act;
         }
 
         static void ClearLocks(object app)
@@ -4002,6 +4007,106 @@ namespace FlockFive.Editor
             bool clear = now != null && now.ToString() == "None";
             return landed && glove && clear && line == "Tap a branch to pick up its top birds."
                 && line != RuleTips.KitLine && line != RuleTips.FeederLine;
+        }
+
+        static void CheckRestartActRound(System.Action<string, bool, string> Check)
+        {
+            const string doneKey = "flockfive.coach.done";
+            bool hadDone = PlayerPrefs.HasKey(doneKey);
+            int keepDone = PlayerPrefs.GetInt(doneKey, 0);
+            bool hadKit = PlayerPrefs.HasKey(RuleTips.KitKey);
+            int keepKit = PlayerPrefs.GetInt(RuleTips.KitKey, 0);
+            bool hadFeeder = PlayerPrefs.HasKey(RuleTips.FeederKey);
+            int keepFeeder = PlayerPrefs.GetInt(RuleTips.FeederKey, 0);
+            int keepStreak = Purse.Streak;
+            float keepResume = ResumeUntil();
+            var go = new GameObject("restart-act-round");
+            var limb = new GameObject("act-round-limb");
+            try
+            {
+                PlayerPrefs.SetInt(doneKey, 1);
+                PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                Purse.SetStreak(0);
+                GamePause.Reset();
+                SetResumeUntil(float.NegativeInfinity);
+                LevelData.Open(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                var seed = board.Clone();
+                var view = limb.AddComponent<BranchView>();
+                for (int s = 0; s < BranchState.Cap; s++)
+                {
+                    var seat = new GameObject("seat");
+                    seat.transform.SetParent(limb.transform, false);
+                    view.Seats[s] = seat.transform;
+                }
+                var birdGo = new GameObject("bird");
+                birdGo.transform.SetParent(limb.transform, false);
+                view.Birds[0] = birdGo.AddComponent<SpriteRenderer>();
+                var garden = new WorldBuilder.Garden();
+                garden.Branches = new BranchView[] { view };
+                garden.Cam = go.AddComponent<Camera>();
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_seed", flags).SetValue(app, seed);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_busy", flags).SetValue(app, false);
+                string crowns = "";
+                string nice = "";
+                try
+                {
+                    crowns = ActRound(app, t, flags, RuleTip.Kit, null);
+                    nice = ActRound(app, t, flags, RuleTip.Feeder, RuleTips.KitLine);
+                }
+                catch (System.Exception ex) { crowns = TapFault(ex); }
+                try { Check("restart-act-round-rearms-crowns-and-nice",
+                    crowns == null && nice == null, "crowns " + crowns + " nice " + nice); }
+                catch (System.Exception hopEx) { Check("restart-act-round-rearms-crowns-and-nice", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keepResume);
+                GamePause.Reset();
+                Purse.SetStreak(keepStreak);
+                if (hadDone) PlayerPrefs.SetInt(doneKey, keepDone);
+                else PlayerPrefs.DeleteKey(doneKey);
+                if (hadKit) PlayerPrefs.SetInt(RuleTips.KitKey, keepKit);
+                else PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                if (hadFeeder) PlayerPrefs.SetInt(RuleTips.FeederKey, keepFeeder);
+                else PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                UnityEngine.Object.DestroyImmediate(limb);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        // Real Restart: ActRestart starts SnapRound, the pump runs the parade,
+        // and CoachAdvance is the reseat after the birds are home.
+        static string ActRound(FlockFiveApp app, System.Type t, BindingFlags flags, RuleTip tip, string stale)
+        {
+            GamePause.Reset();
+            t.GetField("_splash", flags).SetValue(app, false);
+            t.GetField("_busy", flags).SetValue(app, false);
+            t.GetField("_restarting", flags).SetValue(app, false);
+            t.GetField("_coach", flags).SetValue(app, false);
+            var ask = t.GetField("_restartAsk", flags);
+            ask.SetValue(app, System.Enum.ToObject(ask.FieldType, 0));
+            Method(t, "ShowRuleTip", typeof(RuleTip)).Invoke(app, new object[] { tip });
+            if (stale != null) t.GetField("_cueLine", flags).SetValue(app, stale);
+            Method(t, "ActRestart").Invoke(app, null);
+            var snap = (System.Collections.IEnumerator)t.GetField("EditorSnapRound", flags).GetValue(app);
+            bool landed = false;
+            if (snap != null) PumpFrames(snap, 64, null, out landed);
+            Method(t, "CoachAdvance").Invoke(app, null);
+            string line = (string)t.GetField("_cueLine", flags).GetValue(app) ?? "";
+            string now = t.GetField("_ruleTip", flags).GetValue(app).ToString();
+            string want = tip == RuleTip.Kit ? "Kit" : "Feeder";
+            string step1 = tip == RuleTip.Kit ? RuleTips.KitLine : RuleTips.FeederLine;
+            bool staleGone = line.IndexOf("Crowns go with crowns") < 0 || tip == RuleTip.Kit;
+            if (landed && now == want && line == step1 && staleGone) return null;
+            return "landed " + landed + " tip " + now + " line \"" + line + "\"";
         }
 
         static void CheckCoachRestartPath(System.Action<string, bool, string> Check)
