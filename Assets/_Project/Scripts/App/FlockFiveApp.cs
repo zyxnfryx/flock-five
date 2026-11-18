@@ -3991,7 +3991,9 @@ namespace FlockFive
 
         void ForPointersDown(System.Action<int> note)
         {
+#if ENABLE_LEGACY_INPUT_MANAGER
             bool sawTouch = false;
+#endif
             var touch = UnityEngine.InputSystem.Touchscreen.current;
             if (touch != null)
             {
@@ -4001,42 +4003,44 @@ namespace FlockFive
                     var hit = touches[i];
                     if (hit == null || !hit.press.isPressed) continue;
                     note(hit.touchId.ReadValue());
+#if ENABLE_LEGACY_INPUT_MANAGER
                     sawTouch = true;
+#endif
                 }
             }
+#if ENABLE_LEGACY_INPUT_MANAGER
             bool sawMouse = Mouse.current != null && Mouse.current.leftButton.isPressed;
             if (sawMouse) note(-1);
-            // iOS often reports nothing pressed on the resume frame. The old
-            // input reads still see a finger that the Input System missed.
+            // Only when the old input backend is actually compiled in. This
+            // project is Input System only, so these reads are not called.
             if (!sawTouch || !sawMouse)
                 NoteLegacyPointersDown(note, !sawTouch, !sawMouse);
+#else
+            if (Mouse.current != null && Mouse.current.leftButton.isPressed)
+                note(-1);
+#endif
             // The latched glove press is that same held contact.
             if (_glovePressLatched) note(_glovePressId);
         }
 
+#if ENABLE_LEGACY_INPUT_MANAGER
         void NoteLegacyPointersDown(System.Action<int> note, bool touches, bool mouse)
         {
-            try
+            if (touches)
             {
-                if (touches)
+                var legacy = UnityEngine.Input.touches;
+                for (int i = 0; i < legacy.Length; i++)
                 {
-                    var legacy = UnityEngine.Input.touches;
-                    for (int i = 0; i < legacy.Length; i++)
-                    {
-                        var phase = legacy[i].phase;
-                        if (phase == UnityEngine.TouchPhase.Ended || phase == UnityEngine.TouchPhase.Canceled)
-                            continue;
-                        note(legacy[i].fingerId);
-                    }
+                    var phase = legacy[i].phase;
+                    if (phase == UnityEngine.TouchPhase.Ended || phase == UnityEngine.TouchPhase.Canceled)
+                        continue;
+                    note(legacy[i].fingerId);
                 }
-                if (mouse && UnityEngine.Input.GetMouseButton(0))
-                    note(-1);
             }
-            catch (System.InvalidOperationException)
-            {
-                // The Input System package is the only active backend.
-            }
+            if (mouse && UnityEngine.Input.GetMouseButton(0))
+                note(-1);
         }
+#endif
 
         void CapturePointersDownAtHide()
         {
