@@ -3991,6 +3991,7 @@ namespace FlockFive
 
         void ForPointersDown(System.Action<int> note)
         {
+            bool sawTouch = false;
             var touch = UnityEngine.InputSystem.Touchscreen.current;
             if (touch != null)
             {
@@ -4000,12 +4001,41 @@ namespace FlockFive
                     var hit = touches[i];
                     if (hit == null || !hit.press.isPressed) continue;
                     note(hit.touchId.ReadValue());
+                    sawTouch = true;
                 }
             }
-            if (Mouse.current != null && Mouse.current.leftButton.isPressed)
-                note(-1);
+            bool sawMouse = Mouse.current != null && Mouse.current.leftButton.isPressed;
+            if (sawMouse) note(-1);
+            // iOS often reports nothing pressed on the resume frame. The old
+            // input reads still see a finger that the Input System missed.
+            if (!sawTouch || !sawMouse)
+                NoteLegacyPointersDown(note, !sawTouch, !sawMouse);
             // The latched glove press is that same held contact.
             if (_glovePressLatched) note(_glovePressId);
+        }
+
+        void NoteLegacyPointersDown(System.Action<int> note, bool touches, bool mouse)
+        {
+            try
+            {
+                if (touches)
+                {
+                    var legacy = UnityEngine.Input.touches;
+                    for (int i = 0; i < legacy.Length; i++)
+                    {
+                        var phase = legacy[i].phase;
+                        if (phase == UnityEngine.TouchPhase.Ended || phase == UnityEngine.TouchPhase.Canceled)
+                            continue;
+                        note(legacy[i].fingerId);
+                    }
+                }
+                if (mouse && UnityEngine.Input.GetMouseButton(0))
+                    note(-1);
+            }
+            catch (System.InvalidOperationException)
+            {
+                // The Input System package is the only active backend.
+            }
         }
 
         void CapturePointersDownAtHide()
@@ -4015,9 +4045,12 @@ namespace FlockFive
         }
 
         // On resume, every pointer still down is a resume-origin press.
+        // The hide set is the finger iOS recorded and then stopped reporting.
         void StampHeldResumeOrigins()
         {
             ForPointersDown(id => _resumeOriginIds.Add(ResumeFinger(id)));
+            foreach (int id in _downAtHide)
+                _resumeOriginIds.Add(ResumeFinger(id));
         }
 
         bool ResumeHolds(int pointerId)

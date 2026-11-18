@@ -146,6 +146,7 @@ namespace FlockFive.Editor
             Gate("CheckInspectorGates", () => CheckInspectorGates(Check));
             Gate("CheckResumeYield", () => CheckResumeYield(Check));
             Gate("CheckResumeHeldFinger", () => CheckResumeHeldFinger(Check));
+            Gate("CheckResumeHideStamp", () => CheckResumeHideStamp(Check));
             Gate("CheckYieldAdvances", () => CheckYieldAdvances(Check));
             Gate("CheckDealPad", () => CheckDealPad(Check));
             Gate("CheckForcePause", () => CheckForcePause(Check));
@@ -4229,6 +4230,79 @@ namespace FlockFive.Editor
                 try { Check("resume-held-finger-home-and-gear", homeOk && gearOk,
                     "home " + homeOk + " gear " + gearOk); }
                 catch (System.Exception hopEx) { Check("resume-held-finger-home-and-gear", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void HideThenResume(FlockFiveApp app, System.Type t, BindingFlags flags, int id)
+        {
+            t.GetField("_glovePressLatched", flags).SetValue(app, false);
+            t.GetField("_glovePressId", flags).SetValue(app, -1);
+            try { Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { true }); }
+            catch (System.Exception) { }
+            Method(t, "NoteDownAtHide", typeof(int)).Invoke(app, new object[] { id });
+            t.GetField("_resumeNoteFrame", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, -1);
+            try { Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { false }); }
+            catch (System.Exception) { }
+            SetResumeUntil(AdPause.Unscaled - 1f);
+        }
+
+        static void CheckResumeHideStamp(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-hide");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var play = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                ClearRestart(app, t, flags);
+                HideThenResume(app, t, flags, 6);
+                bool unlatched = !(bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                t.GetField("_gloveEdgeId", flags).SetValue(app, 6);
+                Method(t, "ActRestart").Invoke(app, null);
+                bool retryQuiet = unlatched && !RestartBegan(app, t, flags);
+                try { Check("resume-hide-up-does-not-retry", retryQuiet, "restarted " + !retryQuiet); }
+                catch (System.Exception hopEx) { Check("resume-hide-up-does-not-retry", false, ThrowText(hopEx)); }
+                PressHud(app, t, play, -1, false);
+                bool quiet = !RestartBegan(app, t, flags);
+                try { Check("resume-hide-up-does-not-restart", quiet, "restarted " + !quiet); }
+                catch (System.Exception hopEx) { Check("resume-hide-up-does-not-restart", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, false);
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                t.GetField("_gloveTapRect", flags).SetValue(app, home);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                HideThenResume(app, t, flags, 9);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                PressHud(app, t, homePlay, 9, false);
+                bool homeOk = (bool)t.GetField("_splash", flags).GetValue(app);
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                t.GetField("_gloveTapRect", flags).SetValue(app, gear);
+                HideThenResume(app, t, flags, 10);
+                var gearPlay = new Vector2(gear.center.x, PhoneArea.H - gear.center.y);
+                PressHud(app, t, gearPlay, 10, false);
+                bool gearOk = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("resume-hide-home-and-gear", homeOk && gearOk, "home " + homeOk + " gear " + gearOk); }
+                catch (System.Exception hopEx) { Check("resume-hide-home-and-gear", false, ThrowText(hopEx)); }
             }
             finally
             {
