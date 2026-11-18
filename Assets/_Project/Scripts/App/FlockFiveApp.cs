@@ -4304,7 +4304,10 @@ namespace FlockFive
             bool resumeOriginUp = false;
             if (!releaseEdge && !(pointerId < 0 && _glovePressLatched && _glovePressId >= 0))
             {
-                // A new Down is not the glove hop from earlier in this frame.
+                // A real new Down is a new press, so a Home later in this same editor
+                // frame is not blocked by the hop that already landed. A release does
+                // not come through here, and neither does the synthesized mouse Down
+                // beside a touch: that one keeps the touch's same-frame ownership.
                 _gloveTookFrame = -1;
                 RememberResumeOrigin(pointerId);
                 if (!(GateNow < _resumeInputUntil)) _resumeOriginRelease = false;
@@ -4793,6 +4796,11 @@ namespace FlockFive
         IEnumerator DoMoveCore(int from, int to)
         {
             int gen = _motionGen;
+            if (_board == null || _garden.Branches == null
+                || from < 0 || to < 0
+                || from >= _garden.Branches.Length || to >= _garden.Branches.Length
+                || _garden.Branches[from] == null || _garden.Branches[to] == null)
+                yield break;
             _garden.Branches[from].SetReady(false);
             _sel = -1;
             if (Locked(from) || Locked(to) || !_board.CanMove(from, to, out int run))
@@ -4814,7 +4822,7 @@ namespace FlockFive
             if (gen != _motionGen) yield break;
             Unlock(from);
             Unlock(to);
-            if (_board.Ostrich != null && _board.Ostrich.Alive)
+            if (_board != null && _board.Ostrich != null && _board.Ostrich.Alive)
             {
                 // The views catch up to the hop, then the ostrich's pecks are played, not teleported.
                 // He waits until the move is fully resolved, then takes exactly one turn.
@@ -4906,29 +4914,39 @@ namespace FlockFive
         IEnumerator Hop(int from, int to, int run, int fromCount, int toCount, BirdColor col)
         {
             int gen = _motionGen;
-            var src = _garden.Branches[from];
-            var dst = _garden.Branches[to];
+            var src = _garden.Branches != null && from >= 0 && from < _garden.Branches.Length
+                ? _garden.Branches[from] : null;
+            var dst = _garden.Branches != null && to >= 0 && to < _garden.Branches.Length
+                ? _garden.Branches[to] : null;
+            if (src == null || dst == null || src.Birds == null) yield break;
             Sfx.FlockFlutter(run);
             var movers = new SpriteRenderer[run];
             var starts = new Vector3[run];
             var ends = new Vector3[run];
+            int flying = 0;
             for (int i = 0; i < run; i++)
             {
                 int oldSeat = fromCount - run + i;
                 int newSeat = toCount + i;
-                movers[i] = src.Birds[oldSeat];
-                var idle = movers[i].GetComponent<BirdIdle>();
+                if (oldSeat < 0 || oldSeat >= src.Birds.Length) continue;
+                var bird = src.Birds[oldSeat];
+                if (bird == null) continue;
+                movers[flying] = bird;
+                var idle = bird.GetComponent<BirdIdle>();
                 if (idle != null)
                 {
                     idle.Frozen = true;
                     idle.Flapping = true;
                     idle.Lift = 0f;
                 }
-                starts[i] = movers[i].transform.position;
-                ends[i] = dst.SeatWorld(newSeat) + dst.transform.TransformVector(new Vector3(0f, BranchView.RestLift, 0f));
-                movers[i].transform.SetParent(_garden.Root, true);
-                movers[i].sortingOrder = FlockSort.Lift;
+                starts[flying] = bird.transform.position;
+                ends[flying] = dst.SeatWorld(newSeat) + dst.transform.TransformVector(new Vector3(0f, BranchView.RestLift, 0f));
+                if (_garden.Root != null)
+                    bird.transform.SetParent(_garden.Root, true);
+                bird.sortingOrder = FlockSort.Lift;
+                flying++;
             }
+            run = flying;
             float t = 0f;
             const float dur = 0.48f;
             while (t < dur)
@@ -11762,6 +11780,15 @@ namespace FlockFive
             return e == null || e.type == EventType.Repaint;
         }
 
+        // A repaint that is actually inside OnGUI. A null event is the editor batch
+        // (no OnGUI), and a MouseDown parked on Event.current is not a license to
+        // touch GUI.skin or DrawTexture. Those throw outside a real OnGUI pass.
+        static bool GuiRepaint()
+        {
+            var e = Event.current;
+            return e != null && e.type == EventType.Repaint;
+        }
+
         // This OnGUI pass: a tiny home target (bird or name plate) owns the pointer.
         static bool _homeTapTaken;
 
@@ -11784,6 +11811,11 @@ namespace FlockFive
             }
             int id = GuiPadId(r);
             var e = Event.current;
+            if (e == null)
+            {
+                held = false;
+                return false;
+            }
             bool inside = r.Contains(e.mousePosition);
             bool fired = false;
             switch (e.GetTypeForControl(id))
@@ -17407,11 +17439,8 @@ namespace FlockFive
             float lift = _pokerDash * (betR.height + 48f * s);
             var bet = new Rect(betR.x, betR.y + lift, betR.width, betR.height);
             var actBox = actR;
-            if (GuiPaint())
-            {
-                DrawPokerBetBar(bet, s, busy, steppers);
-                DrawPokerWinBanner(betR, actR, s);
-            }
+            DrawPokerBetBar(bet, s, busy, steppers);
+            if (GuiRepaint()) DrawPokerWinBanner(betR, actR, s);
             if (string.IsNullOrEmpty(act) || PokerFirstHandResultHoldsBetBar()) return false; // the dealer button does not return
             bool fire = DrawFloralBtn(actBox, act, s, true);
             return fire;
@@ -18610,10 +18639,6 @@ namespace FlockFive
             _pokerMinusR = minus;
             _pokerPlusR = plus;
 
-            var led = PokerBold(ref _pokerLed, TextAnchor.MiddleCenter);
-            led.fontSize = FitFont(led, PokerBetText(), amount.width, amount.height, 8, type);
-            StampLight(amount, PokerBetText(), led, PokerLabelGold);
-
             bool live = steppers && !busy;
             if (DrawBetStepper(minus, "−", live && BirdPoker.CanNudge(-1)) && live)
             {
@@ -18625,11 +18650,16 @@ namespace FlockFive
                 if (BirdPoker.NudgeBet(1)) Sfx.BetUp();
                 else Sfx.Deny();
             }
+            if (!GuiRepaint()) return;
+            var led = PokerBold(ref _pokerLed, TextAnchor.MiddleCenter);
+            led.fontSize = FitFont(led, PokerBetText(), amount.width, amount.height, 8, type);
+            StampLight(amount, PokerBetText(), led, PokerLabelGold);
         }
 
         bool DrawBetStepper(Rect r, string glyph, bool on)
         {
             bool fire = HitPad(r, out bool held);
+            if (!GuiRepaint()) return fire;
             float sink = held && on ? 2f : 0f;
             // Keep the drop shadow inside the hit rect so the chip does not clip the DEAL disc or screen edge.
             float shadow = 2f;
@@ -18673,7 +18703,8 @@ namespace FlockFive
             var pressDisc = FlowerDisc(r, 0f);
             held = PushButton.Finger(held, GlovePresses(pressDisc));
             float sink = held ? r.height * 0.04f : 0f;
-            if (GuiPaint())
+            // Hit testing is done. Style, measuring, and DrawTexture stay on a real repaint.
+            if (!GuiRepaint()) return fire;
             {
                 var flower = SpriteCatalog.PlayFlower;
                 var tex = flower != null ? flower.texture : null;
@@ -21511,11 +21542,22 @@ namespace FlockFive
 
         // True when this pointer must reach the control under the glove.
         // A release outside the drawn hand is not swallowed. X closes here.
+        // A garden hop glove is not one of these controls: Home and Restart stay
+        // with the glove rules (same-frame, owned hop, other finger). A fresh
+        // press that did not start on the glove falls through so HitHud can open Home.
         bool CoachControlYields(Vector2 windowGui, bool releaseEdge)
         {
+            // The gift X is a small corner inside a larger Restart or gear hit.
+            // Its own center closes the card. Home and Restart still win at their centers.
+            if (GiftCloseExempt(windowGui))
+            {
+                if (releaseEdge) CloseGift();
+                return true;
+            }
+            bool gift = _adHand && _gift == GiftFace.Card;
+            bool button = ButtonCoachGlove();
+            if (!gift && !button) return false;
             int which = HudControl(windowGui);
-            // The real Home, gear, and Restart buttons win over the gift card's X
-            // when the point is on them. Home and the gear stay usable.
             if (which == 1)
             {
                 if (releaseEdge) ShowSplash();
@@ -21531,14 +21573,6 @@ namespace FlockFive
                 if (releaseEdge) ActRestart();
                 return true;
             }
-            if (GiftCloseExempt(windowGui))
-            {
-                if (releaseEdge) CloseGift();
-                return true;
-            }
-            bool gift = _adHand && _gift == GiftFace.Card;
-            bool button = ButtonCoachGlove();
-            if (!gift && !button) return false;
             if (gift)
             {
                 float s = DeviceFit.Ui();

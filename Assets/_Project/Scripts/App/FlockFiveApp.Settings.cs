@@ -656,17 +656,15 @@ namespace FlockFive
         // Same path as the LEVEL flower: badger leap, otherwise the gate sting and Load.
         bool PressLevelButton()
         {
-            if (StartupInputHeld) return false; // b112: nothing starts while the studio card / cover is up
-            // Play is live during the greet, the look, and Tap Daily. Leaving does
-            // not finish those steps or mark them done. Home brings back whatever
-            // is still ahead, in order, once each. Naming never reaches here.
+            if (StartupInputHeld) return false; // b112: cover holds input
             ParkHomeChainForPlay();
             ClearCaptionForWipe();
-            if (TakeBadgerFlower())
+            if (!(_chainLookOwed || _chainDailyOwed) && TakeBadgerFlower())
             {
                 if (!LevelCurtain.LoadStarted) LevelCurtain.Clear();
                 return true;
             }
+            if (_splash && LevelCurtain.LoadStarted) LevelCurtain.Clear();
             if (!LevelCurtain.Armed) LevelCurtain.Arm(AdPause.Unscaled);
             if (!LevelCurtain.LoadStarted)
             {

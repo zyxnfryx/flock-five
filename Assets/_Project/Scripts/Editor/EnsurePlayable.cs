@@ -23,13 +23,13 @@ namespace FlockFive.Editor
         static void CountSuiteLog(string condition, string stackTrace, LogType type)
         {
             if (string.IsNullOrEmpty(condition)) return;
-            if (condition.IndexOf(" THREW ", System.StringComparison.Ordinal) >= 0)
-                _suiteThrew++;
-            if (condition.IndexOf("] FAIL", System.StringComparison.Ordinal) >= 0
-                || condition.IndexOf(" FAIL  ", System.StringComparison.Ordinal) >= 0
-                || condition.IndexOf("HOME_POLISH_FAIL", System.StringComparison.Ordinal) >= 0
-                || condition.IndexOf("_FAIL", System.StringComparison.Ordinal) >= 0)
-                _suiteFail++;
+            // One line, one count. "] FAIL" is the printed failure. " THREW " is a
+            // thrown gate. A line that has both counts once each. Summary tokens
+            // such as HOME_POLISH_FAIL are not a second failure.
+            bool threw = condition.IndexOf(" THREW ", System.StringComparison.Ordinal) >= 0;
+            bool fail = condition.IndexOf("] FAIL", System.StringComparison.Ordinal) >= 0;
+            if (threw) _suiteThrew++;
+            if (fail) _suiteFail++;
         }
 
         static void FinishEditorSuites(bool printDone)
