@@ -4190,13 +4190,6 @@ namespace FlockFive
             int resumeId = pointerId;
             if (releaseEdge && pointerId == -1 && _glovePressLatched && _glovePressId >= 0)
                 resumeId = _glovePressId;
-            // A coach glove over a button yields. Outside the drawn hand, the
-            // release is never a glove tap. Close always runs.
-            if (CoachControlYields(windowGui, releaseEdge))
-            {
-                StampGlove("control", windowGui, onGlove, hud != 0, false);
-                return false;
-            }
             if (ResumeHolds(resumeId))
             {
                 if (!releaseEdge && hud != 0)
@@ -4207,18 +4200,31 @@ namespace FlockFive
                     StampGlove("resume-hud", windowGui, onGlove, true, false);
                     return false;
                 }
-                if (!releaseEdge && onGlove)
+                // Home and the gear stay usable in the resume window. Deliberate.
+                // Restart does not: its Up is swallowed here, before any yield.
+                bool homeOrGear = releaseEdge && (hud == 1 || hud == 3);
+                if (!homeOrGear)
                 {
-                    _gloveSwallowedId = pointerId;
-                    _gloveSwallowHud = 0;
+                    if (!releaseEdge && onGlove)
+                    {
+                        _gloveSwallowedId = pointerId;
+                        _gloveSwallowHud = 0;
+                    }
+                    else if (_glovePressLatched)
+                        _gloveSwallowedId = _glovePressId;
+                    bool held = _glovePressLatched;
+                    DropGlovePress();
+                    if (!held && !onGlove) return false;
+                    StampGlove("resume", windowGui, onGlove, hud != 0, false);
+                    return true;
                 }
-                else if (_glovePressLatched)
-                    _gloveSwallowedId = _glovePressId;
-                bool held = _glovePressLatched;
-                DropGlovePress();
-                if (!held && !onGlove) return false;
-                StampGlove("resume", windowGui, onGlove, hud != 0, false);
-                return true;
+            }
+            // After the resume swallow. A coach glove over a button yields.
+            // Outside the drawn hand, the release is never a glove tap.
+            if (CoachControlYields(windowGui, releaseEdge))
+            {
+                StampGlove("control", windowGui, onGlove, hud != 0, false);
+                return false;
             }
             if (releaseEdge && SwallowedUp(pointerId))
             {
@@ -21315,17 +21321,24 @@ namespace FlockFive
                     if (releaseEdge) StartWatchGift();
                     return true;
                 }
-                int which = HudControl(windowGui);
-                if (which == 1)
-                {
-                    if (releaseEdge) ShowSplash();
-                    return true;
-                }
-                if (which == 2)
-                {
-                    if (releaseEdge && !_restarting) Restart();
-                    return true;
-                }
+            }
+            int which = HudControl(windowGui);
+            // Home stays usable through the resume window. Deliberate.
+            // The gear does too. Restart does not: ActRestart still swallows it.
+            if (which == 1)
+            {
+                if (releaseEdge) ShowSplash();
+                return true;
+            }
+            if (which == 3)
+            {
+                if (releaseEdge) ApplySettingsHit(SettingsMotion.Hit.Gear);
+                return true;
+            }
+            if (which == 2)
+            {
+                if (releaseEdge) ActRestart();
+                return true;
             }
             if (_gloveTapRectOn && _gloveTapRect.Contains(windowGui))
                 return true;

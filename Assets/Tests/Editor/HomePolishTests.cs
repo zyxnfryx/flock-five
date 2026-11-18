@@ -144,6 +144,8 @@ namespace FlockFive.Editor
             Gate("CheckHudSameFrameHop", () => CheckHudSameFrameHop(Check));
             Gate("CheckAdHandOffer", () => CheckAdHandOffer(Check));
             Gate("CheckInspectorGates", () => CheckInspectorGates(Check));
+            Gate("CheckResumeYield", () => CheckResumeYield(Check));
+            Gate("CheckYieldAdvances", () => CheckYieldAdvances(Check));
             Gate("CheckForcePause", () => CheckForcePause(Check));
             Gate("CheckHomeTouchGate", () => CheckHomeTouchGate(Check));
             Gate("CheckGloveRoute", () => CheckGloveRoute(Check));
@@ -4124,6 +4126,126 @@ namespace FlockFive.Editor
             if (differed && landed && reseated && now == want && line == step1 && staleGone) return null;
             return "differed " + differed + " landed " + landed + " reseated " + reseated
                 + " tip " + now + " line \"" + line + "\"";
+        }
+
+        static void CheckResumeYield(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-yield");
+            float keep = ResumeUntil();
+            try
+            {
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_adHand", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var point = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                Method(t, "NoteDownAtHide", typeof(int)).Invoke(app, new object[] { 6 });
+                glove.Invoke(app, new object[] { point, false, 6 });
+                glove.Invoke(app, new object[] { point, true, 6 });
+                bool quiet = t.GetField("EditorSnapRound", flags).GetValue(app) == null
+                    && !(bool)t.GetField("_restarting", flags).GetValue(app);
+                try { Check("resume-window-restart-does-not-snap", quiet,
+                    "round " + (t.GetField("EditorSnapRound", flags).GetValue(app) != null)
+                    + " restarting " + t.GetField("_restarting", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("resume-window-restart-does-not-snap", false, ThrowText(hopEx)); }
+
+                t.GetField("_adHand", flags).SetValue(app, false);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 0));
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                t.GetField("_gloveTapRect", flags).SetValue(app, home);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                glove.Invoke(app, new object[] { new Vector2(home.center.x + PhoneArea.OffX, home.center.y), true, 8 });
+                bool homeOk = (bool)t.GetField("_splash", flags).GetValue(app);
+                var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                t.GetField("_gloveTapRect", flags).SetValue(app, gear);
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                glove.Invoke(app, new object[] { new Vector2(gear.center.x + PhoneArea.OffX, gear.center.y), true, 9 });
+                bool gearOk = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("resume-window-home-and-gear-work", homeOk && gearOk,
+                    "home " + homeOk + " gear " + gearOk); }
+                catch (System.Exception hopEx) { Check("resume-window-home-and-gear-work", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckYieldAdvances(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("yield-advances");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, true);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var spot = new Rect(120f, 240f, 64f, 64f);
+                bool Yield()
+                {
+                    t.GetField("_gloveTapRect", flags).SetValue(app, spot);
+                    t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                    t.GetField("_gloveVis", flags).SetValue(app, true);
+                    return !(bool)glove.Invoke(app, new object[] { spot.center, true, 3 });
+                }
+                t.GetField("_dailyOpen", flags).SetValue(app, true);
+                t.GetField("_dailyIntro", flags).SetValue(app, true);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                t.GetField("_dailyGloveThroughTap", flags).SetValue(app, true);
+                bool claimYield = Yield();
+                Method(t, "FinishClaimGloveTap").Invoke(app, null);
+                bool claim = claimYield && !(bool)t.GetField("_dailyIntroLive", flags).GetValue(app);
+                try { Check("yield-advances-daily-claim", claim, "yield " + claimYield); }
+                catch (System.Exception hopEx) { Check("yield-advances-daily-claim", false, ThrowText(hopEx)); }
+
+                t.GetField("_dailyOpen", flags).SetValue(app, false);
+                t.GetField("_adoptLive", flags).SetValue(app, true);
+                var step = t.GetField("_adoptStep", flags);
+                step.SetValue(app, System.Enum.ToObject(step.FieldType, 2));
+                bool adoptYield = Yield();
+                Method(t, "BeginSettle").Invoke(app, null);
+                bool adopt = adoptYield && step.GetValue(app).ToString() == "Settle";
+                try { Check("yield-advances-adopt", adopt, "yield " + adoptYield + " step " + step.GetValue(app)); }
+                catch (System.Exception hopEx) { Check("yield-advances-adopt", false, ThrowText(hopEx)); }
+
+                t.GetField("_adoptLive", flags).SetValue(app, false);
+                t.GetField("_pokerDealHint", flags).SetValue(app, true);
+                bool dealYield = Yield();
+                Method(t, "BeginPokerDeal").Invoke(app, null);
+                bool deal = dealYield && !(bool)t.GetField("_pokerDealHint", flags).GetValue(app);
+                try { Check("yield-advances-deal", deal, "yield " + dealYield); }
+                catch (System.Exception hopEx) { Check("yield-advances-deal", false, ThrowText(hopEx)); }
+
+                t.GetField("_upgradeTutorOn", flags).SetValue(app, true);
+                bool upYield = Yield();
+                Method(t, "FinishUpgradeTutor").Invoke(app, null);
+                bool up = upYield && !(bool)t.GetField("_upgradeTutorOn", flags).GetValue(app);
+                try { Check("yield-advances-upgrade", up, "yield " + upYield); }
+                catch (System.Exception hopEx) { Check("yield-advances-upgrade", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckInspectorGates(System.Action<string, bool, string> Check)
