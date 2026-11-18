@@ -657,6 +657,7 @@ namespace FlockFive
         bool PressLevelButton()
         {
             if (StartupInputHeld) return false; // b112: nothing starts while the studio card / cover is up
+            ClearCaptionForWipe();
             if (TakeBadgerFlower())
             {
                 if (!LevelCurtain.LoadStarted) LevelCurtain.Clear();
@@ -672,6 +673,19 @@ namespace FlockFive
                 LevelCurtain.Fire(AdPause.Unscaled);
             }
             return true;
+        }
+
+        // The wipe covers the splash. Drop the plate and the hand first.
+        void ClearCaptionForWipe()
+        {
+            _cueLine = null;
+            _cueSpoken = null;
+            _gloveVis = false;
+            _gloveTapRect = default;
+            _gloveTapRectOn = false;
+            _gloveTapHit = null;
+            _gloveTapFrame = -1;
+            DropGlovePress();
         }
 
         // Simulator hook. Absent the argument and the env var, this returns before it touches consent or the level.
@@ -1098,7 +1112,10 @@ namespace FlockFive
             if (_splash)
             {
                 HomeModals(out bool hard, out bool soft);
-                coach = hard || soft || HomeTutorLive() || TutorialGuideLive();
+                var step = HomePopupChain.Next(DailyReminder.PromptDue(), _dailyAskOpen,
+                    PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0, _welcomeOpen || _welcomeQueued, false);
+                bool earlier = step == HomePopupChain.Card.Reminder || step == HomePopupChain.Card.Welcome;
+                coach = hard || soft || earlier || HomeTutorLive() || TutorialGuideLive();
             }
             else
                 coach = TutorialGuideLive();

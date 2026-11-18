@@ -144,9 +144,18 @@ namespace FlockFive
                 return;
             }
 #endif
-            if (_splash && _home == HomeFace.Splash && !_dailyAskOpen
-                && PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0)
-                OfferWelcome();
+            if (_splash && _home == HomeFace.Splash)
+            {
+                var step = HomePopupChain.Next(DailyReminder.PromptDue(), _dailyAskOpen,
+                    PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0, _welcomeOpen || _welcomeQueued, false);
+                if (step == HomePopupChain.Card.Reminder && !_dailyAskOpen && GatePopup(PopupKind.Ask, false))
+                {
+                    _dailyAskOpen = true;
+                    _dailyAskAt = AdPause.Unscaled;
+                }
+                else if (step == HomePopupChain.Card.Welcome)
+                    OfferWelcome();
+            }
         }
 
         // ONE "idle after reward" gate. True only when no reward is in flight and none is
@@ -857,7 +866,7 @@ namespace FlockFive
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive) return;
 #endif
             if (!GatePopup(PopupKind.Welcome, false)) return;
-            if (RewardLessonHold() || AdoptHoldsQueue() || _dailyAskOpen)
+            if (DailyReminder.PromptDue() || RewardLessonHold() || AdoptHoldsQueue() || _dailyAskOpen)
             {
                 if (PlayerPrefs.GetInt(WelcomePendingKey, 0) == 0)
                 {

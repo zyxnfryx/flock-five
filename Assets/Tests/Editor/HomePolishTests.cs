@@ -143,6 +143,7 @@ namespace FlockFive.Editor
             Gate("CheckRestartActRound", () => CheckRestartActRound(Check));
             Gate("CheckHudSameFrameHop", () => CheckHudSameFrameHop(Check));
             Gate("CheckAdHandOffer", () => CheckAdHandOffer(Check));
+            Gate("CheckInspectorGates", () => CheckInspectorGates(Check));
             Gate("CheckForcePause", () => CheckForcePause(Check));
             Gate("CheckHomeTouchGate", () => CheckHomeTouchGate(Check));
             Gate("CheckGloveRoute", () => CheckGloveRoute(Check));
@@ -4123,6 +4124,116 @@ namespace FlockFive.Editor
             if (differed && landed && reseated && now == want && line == step1 && staleGone) return null;
             return "differed " + differed + " landed " + landed + " reseated " + reseated
                 + " tip " + now + " line \"" + line + "\"";
+        }
+
+        static void CheckInspectorGates(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("inspector-gates");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(
+                    t.GetField("_home", flags).FieldType, 0));
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var target = new Rect(100f, 200f, 80f, 80f);
+                t.GetField("_gloveTapRect", flags).SetValue(app, target);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                int taps = app.EditorHandleTaps;
+                bool onButton = !(bool)glove.Invoke(app, new object[] { target.center, true, 2 });
+                bool outside = !(bool)glove.Invoke(app, new object[] { new Vector2(8f, 8f), true, 2 });
+                try { Check("coach-glove-yields-its-button", onButton && app.EditorHandleTaps == taps,
+                    "yield " + onButton + " taps " + app.EditorHandleTaps); }
+                catch (System.Exception hopEx) { Check("coach-glove-yields-its-button", false, ThrowText(hopEx)); }
+                try { Check("coach-glove-outside-is-not-swallowed", outside,
+                    "outside " + outside); }
+                catch (System.Exception hopEx) { Check("coach-glove-outside-is-not-swallowed", false, ThrowText(hopEx)); }
+
+                t.GetField("_dailyIntroLive", flags).SetValue(app, false);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, false);
+                t.GetField("_adHand", flags).SetValue(app, true);
+                var gift = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(gift, 1));
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                float s = DeviceFit.Ui();
+                float top = (float)t.GetMethod("TopHud", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(float) }, null)
+                    .Invoke(null, new object[] { 0f });
+                var xBtn = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { s, top });
+                var x = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { xBtn });
+                glove.Invoke(app, new object[] { x.center, true, 2 });
+                bool closed = t.GetField("_gift", flags).GetValue(app).ToString() == "None";
+                try { Check("gift-x-closes-under-glove", closed, t.GetField("_gift", flags).GetValue(app).ToString()); }
+                catch (System.Exception hopEx) { Check("gift-x-closes-under-glove", false, ThrowText(hopEx)); }
+
+                t.GetField("_adHand", flags).SetValue(app, false);
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_avatarRename", flags).SetValue(app, true);
+                bool naming = !(bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { new Rect(10f, 10f, 40f, 40f) });
+                t.GetField("_avatarRename", flags).SetValue(app, false);
+                t.GetField("_hiveIntroLive", flags).SetValue(app, true);
+                bool caption = !(bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { new Rect(10f, 10f, 40f, 40f) });
+                t.GetField("_hiveIntroLive", flags).SetValue(app, false);
+                t.GetField("_welcomeOpen", flags).SetValue(app, true);
+                bool dialog = !(bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { new Rect(10f, 10f, 40f, 40f) });
+                try { Check("play-blocked-while-naming", naming, "naming " + naming); }
+                catch (System.Exception hopEx) { Check("play-blocked-while-naming", false, ThrowText(hopEx)); }
+                try { Check("play-blocked-while-coach-caption", caption, "caption " + caption); }
+                catch (System.Exception hopEx) { Check("play-blocked-while-coach-caption", false, ThrowText(hopEx)); }
+                try { Check("play-blocked-while-dialog", dialog, "dialog " + dialog); }
+                catch (System.Exception hopEx) { Check("play-blocked-while-dialog", false, ThrowText(hopEx)); }
+
+                t.GetField("_welcomeOpen", flags).SetValue(app, false);
+                t.GetField("_cueLine", flags).SetValue(app, "Tap Daily for\nyour bonus!");
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                Method(t, "PressLevelButton").Invoke(app, null);
+                bool cleared = t.GetField("_cueLine", flags).GetValue(app) == null
+                    && !(bool)t.GetField("_gloveVis", flags).GetValue(app)
+                    && !(bool)t.GetField("_gloveTapRectOn", flags).GetValue(app);
+                try { Check("caption-cleared-before-wipe", cleared, "line " + t.GetField("_cueLine", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("caption-cleared-before-wipe", false, ThrowText(hopEx)); }
+
+                string avatar = System.IO.File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Avatar.cs");
+                bool firstTap = avatar.Contains("bool doneFire = HitPad(done, out doneHeld);")
+                    && !avatar.Contains("doneFire = !arm && HitPad");
+                try { Check("naming-done-accepts-open-frame", firstTap, ""); }
+                catch (System.Exception hopEx) { Check("naming-done-accepts-open-frame", false, ThrowText(hopEx)); }
+
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                t.GetField("_gloveTapRect", flags).SetValue(app, target);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                Method(t, "CoachDone").Invoke(app, null);
+                bool gone = !(bool)t.GetField("_gloveTapRectOn", flags).GetValue(app)
+                    && !(bool)t.GetField("_gloveVis", flags).GetValue(app);
+                try { Check("lesson-end-clears-glove-rect", gone, "on " + t.GetField("_gloveTapRectOn", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("lesson-end-clears-glove-rect", false, ThrowText(hopEx)); }
+
+                bool order = HomePopupChain.Next(true, false, true, false, true) == HomePopupChain.Card.Reminder
+                    && HomePopupChain.Next(false, false, true, false, true) == HomePopupChain.Card.Welcome
+                    && HomePopupChain.Next(false, false, false, false, true) == HomePopupChain.Card.Att
+                    && HomePopupChain.Next(false, true, true, true, true) == HomePopupChain.Card.Reminder;
+                try { Check("home-popups-reminder-then-welcome-then-att", order, ""); }
+                catch (System.Exception hopEx) { Check("home-popups-reminder-then-welcome-then-att", false, ThrowText(hopEx)); }
+
+                bool sign = WorldBuilder.GiftSignIn < 1.08f && WorldBuilder.GiftSignUp > 0.48f
+                    && System.IO.File.ReadAllText("Assets/_Project/Scripts/App/WorldBuilder.cs")
+                        .Contains("new Vector3(-GiftSignIn * dir, GiftSignUp, 0f)");
+                try { Check("gift-sign-sits-on-the-limb", sign, WorldBuilder.GiftSignIn + "," + WorldBuilder.GiftSignUp); }
+                catch (System.Exception hopEx) { Check("gift-sign-sits-on-the-limb", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckAdHandOffer(System.Action<string, bool, string> Check)

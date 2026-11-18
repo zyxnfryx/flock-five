@@ -4190,11 +4190,11 @@ namespace FlockFive
             int resumeId = pointerId;
             if (releaseEdge && pointerId == -1 && _glovePressLatched && _glovePressId >= 0)
                 resumeId = _glovePressId;
-            // The bonus-lesson glove sits on Watch. Its release belongs to the
-            // control under the finger. A release outside the drawn hand is not a glove tap.
-            if (_adHand && _gift == GiftFace.Card && AdHandYieldsRelease(windowGui, releaseEdge))
+            // A coach glove over a button yields. Outside the drawn hand, the
+            // release is never a glove tap. Close always runs.
+            if (CoachControlYields(windowGui, releaseEdge))
             {
-                StampGlove("ad-hand", windowGui, onGlove, hud != 0, false);
+                StampGlove("control", windowGui, onGlove, hud != 0, false);
                 return false;
             }
             if (ResumeHolds(resumeId))
@@ -21282,33 +21282,53 @@ namespace FlockFive
             return tutorial ? AdFailAction.GrantBranch : AdFailAction.Close;
         }
 
-        // True when this pointer must reach a real control instead of the ad-hand glove.
-        // X closes here so a swallowed OnGUI pass cannot leave the offer up.
-        bool AdHandYieldsRelease(Vector2 windowGui, bool releaseEdge)
+        // Coach gloves that sit on a real control, not a garden branch.
+        // Audited: gift Watch and X, Home, Restart, Daily rail, Daily Claim,
+        // hive rail, poker rail, poker Deal, poker Back, album Upgrade, adopt bird.
+        bool ButtonCoachGlove()
+        {
+            if (_adHand && _gift == GiftFace.Card) return true;
+            if (!_gloveTapRectOn && !_gloveVis) return false;
+            return _splash || _dailyOpen || _dailyIntroLive || _hiveIntroLive || _hiveLevelLive
+                || _pokerIntroLive || _pokerDealHint || _pokerPageOn || _upgradeTutorOn
+                || _albumTutorOn || _adoptLive || PokerBackGateLive();
+        }
+
+        // True when this pointer must reach the control under the glove.
+        // A release outside the drawn hand is not swallowed. X closes here.
+        bool CoachControlYields(Vector2 windowGui, bool releaseEdge)
         {
             if (GiftCloseExempt(windowGui))
             {
                 if (releaseEdge) CloseGift();
                 return true;
             }
-            float s = DeviceFit.Ui();
-            GiftCardPlaced(s, out _, out var cta);
-            if (FlowerHit(cta, s).Contains(windowGui))
+            bool gift = _adHand && _gift == GiftFace.Card;
+            bool button = ButtonCoachGlove();
+            if (!gift && !button) return false;
+            if (gift)
             {
-                if (releaseEdge) StartWatchGift();
-                return true;
+                float s = DeviceFit.Ui();
+                GiftCardPlaced(s, out _, out var cta);
+                if (FlowerHit(cta, s).Contains(windowGui))
+                {
+                    if (releaseEdge) StartWatchGift();
+                    return true;
+                }
+                int which = HudControl(windowGui);
+                if (which == 1)
+                {
+                    if (releaseEdge) ShowSplash();
+                    return true;
+                }
+                if (which == 2)
+                {
+                    if (releaseEdge && !_restarting) Restart();
+                    return true;
+                }
             }
-            int which = HudControl(windowGui);
-            if (which == 1)
-            {
-                if (releaseEdge) ShowSplash();
+            if (_gloveTapRectOn && _gloveTapRect.Contains(windowGui))
                 return true;
-            }
-            if (which == 2)
-            {
-                if (releaseEdge && !_restarting) Restart();
-                return true;
-            }
             if (!releaseEdge) return false;
             var drawn = OnScreenGlove();
             bool onHand = _gloveVis && drawn.width > 2f && GloveWindowHit(windowGui, drawn, PhoneArea.OffX);

@@ -7111,7 +7111,7 @@ namespace FlockFive
                 return OffTargetVerdict.Ignore();
             // The bonus glove must not eat Watch, X, Home, or Restart, or a release
             // that missed the hand.
-            if (_adHand && _gift == GiftFace.Card && AdHandYieldsRelease(pos, type == EventType.MouseUp))
+            if (CoachControlYields(pos, type == EventType.MouseUp))
                 return OffTargetVerdict.Pass();
             // The name plate's chips, colors, and Done sit under this gate. A lesson
             // that eats every other press must leave the plate alone.
