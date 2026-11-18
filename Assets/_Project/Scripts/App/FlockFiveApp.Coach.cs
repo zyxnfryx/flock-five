@@ -550,6 +550,14 @@ namespace FlockFive
             }
             PlayerPrefs.Save();
             NoteLessonDismiss(CoachStep.CoachPlace);
+            // Step 2's glove rect must not keep eating releases after the lesson.
+            _gloveTapRect = default;
+            _gloveTapRectOn = false;
+            _gloveTapHit = null;
+            _gloveTapFrame = -1;
+            _gloveBody = default;
+            _gloveBodyFrame = -10;
+            _gloveVis = false;
         }
 
         // Build 89. Last hops, so a take-back is not counted as a real move.
@@ -7101,6 +7109,10 @@ namespace FlockFive
         {
             if (type != EventType.MouseDown && type != EventType.MouseUp && type != EventType.MouseDrag)
                 return OffTargetVerdict.Ignore();
+            // The bonus glove must not eat Watch, X, Home, or Restart, or a release
+            // that missed the hand.
+            if (_adHand && _gift == GiftFace.Card && AdHandYieldsRelease(pos, type == EventType.MouseUp))
+                return OffTargetVerdict.Pass();
             // The name plate's chips, colors, and Done sit under this gate. A lesson
             // that eats every other press must leave the plate alone.
             if (RenamePlateOwns(_avatarRename, _avatarRenameR, pos, PhoneArea.OffX))

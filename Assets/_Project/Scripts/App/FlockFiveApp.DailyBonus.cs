@@ -1041,13 +1041,9 @@ namespace FlockFive
         // still on the face (0.14 in from the cap's left edge).
         public const float DailyClaimGloveBeside = 0.36f;
 
-        // Fingertip seat while the Claim cue is up. Same height as the word,
-        // far enough left that the finger sits beside the label.
-        public static Vector2 DailyClaimGloveSeat(Rect disc)
-        {
-            var word = DailyClaimWordCenter(disc);
-            return new Vector2(word.x - disc.width * DailyClaimGloveBeside, word.y);
-        }
+        // Fingertip on the Claim face. The hand used to sit a label-width to the
+        // left, which left the tip off the button at 820.
+        public static Vector2 DailyClaimGloveSeat(Rect disc) => disc.center;
 
         // Claim step. Fingertip is beside the word, on the pedestal face.
         // The hand still comes from the left. Never a reward box.

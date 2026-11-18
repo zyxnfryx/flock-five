@@ -142,6 +142,7 @@ namespace FlockFive.Editor
             Gate("CheckRestartRecue", () => CheckRestartRecue(Check));
             Gate("CheckRestartActRound", () => CheckRestartActRound(Check));
             Gate("CheckHudSameFrameHop", () => CheckHudSameFrameHop(Check));
+            Gate("CheckAdHandOffer", () => CheckAdHandOffer(Check));
             Gate("CheckForcePause", () => CheckForcePause(Check));
             Gate("CheckHomeTouchGate", () => CheckHomeTouchGate(Check));
             Gate("CheckGloveRoute", () => CheckGloveRoute(Check));
@@ -4122,6 +4123,93 @@ namespace FlockFive.Editor
             if (differed && landed && reseated && now == want && line == step1 && staleGone) return null;
             return "differed " + differed + " landed " + landed + " reseated " + reseated
                 + " tip " + now + " line \"" + line + "\"";
+        }
+
+        static void CheckAdHandOffer(System.Action<string, bool, string> Check)
+        {
+            const string key = "flockfive.coach.adhand";
+            bool had = PlayerPrefs.HasKey(key);
+            int keep = PlayerPrefs.GetInt(key, 0);
+            float keepResume = ResumeUntil();
+            var go = new GameObject("ad-hand-offer");
+            try
+            {
+                PlayerPrefs.DeleteKey(key);
+                SetResumeUntil(float.NegativeInfinity);
+                GamePause.Reset();
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                t.GetField("_busy", flags).SetValue(app, false);
+                var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                Purse.SetStreak(0);
+                void Offer()
+                {
+                    GamePause.Reset();
+                    Purse.SetStreak(0);
+                    t.GetField("_splash", flags).SetValue(app, false);
+                    t.GetField("_restarting", flags).SetValue(app, false);
+                    t.GetField("_watchGiftLive", flags).SetValue(app, false);
+                    t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
+                    t.GetField("_adHand", flags).SetValue(app, false);
+                    PlayerPrefs.DeleteKey(key);
+                    Method(t, "ArmAdHand").Invoke(app, null);
+                }
+                string Tap(Vector2 gui)
+                {
+                    Offer();
+                    var play = new Vector2(gui.x - PhoneArea.OffX, PhoneArea.H - gui.y);
+                    FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                    {
+                        On = true, Down = false, Up = true, Id = 3, Play = play
+                    };
+                    Method(t, "TakeGuiPointer").Invoke(app, null);
+                    FlockFiveApp.EditorPointerInject = default;
+                    var gift = t.GetField("_gift", flags).GetValue(app).ToString();
+                    bool hand = (bool)t.GetField("_adHand", flags).GetValue(app);
+                    bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
+                    bool live = (bool)t.GetField("_watchGiftLive", flags).GetValue(app);
+                    bool round = t.GetField("EditorSnapRound", flags).GetValue(app) != null;
+                    return "gift " + gift + " hand " + hand + " splash " + splash + " watch " + live + " round " + round;
+                }
+                float s = DeviceFit.Ui();
+                object[] placed = { s, default(Rect), default(Rect) };
+                t.GetMethod("GiftCardPlaced", flags).Invoke(app, placed);
+                var cta = (Rect)placed[2];
+                var watchR = (Rect)t.GetMethod("FlowerHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { cta, s });
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                float top = (float)t.GetMethod("TopHud", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(float) }, null)
+                    .Invoke(null, new object[] { 0f });
+                var xBtn = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { s, top });
+                var x = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { xBtn });
+                string watch = Tap(watchR.center);
+                string close = Tap(x.center);
+                string wentHome = Tap(home.center);
+                string restarted = Tap(restart.center);
+                bool watchOk = watch.Contains("watch True") || watch.Contains("gift Wait") || watch.Contains("gift Movie");
+                bool ok = watchOk && close.Contains("gift None")
+                    && wentHome.Contains("splash True") && restarted.Contains("round True");
+                try { Check("ad-hand-offer-buttons", ok,
+                    "watch [" + watch + "] x [" + close + "] home [" + wentHome + "] restart [" + restarted + "]"); }
+                catch (System.Exception hopEx) { Check("ad-hand-offer-buttons", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keepResume);
+                GamePause.Reset();
+                if (had) PlayerPrefs.SetInt(key, keep);
+                else PlayerPrefs.DeleteKey(key);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckHudSameFrameHop(System.Action<string, bool, string> Check)

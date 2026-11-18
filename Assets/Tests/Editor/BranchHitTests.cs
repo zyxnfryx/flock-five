@@ -26,7 +26,7 @@ namespace FlockFive.Editor
             if (gift)
             {
                 float dir = fromRight ? 1f : -1f;
-                var sc = new Vector2(c.x - 1.08f * dir, c.y + 0.48f);
+                var sc = new Vector2(c.x - 0.55f * dir, c.y + 0.62f);
                 pads.Add(sc);
                 cand.HasSign = true;
                 cand.Sign = Rect.MinMaxRect(sc.x - 0.76f, sc.y - 0.42f, sc.x + 0.76f, sc.y + 0.42f); // rotated AABB, as sr.bounds

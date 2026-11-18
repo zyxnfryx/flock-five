@@ -1308,7 +1308,9 @@ namespace FlockFive
                 _avatarRenameFocus = false;
             }
             bool doneHeld = false;
-            bool doneFire = !arm && HitPad(done, out doneHeld);
+            // The open frame used to drop Done. A press that begins once the
+            // sheet is up counts, including the first one.
+            bool doneFire = HitPad(done, out doneHeld);
             DrawPlaqueChip(done, AvatarDoneLabel, s, doneHeld);
             if (doneFire) CommitAvatarRename();
         }
@@ -1641,10 +1643,9 @@ namespace FlockFive
                 _gloveVis = false;
                 return;
             }
-            float lift = GloveRise(s);
-            float hang = GloveDh(s) * 0.48f;
-            if (lift < hang) lift = hang;
-            CoachGloveAt(aim, dt, s, lift, false, float.NaN, default, FnAdoptTap());
+            // The fingertip is the bird, not a hand-height above it. Layout has
+            // already landed the perch by the time this pose runs.
+            CoachGloveAt(aim, dt, s, 0f, false, float.NaN, default, FnAdoptTap());
         }
 
         // Bird body or name plate. Same rects HitAdoptBirds claims, without using the event.

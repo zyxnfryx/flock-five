@@ -29,6 +29,9 @@ namespace FlockFive
         {
             if (!HomeChainOpen()) return;
             if (_settingsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || VipOffer.IsOpen) return;
+            // Naming and the Daily coach stay on the splash. Play waits.
+            // The greet and the look caption still use the chain below.
+            if (_avatarRename || (_dailyIntroLive && !_dailyOpen)) return;
             gates.HardModal = false;
             gates.AdoptQueue = false;
             gates.RailLesson = false;

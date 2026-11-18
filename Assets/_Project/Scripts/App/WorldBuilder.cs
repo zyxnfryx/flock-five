@@ -243,7 +243,8 @@ namespace FlockFive
             // onto a left-hand limb, bulbs included.
             float dir = fromRight ? 1f : -1f;
             var signGo = Sprite("GiftSign", SpriteCatalog.AdSign, view.transform.position, 1f, 11, view.transform);
-            signGo.transform.localPosition = new Vector3(-1.08f * dir, 0.48f, 0f);
+            // Sit on the gift limb, not inward over the bottom branch's tap zone.
+            signGo.transform.localPosition = new Vector3(-0.55f * dir, 0.62f, 0f);
             signGo.transform.localScale = new Vector3(0.26f * dir, 0.26f, 1f);
             signGo.transform.localRotation = Quaternion.Euler(0f, 0f, -6f * dir);
             view.Sign = signGo.transform;

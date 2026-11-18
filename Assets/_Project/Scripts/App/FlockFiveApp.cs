@@ -3843,6 +3843,16 @@ namespace FlockFive
             {
                 if (Pressed(out var tap))
                 {
+                    if (_adHand && _gift == GiftFace.Card)
+                    {
+                        var window = new Vector2(tap.x + PhoneArea.OffX, PhoneArea.H - tap.y);
+                        int offerHud = HudControl(window);
+                        if (offerHud == 1 || offerHud == 2)
+                        {
+                            HitHud(tap);
+                            return;
+                        }
+                    }
                     if (EatGardenLessonTap(tap)) return;
                     if (LessonTapBlocked()) return;
                     if (VeilDrops(tap)) return;
@@ -4180,6 +4190,13 @@ namespace FlockFive
             int resumeId = pointerId;
             if (releaseEdge && pointerId == -1 && _glovePressLatched && _glovePressId >= 0)
                 resumeId = _glovePressId;
+            // The bonus-lesson glove sits on Watch. Its release belongs to the
+            // control under the finger. A release outside the drawn hand is not a glove tap.
+            if (_adHand && _gift == GiftFace.Card && AdHandYieldsRelease(windowGui, releaseEdge))
+            {
+                StampGlove("ad-hand", windowGui, onGlove, hud != 0, false);
+                return false;
+            }
             if (ResumeHolds(resumeId))
             {
                 if (!releaseEdge && hud != 0)
@@ -21263,6 +21280,39 @@ namespace FlockFive
         {
             if (keepStreak || freeze || skipped) return AdFailAction.KeepCard;
             return tutorial ? AdFailAction.GrantBranch : AdFailAction.Close;
+        }
+
+        // True when this pointer must reach a real control instead of the ad-hand glove.
+        // X closes here so a swallowed OnGUI pass cannot leave the offer up.
+        bool AdHandYieldsRelease(Vector2 windowGui, bool releaseEdge)
+        {
+            if (GiftCloseExempt(windowGui))
+            {
+                if (releaseEdge) CloseGift();
+                return true;
+            }
+            float s = DeviceFit.Ui();
+            GiftCardPlaced(s, out _, out var cta);
+            if (FlowerHit(cta, s).Contains(windowGui))
+            {
+                if (releaseEdge) StartWatchGift();
+                return true;
+            }
+            int which = HudControl(windowGui);
+            if (which == 1)
+            {
+                if (releaseEdge) ShowSplash();
+                return true;
+            }
+            if (which == 2)
+            {
+                if (releaseEdge && !_restarting) Restart();
+                return true;
+            }
+            if (!releaseEdge) return false;
+            var drawn = OnScreenGlove();
+            bool onHand = _gloveVis && drawn.width > 2f && GloveWindowHit(windowGui, drawn, PhoneArea.OffX);
+            return !onHand;
         }
 
         // The gift card's X is always accepted, even while the ad-hand glove owns the screen.

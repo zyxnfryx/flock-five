@@ -147,14 +147,8 @@ namespace FlockFive.Editor
                 word.ToString());
             // The finger trails back toward the palm (from the left). The tip has
             // to clear the glyphs, and it still has to sit on the button face.
-            Check("claim glove sits beside the word",
-                FlockFiveApp.DailyClaimGloveBeside > FlockFiveApp.DailyClaimWordHalfFrac + 0.06f
-                && 0.5f - FlockFiveApp.DailyClaimGloveBeside > 0.08f
-                && seat.x < word.x - half
-                && seat.x > face.x + face.width * 0.08f
-                && Mathf.Abs(seat.y - word.y) < 0.5f
-                && face.Contains(seat)
-                && !new Rect(word.x - half, word.y - face.height * 0.28f, half * 2f, face.height * 0.56f).Contains(seat),
+            Check("claim glove sits on the button",
+                face.Contains(seat) && (seat - face.center).magnitude < 1f,
                 "seat " + seat + " word " + word + " half " + half.ToString("0.0"));
             // iPad pillar first (820 → phone column 664, OffX 78), then phones.
             // The arc is GUI space; GuiBase (OffX) is applied outside the pose, so
@@ -173,11 +167,9 @@ namespace FlockFive.Editor
                 var capWord = FlockFiveApp.DailyClaimWordCenter(cap);
                 var capSeat = FlockFiveApp.DailyClaimGloveSeat(cap);
                 float capHalf = cap.width * FlockFiveApp.DailyClaimWordHalfFrac;
-                Check("claim seat clears the word " + tag,
-                    capSeat.x < capWord.x - capHalf
-                    && cap.Contains(capSeat)
-                    && Mathf.Abs(capSeat.y - capWord.y) < 0.5f,
-                    capSeat + " word " + capWord);
+                Check("claim seat on the button " + tag,
+                    cap.Contains(capSeat) && (capSeat - cap.center).magnitude < 1f,
+                    capSeat + " word " + capWord + " half " + capHalf.ToString("0.0"));
                 float dh = FlockFiveApp.GloveDh(1f);
                 var perched = capSeat + new Vector2(-12f, -6f);
                 var start = FlockFiveApp.ClaimGloveStart(perched, capSeat, dh, safe);
