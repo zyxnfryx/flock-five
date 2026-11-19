@@ -3939,6 +3939,9 @@ namespace FlockFive
 #endif
                         return;
                     }
+                    // Stamp here. OnGUI may not have run yet. The same press
+                    // stamped again from TakeGuiPointer is a no-op.
+                    NotePointerEdge(EdgeIdNow(offerRelease), offerRelease, PlayPointer.At);
                     // The X lives inside Restart. Owning it here stops the press
                     // from calling ActRestart before OnGUI. The release closes.
                     if (OverlayOwnsPress(PlayPointer.At, offerRelease))
@@ -4230,18 +4233,45 @@ namespace FlockFive
             _resumeOriginIds.RemoveWhere(n => n >= 0);
         }
 
-        // True for the Up of a press that started inside the resume window.
-        // A mouse -1 release is that same contact when the Down was a touch.
-        // The release is an echo of some other press, so it must not open
-        // which (1 Home, 2 Restart, 3 gear). A fresh tap, whose down began
-        // on that same control, is not an echo. Home and the gear stay live
-        // for that tap inside the resume window. Restart never takes a press
-        // that began in the window.
+        int _noteFrame = -1;
+        int _noteId = int.MinValue;
+        bool _noteUp;
+#if UNITY_EDITOR
+        // How many distinct edges were recorded. A repeat of the same press
+        // in one frame does not add another.
+        internal int EditorEdgeStamps;
+#endif
+
+        static int EdgeIdNow(bool release)
+        {
+#if UNITY_EDITOR
+            if (EditorPointerInject.On)
+                return EditorPointerInject.Id;
+#endif
+            if (!release)
+            {
+                int id = PressIdNow();
+                if (id != int.MinValue) return id;
+            }
+            return -1;
+        }
+
         // Where this finger went down, including a press an overlay then claims.
         // A Down inside the resume window is stamped. Its Up, even after the
         // window, must not become a Restart or a freeze Retry.
+        // UpdateBody and OnGUI both call this. The second call for the same
+        // finger and the same edge, in the same frame, does nothing.
         void NotePointerEdge(int pointerId, bool releaseEdge, Vector2 play)
         {
+            int finger = ResumeFinger(pointerId);
+            if (_noteFrame == Time.frameCount && _noteId == finger && _noteUp == releaseEdge)
+                return;
+            _noteFrame = Time.frameCount;
+            _noteId = finger;
+            _noteUp = releaseEdge;
+#if UNITY_EDITOR
+            EditorEdgeStamps++;
+#endif
             _gloveEdgeId = pointerId;
             if (!releaseEdge && !(pointerId < 0 && _glovePressLatched && _glovePressId >= 0))
             {

@@ -114,6 +114,7 @@ namespace FlockFive.Editor
             CheckWindowGiftPress(Check);
             CheckPointerGuard(Check);
             CheckRuleReentrant(Check);
+            CheckGiftStampBeforeGui(Check);
             CheckReminderAfterReward(Check);
             Check("reminder-waits-for-reward",
                 !FlockFiveApp.ReminderOpensNow(false) && FlockFiveApp.ReminderOpensNow(true),
@@ -1334,6 +1335,75 @@ namespace FlockFive.Editor
                 bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
                 if (fault == null && presses == 1 && splash) return null;
                 return "fault " + (fault ?? "none") + " presses " + presses + " splash " + splash;
+            }, new[] { 820, 402 });
+        }
+
+        static void CheckGiftStampBeforeGui(System.Action<string, bool, string> Check)
+        {
+            EachPhoneWidth(Check, "gift-stamp-before-gui", (app, t, flags) =>
+            {
+                var resume = t.GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
+                var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var window = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                string One(bool freeze)
+                {
+                    t.GetField("_splash", flags).SetValue(app, false);
+                    t.GetField("_adHand", flags).SetValue(app, true);
+                    t.GetField("_freezeOffer", flags).SetValue(app, freeze);
+                    t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
+                    t.GetField("_restarting", flags).SetValue(app, false);
+                    t.GetField("EditorSnapRound", flags).SetValue(app, null);
+                    t.GetField("EditorEdgeStamps", flags).SetValue(app, 0);
+                    resume.SetValue(null, AdPause.Unscaled + 5f);
+                    FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                    {
+                        On = true, Down = true, Up = false, Id = 30, Window = window
+                    };
+                    t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                    int afterUpdate = (int)t.GetField("EditorEdgeStamps", flags).GetValue(app);
+                    t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                    int afterGui = (int)t.GetField("EditorEdgeStamps", flags).GetValue(app);
+                    bool held = RestartLive(t, flags, app);
+                    resume.SetValue(null, AdPause.Unscaled - 5f);
+                    FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                    {
+                        On = true, Down = false, Up = true, Id = 30, Window = window
+                    };
+                    t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                    t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                    int afterUp = (int)t.GetField("EditorEdgeStamps", flags).GetValue(app);
+                    bool released = RestartLive(t, flags, app);
+                    t.GetField("EditorSnapRound", flags).SetValue(app, null);
+                    t.GetField("_restarting", flags).SetValue(app, false);
+                    var fresh = new Vector2(window.x + 1f, window.y);
+                    FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                    {
+                        On = true, Down = true, Up = false, Id = 31, Window = fresh
+                    };
+                    t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                    FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                    {
+                        On = true, Down = false, Up = true, Id = 31, Window = fresh
+                    };
+                    t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                    bool again = RestartLive(t, flags, app);
+                    // Freeze keeps the card over Restart, so a later press still
+                    // does not restart. A gift card leaves Restart live once the
+                    // window has closed.
+                    bool resumeOk = freeze ? !again : again;
+                    if (afterUpdate == 1 && afterGui == 1 && !held && afterUp == 2 && !released && resumeOk)
+                        return null;
+                    return (freeze ? "freeze " : "gift ")
+                        + "update " + afterUpdate + " gui " + afterGui
+                        + " held " + held + " up " + afterUp + " released " + released
+                        + " fresh " + again;
+                }
+                string gift = One(false);
+                if (gift != null) return gift;
+                return One(true);
             }, new[] { 820, 402 });
         }
 
