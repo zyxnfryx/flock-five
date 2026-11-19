@@ -479,6 +479,9 @@ namespace FlockFive
             _adoptGreetDone = true;
             _adoptLive = true;
             _chainLookRuns++;
+            // One resume, in-session or after a kill. A second Home must not
+            // play the look again off the same Play.
+            PlayerPrefs.DeleteKey(ChainLookParkPref);
             _adoptBirdR = default;
             _birdSettledOnBranch = false;
             _coachFade = 0f;

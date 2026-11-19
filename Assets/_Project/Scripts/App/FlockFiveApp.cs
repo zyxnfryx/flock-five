@@ -4337,7 +4337,9 @@ namespace FlockFive
             // Home and the gear stay live for the whole resume window, even when
             // the drawn glove covers them. A glove hop only wins once that window
             // has closed and the finger went down on the sprite.
-            if (GateNow < _resumeInputUntil && (hud == 1 || hud == 3))
+            // A finger already on the glove still hops, including onto Home.
+            // A finger that did not start there keeps Home and the gear.
+            if (GateNow < _resumeInputUntil && (hud == 1 || hud == 3) && !_glovePressLatched)
             {
                 if (!releaseEdge)
                 {
@@ -4345,11 +4347,8 @@ namespace FlockFive
                     _gloveSwallowHud = hud;
                 }
                 DropGlovePress();
-                if (releaseEdge)
-                {
-                    if (hud == 1) ShowSplash();
-                    else ApplySettingsHit(SettingsMotion.Hit.Gear);
-                }
+                if (releaseEdge && hud == 3)
+                    ApplySettingsHit(SettingsMotion.Hit.Gear);
                 StampGlove("resume-hud", windowGui, onGlove, true, false);
                 return false;
             }
@@ -4403,14 +4402,15 @@ namespace FlockFive
             // HitHud is not required, and a later hop cannot set the took-frame
             // that would make ActRestart refuse. A latched glove release falls
             // through and still hops.
-            if (releaseEdge && !_glovePressLatched && !GloveOwnsRelease(pointerId) && !SwallowedUp(pointerId))
+            // Home is opened by HitHud, once. Opening it here as well resumes the
+            // home chain a second time. The gear is not on that path, so it runs
+            // here. A different finger than the one the resume gate ate is not
+            // this button. A latched glove release falls through and still hops.
+            bool otherFinger = _gloveSwallowedId != int.MinValue
+                && !GloveFingerMatches(_gloveSwallowedId, pointerId);
+            if (releaseEdge && !_glovePressLatched && !GloveOwnsRelease(pointerId)
+                && !SwallowedUp(pointerId) && !otherFinger)
             {
-                if (hud == 1)
-                {
-                    ShowSplash();
-                    StampGlove("control", windowGui, onGlove, true, false);
-                    return false;
-                }
                 if (hud == 3)
                 {
                     ApplySettingsHit(SettingsMotion.Hit.Gear);
@@ -4428,9 +4428,17 @@ namespace FlockFive
             {
                 // The press began on this button, so the button still runs.
                 // A glove press that slid here follows the old rule: no hop, and
-                // Home does not open through that press.
+                // Home does not open through that press. HitHud opens Home.
+                // The gear has no HitHud path, so a swallowed finger on it still
+                // opens settings here.
                 bool button = hud != 0 && hud == _gloveSwallowHud;
                 ClearSwallowedGlove();
+                if (hud == 3)
+                {
+                    ApplySettingsHit(SettingsMotion.Hit.Gear);
+                    StampGlove(button ? "hud" : "control", windowGui, onGlove, true, false);
+                    return false;
+                }
                 if (button)
                 {
                     StampGlove("hud", windowGui, onGlove, true, false);
@@ -11864,7 +11872,11 @@ namespace FlockFive
 
         static bool HitPad(Rect r, out bool held)
         {
-            if (_hitLock != 0)
+            // The lock is for the rest of one splash pass after the gear opens.
+            // DrawSplash clears it next frame. An editor batch never draws that
+            // pass, and every suite call shares the frame, so a stale lock must
+            // not keep the deal pad from seeing its Down and Up.
+            if (_hitLock != 0 && Application.isPlaying)
             {
                 held = false;
                 return false;
