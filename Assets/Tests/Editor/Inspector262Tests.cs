@@ -247,8 +247,24 @@ namespace FlockFive.Editor
         static void CheckWatchReopen(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("watch-reopen");
+            bool ads = Ads.Enabled;
+            bool granted = Ads.LastGranted;
+            bool earned = Ads.LastEarned;
+            int ready = (int)typeof(Ads).GetField("_readyOverride", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+            bool hadPend = PlayerPrefs.HasKey(RewardedGrant.Pref);
+            string pend = PlayerPrefs.GetString(RewardedGrant.Pref, "");
+            bool hadPendX = PlayerPrefs.HasKey(RewardedGrant.Pref + ".x");
+            string pendX = PlayerPrefs.GetString(RewardedGrant.Pref + ".x", "");
             try
             {
+                // Earlier suites leave the ad unit, the earn bit, and the retry
+                // flag wherever they finished. This hand is a fresh save.
+                Ads.Enabled = true;
+                Ads.LastGranted = false;
+                Ads.LastEarned = false;
+                Ads.SetReadyOverride(0);
+                AdRetry.ResetForTests();
+                RewardedGrant.ResetEmpty();
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
@@ -258,26 +274,26 @@ namespace FlockFive.Editor
                 t.GetField("_board", flags).SetValue(app, LevelData.Open(0).Clone());
                 t.GetField("_splash", flags).SetValue(app, false);
                 t.GetField("_adHand", flags).SetValue(app, true);
-                AdRetry.Begin();
+                t.GetField("_watchGiftLive", flags).SetValue(app, false);
                 t.GetField("_keepStreak", flags).SetValue(app, false);
                 t.GetField("_frozen", flags).SetValue(app, false);
                 t.GetField("_freezeOffer", flags).SetValue(app, false);
                 t.GetField("_tutorialOfferSeen", flags).SetValue(app, true);
+                t.GetField("_tutorialWatchReopen", flags).SetValue(app, false);
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 0));
                 t.GetMethod("RaiseGiftCard", flags).Invoke(app, null);
                 bool reopen = (bool)t.GetField("_tutorialWatchReopen", flags).GetValue(app);
                 var body = (System.Collections.IEnumerator)t.GetMethod("WatchGiftBody", flags).Invoke(app, null);
-                var clock = System.Diagnostics.Stopwatch.StartNew();
                 bool moved = body.MoveNext();
-                clock.Stop();
+                var yielded = body.Current;
+                bool adWait = yielded is WaitForSeconds || yielded is WaitForSecondsRealtime;
                 string gift = t.GetField("_gift", flags).GetValue(app).ToString();
                 bool hand = (bool)t.GetField("_adHand", flags).GetValue(app);
                 string line = (string)t.GetField("_cueLine", flags).GetValue(app) ?? "";
                 bool closed = !hand || gift == "None" || line.IndexOf("Ad unavailable") >= 0;
-                bool fast = clock.ElapsedMilliseconds < 500;
-                Check("watch-reopen-does-not-wait", reopen && moved && closed && fast,
+                Check("watch-reopen-does-not-wait", reopen && moved && closed && !adWait,
                     "reopen " + reopen + " gift " + gift + " hand " + hand
-                    + " ms " + clock.ElapsedMilliseconds + " line \"" + line + "\"");
+                    + " wait " + adWait + " line \"" + line + "\"");
             }
             catch (System.Exception ex)
             {
@@ -285,6 +301,14 @@ namespace FlockFive.Editor
             }
             finally
             {
+                Ads.Enabled = ads;
+                Ads.LastGranted = granted;
+                Ads.LastEarned = earned;
+                Ads.SetReadyOverride(ready);
+                if (hadPend) PlayerPrefs.SetString(RewardedGrant.Pref, pend);
+                else PlayerPrefs.DeleteKey(RewardedGrant.Pref);
+                if (hadPendX) PlayerPrefs.SetString(RewardedGrant.Pref + ".x", pendX);
+                else PlayerPrefs.DeleteKey(RewardedGrant.Pref + ".x");
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
