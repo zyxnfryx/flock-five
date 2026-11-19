@@ -183,7 +183,7 @@ namespace FlockFive.Editor
                 case "home.intro": return "Tap your bird for a closer look.";
                 case "coach.line": return CaptionLayout.SparrowLine;
                 case "badger.caption": return BadgerCopy.OpenLater;
-                case "home.daily": return "Tap Daily for\nyour bonus!";
+                case "home.daily": return "Tap Daily\nfor a bonus!";
                 case "daily.claim": return "Tap to claim!";
                 case "bee.garden": return CaptionLayout.HiveGardenLine;
                 case "home.poker": return "You earned coins!\nTap poker to bet them.";

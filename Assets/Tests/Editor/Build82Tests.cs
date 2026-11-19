@@ -137,7 +137,7 @@ namespace FlockFive.Editor
             bool ok = bad == 0;
             bool daily = false;
             for (int i = 0; i < lines.Length; i++)
-                if (lines[i] == "Tap Daily for\nyour bonus!") daily = true;
+                if (lines[i] == "Tap Daily\nfor a bonus!") daily = true;
             Check("caption-safe", ok && daily, detail);
         }
 
@@ -146,7 +146,7 @@ namespace FlockFive.Editor
             string line = CaptionLayout.HiveGardenLine;
             bool copy = line.StartsWith("You found a bee!\n")
                 && !CaptionLayout.WantsBeeIcon(line)
-                && !CaptionLayout.WantsBeeIcon("Tap Daily for\nyour bonus!");
+                && !CaptionLayout.WantsBeeIcon("Tap Daily\nfor a bonus!");
             float? keep = DeviceFit.TestWindow;
             DeviceFit.TestWindow = W / H;
             var safe = new Rect(0f, 102f, W, H - 102f - 177f);

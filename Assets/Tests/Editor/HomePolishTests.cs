@@ -5185,7 +5185,7 @@ namespace FlockFive.Editor
                 var warm = t.GetField("_warmCoverOff", BindingFlags.NonPublic | BindingFlags.Static);
                 bool warmWas = warm != null && (bool)warm.GetValue(null);
                 if (warm != null) warm.SetValue(null, true);
-                t.GetField("_cueLine", flags).SetValue(app, "Tap Daily for\nyour bonus!");
+                t.GetField("_cueLine", flags).SetValue(app, "Tap Daily\nfor a bonus!");
                 t.GetField("_gloveVis", flags).SetValue(app, true);
                 t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
                 Method(t, "PressLevelButton").Invoke(app, null);

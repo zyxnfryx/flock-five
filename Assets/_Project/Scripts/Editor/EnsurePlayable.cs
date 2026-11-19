@@ -74,7 +74,10 @@ namespace FlockFive.Editor
             try
             {
                 using (TestPrefsSandbox.Begin())
+                {
                     Suite("home-polish", HomePolishTests.Run);
+                    Suite("inspector-262", Inspector262Tests.Run);
+                }
             }
             finally
             {
@@ -140,6 +143,8 @@ namespace FlockFive.Editor
             Suite("reward-film-mark", RewardFilmMarkTests.Run);
             Suite("home-rail-priority", HomeRailPriorityTests.Run);
             Suite("home-polish", HomePolishTests.Run);
+            Suite("inspector-262", Inspector262Tests.Run);
+            Suite("build124", Build124Tests.Run);
             Suite("build83d", Build83TestsD.Run);
             Suite("build83p2", Build83TestsP2.Run);
             Suite("build84-feeder", Build84TestsFeeder.Run);

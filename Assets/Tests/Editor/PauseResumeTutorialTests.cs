@@ -149,9 +149,9 @@ namespace FlockFive.Editor
             Check("wiring-daily-caption-width-clamped", box.Contains("AdoptResume.DailyCaptionMaxWidth("), "");
             // Brandon: captions are at most two lines. The authored line has one break.
             int nl = 0;
-            string line = "Tap Daily for\nyour bonus!";
+            string line = "Tap Daily\nfor a bonus!";
             foreach (char c in line) if (c == '\n') nl++;
-            Check("daily-line-two-lines", nl == 1 && coach.Contains("const string DailyIntroLine = \"Tap Daily for\\nyour bonus!\";"), "");
+            Check("daily-line-two-lines", nl == 1 && coach.Contains("const string DailyIntroLine = \"Tap Daily\\nfor a bonus!\";"), "");
         }
 
         static string Slice(string src, string from, string to)
