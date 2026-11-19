@@ -3929,11 +3929,21 @@ namespace FlockFive
                 StartCoroutine(GardenFit.Tween(_garden, _board, false));
             if (_gift != GiftFace.None || _frozen)
             {
-                if (Pressed(out var tap))
+                if (PointerEdge(out var tap, out bool offerRelease))
                 {
+                    var window = new Vector2(tap.x + PhoneArea.OffX, PhoneArea.H - tap.y);
+                    // The X lives inside Restart. Owning it here stops the press
+                    // from calling ActRestart before OnGUI. The release closes.
+                    if (OverlayOwnsPress(window, offerRelease))
+                    {
+#if UNITY_EDITOR
+                        EditorPointerInject = default;
+#endif
+                        return;
+                    }
+                    if (offerRelease) return;
                     if (_adHand && _gift == GiftFace.Card)
                     {
-                        var window = new Vector2(tap.x + PhoneArea.OffX, PhoneArea.H - tap.y);
                         int offerHud = HudControl(window);
                         if (offerHud == 1 || offerHud == 2)
                         {
@@ -3972,6 +3982,7 @@ namespace FlockFive
                 if (EatGardenLessonTap(heldTap)) return;
                 if (LessonTapBlocked()) return;
                 if (VeilDrops(heldTap)) return;
+                if (OverlayOwnsPress(new Vector2(heldTap.x + PhoneArea.OffX, PhoneArea.H - heldTap.y), false)) return;
                 if (HitHud(heldTap)) return;
                 return;
             }
@@ -3996,7 +4007,19 @@ namespace FlockFive
                 if (edge || RulePointerHeld()) return;
                 _ruleEatGesture = false;
             }
-            if (!Pressed(out var screen)) return;
+            if (PointerEdge(out var screen, out bool pressRelease))
+            {
+                var owned = new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y);
+                if (OverlayOwnsPress(owned, pressRelease))
+                {
+#if UNITY_EDITOR
+                    EditorPointerInject = default;
+#endif
+                    return;
+                }
+                if (pressRelease) return;
+            }
+            else return;
             {
                 var gui = new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y);
                 int gloveId = PressIdNow();
@@ -8219,6 +8242,7 @@ namespace FlockFive
 
         bool HitHud(Vector2 screen)
         {
+            if (OverlayOwnsPress(new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y), false)) return true;
             if (LessonTapBlocked()) return false;
             HudShaken(out var restart, out var hivePlate);
             var hive = CornerAnchor.HiveStrawHit(CornerAnchor.HiveAlignedDraw(hivePlate, restart));
@@ -8427,13 +8451,9 @@ namespace FlockFive
             bool tapEdge = _tapEdge;
             _tapWho = null;
             _pointerClaimed = false;
-            if (tapEdge && ClaimFivesClose(tapEv)) return;
-            if (tapEdge && ClaimDailyAskNotNow(tapEv)) return;
-            // Gift X sits inside Restart, and Watch on the splash is not Home or
-            // the gear, so the glove gate below never reaches them. Own both here.
-            if (tapEdge && tapEv.type == EventType.MouseUp && ClaimGiftRelease(tapEv.mousePosition, out var giftWho))
+            if (tapEdge && OverlayOwnsPress(tapEv.mousePosition, tapEv.type == EventType.MouseUp))
             {
-                FinishPointerClaim(giftWho, tapEv);
+                FinishPointerClaim(_tapWho ?? "overlay", tapEv);
                 return;
             }
             if (tapEdge && ResumeGloveEdge(tapEv.mousePosition) && HudControl(tapEv.mousePosition) != 2)
@@ -8476,19 +8496,9 @@ namespace FlockFive
             if (EditorPointerInject.On && (EditorPointerInject.Down || EditorPointerInject.Up))
             {
                 var injected = new Vector2(EditorPointerInject.Play.x + PhoneArea.OffX, PhoneArea.H - EditorPointerInject.Play.y);
-                if (EditorPointerInject.Up && TakeFivesClose(injected))
+                if (OverlayOwnsPress(injected, EditorPointerInject.Up && !EditorPointerInject.Down))
                 {
-                    FinishPointerClaim("fives-close", tapEdge ? tapEv : null);
-                    return;
-                }
-                if (EditorPointerInject.Up && _dailyAskNoHitOn && TakeDailyAskNotNow(_dailyAskNoHit, injected))
-                {
-                    FinishPointerClaim("not-now", tapEdge ? tapEv : null);
-                    return;
-                }
-                if (EditorPointerInject.Up && ClaimGiftRelease(injected, out var injectedGift))
-                {
-                    FinishPointerClaim(injectedGift, tapEdge ? tapEv : null);
+                    FinishPointerClaim(_tapWho ?? "overlay", tapEdge ? tapEv : null);
                     return;
                 }
                 if (ResumeGloveEdge(injected) && TryDrawnGlove(injected, EditorPointerInject.Up, EditorPointerInject.Id))
@@ -8511,11 +8521,79 @@ namespace FlockFive
                     && !HomeGateAllows(ref _homeGate, EditorPointerInject.Down, EditorPointerInject.Up, EditorPointerInject.Id))
                 {
                     GUIUtility.hotControl = 0;
-                    if (_tapWho == null) _tapWho = "home-gate";
-                    if (tapEdge) tapEv.Use();
+                    FinishPointerClaim(_tapWho ?? "home-gate", tapEdge ? tapEv : null);
                 }
             }
 #endif
+        }
+
+        // Editor batch reports the release on the inject, not on Pressed().
+        bool PointerEdge(out Vector2 screen, out bool release)
+        {
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Up && !EditorPointerInject.Down)
+            {
+                screen = EditorPointerInject.Play;
+                release = true;
+                return true;
+            }
+#endif
+            release = false;
+            return Pressed(out screen);
+        }
+
+        // One owner for every overlay control. Update presses and TakeGuiPointer
+        // both ask this, so the HUD and the board cannot take the point on
+        // either edge. Release performs the overlay's action. Press only claims.
+        bool OverlayOwnsPress(Vector2 windowGui, bool release)
+        {
+            if (_gift == GiftFace.Card && !_freezeOffer)
+            {
+                int which = HudControl(windowGui);
+                bool onX = GiftCloseExempt(windowGui);
+                if (onX && which != 0 && !CloserToGiftX(windowGui, which))
+                    onX = false;
+                if (onX)
+                {
+                    if (release) CloseGift();
+                    _tapWho = "gift-x";
+                    return true;
+                }
+                if (_adHand)
+                {
+                    float s = DeviceFit.Ui();
+                    GiftCardPlaced(s, out _, out var cta);
+                    if (FlowerHit(cta, s).Contains(windowGui))
+                    {
+                        if (release) StartWatchGift();
+                        _tapWho = "watch";
+                        return true;
+                    }
+                }
+            }
+            if (_fivesOpen)
+            {
+                float s = DeviceFit.Ui();
+                var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
+                if (FivesCloseRect(g.Panel, s).Contains(windowGui))
+                {
+                    if (release) TakeFivesClose(windowGui);
+                    _tapWho = "fives-close";
+                    return true;
+                }
+            }
+            if (_dailyAskOpen && _dailyAskNoHitOn && _dailyAskNoHit.Contains(windowGui))
+            {
+                if (release) TakeDailyAskNotNow(_dailyAskNoHit, windowGui);
+                _tapWho = "not-now";
+                return true;
+            }
+            if (_avatarRename && _avatarRenameR.width > 2f && _avatarRenameR.Contains(windowGui))
+            {
+                _tapWho = "naming";
+                return true;
+            }
+            return false;
         }
 
         // The fives X owns this event. Later poker hits must not see it.
@@ -22199,6 +22277,10 @@ namespace FlockFive
             if (_watchGiftLive) return;
             _watchGiftLive = true;
             _watchStarts++;
+#if UNITY_EDITOR
+            // EditMode has no player loop, so the coroutine is not the claim.
+            if (!Application.isPlaying) return;
+#endif
             StartCoroutine(WatchGift());
         }
 

@@ -7066,6 +7066,7 @@ namespace FlockFive
 
         bool GardenHudAct(Vector2 screen)
         {
+            if (OverlayOwnsPress(new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y), false)) return true;
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             bool homeHit, restartHit;
