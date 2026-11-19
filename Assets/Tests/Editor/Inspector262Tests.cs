@@ -911,7 +911,7 @@ namespace FlockFive.Editor
             var inject = FlockFiveApp.EditorPointerInject;
             try
             {
-                FlockFiveApp.EditorPointerInject = default;
+                Event.current = null;
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
@@ -923,19 +923,20 @@ namespace FlockFive.Editor
                 t.GetField("_pokerPayOpen", flags).SetValue(app, true);
                 t.GetField("_pokerPayAnim", flags).SetValue(app, 1f);
                 t.GetField("_pokerHover", flags).SetValue(app, 7);
-                var up = new Event { type = EventType.MouseUp, mousePosition = close.center, button = 0 };
-                Event.current = up;
+                // Editor batch has no IMGUI event. A real tap here is EditorPointerInject,
+                // Play space (x without the pillar, y up). TakeGuiPointer flips it back.
+                InjectGuiRelease(close.center, 4);
                 t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
                 bool closed = !(bool)t.GetField("_fivesOpen", flags).GetValue(app);
-                bool used = up.type == EventType.Used;
+                bool eaten = !FlockFiveApp.EditorPointerInject.On;
                 string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
                 t.GetMethod("TickPokerPayTable", flags).Invoke(app, new object[] { 80f, s });
                 bool payStayed = (bool)t.GetField("_pokerPayOpen", flags).GetValue(app);
                 t.GetMethod("HitPokerCards", flags).Invoke(app, new object[] { true, new Rect(0f, 0f, 40f, 60f), 0f, 0f, 40f, 60f, 4f });
                 int hover = (int)t.GetField("_pokerHover", flags).GetValue(app);
                 Check("fives-x-consumes-pointer",
-                    close.width > 8f && closed && used && who == "fives-close" && payStayed && hover == 7,
-                    "closed " + closed + " used " + used + " who " + who + " pay " + payStayed + " hover " + hover);
+                    close.width > 8f && closed && eaten && who == "fives-close" && payStayed && hover == 7,
+                    "closed " + closed + " eaten " + eaten + " who " + who + " payStayed " + payStayed + " hover " + hover);
             }
             catch (System.Exception ex)
             {
@@ -956,7 +957,7 @@ namespace FlockFive.Editor
             var inject = FlockFiveApp.EditorPointerInject;
             try
             {
-                FlockFiveApp.EditorPointerInject = default;
+                Event.current = null;
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
@@ -971,17 +972,16 @@ namespace FlockFive.Editor
                 var at = level.width > 2f ? level.center : new Vector2(220f, 280f);
                 var shown = (Vector2[])t.GetField("_adoptShown", flags).GetValue(app);
                 shown[0] = at;
-                var up = new Event { type = EventType.MouseUp, mousePosition = at, button = 0 };
-                Event.current = up;
+                InjectGuiRelease(at, 5);
                 t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
                 bool named = (bool)t.GetField("_avatarRename", flags).GetValue(app);
                 bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
                 string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
-                bool used = up.type == EventType.Used;
+                bool eaten = !FlockFiveApp.EditorPointerInject.On;
                 bool play = HitPadQuiet(level.width > 2f ? level : new Rect(at.x - 4f, at.y - 4f, 8f, 8f));
                 Check("bird-tap-consumes-pointer",
-                    named && splash && who == "adopt-look" && used && !play,
-                    "named " + named + " splash " + splash + " who " + who + " used " + used + " play " + play);
+                    named && splash && who == "adopt-look" && eaten && !play,
+                    "named " + named + " splash " + splash + " who " + who + " eaten " + eaten + " play " + play);
             }
             catch (System.Exception ex)
             {
@@ -993,6 +993,18 @@ namespace FlockFive.Editor
                 FlockFiveApp.EditorPointerInject = inject;
                 UnityEngine.Object.DestroyImmediate(go);
             }
+        }
+
+        // Same release PressHud feeds. gui is window space (y down, includes the pillar).
+        static void InjectGuiRelease(Vector2 gui, int id)
+        {
+            FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+            {
+                On = true,
+                Up = true,
+                Id = id,
+                Play = new Vector2(gui.x - PhoneArea.OffX, PhoneArea.H - gui.y)
+            };
         }
 
         // Editor HitPad with whatever Event.current is. No draw.

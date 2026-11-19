@@ -8434,16 +8434,14 @@ namespace FlockFive
                 int gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
                 if (TryDrawnGlove(tapEv.mousePosition, tapEv.type == EventType.MouseUp, gloveId))
                 {
-                    _tapWho = "glove";
-                    tapEv.Use();
+                    FinishPointerClaim("glove", tapEv);
                     return;
                 }
                 // Watch (and the gift X) already ran inside the yield. Eat the
                 // event so the card, Play, and the cards do not see it too.
                 if (_pointerClaimed)
                 {
-                    if (_tapWho == null) _tapWho = "watch";
-                    tapEv.Use();
+                    FinishPointerClaim(_tapWho ?? "watch", tapEv);
                     return;
                 }
             }
@@ -8456,8 +8454,7 @@ namespace FlockFive
                 // and send the player back into the garden.
                 if (up && TakeAdoptLookTap(tapEv.mousePosition))
                 {
-                    _tapWho = "adopt-look";
-                    tapEv.Use();
+                    FinishPointerClaim("adopt-look", tapEv);
                     return;
                 }
                 if (!AdoptLookOwnsTap(tapEv.mousePosition)
@@ -8474,32 +8471,27 @@ namespace FlockFive
                 var injected = new Vector2(EditorPointerInject.Play.x + PhoneArea.OffX, PhoneArea.H - EditorPointerInject.Play.y);
                 if (EditorPointerInject.Up && TakeFivesClose(injected))
                 {
-                    _tapWho = "fives-close";
-                    if (tapEdge) tapEv.Use();
+                    FinishPointerClaim("fives-close", tapEdge ? tapEv : null);
                     return;
                 }
                 if (EditorPointerInject.Up && _dailyAskNoHitOn && TakeDailyAskNotNow(_dailyAskNoHit, injected))
                 {
-                    _tapWho = "not-now";
-                    if (tapEdge) tapEv.Use();
+                    FinishPointerClaim("not-now", tapEdge ? tapEv : null);
                     return;
                 }
                 if (ResumeGloveEdge(injected) && TryDrawnGlove(injected, EditorPointerInject.Up, EditorPointerInject.Id))
                 {
-                    _tapWho = "glove";
-                    if (tapEdge) tapEv.Use();
+                    FinishPointerClaim("glove", tapEdge ? tapEv : null);
                     return;
                 }
                 if (_pointerClaimed)
                 {
-                    if (_tapWho == null) _tapWho = "watch";
-                    if (tapEdge) tapEv.Use();
+                    FinishPointerClaim(_tapWho ?? "watch", tapEdge ? tapEv : null);
                     return;
                 }
                 if (EditorPointerInject.Up && TakeAdoptLookTap(injected))
                 {
-                    _tapWho = "adopt-look";
-                    if (tapEdge) tapEv.Use();
+                    FinishPointerClaim("adopt-look", tapEdge ? tapEv : null);
                     return;
                 }
                 if (_splash && _home == HomeFace.Splash
@@ -8518,8 +8510,7 @@ namespace FlockFive
         bool ClaimFivesClose(Event tapEv)
         {
             if (tapEv.type != EventType.MouseUp || !TakeFivesClose(tapEv.mousePosition)) return false;
-            _tapWho = "fives-close";
-            tapEv.Use();
+            FinishPointerClaim("fives-close", tapEv);
             return true;
         }
 
@@ -8528,9 +8519,21 @@ namespace FlockFive
         bool ClaimDailyAskNotNow(Event tapEv)
         {
             if (!_dailyAskNoHitOn || !TakeDailyAskNotNow(_dailyAskNoHit, tapEv.mousePosition)) return false;
-            _tapWho = "not-now";
-            tapEv.Use();
+            FinishPointerClaim("not-now", tapEv);
             return true;
+        }
+
+        // Use a real IMGUI edge when one is on the stack, and drop the editor
+        // inject so a later HitPad in this same frame cannot take the tap again.
+        void FinishPointerClaim(string who, Event tapEv)
+        {
+            _tapWho = who;
+            if (tapEv != null && tapEv.button == 0
+                && (tapEv.type == EventType.MouseDown || tapEv.type == EventType.MouseUp))
+                tapEv.Use();
+#if UNITY_EDITOR
+            EditorPointerInject = default;
+#endif
         }
 
         void PaintAfterPointer()
