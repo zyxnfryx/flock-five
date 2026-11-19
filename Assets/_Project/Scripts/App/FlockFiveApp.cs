@@ -3988,6 +3988,10 @@ namespace FlockFive
         // Which HUD button was pressed inside the resume window. 0 none, 1 Home, 2 Restart, 3 gear.
         int _resumeHudArm;
         int _gloveEdgeId = int.MinValue;
+        // Where this finger went down. -1 the glove, 0 empty space, 1 Home, 2 Restart, 3 gear.
+        // The release belongs to that down, same as a drag onto Restart.
+        int _gestureId = int.MinValue;
+        int _gestureHud;
 
         void DropGlovePress()
         {
@@ -4117,6 +4121,24 @@ namespace FlockFive
 
         // True for the Up of a press that started inside the resume window.
         // A mouse -1 release is that same contact when the Down was a touch.
+        // The release is an echo of some other press, so it must not open
+        // which (1 Home, 2 Restart, 3 gear). A fresh tap, whose down began
+        // on that same control, is not an echo. Home and the gear stay live
+        // for that tap inside the resume window. Restart never takes a press
+        // that began in the window.
+        bool EchoReleaseBlocks(int which)
+        {
+            if (_glovePressLatched || GloveOwnsRelease(_gloveEdgeId)) return true;
+            bool same = GloveFingerMatches(_gestureId, _gloveEdgeId);
+            if (same && _gestureHud < 0) return true;
+            if (same && _gestureHud > 0 && _gestureHud != which) return true;
+            bool beganBefore = _resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId);
+            bool downOnThis = same && _gestureHud == which;
+            if (which == 2 && beganBefore) return true;
+            if (beganBefore && !downOnThis) return true;
+            return false;
+        }
+
         bool ResumeOriginBlocks(int pointerId)
         {
             if (_resumeOriginRelease) return true;
@@ -4327,6 +4349,8 @@ namespace FlockFive
                 _gloveTookFrame = -1;
                 RememberResumeOrigin(pointerId);
                 if (!(GateNow < _resumeInputUntil)) _resumeOriginRelease = false;
+                _gestureId = pointerId;
+                _gestureHud = onGlove ? -1 : hud;
             }
             else if (releaseEdge)
             {
@@ -4347,7 +4371,10 @@ namespace FlockFive
                     _gloveSwallowHud = hud;
                 }
                 DropGlovePress();
-                if (releaseEdge && hud == 3)
+                // A fresh tap on the gear (this down began there) stays live.
+                // A drag from the glove, another control, or a press that was
+                // already down when the window began does not open it.
+                if (releaseEdge && hud == 3 && !EchoReleaseBlocks(3))
                     ApplySettingsHit(SettingsMotion.Hit.Gear);
                 StampGlove("resume-hud", windowGui, onGlove, true, false);
                 return false;
@@ -4385,10 +4412,12 @@ namespace FlockFive
             // not restart or retry on its Up, including after the window closes.
             // Home and the gear stay allowed.
             bool resumePress = releaseEdge && (SwallowedUp(pointerId) || resumeOriginUp);
-            if (resumePress && hud != 1 && hud != 3 && (hud == 2 || SwallowedUp(pointerId)))
+            // Restart falls through to the same-finger guard below. Home and the
+            // gear stay allowed. Any other resume-origin release is swallowed.
+            if (resumePress && hud != 1 && hud != 2 && hud != 3 && SwallowedUp(pointerId))
             {
-                if (SwallowedUp(pointerId)) ClearSwallowedGlove();
-                StampGlove("swallowed-up", windowGui, onGlove, hud != 0, false);
+                ClearSwallowedGlove();
+                StampGlove("swallowed-up", windowGui, onGlove, false, false);
                 return true;
             }
             // After that check. A coach glove over a button yields.
@@ -4396,6 +4425,14 @@ namespace FlockFive
             if (CoachControlYields(windowGui, releaseEdge))
             {
                 StampGlove("control", windowGui, onGlove, hud != 0, false);
+                return false;
+            }
+            // Same finger, release on Restart. Runs for a glove press too, and
+            // refuses it: the finger that went down owns the release.
+            if (releaseEdge && hud == 2 && !EchoReleaseBlocks(2))
+            {
+                ActRestart();
+                StampGlove("control", windowGui, onGlove, true, false);
                 return false;
             }
             // Not a glove press. Home, the gear, and a fresh Restart run here so
@@ -4411,15 +4448,9 @@ namespace FlockFive
             if (releaseEdge && !_glovePressLatched && !GloveOwnsRelease(pointerId)
                 && !SwallowedUp(pointerId) && !otherFinger)
             {
-                if (hud == 3)
+                if (hud == 3 && !EchoReleaseBlocks(3))
                 {
                     ApplySettingsHit(SettingsMotion.Hit.Gear);
-                    StampGlove("control", windowGui, onGlove, true, false);
-                    return false;
-                }
-                if (hud == 2 && !ResumeSwallowsRestart() && !ResumeOriginBlocks(pointerId))
-                {
-                    ActRestart();
                     StampGlove("control", windowGui, onGlove, true, false);
                     return false;
                 }
@@ -4433,10 +4464,10 @@ namespace FlockFive
                 // opens settings here.
                 bool button = hud != 0 && hud == _gloveSwallowHud;
                 ClearSwallowedGlove();
-                if (hud == 3)
+                if (hud == 3 && button && !EchoReleaseBlocks(3))
                 {
                     ApplySettingsHit(SettingsMotion.Hit.Gear);
-                    StampGlove(button ? "hud" : "control", windowGui, onGlove, true, false);
+                    StampGlove("hud", windowGui, onGlove, true, false);
                     return false;
                 }
                 if (button)
@@ -8066,7 +8097,10 @@ namespace FlockFive
             {
                 if (homeHit)
                 {
-                    if (GloveOwnsHudPress()) return true;
+                    // Same ownership as the gear. A fresh tap opens Home.
+                    // A drag from the glove, another control, or a press that
+                    // was already down when the resume window began does not.
+                    if (GloveOwnsHudPress() || EchoReleaseBlocks(1)) return true;
                     _tapWho = "home";
                     ShowSplash();
                 }
@@ -21675,17 +21709,17 @@ namespace FlockFive
             if (!gift && !button) return false;
             if (which == 1)
             {
-                if (releaseEdge) ShowSplash();
+                if (releaseEdge && !EchoReleaseBlocks(1)) ShowSplash();
                 return true;
             }
             if (which == 3)
             {
-                if (releaseEdge) ApplySettingsHit(SettingsMotion.Hit.Gear);
+                if (releaseEdge && !EchoReleaseBlocks(3)) ApplySettingsHit(SettingsMotion.Hit.Gear);
                 return true;
             }
             if (which == 2)
             {
-                if (releaseEdge) ActRestart();
+                if (releaseEdge && !EchoReleaseBlocks(2)) ActRestart();
                 return true;
             }
             if (gift)

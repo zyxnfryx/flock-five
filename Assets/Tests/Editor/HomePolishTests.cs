@@ -4447,12 +4447,14 @@ namespace FlockFive.Editor
                 float h = PhoneArea.H > 2f ? PhoneArea.H : 800f;
                 var away = new Vector2(w * 0.5f, h * 0.55f);
                 if (restart.Contains(away)) away = new Vector2(restart.center.x, restart.yMax + 80f);
-                var awayPlay = new Vector2(away.x, PhoneArea.H - away.y);
 
                 SetResumeUntil(float.NegativeInfinity);
                 ClearRestart(app, t, flags);
-                PressHud(app, t, awayPlay, 4, true);
-                PressHud(app, t, restartPlay, 4, false);
+                var drag = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var awayGui = new Vector2(away.x + PhoneArea.OffX, away.y);
+                var restartGui = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                drag.Invoke(app, new object[] { awayGui, false, 4 });
+                drag.Invoke(app, new object[] { restartGui, true, 4 });
                 bool fresh = RestartBegan(app, t, flags);
                 try { Check("drag-onto-restart-outside-window-restarts", fresh, "restarted " + fresh); }
                 catch (System.Exception hopEx) { Check("drag-onto-restart-outside-window-restarts", false, ThrowText(hopEx)); }
@@ -4479,17 +4481,102 @@ namespace FlockFive.Editor
                 t.GetField("_gloveVis", flags).SetValue(app, false);
                 t.GetField("_glovePressLatched", flags).SetValue(app, false);
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
-                PressHud(app, t, awayPlay, 8, true);
-                PressHud(app, t, restartPlay, 8, false);
+                drag.Invoke(app, new object[] { awayGui, false, 8 });
+                drag.Invoke(app, new object[] { restartGui, true, 8 });
                 bool heldOpen = !RestartBegan(app, t, flags);
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
-                PressHud(app, t, awayPlay, 9, true);
+                drag.Invoke(app, new object[] { awayGui, false, 9 });
                 SetResumeUntil(float.NegativeInfinity);
-                PressHud(app, t, restartPlay, 9, false);
+                drag.Invoke(app, new object[] { restartGui, true, 9 });
                 bool heldPast = !RestartBegan(app, t, flags);
                 try { Check("drag-onto-restart-from-resume-window-does-not-restart", heldOpen && heldPast,
                     "open " + heldOpen + " past " + heldPast); }
                 catch (System.Exception hopEx) { Check("drag-onto-restart-from-resume-window-does-not-restart", false, ThrowText(hopEx)); }
+
+                // Gear is only drawn on the home face. A fresh tap there stays
+                // live. A glove drag and a press from before the window do not.
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                var gearGui = new Vector2(gear.center.x + PhoneArea.OffX, gear.center.y);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                drag.Invoke(app, new object[] { gearGui, false, 11 });
+                drag.Invoke(app, new object[] { gearGui, true, 11 });
+                bool gearTap = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("gear-tap-inside-resume-window-opens", gearTap, "open " + gearTap); }
+                catch (System.Exception hopEx) { Check("gear-tap-inside-resume-window-opens", false, ThrowText(hopEx)); }
+
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                var phase = t.GetField("_settingsPhase", flags);
+                phase.SetValue(app, System.Enum.ToObject(phase.FieldType, 0));
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                PoseGlove(app, away, 72f);
+                SetResumeUntil(float.NegativeInfinity);
+                bool gearDown = (bool)drag.Invoke(app, new object[] { awayGui, false, 12 });
+                drag.Invoke(app, new object[] { gearGui, true, 12 });
+                bool gearGlove = gearDown && !(bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("drag-from-glove-onto-gear-does-not-open", gearGlove,
+                    "down " + gearDown + " open " + t.GetField("_settingsOpen", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("drag-from-glove-onto-gear-does-not-open", false, ThrowText(hopEx)); }
+
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                phase.SetValue(app, System.Enum.ToObject(phase.FieldType, 0));
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                SetResumeUntil(float.NegativeInfinity);
+                drag.Invoke(app, new object[] { awayGui, false, 13 });
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                Method(t, "RememberResumeOrigin", typeof(int)).Invoke(app, new object[] { 13 });
+                drag.Invoke(app, new object[] { gearGui, true, 13 });
+                bool gearBefore = !(bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("press-from-before-window-onto-gear-does-not-open", gearBefore,
+                    "open " + t.GetField("_settingsOpen", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("press-from-before-window-onto-gear-does-not-open", false, ThrowText(hopEx)); }
+
+                // Home uses the same echo rule. HitHud is the one open.
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var homeGui = new Vector2(home.center.x + PhoneArea.OffX, home.center.y);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                drag.Invoke(app, new object[] { homeGui, false, 14 });
+                drag.Invoke(app, new object[] { homeGui, true, 14 });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homePlay });
+                bool homeTap = (bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("home-tap-inside-resume-window-opens", homeTap, "open " + homeTap); }
+                catch (System.Exception hopEx) { Check("home-tap-inside-resume-window-opens", false, ThrowText(hopEx)); }
+
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                PoseGlove(app, away, 72f);
+                SetResumeUntil(float.NegativeInfinity);
+                bool homeDown = (bool)drag.Invoke(app, new object[] { awayGui, false, 15 });
+                drag.Invoke(app, new object[] { homeGui, true, 15 });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homePlay });
+                bool homeGlove = homeDown && !(bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("drag-from-glove-onto-home-does-not-open", homeGlove,
+                    "down " + homeDown + " open " + t.GetField("_splash", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("drag-from-glove-onto-home-does-not-open", false, ThrowText(hopEx)); }
+
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                SetResumeUntil(float.NegativeInfinity);
+                drag.Invoke(app, new object[] { awayGui, false, 16 });
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                Method(t, "RememberResumeOrigin", typeof(int)).Invoke(app, new object[] { 16 });
+                drag.Invoke(app, new object[] { homeGui, true, 16 });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homePlay });
+                bool homeBefore = !(bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("press-from-before-window-onto-home-does-not-open", homeBefore,
+                    "open " + t.GetField("_splash", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("press-from-before-window-onto-home-does-not-open", false, ThrowText(hopEx)); }
             }
             finally
             {
