@@ -115,6 +115,7 @@ namespace FlockFive.Editor
             CheckPointerGuard(Check);
             CheckRuleReentrant(Check);
             CheckGiftStampBeforeGui(Check);
+            CheckSameFrameLifts(Check);
             CheckDistinctReleaseIds(Check);
             CheckRestartAskAfterResume(Check);
             CheckReminderAfterReward(Check);
@@ -1121,13 +1122,8 @@ namespace FlockFive.Editor
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
                 t.GetField("_busy", flags).SetValue(app, false);
                 t.GetField("_restarting", flags).SetValue(app, false);
-                float s = DeviceFit.Ui();
-                float top = (float)t.GetMethod("TopHud", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(float) }, null)
-                    .Invoke(null, new object[] { 0f });
-                var xBtn = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { s, top });
-                var x = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { xBtn });
+                var x = (Rect)t.GetMethod("GiftCloseHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, null);
                 InjectGuiRelease(x.center, 8);
                 t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
                 string gift = t.GetField("_gift", flags).GetValue(app).ToString();
@@ -1161,13 +1157,8 @@ namespace FlockFive.Editor
                 t.GetField("_adHand", flags).SetValue(app, true);
                 t.GetField("_freezeOffer", flags).SetValue(app, false);
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
-                float s = DeviceFit.Ui();
-                float top = (float)t.GetMethod("TopHud", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(float) }, null)
-                    .Invoke(null, new object[] { 0f });
-                var xBtn = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { s, top });
-                var x = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { xBtn });
+                var x = (Rect)t.GetMethod("GiftCloseHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, null);
                 bool step = PressThenRelease(app, t, flags, x.center);
                 string gift = t.GetField("_gift", flags).GetValue(app).ToString();
                 bool home = (bool)t.GetField("_splash", flags).GetValue(app);
@@ -1285,13 +1276,8 @@ namespace FlockFive.Editor
                 t.GetField("_adHand", flags).SetValue(app, true);
                 t.GetField("_freezeOffer", flags).SetValue(app, false);
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
-                float s = DeviceFit.Ui();
-                float top = (float)t.GetMethod("TopHud", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(float) }, null)
-                    .Invoke(null, new object[] { 0f });
-                var xBtn = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { s, top });
-                var x = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { xBtn });
+                var x = (Rect)t.GetMethod("GiftCloseHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, null);
                 var window = new Vector2(x.center.x + PhoneArea.OffX, x.center.y);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
@@ -1346,16 +1332,21 @@ namespace FlockFive.Editor
             {
                 var resume = t.GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
                 var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                var edgeNow = t.GetMethod("EdgeIdNow", BindingFlags.NonPublic | BindingFlags.Static);
                 object[] hud = { default(Rect), default(Rect) };
                 t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
                 var restart = (Rect)hud[0];
                 float s = DeviceFit.Ui();
                 float top = (float)t.GetMethod("TopHud", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(float) }, null)
                     .Invoke(null, new object[] { 0f });
-                var xBtn = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
+                var xCorner = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
                     .Invoke(null, new object[] { s, top });
-                var xHit = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { xBtn });
+                var xPad = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { xCorner });
+                var xClaim = (Rect)t.GetMethod("GiftCloseHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, null);
+                // Same search as before. It does not pick a new pixel: if the
+                // padded corner covers Restart, the aim stays on the center.
                 Vector2 aim = restart.center;
                 Vector2[] candidates =
                 {
@@ -1365,13 +1356,18 @@ namespace FlockFive.Editor
                 };
                 for (int i = 0; i < candidates.Length; i++)
                 {
-                    if (restart.Contains(candidates[i]) && !xHit.Contains(candidates[i]))
+                    if (restart.Contains(candidates[i]) && !xPad.Contains(candidates[i]))
                     {
                         aim = candidates[i];
                         break;
                     }
                 }
                 var window = new Vector2(aim.x + PhoneArea.OffX, aim.y);
+                string Box(Rect r)
+                {
+                    return r.x.ToString("0.0") + "," + r.y.ToString("0.0")
+                        + " " + r.width.ToString("0.0") + "x" + r.height.ToString("0.0");
+                }
                 string One(bool freeze)
                 {
                     t.GetField("_splash", flags).SetValue(app, false);
@@ -1381,16 +1377,49 @@ namespace FlockFive.Editor
                     t.GetField("_restarting", flags).SetValue(app, false);
                     t.GetField("EditorSnapRound", flags).SetValue(app, null);
                     t.GetField("EditorEdgeStamps", flags).SetValue(app, 0);
+                    t.GetField("EditorActRestartEntered", flags).SetValue(app, 0);
+                    t.GetField("EditorActRestartCommitted", flags).SetValue(app, 0);
+                    t.GetField("EditorActRestartBlock", flags).SetValue(app, "");
+                    bool held = false, released = false, freshLive = false;
+                    string steps = "";
+                    void Mark(string step, int latch)
+                    {
+                        bool live = RestartLive(t, flags, app);
+                        if (latch == 1) held = live;
+                        else if (latch == 2) released = live;
+                        else if (latch == 3) freshLive = live;
+                        string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "none";
+                        int entered = (int)t.GetField("EditorActRestartEntered", flags).GetValue(app);
+                        int committed = (int)t.GetField("EditorActRestartCommitted", flags).GetValue(app);
+                        string block = (string)t.GetField("EditorActRestartBlock", flags).GetValue(app) ?? "none";
+                        float until = (float)resume.GetValue(null);
+                        float now = AdPause.Unscaled;
+                        int edge = int.MinValue;
+                        if (FlockFiveApp.EditorPointerInject.On)
+                        {
+                            bool rel = FlockFiveApp.EditorPointerInject.Up && !FlockFiveApp.EditorPointerInject.Down;
+                            edge = (int)edgeNow.Invoke(null, new object[] { rel });
+                        }
+                        steps += step
+                            + " held " + held + " released " + released + " fresh " + freshLive
+                            + " live " + live + " who " + who + " edge " + edge
+                            + " resume " + (now < until ? "open" : "closed")
+                            + " elapsed " + (now - until).ToString("0.00")
+                            + " act " + entered + " commit " + committed + " " + block
+                            + " | ";
+                    }
                     resume.SetValue(null, AdPause.Unscaled + 5f);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
                         On = true, Down = true, Up = false, Id = 30, Window = window
                     };
+                    Mark("down", 0);
                     t.GetMethod("UpdateBody", flags).Invoke(app, null);
                     int afterUpdate = (int)t.GetField("EditorEdgeStamps", flags).GetValue(app);
+                    Mark("update", 1);
                     t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
                     int afterGui = (int)t.GetField("EditorEdgeStamps", flags).GetValue(app);
-                    bool held = RestartLive(t, flags, app);
+                    Mark("gui", 1);
                     resume.SetValue(null, AdPause.Unscaled - 5f);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
@@ -1399,35 +1428,119 @@ namespace FlockFive.Editor
                     t.GetMethod("UpdateBody", flags).Invoke(app, null);
                     t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
                     int afterUp = (int)t.GetField("EditorEdgeStamps", flags).GetValue(app);
-                    bool released = RestartLive(t, flags, app);
+                    Mark("up", 2);
                     t.GetField("EditorSnapRound", flags).SetValue(app, null);
                     t.GetField("_restarting", flags).SetValue(app, false);
                     var fresh = new Vector2(window.x + 1f, window.y);
+                    var play = PlayPointer.Enter(fresh);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
                         On = true, Down = true, Up = false, Id = 31, Window = fresh
                     };
                     t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                    Mark("freshDown", 3);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
                         On = true, Down = false, Up = true, Id = 31, Window = fresh
                     };
                     t.GetMethod("UpdateBody", flags).Invoke(app, null);
-                    bool again = RestartLive(t, flags, app);
+                    Mark("freshUp", 3);
+                    bool again = freshLive;
                     // Freeze keeps the card over Restart, so a later press still
                     // does not restart. A gift card leaves Restart live once the
                     // window has closed.
                     bool resumeOk = freeze ? !again : again;
-                    if (afterUpdate == 1 && afterGui == 1 && !held && afterUp == 2 && !released && resumeOk)
-                        return null;
-                    return (freeze ? "freeze " : "gift ")
+                    bool overlap = xClaim.Overlaps(restart);
+                    string detail = (freeze ? "freeze " : "gift ")
                         + "update " + afterUpdate + " gui " + afterGui
                         + " held " + held + " up " + afterUp + " released " + released
-                        + " fresh " + again;
+                        + " fresh " + again
+                        + " win " + fresh + " play " + play
+                        + " restart " + Box(restart)
+                        + " corner " + Box(xCorner)
+                        + " pad " + Box(xPad)
+                        + " claim " + Box(xClaim)
+                        + " inRestart " + restart.Contains(play)
+                        + " inClaim " + xClaim.Contains(play)
+                        + " overlap " + overlap
+                        + " | " + steps;
+                    Debug.Log("[inspector-262] gift-stamp-steps " + PhoneArea.W + " " + detail);
+                    if (afterUpdate == 1 && afterGui == 1 && !held && afterUp == 2 && !released && resumeOk && !overlap)
+                        return null;
+                    return detail;
                 }
                 string gift = One(false);
                 if (gift != null) return gift;
                 return One(true);
+            }, new[] { 820, 402, 412, 360 });
+        }
+
+        static void CheckSameFrameLifts(System.Action<string, bool, string> Check)
+        {
+            EachPhoneWidth(Check, "same-frame-lift", (app, t, flags) =>
+            {
+                var resume = t.GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
+                var ids = (System.Collections.Generic.HashSet<int>)t.GetField("_resumeOriginIds", flags).GetValue(app);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var window = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                void Edge(int id, bool down)
+                {
+                    FlockFiveApp.EditorEndedIds.Clear();
+                    FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                    {
+                        On = true, Down = down, Up = !down, Id = id, Window = window
+                    };
+                    t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                    t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                }
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_adHand", flags).SetValue(app, false);
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(
+                    t.GetNestedType("GiftFace", BindingFlags.NonPublic), 0));
+                t.GetField("_restarting", flags).SetValue(app, false);
+                t.GetField("EditorSnapRound", flags).SetValue(app, null);
+                resume.SetValue(null, AdPause.Unscaled + 5f);
+                Edge(4, true);
+                Edge(9, true);
+                if (!ids.Contains(4) || !ids.Contains(9))
+                    return "down 4 " + ids.Contains(4) + " 9 " + ids.Contains(9);
+                resume.SetValue(null, AdPause.Unscaled - 5f);
+                FlockFiveApp.EditorEndedIds.Clear();
+                FlockFiveApp.EditorEndedIds.Add(4);
+                FlockFiveApp.EditorEndedIds.Add(9);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = false, Up = true, Id = 4, Window = window
+                };
+                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                bool bothGone = !ids.Contains(4) && !ids.Contains(9);
+                bool restarted = RestartLive(t, flags, app);
+                FlockFiveApp.EditorEndedIds.Clear();
+                if (!bothGone || restarted)
+                    return "both 4 " + ids.Contains(4) + " 9 " + ids.Contains(9) + " restart " + restarted;
+                t.GetField("EditorSnapRound", flags).SetValue(app, null);
+                t.GetField("_restarting", flags).SetValue(app, false);
+                resume.SetValue(null, AdPause.Unscaled + 5f);
+                Edge(4, true);
+                Edge(FlockFiveApp.MousePointerId, true);
+                resume.SetValue(null, AdPause.Unscaled - 5f);
+                FlockFiveApp.EditorEndedIds.Clear();
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = false, Up = true, Id = FlockFiveApp.MousePointerId, Window = window
+                };
+                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                bool touchLeft = ids.Contains(4);
+                bool mouseLeft = ids.Contains(FlockFiveApp.MousePointerId);
+                bool mouseRestart = RestartLive(t, flags, app);
+                FlockFiveApp.EditorEndedIds.Clear();
+                if (touchLeft && !mouseLeft && !mouseRestart) return null;
+                return "mouse touch " + touchLeft + " mouse " + mouseLeft + " restart " + mouseRestart;
             }, new[] { 820, 402 });
         }
 
@@ -1714,6 +1827,7 @@ namespace FlockFive.Editor
                     try
                     {
                         Event.current = null;
+                        FlockFiveApp.EditorEndedIds.Clear();
                         Purse.SetStreak(0);
                         resume.SetValue(null, float.NegativeInfinity);
                         var app = go.AddComponent<FlockFiveApp>();

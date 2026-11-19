@@ -5041,6 +5041,8 @@ namespace FlockFive.Editor
                 }
                 string pressTrace = Trace("press", watchWindow, true);
                 string releaseTrace = Trace("release", watchWindow, false);
+                Debug.Log("[home-polish] yield-watch press " + pressTrace);
+                Debug.Log("[home-polish] yield-watch release " + releaseTrace);
                 int starts = (int)t.GetField("_watchStarts", flags).GetValue(app);
                 Event.current = keptEvent;
                 try { Check("yield-watch-starts-once", starts == 1,
@@ -5149,13 +5151,8 @@ namespace FlockFive.Editor
                 var gift = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(gift, 1));
                 t.GetField("_freezeOffer", flags).SetValue(app, false);
-                float s = DeviceFit.Ui();
-                float top = (float)t.GetMethod("TopHud", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(float) }, null)
-                    .Invoke(null, new object[] { 0f });
-                var xBtn = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { s, top });
-                var x = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { xBtn });
+                var x = (Rect)t.GetMethod("GiftCloseHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, null);
                 glove.Invoke(app, new object[] { x.center, true, 2 });
                 bool closed = t.GetField("_gift", flags).GetValue(app).ToString() == "None";
                 try { Check("gift-x-closes-under-glove", closed, t.GetField("_gift", flags).GetValue(app).ToString()); }
@@ -5290,12 +5287,8 @@ namespace FlockFive.Editor
                 t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
                 var restart = (Rect)hud[0];
                 var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
-                float top = (float)t.GetMethod("TopHud", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(float) }, null)
-                    .Invoke(null, new object[] { 0f });
-                var xBtn = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { s, top });
-                var x = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
-                    .Invoke(null, new object[] { xBtn });
+                var x = (Rect)t.GetMethod("GiftCloseHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, null);
                 string watch = Tap(watchR.center);
                 string close = Tap(x.center);
                 string wentHome = Tap(home.center);

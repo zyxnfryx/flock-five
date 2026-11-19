@@ -3941,7 +3941,7 @@ namespace FlockFive
                     }
                     // Stamp here. OnGUI may not have run yet. The same press
                     // stamped again from TakeGuiPointer is a no-op.
-                    NotePointerEdge(EdgeIdNow(offerRelease), offerRelease, PlayPointer.At);
+                    NotePointerEdges(offerRelease, PlayPointer.At);
                     // The X lives inside Restart. Owning it here stops the press
                     // from calling ActRestart before OnGUI. The release closes.
                     if (OverlayOwnsPress(PlayPointer.At, offerRelease))
@@ -4219,27 +4219,27 @@ namespace FlockFive
             else _resumeOriginIds.Remove(id);
         }
 
-        // Drop this finger. A mouse -1 up is the lift of the touch that went down,
-        // so that touch stamp cannot keep blocking later mouse clicks.
+        // Drop this finger only. The mouse has its own id, so its lift does not
+        // clear a touch that is still down.
         void LiftResumeOrigin(int pointerId)
         {
-            int id = ResumeFinger(pointerId);
-            if (id >= 0)
-            {
-                _resumeOriginIds.Remove(id);
-                return;
-            }
-            _resumeOriginIds.Remove(-1);
-            _resumeOriginIds.RemoveWhere(n => n >= 0);
+            _resumeOriginIds.Remove(ResumeFinger(pointerId));
         }
 
         int _noteFrame = -1;
-        int _noteId = int.MinValue;
-        bool _noteUp;
+        int _noteCount;
+        readonly int[] _noteFingers = new int[8];
+        readonly bool[] _noteUps = new bool[8];
 #if UNITY_EDITOR
         // How many distinct edges were recorded. A repeat of the same press
         // in one frame does not add another.
         internal int EditorEdgeStamps;
+        // ActRestart entries, and how many of those called Restart.
+        internal int EditorActRestartEntered;
+        internal int EditorActRestartCommitted;
+        internal string EditorActRestartBlock;
+        // Extra touch ids that ended on this frame. The inject carries one pointer.
+        public static readonly System.Collections.Generic.List<int> EditorEndedIds = new System.Collections.Generic.List<int>();
 #endif
 
         static int EdgeIdNow(bool release)
@@ -4257,7 +4257,7 @@ namespace FlockFive
                 var e = Event.current;
                 if (e != null && e.type == EventType.MouseUp && e.button == 0)
                     return HomeEventId(e, false, true);
-                return -1;
+                return MousePointerId;
             }
             int id = PressIdNow();
             return id == int.MinValue ? -1 : id;
@@ -4266,16 +4266,78 @@ namespace FlockFive
         // Where this finger went down, including a press an overlay then claims.
         // A Down inside the resume window is stamped. Its Up, even after the
         // window, must not become a Restart or a freeze Retry.
-        // UpdateBody and OnGUI both call this. The second call for the same
-        // finger and the same edge, in the same frame, does nothing.
+        // One press, or every finger that ended this frame. UpdateBody and OnGUI
+        // both call this. The second call for a finger already noted is a no-op.
+        readonly System.Collections.Generic.List<int> _endedIds = new System.Collections.Generic.List<int>(4);
+
+        void NotePointerEdges(bool release, Vector2 play)
+        {
+            if (!release)
+            {
+                NotePointerEdge(EdgeIdNow(false), false, play);
+                return;
+            }
+            _endedIds.Clear();
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Up)
+                AddEnded(EditorPointerInject.Id);
+            for (int i = 0; i < EditorEndedIds.Count; i++)
+                AddEnded(EditorEndedIds[i]);
+#endif
+            var touch = Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count; i++)
+                {
+                    var t = touches[i];
+                    if (t == null) continue;
+                    var phase = t.phase.ReadValue();
+                    if (phase != UnityEngine.InputSystem.TouchPhase.Ended
+                        && phase != UnityEngine.InputSystem.TouchPhase.Canceled) continue;
+                    AddEnded(t.touchId.ReadValue());
+                }
+            }
+            if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
+                AddEnded(MousePointerId);
+            if (_endedIds.Count == 0)
+            {
+                NotePointerEdge(EdgeIdNow(true), true, play);
+                return;
+            }
+            for (int i = 0; i < _endedIds.Count; i++)
+                NotePointerEdge(_endedIds[i], true, play);
+        }
+
+        void AddEnded(int id)
+        {
+            if (!_endedIds.Contains(id)) _endedIds.Add(id);
+        }
+
+        bool EdgeAlreadyNoted(int finger, bool releaseEdge)
+        {
+            if (_noteFrame != Time.frameCount) return false;
+            for (int i = 0; i < _noteCount; i++)
+                if (_noteFingers[i] == finger && _noteUps[i] == releaseEdge)
+                    return true;
+            return false;
+        }
+
         void NotePointerEdge(int pointerId, bool releaseEdge, Vector2 play)
         {
             int finger = ResumeFinger(pointerId);
-            if (_noteFrame == Time.frameCount && _noteId == finger && _noteUp == releaseEdge)
-                return;
-            _noteFrame = Time.frameCount;
-            _noteId = finger;
-            _noteUp = releaseEdge;
+            if (EdgeAlreadyNoted(finger, releaseEdge)) return;
+            if (_noteFrame != Time.frameCount)
+            {
+                _noteFrame = Time.frameCount;
+                _noteCount = 0;
+            }
+            if (_noteCount < _noteFingers.Length)
+            {
+                _noteFingers[_noteCount] = finger;
+                _noteUps[_noteCount] = releaseEdge;
+                _noteCount++;
+            }
 #if UNITY_EDITOR
             EditorEdgeStamps++;
 #endif
@@ -7661,7 +7723,7 @@ namespace FlockFive
                     if (endedIds[i] == trackedId) return trackedId;
                 if (endedIds.Length > 0) return endedIds[0];
             }
-            return mouseRelease ? -1 : int.MinValue;
+            return mouseRelease ? MousePointerId : int.MinValue;
         }
 
         void ArmLevelExit(int pointerId)
@@ -7705,7 +7767,7 @@ namespace FlockFive
                 }
             }
             if (Mouse.current != null && Mouse.current.leftButton.isPressed)
-                ArmLevelExit(-1);
+                ArmLevelExit(MousePointerId);
         }
 
         static int ResolveExitEventId(Event e)
@@ -7733,6 +7795,10 @@ namespace FlockFive
             return ExitFingerId(_exitPointerId, ended, true);
         }
 
+        // Shipping mouse. Touch ids are >= 0. -1 is the old synthesized echo that
+        // still matches the touch it belongs to. -2 is "no down-control".
+        public const int MousePointerId = -3;
+
         static int PressIdNow()
         {
 #if UNITY_EDITOR
@@ -7751,7 +7817,7 @@ namespace FlockFive
                 }
             }
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-                return -1;
+                return MousePointerId;
             return int.MinValue;
         }
 
@@ -7981,7 +8047,7 @@ namespace FlockFive
             }
             if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
             {
-                id = -1;
+                id = MousePointerId;
                 return true;
             }
             return false;
@@ -8066,7 +8132,7 @@ namespace FlockFive
             if (PressRainbow.StageHeld()) return false;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
-                PlayPointer.CaptureScreenBottom(Mouse.current.position.ReadValue(), true, false, -1);
+                PlayPointer.CaptureScreenBottom(Mouse.current.position.ReadValue(), true, false, MousePointerId);
                 screen = PlayPointer.PlayBottom;
                 return true;
             }
@@ -8286,14 +8352,32 @@ namespace FlockFive
             // No record (-2) is allowed here. GardenHudAct, a rule-tip tap, and
             // the Restart button call this without a glove Down. The echo path
             // refuses a bare release before it gets here.
+#if UNITY_EDITOR
+            EditorActRestartEntered++;
+#endif
             int down = DownControlOf(_gloveEdgeId);
             if (down == -1 || (down > 0 && down != 2))
+            {
+#if UNITY_EDITOR
+                EditorActRestartBlock = "down " + down;
+#endif
                 return true;
+            }
             if (ResumeSwallowsRestart() || GloveOwnsHudPress() || _resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId))
             {
+#if UNITY_EDITOR
+                EditorActRestartBlock = "swallow window " + ResumeSwallowsRestart()
+                    + " glove " + GloveOwnsHudPress()
+                    + " origin " + _resumeOriginRelease
+                    + " blocks " + ResumeOriginBlocks(_gloveEdgeId);
+#endif
                 _resumeOriginRelease = false;
                 return true;
             }
+#if UNITY_EDITOR
+            EditorActRestartCommitted++;
+            EditorActRestartBlock = "commit";
+#endif
             _tapWho = "restart";
             Restart();
             return true;
@@ -8539,7 +8623,7 @@ namespace FlockFive
                 return;
             }
             var play = PlayPointer.At;
-            NotePointerEdge(EdgeIdNow(release), release, play);
+            NotePointerEdges(release, play);
             if (_avatarRename) RegisterAvatarPlate(DeviceFit.Ui());
             if (_avatarRename && PlateControlAt(play))
             {
@@ -22398,8 +22482,7 @@ namespace FlockFive
         // True when this point is nearer the gift X than the HUD button it also hits.
         bool CloserToGiftX(Vector2 windowGui, int which)
         {
-            float s = DeviceFit.Ui();
-            var x = CloseTapRect(CornerCloseRect(s, TopHud()));
+            var x = GiftCloseHit();
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
@@ -22417,8 +22500,31 @@ namespace FlockFive
         bool GiftCloseExempt(Vector2 play)
         {
             if (_gift != GiftFace.Card || _freezeOffer) return false;
-            var x = CloseTapRect(CornerCloseRect(DeviceFit.Ui(), TopHud()));
+            var x = GiftCloseHit();
             return x.width > 2f && x.Contains(play);
+        }
+
+        // The corner X is padded to a finger target, and that pad used to cover
+        // Restart on a phone. The hit sits on the corner until it would cover
+        // Restart, then moves to a square just below the button.
+        static Rect GiftCloseHit()
+        {
+            var drawn = CornerCloseRect(DeviceFit.Ui(), TopHud());
+            var hit = CloseTapRect(drawn);
+            HudShaken(out var restart, out _);
+            if (restart.width < 2f || !hit.Overlaps(restart)) return hit;
+            float sz = Mathf.Max(36f, drawn.width);
+            float x = drawn.xMax - sz;
+            if (x < 0f) x = 0f;
+            if (x + sz > PhoneArea.W) x = Mathf.Max(0f, PhoneArea.W - sz);
+            float y = restart.yMax + 2f;
+            var seat = new Rect(x, y, sz, sz);
+            if (seat.Overlaps(restart))
+                seat.y = restart.yMax + 4f;
+            if (!seat.Overlaps(restart) && seat.yMax <= PhoneArea.H) return seat;
+            seat = new Rect(Mathf.Max(0f, restart.xMin - 2f - sz), restart.y, sz, sz);
+            if (!seat.Overlaps(restart)) return seat;
+            return hit;
         }
 
         void CloseGift()
@@ -22706,11 +22812,9 @@ namespace FlockFive
                 return;
             }
 
-            var safe = PhoneArea.Safe;
-            float top = TopHud();
-            var xBtn = CornerCloseRect(s, top);
+            var xBtn = GiftCloseHit();
             bool xHeld = false;
-            if (!_freezeOffer && HitPad(CloseTapRect(xBtn), out xHeld))
+            if (!_freezeOffer && HitPad(xBtn, out xHeld))
             {
                 DismissAdHand();
                 if (_keepStreak)
