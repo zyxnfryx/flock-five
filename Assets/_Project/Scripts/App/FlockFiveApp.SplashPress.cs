@@ -191,7 +191,7 @@ namespace FlockFive
                 SynthesizeMouse(into);
                 return;
             }
-            PlayPointer.CaptureScreenBottom(mouse.position.ReadValue(), btn.wasPressedThisFrame, btn.wasReleasedThisFrame, SplashPress.MouseId);
+            PlayPointer.CaptureScreenBottom(mouse.position.ReadValue(), btn.wasPressedThisFrame, btn.wasReleasedThisFrame, PlayPointer.MouseId);
             var pos = PlayPointer.At;
             var ev = Event.current;
             if (ev != null && ev.button == 0 &&
@@ -202,7 +202,7 @@ namespace FlockFive
             else if (btn.wasPressedThisFrame) phase = SplashPress.Phase.Began;
             else if (btn.wasReleasedThisFrame) phase = SplashPress.Phase.Ended;
             else phase = SplashPress.Phase.Held;
-            into.Add(SampleAt(SplashPress.MouseId, pos, phase));
+            into.Add(SampleAt(PlayPointer.MouseId, pos, phase));
         }
 
         static void AddTouch(List<SplashPress.Sample> into, UnityEngine.InputSystem.Controls.TouchControl t, float screenH)
@@ -227,11 +227,11 @@ namespace FlockFive
             var e = Event.current;
             if (e == null || e.button != 0) return;
             if (e.type == EventType.MouseDown)
-                into.Add(SampleAt(SplashPress.MouseId, PlayPointer.Gui(e), SplashPress.Phase.Began));
+                into.Add(SampleAt(PlayPointer.MouseId, PlayPointer.Gui(e), SplashPress.Phase.Began));
             else if (e.type == EventType.MouseUp)
-                into.Add(SampleAt(SplashPress.MouseId, PlayPointer.Gui(e), SplashPress.Phase.Ended));
+                into.Add(SampleAt(PlayPointer.MouseId, PlayPointer.Gui(e), SplashPress.Phase.Ended));
             else if (e.type == EventType.MouseDrag)
-                into.Add(SampleAt(SplashPress.MouseId, PlayPointer.Gui(e), SplashPress.Phase.Held));
+                into.Add(SampleAt(PlayPointer.MouseId, PlayPointer.Gui(e), SplashPress.Phase.Held));
         }
 
         static SplashPress.Sample SampleAt(int id, Vector2 pos, SplashPress.Phase phase)

@@ -11,6 +11,9 @@ namespace FlockFive
     // Hit tests read At. They do not add or subtract the pillar.
     public static class PlayPointer
     {
+        // The mouse is not a touch. Touch ids are >= 0. -1 is only a missing id.
+        public const int MouseId = -3;
+
         public static bool Live;
         public static bool Down;
         public static bool Up;

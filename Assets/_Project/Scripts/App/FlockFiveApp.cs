@@ -921,6 +921,14 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-peach-flutter"); } catch { }
                 StartCoroutine(ShotPeachFlutter());
             }
+            // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+            // Touch /tmp/flock-five-gift-x-still to capture the gift card with the
+            // X below Restart at 820, then 402, 412, and 360.
+            if (System.IO.File.Exists("/tmp/flock-five-gift-x-still"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-gift-x-still"); } catch { }
+                StartCoroutine(ShotGiftXBelowRestart());
+            }
 #endif
         }
 
@@ -1359,6 +1367,38 @@ namespace FlockFive
             EditorShotLive = false;
 #endif
         }
+
+#if UNITY_EDITOR
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // Portrait stills of the gift card. The X hit stays below Restart.
+        IEnumerator ShotGiftXBelowRestart()
+        {
+            const string dir = "/tmp/flock-five-gift-x-stills";
+            System.IO.Directory.CreateDirectory(dir);
+            _splash = false;
+            _adHand = true;
+            _freezeOffer = false;
+            _gift = GiftFace.Card;
+            int[] widths = { 820, 402, 412, 360 };
+            int[] heights = { 1180, 874, 915, 800 };
+            for (int i = 0; i < widths.Length; i++)
+            {
+                int w = widths[i];
+                int h = heights[i];
+                Screen.SetResolution(w, h, false);
+                PhoneArea.EditorWindowOn = true;
+                PhoneArea.EditorWindowW = w;
+                PhoneArea.EditorWindowH = h;
+                PhoneArea.EditorSafeTop = 59f;
+                PhoneArea.EditorSafeBottom = 34f;
+                yield return null;
+                yield return new WaitForEndOfFrame();
+                yield return SnapShot(dir + "/gift-x-" + w + ".png");
+            }
+            PhoneArea.EditorWindowOn = false;
+            Debug.Log("GIFT_X_STILLS_DONE");
+        }
+#endif
 
         IEnumerator ShotGift()
         {
@@ -4257,7 +4297,7 @@ namespace FlockFive
                 var e = Event.current;
                 if (e != null && e.type == EventType.MouseUp && e.button == 0)
                     return HomeEventId(e, false, true);
-                return MousePointerId;
+                return PlayPointer.MouseId;
             }
             int id = PressIdNow();
             return id == int.MinValue ? -1 : id;
@@ -4299,7 +4339,7 @@ namespace FlockFive
                 }
             }
             if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
-                AddEnded(MousePointerId);
+                AddEnded(PlayPointer.MouseId);
             if (_endedIds.Count == 0)
             {
                 NotePointerEdge(EdgeIdNow(true), true, play);
@@ -4314,12 +4354,14 @@ namespace FlockFive
             if (!_endedIds.Contains(id)) _endedIds.Add(id);
         }
 
+        // UpdateBody and OnGUI deliver one edge twice. A later down, after this
+        // finger's up, is a new press even in the same edit-mode frame.
         bool EdgeAlreadyNoted(int finger, bool releaseEdge)
         {
             if (_noteFrame != Time.frameCount) return false;
             for (int i = 0; i < _noteCount; i++)
-                if (_noteFingers[i] == finger && _noteUps[i] == releaseEdge)
-                    return true;
+                if (_noteFingers[i] == finger)
+                    return _noteUps[i] == releaseEdge;
             return false;
         }
 
@@ -4332,7 +4374,12 @@ namespace FlockFive
                 _noteFrame = Time.frameCount;
                 _noteCount = 0;
             }
-            if (_noteCount < _noteFingers.Length)
+            int slot = -1;
+            for (int i = 0; i < _noteCount; i++)
+                if (_noteFingers[i] == finger) { slot = i; break; }
+            if (slot >= 0)
+                _noteUps[slot] = releaseEdge;
+            else if (_noteCount < _noteFingers.Length)
             {
                 _noteFingers[_noteCount] = finger;
                 _noteUps[_noteCount] = releaseEdge;
@@ -4342,7 +4389,7 @@ namespace FlockFive
             EditorEdgeStamps++;
 #endif
             _gloveEdgeId = pointerId;
-            if (!releaseEdge && !(pointerId < 0 && _glovePressLatched && _glovePressId >= 0))
+            if (!releaseEdge && !(pointerId == PlayPointer.MouseId && _glovePressLatched && _glovePressId >= 0))
             {
                 _gloveTookFrame = -1;
                 _homeOpenedThisEdge = false;
@@ -4356,7 +4403,12 @@ namespace FlockFive
             else if (releaseEdge)
             {
                 if (ResumeOriginBlocks(pointerId)) _resumeOriginRelease = true;
+                // A mouse up is the lift of the touch that went down, and of the
+                // mouse. It does not clear a different finger that is still down.
+                int echoed = ResumeFinger(pointerId) == PlayPointer.MouseId && _downPointer >= 0
+                    ? _downPointer : int.MinValue;
                 LiftResumeOrigin(pointerId);
+                if (echoed >= 0) LiftResumeOrigin(echoed);
             }
         }
 
@@ -4373,7 +4425,7 @@ namespace FlockFive
             if (_downPointer == int.MinValue) return -2;
             int id = ResumeFinger(pointerId);
             if (id == _downPointer) return _downControl;
-            if (id == -1 && _downPointer >= 0) return _downControl;
+            if (id == PlayPointer.MouseId && _downPointer >= 0) return _downControl;
             return -2;
         }
 
@@ -4413,7 +4465,7 @@ namespace FlockFive
             if (_resumeOriginRelease) return true;
             int id = ResumeFinger(pointerId);
             if (_resumeOriginIds.Contains(id)) return true;
-            if (id != -1) return false;
+            if (id != PlayPointer.MouseId) return false;
             foreach (int stamped in _resumeOriginIds)
                 if (stamped >= 0) return true;
             return false;
@@ -4424,7 +4476,7 @@ namespace FlockFive
             if (_gloveCancelFrame != Time.frameCount || _glovePressLatched) return false;
             // The canceled touch, and the mouse release that arrives with it.
             // A different finger keeps its own tap.
-            return pointerId == _gloveCancelId || pointerId == -1;
+            return pointerId == _gloveCancelId || pointerId == PlayPointer.MouseId;
         }
 
         void ClearResumeOrigins()
@@ -4443,7 +4495,7 @@ namespace FlockFive
             // The finger is gone. A later mouse Down is a new press, not the
             // synthesized echo of the touch that was canceled.
             if (_glovePressLatched && (GloveFingerMatches(_glovePressId, pointerId)
-                || (pointerId < 0 && _glovePressId >= 0)))
+                || (pointerId == PlayPointer.MouseId && _glovePressId >= 0)))
                 DropGlovePress();
             if (_gloveSwallowedId == int.MinValue) return;
             if (!GloveFingerMatches(_gloveSwallowedId, pointerId)) return;
@@ -4478,7 +4530,7 @@ namespace FlockFive
         {
             if (!_glovePressLatched) return false;
             if (GloveFingerMatches(_glovePressId, releaseId)) return true;
-            return releaseId == -1 && _glovePressId >= 0;
+            return releaseId == PlayPointer.MouseId && _glovePressId >= 0;
         }
 
         int _gloveEchoId = int.MinValue;
@@ -4490,7 +4542,7 @@ namespace FlockFive
             // however many frames sit between the releases.
             if (_gloveEchoFrame < 0) return false;
             if (GloveFingerMatches(_gloveEchoId, releaseId)) return true;
-            return releaseId == -1 && _gloveEchoId >= 0;
+            return releaseId == PlayPointer.MouseId && _gloveEchoId >= 0;
         }
 
         // 0 is not a button. 1 Home, 2 Restart, 3 gear. Play-canvas pixels.
@@ -4607,7 +4659,7 @@ namespace FlockFive
             // press, not the synthesized id, or a fresh tap is eaten because
             // the mouse was the thing down at hide.
             int resumeId = pointerId;
-            if (releaseEdge && pointerId == -1 && _glovePressLatched && _glovePressId >= 0)
+            if (releaseEdge && pointerId == PlayPointer.MouseId && _glovePressLatched && _glovePressId >= 0)
                 resumeId = _glovePressId;
             // The edge stamp also runs before an overlay claim, so a second pass
             // here must not drop the resume flag the first pass just set.
@@ -4773,7 +4825,7 @@ namespace FlockFive
                 // iOS and Android synthesize a mouse Down for the touch that is
                 // already on the glove. That Down is not a new press: it must not
                 // drop the touch latch or open the button under the sprite.
-                if (pointerId < 0 && _glovePressLatched && _glovePressId >= 0)
+                if (pointerId == PlayPointer.MouseId && _glovePressLatched && _glovePressId >= 0)
                 {
                     StampGlove("mouse-with-touch", windowGui, onGlove, hud != 0, false);
                     return true;
@@ -4831,7 +4883,7 @@ namespace FlockFive
                 _gloveEchoFrame = _glovePressId >= 0 ? Time.frameCount : -1;
                 // Started on the sprite. The up is often mouse -1 and often lands
                 // on the button the glove overlaps. That is still the one hop.
-                bool synthesized = pointerId == -1 && _glovePressId >= 0;
+                bool synthesized = pointerId == PlayPointer.MouseId && _glovePressId >= 0;
                 if (synthesized) _gloveEdgeId = _glovePressId;
                 DropGlovePress();
             }
@@ -7723,7 +7775,7 @@ namespace FlockFive
                     if (endedIds[i] == trackedId) return trackedId;
                 if (endedIds.Length > 0) return endedIds[0];
             }
-            return mouseRelease ? MousePointerId : int.MinValue;
+            return mouseRelease ? PlayPointer.MouseId : int.MinValue;
         }
 
         void ArmLevelExit(int pointerId)
@@ -7767,7 +7819,7 @@ namespace FlockFive
                 }
             }
             if (Mouse.current != null && Mouse.current.leftButton.isPressed)
-                ArmLevelExit(MousePointerId);
+                ArmLevelExit(PlayPointer.MouseId);
         }
 
         static int ResolveExitEventId(Event e)
@@ -7795,10 +7847,6 @@ namespace FlockFive
             return ExitFingerId(_exitPointerId, ended, true);
         }
 
-        // Shipping mouse. Touch ids are >= 0. -1 is the old synthesized echo that
-        // still matches the touch it belongs to. -2 is "no down-control".
-        public const int MousePointerId = -3;
-
         static int PressIdNow()
         {
 #if UNITY_EDITOR
@@ -7817,7 +7865,7 @@ namespace FlockFive
                 }
             }
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-                return MousePointerId;
+                return PlayPointer.MouseId;
             return int.MinValue;
         }
 
@@ -7836,7 +7884,7 @@ namespace FlockFive
             if (e.type == EventType.MouseDown)
             {
                 int id = PressIdNow();
-                if (id == int.MinValue) id = -1;
+                if (id == int.MinValue) id = PlayPointer.MouseId;
                 if (DropExitOnPress(_exitPointerHeld, _exitPointerId, id, _exitPointerFrame, Time.frameCount))
                     ClearLevelExit();
                 return false;
@@ -8047,7 +8095,7 @@ namespace FlockFive
             }
             if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
             {
-                id = MousePointerId;
+                id = PlayPointer.MouseId;
                 return true;
             }
             return false;
@@ -8132,7 +8180,7 @@ namespace FlockFive
             if (PressRainbow.StageHeld()) return false;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
-                PlayPointer.CaptureScreenBottom(Mouse.current.position.ReadValue(), true, false, MousePointerId);
+                PlayPointer.CaptureScreenBottom(Mouse.current.position.ReadValue(), true, false, PlayPointer.MouseId);
                 screen = PlayPointer.PlayBottom;
                 return true;
             }

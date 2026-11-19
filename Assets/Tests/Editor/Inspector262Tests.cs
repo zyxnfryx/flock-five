@@ -1368,8 +1368,10 @@ namespace FlockFive.Editor
                     return r.x.ToString("0.0") + "," + r.y.ToString("0.0")
                         + " " + r.width.ToString("0.0") + "x" + r.height.ToString("0.0");
                 }
-                string One(bool freeze)
+                string One(bool freeze, int heldId, int freshId)
                 {
+                    t.GetField("_noteFrame", flags).SetValue(app, -1);
+                    t.GetField("_noteCount", flags).SetValue(app, 0);
                     t.GetField("_splash", flags).SetValue(app, false);
                     t.GetField("_adHand", flags).SetValue(app, true);
                     t.GetField("_freezeOffer", flags).SetValue(app, freeze);
@@ -1411,7 +1413,7 @@ namespace FlockFive.Editor
                     resume.SetValue(null, AdPause.Unscaled + 5f);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
-                        On = true, Down = true, Up = false, Id = 30, Window = window
+                        On = true, Down = true, Up = false, Id = heldId, Window = window
                     };
                     Mark("down", 0);
                     t.GetMethod("UpdateBody", flags).Invoke(app, null);
@@ -1423,7 +1425,7 @@ namespace FlockFive.Editor
                     resume.SetValue(null, AdPause.Unscaled - 5f);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
-                        On = true, Down = false, Up = true, Id = 30, Window = window
+                        On = true, Down = false, Up = true, Id = heldId, Window = window
                     };
                     t.GetMethod("UpdateBody", flags).Invoke(app, null);
                     t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
@@ -1435,13 +1437,13 @@ namespace FlockFive.Editor
                     var play = PlayPointer.Enter(fresh);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
-                        On = true, Down = true, Up = false, Id = 31, Window = fresh
+                        On = true, Down = true, Up = false, Id = freshId, Window = fresh
                     };
                     t.GetMethod("UpdateBody", flags).Invoke(app, null);
                     Mark("freshDown", 3);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
-                        On = true, Down = false, Up = true, Id = 31, Window = fresh
+                        On = true, Down = false, Up = true, Id = freshId, Window = fresh
                     };
                     t.GetMethod("UpdateBody", flags).Invoke(app, null);
                     Mark("freshUp", 3);
@@ -1469,9 +1471,9 @@ namespace FlockFive.Editor
                         return null;
                     return detail;
                 }
-                string gift = One(false);
+                string gift = One(false, 30, 31);
                 if (gift != null) return gift;
-                return One(true);
+                return One(true, 40, 41);
             }, new[] { 820, 402, 412, 360 });
         }
 
@@ -1526,17 +1528,17 @@ namespace FlockFive.Editor
                 t.GetField("_restarting", flags).SetValue(app, false);
                 resume.SetValue(null, AdPause.Unscaled + 5f);
                 Edge(4, true);
-                Edge(FlockFiveApp.MousePointerId, true);
+                Edge(PlayPointer.MouseId, true);
                 resume.SetValue(null, AdPause.Unscaled - 5f);
                 FlockFiveApp.EditorEndedIds.Clear();
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
-                    On = true, Down = false, Up = true, Id = FlockFiveApp.MousePointerId, Window = window
+                    On = true, Down = false, Up = true, Id = PlayPointer.MouseId, Window = window
                 };
                 t.GetMethod("UpdateBody", flags).Invoke(app, null);
                 t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
                 bool touchLeft = ids.Contains(4);
-                bool mouseLeft = ids.Contains(FlockFiveApp.MousePointerId);
+                bool mouseLeft = ids.Contains(PlayPointer.MouseId);
                 bool mouseRestart = RestartLive(t, flags, app);
                 FlockFiveApp.EditorEndedIds.Clear();
                 if (touchLeft && !mouseLeft && !mouseRestart) return null;

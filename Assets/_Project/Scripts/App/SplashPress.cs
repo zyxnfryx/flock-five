@@ -17,8 +17,7 @@ namespace FlockFive
         public enum Id { Level = 0, Poker = 1, Hive = 2, Daily = 3, Vip = 4 }
         public const int Count = 5;
 
-        // Mouse stands in when no touch is down. Real touch ids are never negative.
-        public const int MouseId = -1;
+        // No finger. The mouse id is PlayPointer.MouseId.
         public const int NoTouch = int.MinValue;
 
         public enum Phase { Held, Began, Ended, Canceled, Tap }

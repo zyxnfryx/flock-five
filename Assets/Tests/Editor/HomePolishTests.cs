@@ -1375,8 +1375,8 @@ namespace FlockFive.Editor
                 bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
                 int tutor = (int)t.GetField("_tutorPause", flags).GetValue(app);
                 var tip = t.GetField("_ruleTip", flags).GetValue(app);
-                bool releaseSwallowed = FlockFiveApp.SwallowLevelExit(true, -1, FlockFiveApp.PointerEdge.Release, -1);
-                bool downSwallowed = FlockFiveApp.SwallowLevelExit(true, -1, FlockFiveApp.PointerEdge.Down, -1);
+                bool releaseSwallowed = FlockFiveApp.SwallowLevelExit(true, PlayPointer.MouseId, FlockFiveApp.PointerEdge.Release, PlayPointer.MouseId);
+                bool downSwallowed = FlockFiveApp.SwallowLevelExit(true, PlayPointer.MouseId, FlockFiveApp.PointerEdge.Down, PlayPointer.MouseId);
                 bool gearTakes = FlockFiveApp.GearTakesRelease(true, -1, -1, true, home.center, home);
                 try { Check("kit-home-releases-tutor-pause",
                     splash && tutor == 0 && tip != null && tip.ToString() == "None" && !GamePause.Paused,
@@ -1453,21 +1453,21 @@ namespace FlockFive.Editor
                 else
                 {
                     int id = (int)tracked.GetValue(null);
-                    ateRelease = FlockFiveApp.SwallowLevelExit((bool)held.GetValue(null), id, FlockFiveApp.PointerEdge.Release, -1);
+                    ateRelease = FlockFiveApp.SwallowLevelExit((bool)held.GetValue(null), id, FlockFiveApp.PointerEdge.Release, id);
                     if (ateRelease) clear.Invoke(null, null);
                 }
                 bool releaseKept = pressCleared && !ateRelease && !(bool)held.GetValue(null);
                 bool leavingDown = FlockFiveApp.DropExitOnPress(true, -1, -1, 3, 3);
                 bool otherFinger = FlockFiveApp.DropExitOnPress(true, 4, 8, 3, 3);
 
-                int mouse = FlockFiveApp.ExitFingerId(-1, null, true);
+                int mouse = FlockFiveApp.ExitFingerId(PlayPointer.MouseId, null, true);
                 int finger = FlockFiveApp.ExitFingerId(4, new int[] { 9, 4 }, true);
                 int other = FlockFiveApp.ExitFingerId(4, new int[] { 9 }, true);
-                int mouseVsFinger = FlockFiveApp.ExitFingerId(-1, new int[] { 9 }, true);
-                bool mouseSwallow = FlockFiveApp.SwallowLevelExit(true, -1, FlockFiveApp.PointerEdge.Release, mouse);
+                int mouseVsFinger = FlockFiveApp.ExitFingerId(PlayPointer.MouseId, new int[] { 9 }, true);
+                bool mouseSwallow = FlockFiveApp.SwallowLevelExit(true, PlayPointer.MouseId, FlockFiveApp.PointerEdge.Release, mouse);
                 bool fingerSwallow = FlockFiveApp.SwallowLevelExit(true, 4, FlockFiveApp.PointerEdge.Release, finger);
                 bool otherSwallow = FlockFiveApp.SwallowLevelExit(true, 4, FlockFiveApp.PointerEdge.Release, other);
-                bool mouseEatsFinger = FlockFiveApp.SwallowLevelExit(true, -1, FlockFiveApp.PointerEdge.Release, mouseVsFinger);
+                bool mouseEatsFinger = FlockFiveApp.SwallowLevelExit(true, PlayPointer.MouseId, FlockFiveApp.PointerEdge.Release, mouseVsFinger);
                 try { Check("home-exit-clears-on-focus-loss", focusCleared && pauseCleared,
                     "focus " + focusCleared + " pause " + pauseCleared); }
                 catch (System.Exception hopEx) { Check("home-exit-clears-on-focus-loss", false, ThrowText(hopEx)); }
@@ -1476,7 +1476,7 @@ namespace FlockFive.Editor
                     + " event " + eventLive + " leaving " + leavingDown + " other " + otherFinger); }
                 catch (System.Exception hopEx) { Check("home-exit-clears-on-fresh-press", false, ThrowText(hopEx)); }
                 try { Check("home-exit-matches-finger-id",
-                    mouse == -1 && finger == 4 && other == 9 && mouseVsFinger == 9
+                    mouse == PlayPointer.MouseId && finger == 4 && other == 9 && mouseVsFinger == 9
                     && mouseSwallow && fingerSwallow && !otherSwallow && !mouseEatsFinger,
                     "mouse " + mouse + " finger " + finger + " other " + other + " echo " + mouseVsFinger); }
                 catch (System.Exception hopEx) { Check("home-exit-matches-finger-id", false, ThrowText(hopEx)); }
@@ -1491,7 +1491,7 @@ namespace FlockFive.Editor
 
         static void CheckHomeAndPrivacy(System.Action<string, bool, string> Check)
         {
-            var gate = FlockFiveApp.BeginHomeGate(true, -1);
+            var gate = FlockFiveApp.BeginHomeGate(true, PlayPointer.MouseId);
             bool opened = false;
             for (int i = 0; i < 120; i++)
             {
@@ -1499,8 +1499,8 @@ namespace FlockFive.Editor
             }
             try { Check("home-tap-does-not-open-settings", !opened && !gate.FreshDown, "opened " + opened); }
                 catch (System.Exception hopEx) { Check("home-tap-does-not-open-settings", false, ThrowText(hopEx)); }
-            bool down = FlockFiveApp.HomeGateAllows(ref gate, true, false, -1);
-            bool up = FlockFiveApp.HomeGateAllows(ref gate, false, true, -1);
+            bool down = FlockFiveApp.HomeGateAllows(ref gate, true, false, PlayPointer.MouseId);
+            bool up = FlockFiveApp.HomeGateAllows(ref gate, false, true, PlayPointer.MouseId);
             var gear = new Rect(16f, 8f, 48f, 48f);
             bool gearTakes = up && FlockFiveApp.GearTakesRelease(false, -1, -1, true, gear.center, gear);
             try { Check("home-fresh-down-then-release", down && up && gate.FreshDown && gearTakes, "down " + down + " up " + up); }
@@ -1517,7 +1517,7 @@ namespace FlockFive.Editor
         static void CheckHomeTouchGate(System.Action<string, bool, string> Check)
         {
             var mismatched = FlockFiveApp.BeginHomeGate(true, 4);
-            bool mouseClearsTouch = FlockFiveApp.HomeGateAllows(ref mismatched, false, true, -1);
+            bool mouseClearsTouch = FlockFiveApp.HomeGateAllows(ref mismatched, false, true, PlayPointer.MouseId);
             bool stillCarried = mismatched.CarryHeld && !mouseClearsTouch;
             bool touchClears = FlockFiveApp.HomeGateAllows(ref mismatched, false, true, 4);
             bool fresh = !mismatched.CarryHeld && touchClears == false
@@ -1564,8 +1564,8 @@ namespace FlockFive.Editor
         static void CheckGloveOneHandle(System.Action<string, bool, string> Check)
         {
             FlockFiveApp.ClearLessonGuard();
-            bool mouseKeepsTouchRelease = FlockFiveApp.HomePointerId(-1, true, 4) == 4;
-            bool noReleaseStaysMouse = FlockFiveApp.HomePointerId(-1, false, 4) == -1;
+            bool mouseKeepsTouchRelease = FlockFiveApp.HomePointerId(PlayPointer.MouseId, true, 4) == 4;
+            bool noReleaseStaysMouse = FlockFiveApp.HomePointerId(PlayPointer.MouseId, false, 4) == PlayPointer.MouseId;
             bool namedFingerWins = FlockFiveApp.HomePointerId(4, true, 9) == 4;
                 var go = new GameObject("glove-one-handle");
                 var limb = new GameObject("one-handle-limb");
@@ -1731,13 +1731,13 @@ namespace FlockFive.Editor
                 ReadyHop(app);
                 SetEditorTaps(app, 0);
                 var cuff = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
-                bool cuffDown = (bool)cuff.Invoke(app, new object[] { homeWin, false, -1 });
+                bool cuffDown = (bool)cuff.Invoke(app, new object[] { homeWin, false, PlayPointer.MouseId });
                 int cuffPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
                 bool cuffLatched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
                 Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
                 Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
                 bool homeOnDown = (bool)splash.GetValue(app);
-                bool cuffUp = (bool)cuff.Invoke(app, new object[] { homeWin, true, -1 });
+                bool cuffUp = (bool)cuff.Invoke(app, new object[] { homeWin, true, PlayPointer.MouseId });
                 Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
                 bool homeOnUp = (bool)splash.GetValue(app);
                 int cuffSel = (int)t.GetField("_sel", flags).GetValue(app);
@@ -1745,7 +1745,7 @@ namespace FlockFive.Editor
                 int cuffTaps = EditorTaps(app);
                 SetEditorTaps(app, 0);
                 bool cuffAgain = (bool)cuff.Invoke(app, new object[] { homeWin, true, -1 });
-                bool cuffHop = level1 && from >= 0 && cuffDown && cuffLatched && cuffPress == -1 && cuffUp
+                bool cuffHop = level1 && from >= 0 && cuffDown && cuffLatched && cuffPress == PlayPointer.MouseId && cuffUp
                     && cuffTaps == 1 && cuffSel == from && cuffHit == from
                     && !homeOnDown && !homeOnUp && !cuffAgain && EditorTaps(app) == 0 && !SnapArmed(app);
                 try { Check("glove-down-and-up-handle-once", once,
@@ -2364,14 +2364,14 @@ namespace FlockFive.Editor
 
         static void CheckPointerIdExact(System.Action<string, bool, string> Check)
         {
-            var mouse = FlockFiveApp.BeginHomeGate(true, -1);
+            var mouse = FlockFiveApp.BeginHomeGate(true, PlayPointer.MouseId);
             bool otherNeg = FlockFiveApp.HomeGateAllows(ref mouse, false, true, -2);
             bool mouseHeld = mouse.CarryHeld && !otherNeg;
-            var same = FlockFiveApp.BeginHomeGate(true, -1);
-            FlockFiveApp.HomeGateAllows(ref same, false, true, -1);
+            var same = FlockFiveApp.BeginHomeGate(true, PlayPointer.MouseId);
+            FlockFiveApp.HomeGateAllows(ref same, false, true, PlayPointer.MouseId);
             bool mouseCleared = !same.CarryHeld;
             var missing = FlockFiveApp.BeginHomeGate(true, int.MinValue);
-            FlockFiveApp.HomeGateAllows(ref missing, false, true, -1);
+            FlockFiveApp.HomeGateAllows(ref missing, false, true, PlayPointer.MouseId);
             bool missingHeld = missing.CarryHeld;
             try { Check("pointer-id-exact-on-home-gate", mouseHeld && mouseCleared && missingHeld,
                 "held " + mouse.CarryHeld + " cleared " + !same.CarryHeld + " missing " + missing.CarryHeld); }
@@ -2566,14 +2566,14 @@ namespace FlockFive.Editor
                 var up = new Vector2(px + PhoneArea.OffX + 180f, py + 180f);
                 SetEditorTaps(app, 0);
                 ReadyHop(app);
-                int hops = ReplayGlove(app, down, 7, up, -1);
+                int hops = ReplayGlove(app, down, 7, up, PlayPointer.MouseId);
                 int hopSel = (int)t.GetField("_sel", flags).GetValue(app);
                 int hopHit = GloveHit();
                 var beforeMove = ((Board)t.GetField("_board", flags).GetValue(app)).Clone();
                 t.GetField("_nextTap", flags).SetValue(app, 0f);
                 t.GetField("_cueBranch", flags).SetValue(app, to);
                 PoseGlove(app, new Vector2(px, py), 80f);
-                int moveTaps = ReplayGlove(app, down, 7, up, -1);
+                int moveTaps = ReplayGlove(app, down, 7, up, PlayPointer.MouseId);
                 int moveHit = GloveHit();
                 string moveExit = GloveExit();
                 bool moved = BirdsMoved(app, beforeMove);
@@ -2612,7 +2612,7 @@ namespace FlockFive.Editor
                 t.GetField("_gloveVis", flags).SetValue(app, true);
                 PoseGlove(app, home.center, 72f);
                 ReadyHop(app);
-                int step2 = ReplayGlove(app, onHome, 7, onHome, -1);
+                int step2 = ReplayGlove(app, onHome, 7, onHome, PlayPointer.MouseId);
                 int step2Sel = (int)t.GetField("_sel", flags).GetValue(app);
                 int step2Hit = GloveHit();
                 var beforeStep = stepBoard.Clone();
@@ -2620,7 +2620,7 @@ namespace FlockFive.Editor
                 t.GetField("_cueBranch", flags).SetValue(app, stepTo);
                 t.GetField("_coachMoves", flags).SetValue(app, 2);
                 PoseGlove(app, home.center, 72f);
-                int step3 = ReplayGlove(app, onHome, 8, onHome, -1);
+                int step3 = ReplayGlove(app, onHome, 8, onHome, PlayPointer.MouseId);
                 int step3Hit = GloveHit();
                 string step3Exit = GloveExit();
                 bool stepMoved = BirdsMoved(app, beforeStep);
@@ -2668,7 +2668,7 @@ namespace FlockFive.Editor
                 var point = new Vector2(px + PhoneArea.OffX, py);
                 SetResumeUntil(AdPause.Unscaled + 0.10f);
                 SetEditorTaps(app, 0);
-                int fresh = ReplayGlove(app, point, 9, point, -1);
+                int fresh = ReplayGlove(app, point, 9, point, PlayPointer.MouseId);
                 NoteHeld(app, 4);
                 t.GetField("_glovePressLatched", flags).SetValue(app, true);
                 t.GetField("_glovePressId", flags).SetValue(app, 4);
@@ -2700,7 +2700,7 @@ namespace FlockFive.Editor
                 On = on,
                 Down = down,
                 Up = false,
-                Id = -1,
+                Id = PlayPointer.MouseId,
                 Window = new Vector2(playBottom.x + PhoneArea.OffX, PhoneArea.H - playBottom.y)
             };
         }
@@ -3258,7 +3258,7 @@ namespace FlockFive.Editor
                 var homeFace = t.GetField("_home", flags);
                 homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
                 bool gearLeft = FreshDownLeft(app, HudWindow(HudPlayRect(3)));
-                NoteHeld(app, -1);
+                NoteHeld(app, PlayPointer.MouseId);
                 var heldHome = new Event { type = EventType.MouseDown, mousePosition = HudWindow(home), button = 0 };
                 Event.current = heldHome;
                 Method(t, "SwallowResumePointer").Invoke(null, null);
@@ -4593,7 +4593,7 @@ namespace FlockFive.Editor
                 var play = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
                 ClearRestart(app, t, flags);
                 HoldThroughResume(app, t, flags, 6);
-                PressHud(app, t, play, -1, false);
+                PressHud(app, t, play, PlayPointer.MouseId, false);
                 bool quiet = !RestartBegan(app, t, flags);
                 try { Check("resume-held-finger-does-not-restart", quiet, "restarted " + !quiet); }
                 catch (System.Exception hopEx) { Check("resume-held-finger-does-not-restart", false, ThrowText(hopEx)); }
@@ -4675,7 +4675,7 @@ namespace FlockFive.Editor
                 bool retryQuiet = unlatched && !RestartBegan(app, t, flags);
                 try { Check("resume-hide-up-does-not-retry", retryQuiet, "restarted " + !retryQuiet); }
                 catch (System.Exception hopEx) { Check("resume-hide-up-does-not-retry", false, ThrowText(hopEx)); }
-                PressHud(app, t, play, -1, false);
+                PressHud(app, t, play, PlayPointer.MouseId, false);
                 bool quiet = !RestartBegan(app, t, flags);
                 try { Check("resume-hide-up-does-not-restart", quiet, "restarted " + !quiet); }
                 catch (System.Exception hopEx) { Check("resume-hide-up-does-not-restart", false, ThrowText(hopEx)); }
@@ -4749,9 +4749,9 @@ namespace FlockFive.Editor
                 }
                 Offer("resume-window-restart-does-not-snap", true, 4, false);
                 Offer("resume-restart-inside-glove-touch", true, 5, false);
-                Offer("resume-restart-inside-glove-mouse", true, -1, false);
+                Offer("resume-restart-inside-glove-mouse", true, PlayPointer.MouseId, false);
                 Offer("resume-restart-outside-glove-touch", false, 6, false);
-                Offer("resume-restart-outside-glove-mouse", false, -1, false);
+                Offer("resume-restart-outside-glove-mouse", false, PlayPointer.MouseId, false);
                 Offer("resume-restart-held-past-window", true, 7, true);
 
                 ClearRestart(app, t, flags);
@@ -4768,7 +4768,7 @@ namespace FlockFive.Editor
                 var neutral = new Vector2(play.x, 80f);
                 PressHud(app, t, neutral, 13, true);
                 SetResumeUntil(AdPause.Unscaled - 1f);
-                PressHud(app, t, neutral, -1, false);
+                PressHud(app, t, neutral, PlayPointer.MouseId, false);
                 Method(t, "ActRestart").Invoke(app, null);
                 bool retryQuiet = !RestartBegan(app, t, flags);
                 try { Check("resume-freeze-retry-does-not-restart", retryQuiet, "restarted " + !retryQuiet); }
@@ -4779,7 +4779,7 @@ namespace FlockFive.Editor
                 SetResumeUntil(AdPause.Unscaled + 0.35f);
                 PressHud(app, t, play, 14, true);
                 SetResumeUntil(AdPause.Unscaled - 1f);
-                PressHud(app, t, play, -1, false);
+                PressHud(app, t, play, PlayPointer.MouseId, false);
                 bool pairQuiet = !RestartBegan(app, t, flags);
                 try { Check("resume-touch-down-mouse-up", pairQuiet, "restarted " + !pairQuiet); }
                 catch (System.Exception hopEx) { Check("resume-touch-down-mouse-up", false, ThrowText(hopEx)); }
@@ -4819,8 +4819,8 @@ namespace FlockFive.Editor
                 PressHud(app, t, play, 15, true);
                 Method(t, "NoteSwallowedCancel", typeof(int)).Invoke(app, new object[] { 15 });
                 SetResumeUntil(AdPause.Unscaled - 1f);
-                PressHud(app, t, play, -1, true);
-                PressHud(app, t, play, -1, false);
+                PressHud(app, t, play, PlayPointer.MouseId, true);
+                PressHud(app, t, play, PlayPointer.MouseId, false);
                 bool afterCancel = RestartBegan(app, t, flags);
                 try { Check("resume-cancel-then-fresh-press-restarts", afterCancel, "restarted " + afterCancel); }
                 catch (System.Exception hopEx) { Check("resume-cancel-then-fresh-press-restarts", false, ThrowText(hopEx)); }
@@ -5396,7 +5396,7 @@ namespace FlockFive.Editor
 
                 ClearRestart(app, t, flags);
                 PressHud(app, t, homePlay, 4, true);
-                PressHud(app, t, restartPlay, -1, false);
+                PressHud(app, t, restartPlay, PlayPointer.MouseId, false);
                 bool homeDownQuiet = !RestartBegan(app, t, flags);
                 try { Check("touch-down-home-mouse-up-restart-stays", homeDownQuiet,
                     "restarted " + !homeDownQuiet); }
@@ -5408,7 +5408,7 @@ namespace FlockFive.Editor
                 t.GetField("_settingsOpen", flags).SetValue(app, false);
                 PressHud(app, t, gearPlay, 5, true);
                 t.GetField("_splash", flags).SetValue(app, false);
-                PressHud(app, t, restartPlay, -1, false);
+                PressHud(app, t, restartPlay, PlayPointer.MouseId, false);
                 bool gearDownQuiet = !RestartBegan(app, t, flags);
                 try { Check("touch-down-gear-mouse-up-restart-stays", gearDownQuiet,
                     "restarted " + !gearDownQuiet); }
@@ -5417,7 +5417,7 @@ namespace FlockFive.Editor
                 ClearRestart(app, t, flags);
                 t.GetField("_splash", flags).SetValue(app, false);
                 PressHud(app, t, homePlay, 6, true);
-                PressHud(app, t, homePlay, -1, false);
+                PressHud(app, t, homePlay, PlayPointer.MouseId, false);
                 bool homeOpen = (bool)t.GetField("_splash", flags).GetValue(app);
                 try { Check("touch-down-home-mouse-up-opens", homeOpen, "home " + homeOpen); }
                 catch (System.Exception hopEx) { Check("touch-down-home-mouse-up-opens", false, ThrowText(hopEx)); }
@@ -5426,7 +5426,7 @@ namespace FlockFive.Editor
                 t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
                 t.GetField("_settingsOpen", flags).SetValue(app, false);
                 PressHud(app, t, gearPlay, 7, true);
-                PressHud(app, t, gearPlay, -1, false);
+                PressHud(app, t, gearPlay, PlayPointer.MouseId, false);
                 bool gearOpen = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
                 try { Check("touch-down-gear-mouse-up-opens", gearOpen, "gear " + gearOpen); }
                 catch (System.Exception hopEx) { Check("touch-down-gear-mouse-up-opens", false, ThrowText(hopEx)); }
