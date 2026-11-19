@@ -21850,10 +21850,19 @@ namespace FlockFive
             Sfx.Chirp(BirdColor.Gold);
         }
 
+        bool _tutorialOfferSeen;
+        bool _tutorialWatchReopen;
+
         void RaiseGiftCard()
         {
             if (_gift == GiftFace.Card) return;
             if (!GatePopup(PopupKind.Gift, false)) return;
+            // The first tutorial card waits on the ad. A later open of that
+            // same hand is the reopen that must not sit on an empty fill.
+            if (_adHand && _tutorialOfferSeen)
+                _tutorialWatchReopen = true;
+            if (_adHand)
+                _tutorialOfferSeen = true;
             _gift = GiftFace.Card;
             if (_freezeOffer) _freezeShownAt = AdPause.Unscaled;
             AdLog.Add("branch offer shown (" + OfferReason() + ")");
@@ -22038,9 +22047,9 @@ namespace FlockFive
             int payload = keep ? _restartSavedMul : _giftBranch;
             string placement = keep ? Ads.PlacementKeep : Ads.PlacementBonus;
             bool tutorial = _adHand && !keep;
-            // A reopened tutorial offer must not sit dead for the load wait.
-            // No fill grants the branch (tutorial) or closes with a line.
-            bool skipWait = WatchReopenSkipsLoadWait(tutorial, Ads.Enabled, Ads.RewardedReady);
+            // Only a reopened tutorial card with nothing loaded. The first
+            // offer still goes to Wait and asks for the ad.
+            bool skipWait = WatchReopenSkipsLoadWait(tutorial && _tutorialWatchReopen, Ads.Enabled, Ads.RewardedReady);
             // No fill grants the branch (tutorial) or closes with a line.
             if (skipWait)
                 AdLog.Add("gift ad unavailable (reopened offer, not ready)");

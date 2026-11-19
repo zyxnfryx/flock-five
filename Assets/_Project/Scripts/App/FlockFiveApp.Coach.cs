@@ -1065,8 +1065,9 @@ namespace FlockFive
             _gloveReady = glove;
         }
 
-        // Nice and Crowns are queued captions. Restart drops them.
-        public static bool RestartDropsQueuedCaption(bool crownsOrNice) => crownsOrNice;
+        // Step 1 is only Level 1 while the coach is still owed. Nice and Crowns
+        // are dropped off the screen and armed again, not marked seen.
+        public static bool RestartDropsQueuedCaption(bool level1CoachOwed) => level1CoachOwed;
 
         // Unfinished level-1 coach still comes back as its own step 1.
         // Every other live lesson comes back as that lesson's step 1, and the
@@ -1074,25 +1075,12 @@ namespace FlockFive
         void ApplyRestartRecue()
         {
             bool garden = _coach && PlayerPrefs.GetInt(CoachKey, 0) == 0 && LevelData.DisplayNumber == 1;
-            var stage = _restartFrom < 0 ? LessonRestart.Stage.None : (LessonRestart.Stage)_restartFrom;
-            // Nice and Crowns are queued captions. Restart cancels them and
-            // comes back as step 1, with that caption and its glove.
-            bool cancelCaption = stage == LessonRestart.Stage.Crowns || stage == LessonRestart.Stage.Nice;
-            if (cancelCaption)
-            {
-                _ruleTip = RuleTip.None;
-                _cueLine = null;
-                _cueSpoken = null;
-                _gloveVis = false;
-                if (PlayerPrefs.GetInt(CoachKey, 0) == 0 && LevelData.DisplayNumber == 1)
-                    SettleRestartLesson();
-                return;
-            }
             if (garden)
             {
                 SettleRestartLesson();
                 return;
             }
+            var stage = _restartFrom < 0 ? LessonRestart.Stage.None : (LessonRestart.Stage)_restartFrom;
             ArmRestartStep1(stage);
         }
 
@@ -2014,6 +2002,9 @@ namespace FlockFive
             PlayerPrefs.SetInt(CoachAdHandKey, 1);
             PlayerPrefs.Save();
             _adHand = true;
+            _tutorialWatchReopen = false;
+            if (_gift == GiftFace.Card)
+                _tutorialOfferSeen = true;
             _coachFade = 0f;
             _gloveReady = false;
             _gloveWiggle = 0f;
@@ -2038,6 +2029,8 @@ namespace FlockFive
         {
             if (!_adHand) return;
             _adHand = false;
+            _tutorialOfferSeen = false;
+            _tutorialWatchReopen = false;
             _gloveVis = false;
             DropGlovePress();
             _gloveReady = false;
