@@ -184,6 +184,7 @@ namespace FlockFive.Editor
             Gate("CheckPlayLeavesHomeChain", () => CheckPlayLeavesHomeChain(Check));
             Gate("CheckDailyFinishOffersBadger", () => CheckDailyFinishOffersBadger(Check));
             Gate("CheckPauseKeepsHeldId", () => CheckPauseKeepsHeldId(Check));
+            Gate("CheckDragReleaseOnRestart", () => CheckDragReleaseOnRestart(Check));
 
             string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
             sb.AppendLine(end);
@@ -4412,6 +4413,93 @@ namespace FlockFive.Editor
             t.GetField("_glovePressLatched", flags).SetValue(app, false);
             t.GetField("_glovePressId", flags).SetValue(app, -1);
             SetResumeUntil(AdPause.Unscaled - 1f);
+        }
+
+        // A drag is one gesture. The finger that went down decides the release.
+        // Outside the resume window, a press that did not start on the glove
+        // restarts when it comes up on Restart. A press that did start on the
+        // glove is that hop, so Restart stays down. A press that started inside
+        // the resume window never restarts, even after it slides onto Restart
+        // and even if the window has already closed.
+        static void CheckDragReleaseOnRestart(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("drag-restart");
+            float keep = ResumeUntil();
+            int streak = Purse.Streak;
+            GameObject limb = null, camGo = null;
+            try
+            {
+                Purse.SetStreak(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_cueBranch", flags).SetValue(app, -1);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var restartPlay = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                float w = PhoneArea.W > 2f ? PhoneArea.W : 400f;
+                float h = PhoneArea.H > 2f ? PhoneArea.H : 800f;
+                var away = new Vector2(w * 0.5f, h * 0.55f);
+                if (restart.Contains(away)) away = new Vector2(restart.center.x, restart.yMax + 80f);
+                var awayPlay = new Vector2(away.x, PhoneArea.H - away.y);
+
+                SetResumeUntil(float.NegativeInfinity);
+                ClearRestart(app, t, flags);
+                PressHud(app, t, awayPlay, 4, true);
+                PressHud(app, t, restartPlay, 4, false);
+                bool fresh = RestartBegan(app, t, flags);
+                try { Check("drag-onto-restart-outside-window-restarts", fresh, "restarted " + fresh); }
+                catch (System.Exception hopEx) { Check("drag-onto-restart-outside-window-restarts", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                ReadyHop(app);
+                PoseGlove(app, away, 72f);
+                var gloveAt = new Vector2(away.x + PhoneArea.OffX, away.y);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool owned = (bool)glove.Invoke(app, new object[] { gloveAt, false, 6 });
+                bool hopped = false;
+                string hopExText = "";
+                try { hopped = (bool)glove.Invoke(app, new object[] { new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y), true, 6 }); }
+                catch (System.Exception ex) { hopExText = ThrowText(ex); }
+                bool gloveKept = owned && hopped && !RestartBegan(app, t, flags);
+                try { Check("drag-from-glove-onto-restart-does-not-restart", gloveKept,
+                    "owned " + owned + " hopped " + hopped + " restarted " + RestartBegan(app, t, flags) + hopExText); }
+                catch (System.Exception hopEx) { Check("drag-from-glove-onto-restart-does-not-restart", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                PressHud(app, t, awayPlay, 8, true);
+                PressHud(app, t, restartPlay, 8, false);
+                bool heldOpen = !RestartBegan(app, t, flags);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                PressHud(app, t, awayPlay, 9, true);
+                SetResumeUntil(float.NegativeInfinity);
+                PressHud(app, t, restartPlay, 9, false);
+                bool heldPast = !RestartBegan(app, t, flags);
+                try { Check("drag-onto-restart-from-resume-window-does-not-restart", heldOpen && heldPast,
+                    "open " + heldOpen + " past " + heldPast); }
+                catch (System.Exception hopEx) { Check("drag-onto-restart-from-resume-window-does-not-restart", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                Purse.SetStreak(streak);
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckResumeHeldFinger(System.Action<string, bool, string> Check)

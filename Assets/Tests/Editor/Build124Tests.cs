@@ -137,7 +137,11 @@ namespace FlockFive.Editor
                 app.Contains("if (PokerFirstHandResultHoldsBetBar()) return true;")
                 && app.Contains("_home == HomeFace.Poker && !PokerBackDone() && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn"), "");
             Check("poker-back-uses-shared-banner-spot", CaptionStyles.IsBanner("poker.back") && app.Contains("\"poker.back\""), "");
-            Check("dealer-button-held-with-bar", app.Contains("|| PokerFirstHandResultHoldsBetBar()) return false;"), "");
+            // Deal is hit before the steppers, and it is not eligible while the
+            // first-hand result is holding the bet bar. deal is false, so the
+            // button does not fire.
+            Check("dealer-button-held-with-bar",
+                app.Contains("bool deal = !string.IsNullOrEmpty(act) && !PokerFirstHandResultHoldsBetBar();"), "");
 
             // (6) claimed Daily: no burst, no squish; unclaimed still bursts.
             string daily = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.DailyBonus.cs");
