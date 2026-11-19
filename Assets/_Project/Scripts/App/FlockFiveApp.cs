@@ -8235,7 +8235,18 @@ namespace FlockFive
 
         // Item 8 profiling: OnGUI by event, and the render tail to end of frame.
         public static bool ShotNoGui; // editor clips: background only
+        // OnGUIBody is also invoked from editor tests. Paint only while this
+        // real OnGUI call is on the stack, so a batch Repaint event cannot blit.
+        static int _onGuiDepth;
+
         void OnGUI()
+        {
+            _onGuiDepth++;
+            try { OnGUICore(); }
+            finally { _onGuiDepth--; }
+        }
+
+        void OnGUICore()
         {
             // iPad pillarbox: garden bars + play image, then the GUI runs in the phone area.
             PhoneArea.BeginGui();
@@ -8321,7 +8332,10 @@ namespace FlockFive
         void OnGUIBody()
         {
             TakeGuiPointer();
-            PaintAfterPointer();
+            // Hit and gate logic above is safe outside OnGUI. Every draw under
+            // PaintAfterPointer stays on a real OnGUI pass.
+            if (_onGuiDepth > 0)
+                PaintAfterPointer();
             // The resume-origin Up has had its pass, including Retry's ActRestart.
             _resumeOriginRelease = false;
         }
@@ -11978,7 +11992,7 @@ namespace FlockFive
         static bool GuiRepaint()
         {
             var e = Event.current;
-            return e != null && e.type == EventType.Repaint;
+            return _onGuiDepth > 0 && e != null && e.type == EventType.Repaint;
         }
 
         // This OnGUI pass: a tiny home target (bird or name plate) owns the pointer.
