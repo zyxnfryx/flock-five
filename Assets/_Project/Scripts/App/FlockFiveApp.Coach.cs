@@ -5837,7 +5837,7 @@ namespace FlockFive
         }
 
         // The drawn quad in window GUI pixels, pillar shift included.
-        // Event.mousePosition is already in that space.
+        // PlayPointer.Gui(Event) is already in that space.
         public static Rect GloveWindowRect(Rect playGui, float offX)
         {
             if (playGui.width < 2f) return playGui;
@@ -5915,20 +5915,13 @@ namespace FlockFive
             return homeHit || restartHit;
         }
 
-        // Event.mousePosition is window GUI: top-left origin, x includes the pillar.
+        // PlayPointer.Gui(Event) is window GUI: top-left origin, x includes the pillar.
         // Home and Restart rects are play-area GUI. Subtract OffX, then flip Y into
         // the bottom-origin play point GardenHudPoint expects.
         public static Vector2 WindowGuiToPlay(Vector2 windowGui)
         {
-            return new Vector2(windowGui.x - PhoneArea.OffX, PhoneArea.H - windowGui.y);
-        }
-
-        // Window GUI (pillar included, y down) to phone-local GUI (0..PhoneArea.W, y down).
-        // HUD rects and overlay rects are phone-local. Press and release hit-tests
-        // all go through this, so a pillar cannot slide the point onto Restart.
-        public static Vector2 ToPhoneLocal(Vector2 windowGui)
-        {
-            return new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
+            var play = PlayPointer.Enter(windowGui);
+            return new Vector2(play.x, PhoneArea.H - play.y);
         }
 
         void DrawGloveAt(Vector2 pivot, float ang, float dh, float alpha, float dip, bool mirror = false)
@@ -7060,7 +7053,7 @@ namespace FlockFive
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-            if (GardenHudGui(e.mousePosition)) return;
+            if (GardenHudGui(PlayPointer.Gui(e))) return;
             e.Use();
         }
 
@@ -7069,12 +7062,14 @@ namespace FlockFive
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             bool homeHit, restartHit;
-            return GardenHudPoint(WindowGuiToPlay(gui), PhoneArea.H, home, restart, out homeHit, out restartHit);
+            var bottom = new Vector2(gui.x, PhoneArea.H - gui.y);
+            return GardenHudPoint(bottom, PhoneArea.H, home, restart, out homeHit, out restartHit);
         }
 
         bool GardenHudAct(Vector2 screen)
         {
-            if (OverlayOwnsPress(new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y), false)) return true;
+            var canvas = new Vector2(screen.x, PhoneArea.H - screen.y);
+            if (OverlayOwnsPress(canvas, false)) return true;
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             bool homeHit, restartHit;
@@ -7323,7 +7318,7 @@ namespace FlockFive
         bool SwallowOffTargetTap(Event e)
         {
             if (e == null) return false;
-            var v = JudgeOffTargetTap(e.type, e.mousePosition, e.button);
+            var v = JudgeOffTargetTap(e.type, PlayPointer.Gui(e), e.button);
             if (v.Kind == OffTargetVerdict.Act.Ignore) return false;
             if (v.ClearHotControl) GUIUtility.hotControl = 0;
             if (v.Kind == OffTargetVerdict.Act.Use) e.Use();
@@ -7342,7 +7337,7 @@ namespace FlockFive
                 return OffTargetVerdict.Pass();
             // The name plate's chips, colors, and Done sit under this gate. A lesson
             // that eats every other press must leave the plate alone.
-            if (RenamePlateOwns(_avatarRename, _avatarRenameR, pos, PhoneArea.OffX))
+            if (RenamePlateOwns(_avatarRename, _avatarRenameR, pos, 0))
                 return OffTargetVerdict.Pass();
             // The bet coach's glove gate used to eat Back before the medal's own
             // handler ran, so a new player could not leave. The same predicate the
@@ -8692,7 +8687,7 @@ namespace FlockFive
             if (e == null) return false;
             if (e.type != EventType.MouseDown && e.type != EventType.MouseUp && e.type != EventType.MouseDrag)
                 return false;
-            return RestartGui(e.mousePosition);
+            return RestartGui(PlayPointer.Gui(e));
         }
 
         bool RestartGui(Vector2 gui)

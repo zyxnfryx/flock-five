@@ -3931,10 +3931,17 @@ namespace FlockFive
             {
                 if (TryPointerSample(out var tap, out bool offerRelease))
                 {
-                    var window = new Vector2(tap.x + PhoneArea.OffX, PhoneArea.H - tap.y);
+                    // tap is play-bottom. The canvas point was captured with it.
+                    if (!PlayPointer.Inside(PlayPointer.At))
+                    {
+#if UNITY_EDITOR
+                        EditorPointerInject = default;
+#endif
+                        return;
+                    }
                     // The X lives inside Restart. Owning it here stops the press
                     // from calling ActRestart before OnGUI. The release closes.
-                    if (OverlayOwnsPress(window, offerRelease))
+                    if (OverlayOwnsPress(PlayPointer.At, offerRelease))
                     {
 #if UNITY_EDITOR
                         EditorPointerInject = default;
@@ -3944,7 +3951,7 @@ namespace FlockFive
                     if (offerRelease) return;
                     if (_adHand && _gift == GiftFace.Card)
                     {
-                        int offerHud = HudControl(window);
+                        int offerHud = HudControl(PlayPointer.At);
                         if (offerHud == 1 || offerHud == 2)
                         {
                             HitHud(tap);
@@ -3982,7 +3989,7 @@ namespace FlockFive
                 if (EatGardenLessonTap(heldTap)) return;
                 if (LessonTapBlocked()) return;
                 if (VeilDrops(heldTap)) return;
-                if (OverlayOwnsPress(new Vector2(heldTap.x + PhoneArea.OffX, PhoneArea.H - heldTap.y), false)) return;
+                if (OverlayOwnsPress(PlayPointer.At, false)) return;
                 if (HitHud(heldTap)) return;
                 return;
             }
@@ -3993,11 +4000,10 @@ namespace FlockFive
                 if (TickRuleHold()) return;
                 if (Pressed(out var ruleTap))
                 {
-                    var gui = new Vector2(ruleTap.x + PhoneArea.OffX, PhoneArea.H - ruleTap.y);
                     int gloveId = PressIdNow();
                     if (gloveId == int.MinValue) gloveId = -1;
-                    if (TryDrawnGlove(gui, false, gloveId)) return;
-                    TakeRuleTipPress(ruleTap);
+                    if (PlayPointer.Inside(PlayPointer.At) && TryDrawnGlove(PlayPointer.At, false, gloveId)) return;
+                    if (PlayPointer.Inside(PlayPointer.At)) OverlayOwnsPress(PlayPointer.At, false);
                 }
                 return;
             }
@@ -4009,8 +4015,7 @@ namespace FlockFive
             }
             if (TryPointerSample(out var screen, out bool pressRelease))
             {
-                var owned = new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y);
-                if (OverlayOwnsPress(owned, pressRelease))
+                if (!PlayPointer.Inside(PlayPointer.At))
                 {
 #if UNITY_EDITOR
                     EditorPointerInject = default;
@@ -4018,14 +4023,18 @@ namespace FlockFive
                     return;
                 }
                 if (pressRelease) return;
-            }
-            else return;
-            {
-                var gui = new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y);
                 int gloveId = PressIdNow();
                 if (gloveId == int.MinValue) gloveId = -1;
-                if (TryDrawnGlove(gui, false, gloveId)) return;
+                if (TryDrawnGlove(PlayPointer.At, false, gloveId)) return;
+                if (OverlayOwnsPress(PlayPointer.At, false))
+                {
+#if UNITY_EDITOR
+                    EditorPointerInject = default;
+#endif
+                    return;
+                }
             }
+            else return;
             if (GardenHudAct(screen)) return;
             // Informational leaf and pest lessons eat the press before a stamp,
             // the hud, or a branch move. Restart is exempt inside the helper.
@@ -4358,13 +4367,12 @@ namespace FlockFive
             return releaseId == -1 && _gloveEchoId >= 0;
         }
 
-        // 0 is not a button. 1 Home, 2 Restart, 3 gear. Play pixels, not window pixels.
-        int HudControl(Vector2 windowGui)
+        // 0 is not a button. 1 Home, 2 Restart, 3 gear. Play-canvas pixels.
+        int HudControl(Vector2 play)
         {
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            var play = ToPhoneLocal(windowGui);
             if (home.width > 2f && home.Contains(play)) return 1;
             if (restart.width > 2f && restart.Contains(play)) return 2;
             // The gear is drawn only on the home face. The same rect in the garden
@@ -4385,7 +4393,8 @@ namespace FlockFive
                 return false;
             }
             held = false;
-            var play = ToPhoneLocal(windowGui);
+            // play-canvas pixels. The caller already ran them through PlayPointer.
+            var play = windowGui;
             bool inside = playRect.width > 2f && playRect.Contains(play);
             bool pad = false;
             if (Event.current != null)
@@ -4423,7 +4432,7 @@ namespace FlockFive
         {
             if (!DevLevelSkip.TapLogFromUrl(Application.absoluteURL)) return;
             string scene = _splash ? "home" : (_ruleTip != RuleTip.None ? "caption" : "level");
-            var glove = GloveWindowRect(OnScreenGlove(), PhoneArea.OffX);
+            var glove = OnScreenGlove();
             var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             Debug.Log("[tap] " + (down ? "down" : "up")
                 + " " + at.x.ToString("0") + "," + at.y.ToString("0")
@@ -4459,7 +4468,7 @@ namespace FlockFive
             // has been cleared. Garden hops still require the splash to be down.
             // The down-control uses the sprite.
             bool drawnGlove = _gloveVis
-                && GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX);
+                && OnScreenGlove().Contains(windowGui);
             bool onGlove = !_splash && _board != null && drawnGlove;
             int hud = HudControl(windowGui);
             // Same resume gate as Pressed. This runs before SwallowResumePointer,
@@ -4651,8 +4660,7 @@ namespace FlockFive
                 HudShaken(out var restart, out _);
                 var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
                 var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-                var playGui = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
-                onHud = HudBeatsGlove(playGui, home, restart, gear, HomeGear.Shown(HomeGearNow()));
+                onHud = HudBeatsGlove(windowGui, home, restart, gear, HomeGear.Shown(HomeGearNow()));
             }
             if (!releaseEdge)
             {
@@ -7765,7 +7773,7 @@ namespace FlockFive
             if (_app == null) return;
             int heldId = pointer ? HomeEventId(e, t == EventType.MouseDown, t == EventType.MouseUp) : -1;
             bool held = pointer && _app.ResumeHolds(heldId);
-            int hud = _app.HudControl(e.mousePosition);
+            int hud = _app.HudControl(PlayPointer.Gui(e));
             // Fresh Home and gear. A finger already down at hide is swallowed.
             // Fresh Restart stays swallowed until its own commit.
             if (resumeHold && !otherHold && (hud == 1 || hud == 3) && !held)
@@ -7811,7 +7819,8 @@ namespace FlockFive
             public bool Down;
             public bool Up;
             public int Id;
-            public Vector2 Play;
+            // Raw window GUI (top-origin, pillar included). PlayPointer converts it once.
+            public Vector2 Window;
         }
 
         public static EditorPointer EditorPointerInject;
@@ -7822,8 +7831,10 @@ namespace FlockFive
         public int DevReplayGloveTap(Vector2 downGui, int downId, Vector2 upGui, int upId)
         {
             int before = EditorHandleTaps;
-            TryDrawnGlove(downGui, false, downId);
-            TryDrawnGlove(upGui, true, upId);
+            PlayPointer.CaptureWindow(downGui, true, false, downId);
+            TryDrawnGlove(PlayPointer.At, false, downId);
+            PlayPointer.CaptureWindow(upGui, false, true, upId);
+            TryDrawnGlove(PlayPointer.At, true, upId);
             return EditorHandleTaps - before;
         }
 
@@ -7990,7 +8001,8 @@ namespace FlockFive
 #if UNITY_EDITOR
             if (EditorPointerInject.On && EditorPointerInject.Down)
             {
-                screen = EditorPointerInject.Play;
+                PlayPointer.CaptureInject();
+                screen = PlayPointer.PlayBottom;
                 return true;
             }
 #endif
@@ -8010,7 +8022,8 @@ namespace FlockFive
             if (PressRainbow.StageHeld()) return false;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
-                screen = PhoneArea.In(Mouse.current.position.ReadValue());
+                PlayPointer.CaptureScreenBottom(Mouse.current.position.ReadValue(), true, false, -1);
+                screen = PlayPointer.PlayBottom;
                 return true;
             }
             return false;
@@ -8030,12 +8043,14 @@ namespace FlockFive
                 if (phase == UnityEngine.InputSystem.TouchPhase.Canceled
                     || phase == UnityEngine.InputSystem.TouchPhase.None)
                     continue;
-                screen = PhoneArea.In(t.position.ReadValue());
+                PlayPointer.CaptureScreenBottom(t.position.ReadValue(), true, false, t.touchId.ReadValue());
+                screen = PlayPointer.PlayBottom;
                 return true;
             }
             if (touch.primaryTouch != null && touch.primaryTouch.press.wasPressedThisFrame)
             {
-                screen = PhoneArea.In(touch.primaryTouch.position.ReadValue());
+                PlayPointer.CaptureScreenBottom(touch.primaryTouch.position.ReadValue(), true, false, touch.primaryTouch.touchId.ReadValue());
+                screen = PlayPointer.PlayBottom;
                 return true;
             }
             return false;
@@ -8242,7 +8257,8 @@ namespace FlockFive
 
         bool HitHud(Vector2 screen)
         {
-            if (OverlayOwnsPress(new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y), false)) return true;
+            var canvas = new Vector2(screen.x, PhoneArea.H - screen.y);
+            if (OverlayOwnsPress(canvas, false)) return true;
             if (LessonTapBlocked()) return false;
             HudShaken(out var restart, out var hivePlate);
             var hive = CornerAnchor.HiveStrawHit(CornerAnchor.HiveAlignedDraw(hivePlate, restart));
@@ -8336,6 +8352,7 @@ namespace FlockFive
 
         void OnGUICore()
         {
+            PlayPointer.CaptureEvent(Event.current);
             // iPad pillarbox: garden bars + play image, then the GUI runs in the phone area.
             if (_onGuiDepth > 0) PhoneArea.BeginGui();
             // Depth 0 is a test call, not a real OnGUI. GUI.depth throws there.
@@ -8447,61 +8464,51 @@ namespace FlockFive
             _tapEdge = tapEv != null && tapEv.button == 0
                 && (tapEv.type == EventType.MouseDown || tapEv.type == EventType.MouseUp);
             _tapDown = tapEv != null && tapEv.type == EventType.MouseDown;
-            _tapAt = tapEv != null ? tapEv.mousePosition : default;
             bool tapEdge = _tapEdge;
-            _tapWho = null;
-            _pointerClaimed = false;
-            if (tapEdge && OverlayOwnsPress(tapEv.mousePosition, tapEv.type == EventType.MouseUp))
+            bool release = false;
+            bool have = false;
+            if (tapEdge)
             {
-                FinishPointerClaim(_tapWho ?? "overlay", tapEv);
-                return;
-            }
-            if (tapEdge && ResumeGloveEdge(tapEv.mousePosition) && HudControl(tapEv.mousePosition) != 2)
-            {
-                int gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
-                if (TryDrawnGlove(tapEv.mousePosition, tapEv.type == EventType.MouseUp, gloveId))
-                {
-                    FinishPointerClaim("glove", tapEv);
-                    return;
-                }
-                // Watch (and the gift X) already ran inside the yield. Eat the
-                // event so the card, Play, and the cards do not see it too.
-                if (_pointerClaimed)
-                {
-                    FinishPointerClaim(_tapWho ?? "watch", tapEv);
-                    return;
-                }
-            }
-            if (tapEdge && _splash && _home == HomeFace.Splash)
-            {
-                bool down = tapEv.type == EventType.MouseDown;
-                bool up = tapEv.type == EventType.MouseUp;
-                int id = HomeEventId(tapEv, down, up);
-                // The bird look opens naming. The home gate must not eat that tap
-                // and send the player back into the garden.
-                if (up && TakeAdoptLookTap(tapEv.mousePosition))
-                {
-                    FinishPointerClaim("adopt-look", tapEv);
-                    return;
-                }
-                if (!AdoptLookOwnsTap(tapEv.mousePosition)
-                    && !HomeGateAllows(ref _homeGate, down, up, id))
-                {
-                    GUIUtility.hotControl = 0;
-                    if (_tapWho == null) _tapWho = "home-gate";
-                    tapEv.Use();
-                }
+                PlayPointer.CaptureEvent(tapEv);
+                have = true;
+                release = tapEv.type == EventType.MouseUp;
             }
 #if UNITY_EDITOR
-            if (EditorPointerInject.On && (EditorPointerInject.Down || EditorPointerInject.Up))
+            else if (EditorPointerInject.On && (EditorPointerInject.Down || EditorPointerInject.Up))
             {
-                var injected = new Vector2(EditorPointerInject.Play.x + PhoneArea.OffX, PhoneArea.H - EditorPointerInject.Play.y);
-                if (OverlayOwnsPress(injected, EditorPointerInject.Up && !EditorPointerInject.Down))
-                {
-                    FinishPointerClaim(_tapWho ?? "overlay", tapEdge ? tapEv : null);
-                    return;
-                }
-                if (ResumeGloveEdge(injected) && TryDrawnGlove(injected, EditorPointerInject.Up, EditorPointerInject.Id))
+                PlayPointer.CaptureInject();
+                have = true;
+                release = EditorPointerInject.Up && !EditorPointerInject.Down;
+            }
+#endif
+            _tapAt = have ? PlayPointer.At : default;
+            _tapWho = null;
+            _pointerClaimed = false;
+            if (!have) return;
+            // Side bars are the painting. They are not Home, Restart, or a card.
+            if (!PlayPointer.Inside(PlayPointer.At))
+            {
+                if (tapEdge && tapEv != null) tapEv.Use();
+#if UNITY_EDITOR
+                EditorPointerInject = default;
+#endif
+                return;
+            }
+            var play = PlayPointer.At;
+            if (OverlayOwnsPress(play, release))
+            {
+                FinishPointerClaim(_tapWho ?? "overlay", tapEdge ? tapEv : null);
+                return;
+            }
+            if (ResumeGloveEdge(play) && HudControl(play) != 2)
+            {
+                int gloveId = -1;
+                if (tapEdge)
+                    gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
+#if UNITY_EDITOR
+                else gloveId = EditorPointerInject.Id;
+#endif
+                if (TryDrawnGlove(play, release, gloveId))
                 {
                     FinishPointerClaim("glove", tapEdge ? tapEv : null);
                     return;
@@ -8511,20 +8518,28 @@ namespace FlockFive
                     FinishPointerClaim(_tapWho ?? "watch", tapEdge ? tapEv : null);
                     return;
                 }
-                if (EditorPointerInject.Up && TakeAdoptLookTap(injected))
+            }
+            if (_splash && _home == HomeFace.Splash && !(_avatarRename && PlateControlAt(play)))
+            {
+                int id = -1;
+                if (tapEdge)
+                    id = HomeEventId(tapEv, !release, release);
+#if UNITY_EDITOR
+                else id = EditorPointerInject.Id;
+#endif
+                bool down = !release;
+                if (release && TakeAdoptLookTap(play))
                 {
                     FinishPointerClaim("adopt-look", tapEdge ? tapEv : null);
                     return;
                 }
-                if (_splash && _home == HomeFace.Splash
-                    && !AdoptLookOwnsTap(injected)
-                    && !HomeGateAllows(ref _homeGate, EditorPointerInject.Down, EditorPointerInject.Up, EditorPointerInject.Id))
+                if (!AdoptLookOwnsTap(play)
+                    && !HomeGateAllows(ref _homeGate, down, release, id))
                 {
                     GUIUtility.hotControl = 0;
                     FinishPointerClaim(_tapWho ?? "home-gate", tapEdge ? tapEv : null);
                 }
             }
-#endif
         }
 
         // Editor batch reports the release on the inject, not on Pressed().
@@ -8534,7 +8549,8 @@ namespace FlockFive
 #if UNITY_EDITOR
             if (EditorPointerInject.On && EditorPointerInject.Up && !EditorPointerInject.Down)
             {
-                screen = EditorPointerInject.Play;
+                PlayPointer.CaptureInject();
+                screen = PlayPointer.PlayBottom;
                 release = true;
                 return true;
             }
@@ -8546,34 +8562,11 @@ namespace FlockFive
         // One owner for every overlay control. Update presses and TakeGuiPointer
         // both ask this, so the HUD and the board cannot take the point on
         // either edge. Release performs the overlay's action. Press only claims.
-        bool OverlayOwnsPress(Vector2 windowGui, bool release)
+        bool OverlayOwnsPress(Vector2 play, bool release)
         {
-            var phone = ToPhoneLocal(windowGui);
-            if (_gift == GiftFace.Card && !_freezeOffer)
-            {
-                int which = HudControl(windowGui);
-                bool onX = GiftCloseExempt(windowGui);
-                if (onX && which != 0 && !CloserToGiftX(windowGui, which))
-                    onX = false;
-                if (onX)
-                {
-                    if (release) CloseGift();
-                    _tapWho = "gift-x";
-                    return true;
-                }
-                if (_adHand)
-                {
-                    float s = DeviceFit.Ui();
-                    GiftCardPlaced(s, out _, out var cta);
-                    if (FlowerHit(cta, s).Contains(phone))
-                    {
-                        if (release) StartWatchGift();
-                        _tapWho = "watch";
-                        return true;
-                    }
-                }
-            }
-            if (_fivesOpen && phone.x >= 0f && phone.y >= 0f && phone.x <= PhoneArea.W && phone.y <= PhoneArea.H)
+            if (!PlayPointer.Inside(play)) return false;
+            if (GiftOverlayOwns(play, release)) return true;
+            if (_fivesOpen)
             {
                 // The glass covers Restart and Home. The X and a tap on the glass both close.
                 if (release)
@@ -8584,38 +8577,121 @@ namespace FlockFive
                 }
                 float s = DeviceFit.Ui();
                 var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
-                _tapWho = FivesCloseRect(g.Panel, s).Contains(phone) ? "fives-close" : "fives-glass";
+                _tapWho = FivesCloseRect(g.Panel, s).Contains(play) ? "fives-close" : "fives-glass";
                 return true;
             }
-            if (_dailyAskOpen && _dailyAskNoHitOn && _dailyAskNoHit.Contains(phone))
+            if (_dailyAskOpen && _dailyAskNoHitOn && _dailyAskNoHit.Contains(play))
             {
-                if (release) TakeDailyAskNotNow(_dailyAskNoHit, phone);
+                if (release) TakeDailyAskNotNow(_dailyAskNoHit, play);
                 _tapWho = "not-now";
                 return true;
             }
-            if (_avatarRename && _avatarRenameR.width > 2f && _avatarRenameR.Contains(phone) && !NamingControlHit(phone))
+            if (_avatarRename && _avatarRenameR.width > 2f)
             {
-                _tapWho = "naming";
+                RegisterAvatarPlate(DeviceFit.Ui());
+                if (_avatarRenameR.Contains(play) && !PlateControlAt(play))
+                {
+                    _tapWho = "naming";
+                    return true;
+                }
+            }
+            if (RewardChoiceButtonsDue())
+            {
+                bool hasAd = _rewardHasAd == 1;
+                var lay = LayoutRewardChoice(_rewardFace, PhoneArea.W, PhoneArea.H, hasAd);
+                if (!(lay.Primary.Contains(play) || (hasAd && lay.Secondary.Contains(play))))
+                {
+                    _tapWho = "reward";
+                    return true;
+                }
+            }
+            if (_ruleTip != RuleTip.None)
+            {
+                if (!release) TakeRuleTipPress(PlayPointer.PlayBottom);
+                _tapWho = "rule";
+                return true;
+            }
+            // Home and Restart stay live. Any other lesson tap belongs to the caption.
+            if (HudControl(play) == 0 && EatGardenLessonTap(PlayPointer.PlayBottom))
+            {
+                _tapWho = "coach";
                 return true;
             }
             return false;
         }
 
-        // Done and the kit chips have their own pads. Claiming them would Use the
-        // event before DrawAvatarRename, so those taps would never land.
-        bool NamingControlHit(Vector2 phone)
+        // Gift card, the ad movie, the wait, the thanks, and the freeze offer.
+        // X and Watch run here. Freeze Retry, Continue, and Wait Cancel are
+        // their own pads, so this leaves those points alone.
+        bool GiftOverlayOwns(Vector2 play, bool release)
         {
-            AvatarRenameLayout(DeviceFit.Ui(), out _, out _, out var done);
-            if (done.width > 2f && done.Contains(phone)) return true;
-            for (int i = 0; i < _avatarKitN; i++)
-                if (_avatarKitR[i].width > 2f && _avatarKitR[i].Contains(phone)) return true;
-            return false;
+            if (_gift == GiftFace.None && !_freezeOffer) return false;
+            if (_freezeOffer)
+            {
+                if (FreezeControlAt(play)) return false;
+                _tapWho = "freeze";
+                return true;
+            }
+            if (_gift == GiftFace.Card)
+            {
+                int which = HudControl(play);
+                bool onX = GiftCloseExempt(play);
+                if (onX && which != 0 && !CloserToGiftX(play, which))
+                    onX = false;
+                if (onX)
+                {
+                    if (release) CloseGift();
+                    _tapWho = "gift-x";
+                    return true;
+                }
+                float s = DeviceFit.Ui();
+                GiftCardPlaced(s, out var card, out var cta);
+                if (_adHand && FlowerHit(cta, s).Contains(play))
+                {
+                    if (release) StartWatchGift();
+                    _tapWho = "watch";
+                    return true;
+                }
+                if (card.Contains(play))
+                {
+                    _tapWho = "gift";
+                    return true;
+                }
+                return false;
+            }
+            if (_gift == GiftFace.Wait)
+            {
+                if (WaitCancelAt(play)) return false;
+                _tapWho = "gift-wait";
+                return true;
+            }
+            // Movie and Thanks cover the play canvas. They have no HUD button.
+            _tapWho = _gift == GiftFace.Movie ? "gift-movie" : "gift-thanks";
+            return true;
+        }
+
+        bool FreezeControlAt(Vector2 play)
+        {
+            float s = DeviceFit.Ui();
+            PlaceFreeze(s, out _, out var retry, out var cont);
+            float pad = 8f * s;
+            var retryHit = new Rect(retry.x - pad, retry.y - pad * 0.35f, retry.width + pad * 2f, retry.height + pad * 0.7f);
+            return retryHit.Contains(play) || cont.Contains(play);
+        }
+
+        bool WaitCancelAt(Vector2 play)
+        {
+            if (!Ads.CanCancelWait) return false;
+            float s = DeviceFit.Ui();
+            float w = Mathf.Max(120f, 150f * s), h = Mathf.Max(40f, 44f * s);
+            var r = new Rect((PhoneArea.W - w) * 0.5f, PhoneArea.H * 0.56f, w, h);
+            return r.Contains(play);
         }
 
         // The fives X owns this event. Later poker hits must not see it.
         bool ClaimFivesClose(Event tapEv)
         {
-            if (tapEv.type != EventType.MouseUp || !TakeFivesClose(tapEv.mousePosition)) return false;
+            if (tapEv.type != EventType.MouseUp || !TakeFivesClose(PlayPointer.Gui(tapEv))) return false;
             FinishPointerClaim("fives-close", tapEv);
             return true;
         }
@@ -8626,7 +8702,7 @@ namespace FlockFive
         {
             // Same as the fives X: the press does not close the ask. The release does.
             if (tapEv.type != EventType.MouseUp) return false;
-            if (!_dailyAskNoHitOn || !TakeDailyAskNotNow(_dailyAskNoHit, tapEv.mousePosition)) return false;
+            if (!_dailyAskNoHitOn || !TakeDailyAskNotNow(_dailyAskNoHit, PlayPointer.Gui(tapEv))) return false;
             FinishPointerClaim("not-now", tapEv);
             return true;
         }
@@ -8650,7 +8726,7 @@ namespace FlockFive
             if (!_adHand) return false;
             float s = DeviceFit.Ui();
             GiftCardPlaced(s, out _, out var cta);
-            if (!FlowerHit(cta, s).Contains(ToPhoneLocal(gui))) return false;
+            if (!FlowerHit(cta, s).Contains(gui)) return false;
             StartWatchGift();
             who = "watch";
             return true;
@@ -8769,7 +8845,7 @@ namespace FlockFive
             var hudEv = Event.current;
             bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
             bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
-            var hudAt = hudEv != null ? hudEv.mousePosition : restart.center;
+            var hudAt = hudEv != null ? PlayPointer.Gui(hudEv) : restart.center;
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             bool homeHeld = false;
             if (home.width > 2f)
@@ -12314,7 +12390,7 @@ namespace FlockFive
                 return HitPadStable(r, e, out held);
 #endif
             int id = GuiPadId(r);
-            bool inside = r.Contains(e.mousePosition);
+            bool inside = r.Contains(PlayPointer.Gui(e));
             bool fired = false;
             switch (e.GetTypeForControl(id))
             {
@@ -12354,7 +12430,7 @@ namespace FlockFive
         static bool HitPadStable(Rect r, Event e, out bool held)
         {
             int id = StableRectId(r);
-            bool inside = r.Contains(e.mousePosition);
+            bool inside = r.Contains(PlayPointer.Gui(e));
             bool fired = false;
             if (e.type == EventType.MouseDown && inside && e.button == 0)
             {
@@ -12382,18 +12458,13 @@ namespace FlockFive
         // bottom-up screen space, the same two spaces the HUD presses use.
         static bool HitPadPointer(Rect r, out bool held)
         {
-            var p = EditorPointerInject;
-            bool inside = r.Contains(p.Play);
-            if (!inside && PhoneArea.H > 2f)
-            {
-                var gui = new Vector2(p.Play.x + PhoneArea.OffX, PhoneArea.H - p.Play.y);
-                inside = r.Contains(gui);
-            }
+            PlayPointer.CaptureInject();
+            bool inside = r.Contains(PlayPointer.At);
             int id = StableRectId(r);
             bool fired = false;
-            if (p.Down && inside)
+            if (PlayPointer.Down && inside)
                 _editPadDown = id;
-            else if (p.Up && _editPadDown == id)
+            else if (PlayPointer.Up && _editPadDown == id)
             {
                 _editPadDown = 0;
                 if (inside) fired = true;
@@ -12437,8 +12508,8 @@ namespace FlockFive
             var kind = e.type;
             if (kind == EventType.MouseDown && e.button == 0)
             {
-                swipe.Tracking = area.width > 2f && area.height > 2f && area.Contains(e.mousePosition);
-                swipe.Origin = e.mousePosition;
+                swipe.Tracking = area.width > 2f && area.height > 2f && area.Contains(PlayPointer.Gui(e));
+                swipe.Origin = PlayPointer.Gui(e);
                 swipe.Claimed = false;
                 PageSwipeAte = false;
                 return;
@@ -12447,7 +12518,7 @@ namespace FlockFive
             swipe.Tracking = false;
             if (e.button != 0) return;
             int dir;
-            bool took = PageSwipeDir(e.mousePosition - swipe.Origin, minPx, out dir);
+            bool took = PageSwipeDir(PlayPointer.Gui(e) - swipe.Origin, minPx, out dir);
             swipe.Claimed = took;
             PageSwipeAte = took;
             if (took) swipe.Dir = dir;
@@ -12570,7 +12641,7 @@ namespace FlockFive
             var pigR = PiggyRect(s);
             _yieldPig = !modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR);
             _yieldPigR = pigR;
-            if (_yieldPig && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
+            if (_yieldPig && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, PlayPointer.Gui(Event.current))))
             {
                 TryPigPoke();
                 ShowCoinTip();
@@ -18976,7 +19047,7 @@ namespace FlockFive
             // probe off GUIUtility, which throws outside a real OnGUI.
             if (e == null || (e.type != EventType.MouseDown && e.type != EventType.MouseUp && e.type != EventType.MouseDrag))
                 return;
-            var mouse = e.mousePosition;
+            var mouse = PlayPointer.Gui(e);
             _pokerHover = -1;
             if (canHold)
             {
@@ -19012,7 +19083,7 @@ namespace FlockFive
                         if (canHold && i == top && e.button == 0)
                         {
                             GUIUtility.hotControl = id;
-                            _pokerDownAt = e.mousePosition;
+                            _pokerDownAt = PlayPointer.Gui(e);
                             e.Use();
                         }
                         break;
@@ -19022,7 +19093,7 @@ namespace FlockFive
                             GUIUtility.hotControl = 0;
                             e.Use();
                             if (canHold && i == top
-                                && PokerCardReleaseToggles(BirdPoker.Hold[i], e.mousePosition - _pokerDownAt, PokerSwipeMin(DeviceFit.Ui())))
+                                && PokerCardReleaseToggles(BirdPoker.Hold[i], PlayPointer.Gui(e) - _pokerDownAt, PokerSwipeMin(DeviceFit.Ui())))
                                 ApplyPokerHold(i);
                         }
                         break;
@@ -20298,7 +20369,7 @@ namespace FlockFive
             if (!_albumCardOk || _hiveInspect >= 0 || PageSwipeAte) return;
             var e = Event.current;
             if (e == null || e.rawType != EventType.MouseUp || e.button != 0) return;
-            if (!_albumCardR.Contains(e.mousePosition)) return;
+            if (!_albumCardR.Contains(PlayPointer.Gui(e))) return;
             AdvanceAlbumTutor(3);
         }
 
@@ -20386,7 +20457,7 @@ namespace FlockFive
             GUI.Label(xBtn, "X", xLab);
 
             bool fullyOpen = !_hiveInspectClosing && u >= 1f;
-            var hintGui = Event.current != null ? Event.current.mousePosition : default;
+            var hintGui = Event.current != null ? PlayPointer.Gui(Event.current) : default;
             bool hintUp = Event.current != null && Event.current.button == 0 && Event.current.type == EventType.MouseUp
                 && PutBackHintHit(hintGui, _maxxedHint);
             bool hintPut = hintUp || (PutBackHintHit(hintGui, _maxxedHint) && HitPad(PutBackHintPad(_maxxedHint), out _));
@@ -20405,7 +20476,7 @@ namespace FlockFive
             bool outside = !upgradeHit && !_hiveInspectClosing && u > 0.85f && (HitPad(full, out _) || margin);
             bool onHint = _maxxedHint.width > 8f && Event.current != null
                 && Event.current.button == 0 && Event.current.type == EventType.MouseUp
-                && _maxxedHint.Contains(Event.current.mousePosition);
+                && _maxxedHint.Contains(PlayPointer.Gui(Event.current));
             if ((outside || xHit || backHit || onHint || hintPut) && !_hiveInspectClosing)
             {
                 if (hintPut || onHint) _tapWho = "hint";
@@ -20886,8 +20957,8 @@ namespace FlockFive
         {
             var e = Event.current;
             if (e == null || e.button != 0 || e.type != EventType.MouseUp) return false;
-            if (!InspectDismissTap(e.mousePosition, card)) return false;
-            var p = e.mousePosition;
+            if (!InspectDismissTap(PlayPointer.Gui(e), card)) return false;
+            var p = PlayPointer.Gui(e);
             float w = PhoneArea.W;
             float h = PhoneArea.H;
             if (p.x >= 0f && p.y >= 0f && p.x <= w && p.y <= h) return false;
@@ -20989,7 +21060,7 @@ namespace FlockFive
             for (int i = 0; i < n; i++)
             {
                 bool fire = HitPad(_honeyHits[i], out bool held);
-                bool drag = e != null && e.type == EventType.MouseDrag && _honeyHits[i].Contains(e.mousePosition);
+                bool drag = e != null && e.type == EventType.MouseDrag && _honeyHits[i].Contains(PlayPointer.Gui(e));
                 if (drag && HoneyPoke.DragInto(i))
                 {
                     ate = true;
@@ -21484,7 +21555,7 @@ namespace FlockFive
             if (honey <= 0) return false;
             int n = CardText.HoneyBand(CardText.FaceOf(card), honey, true, _honeyHits);
             for (int i = 0; i < n; i++)
-                if (_honeyHits[i].Contains(e.mousePosition)) return true;
+                if (_honeyHits[i].Contains(PlayPointer.Gui(e))) return true;
             return false;
         }
 
@@ -21797,14 +21868,14 @@ namespace FlockFive
             _levelHiveDragId = id;
             var e = Event.current;
             if (e == null) return;
-            bool inside = r.Contains(e.mousePosition);
+            bool inside = r.Contains(PlayPointer.Gui(e));
             switch (e.GetTypeForControl(id))
             {
                 case EventType.MouseDown:
                     if (inside && e.button == 0)
                     {
                         GUIUtility.hotControl = id;
-                        _levelHiveDrag0 = e.mousePosition;
+                        _levelHiveDrag0 = PlayPointer.Gui(e);
                         _levelHiveDragX = 0f;
                         _levelHiveDrag = true;
                         e.Use();
@@ -21813,7 +21884,7 @@ namespace FlockFive
                 case EventType.MouseDrag:
                     if (GUIUtility.hotControl == id)
                     {
-                        _levelHiveDragX = e.mousePosition.x - _levelHiveDrag0.x;
+                        _levelHiveDragX = PlayPointer.Gui(e).x - _levelHiveDrag0.x;
                         e.Use();
                     }
                     break;
@@ -21821,7 +21892,7 @@ namespace FlockFive
                     if (GUIUtility.hotControl == id)
                     {
                         GUIUtility.hotControl = 0;
-                        float dx = e.mousePosition.x - _levelHiveDrag0.x;
+                        float dx = PlayPointer.Gui(e).x - _levelHiveDrag0.x;
                         _levelHiveDrag = false;
                         _levelHiveDragX = 0f;
                         e.Use();
@@ -22232,7 +22303,7 @@ namespace FlockFive
             {
                 float s = DeviceFit.Ui();
                 GiftCardPlaced(s, out _, out var cta);
-                if (FlowerHit(cta, s).Contains(ToPhoneLocal(windowGui)))
+                if (FlowerHit(cta, s).Contains(windowGui))
                 {
                     if (releaseEdge) StartWatchGift();
                     _pointerClaimed = true;
@@ -22246,7 +22317,7 @@ namespace FlockFive
                 return true;
             if (!releaseEdge) return false;
             var drawn = OnScreenGlove();
-            bool onHand = _gloveVis && drawn.width > 2f && GloveWindowHit(windowGui, drawn, PhoneArea.OffX);
+            bool onHand = _gloveVis && drawn.width > 2f && drawn.Contains(windowGui);
             return !onHand;
         }
 
@@ -22259,12 +22330,11 @@ namespace FlockFive
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             var hud = which == 1 ? home : which == 3 ? gear : restart;
-            var phone = ToPhoneLocal(windowGui);
             if (x.width < 2f || hud.width < 2f) return true;
-            float dx = phone.x - x.center.x;
-            float dy = phone.y - x.center.y;
-            float hx = phone.x - hud.center.x;
-            float hy = phone.y - hud.center.y;
+            float dx = windowGui.x - x.center.x;
+            float dy = windowGui.y - x.center.y;
+            float hx = windowGui.x - hud.center.x;
+            float hy = windowGui.y - hud.center.y;
             return dx * dx + dy * dy <= hx * hx + hy * hy;
         }
 
@@ -22273,7 +22343,7 @@ namespace FlockFive
         {
             if (_gift != GiftFace.Card || _freezeOffer) return false;
             var x = CloseTapRect(CornerCloseRect(DeviceFit.Ui(), TopHud()));
-            return x.width > 2f && x.Contains(ToPhoneLocal(windowGui));
+            return x.width > 2f && x.Contains(windowGui);
         }
 
         void CloseGift()

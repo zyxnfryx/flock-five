@@ -77,7 +77,7 @@ namespace FlockFive
                 var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
                 var close = FivesCloseRect(g.Panel, s);
                 var e = Event.current;
-                bool onClose = e != null && close.Contains(e.mousePosition);
+                bool onClose = e != null && close.Contains(PlayPointer.Gui(e));
                 if (!onClose && _fivesAnim > 0.55f && HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _))
                 {
                     _fivesOpen = false;
@@ -258,14 +258,16 @@ namespace FlockFive
 #if UNITY_EDITOR
             if (EditorPointerInject.On && EditorPointerInject.Up)
             {
-                gui = new Vector2(EditorPointerInject.Play.x + PhoneArea.OffX, PhoneArea.H - EditorPointerInject.Play.y);
+                PlayPointer.CaptureInject();
+                gui = PlayPointer.At;
                 return true;
             }
 #endif
             var e = Event.current;
             if (e != null && e.type == EventType.MouseUp && e.button == 0)
             {
-                gui = e.mousePosition;
+                PlayPointer.CaptureEvent(e);
+                gui = PlayPointer.At;
                 return true;
             }
             gui = default;
@@ -278,7 +280,7 @@ namespace FlockFive
             if (!_fivesOpen) return false;
             float s = DeviceFit.Ui();
             var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
-            if (!FivesCloseRect(g.Panel, s).Contains(ToPhoneLocal(windowGui))) return false;
+            if (!FivesCloseRect(g.Panel, s).Contains(windowGui)) return false;
             _fivesOpen = false;
             _fivesAnim = 0f;
             _fivesChipHeld = false;

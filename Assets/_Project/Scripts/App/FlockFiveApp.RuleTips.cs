@@ -297,7 +297,8 @@ namespace FlockFive
             {
                 if (t == EventType.MouseDown && e.button == 0)
                 {
-                    TakeRuleTipPress(WindowGuiToPlay(e.mousePosition));
+                    PlayPointer.CaptureEvent(e);
+                    TakeRuleTipPress(PlayPointer.PlayBottom);
                 }
                 if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
                 return;

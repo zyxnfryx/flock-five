@@ -133,7 +133,7 @@ namespace FlockFive
             var r = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             var e = Event.current;
             bool release = e != null && e.type == EventType.MouseUp && e.button == 0;
-            var gui = e != null ? e.mousePosition : default;
+            var gui = e != null ? PlayPointer.Gui(e) : default;
             if (release && _exitPointerHeld)
             {
                 int eventId = ResolveExitEventId(e);
@@ -152,7 +152,7 @@ namespace FlockFive
                 return;
             }
             bool gearDown = e != null && e.type == EventType.MouseDown && e.button == 0;
-            var gearAt = e != null ? e.mousePosition : r.center;
+            var gearAt = e != null ? PlayPointer.Gui(e) : r.center;
             FeedResumeHudButton(3, r, gearAt, gearDown, release, out _gearHeld);
         }
 
@@ -191,7 +191,7 @@ namespace FlockFive
         {
             var e = Event.current;
             if (e == null || r.width < 2f) return;
-            if (!r.Contains(e.mousePosition)) return;
+            if (!r.Contains(PlayPointer.Gui(e))) return;
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
@@ -284,7 +284,7 @@ namespace FlockFive
                 var ev = Event.current;
                 bool evDown = ev != null && ev.type == EventType.MouseDown && ev.button == 0;
                 bool evUp = ev != null && ev.type == EventType.MouseUp && ev.button == 0;
-                var at = ev != null ? ev.mousePosition : default;
+                var at = ev != null ? PlayPointer.Gui(ev) : default;
                 soundFlip = HitPad(rows.SoundToggle, out soundHeld);
                 if (evDown && settled && rows.SoundToggle.Contains(at)) _soundArmed = true;
                 if (evUp)
@@ -582,16 +582,16 @@ namespace FlockFive
             if (e == null) return value;
             bool hot = GUIUtility.hotControl == id;
             var type = e.GetTypeForControl(id);
-            if (type == EventType.MouseDown && e.button == 0 && hit.Contains(e.mousePosition))
+            if (type == EventType.MouseDown && e.button == 0 && hit.Contains(PlayPointer.Gui(e)))
             {
                 GUIUtility.hotControl = id;
                 e.Use();
                 held = true;
-                return SliderAt(hit, e.mousePosition.x, scale);
+                return SliderAt(hit, PlayPointer.Gui(e).x, scale);
             }
             if (hot && (type == EventType.MouseDrag || type == EventType.MouseUp))
             {
-                float v = SliderAt(hit, e.mousePosition.x, scale);
+                float v = SliderAt(hit, PlayPointer.Gui(e).x, scale);
                 if (type == EventType.MouseUp)
                 {
                     GUIUtility.hotControl = 0;
@@ -1181,7 +1181,7 @@ namespace FlockFive
             var cev = Event.current;
             bool cDown = cev != null && cev.type == EventType.MouseDown && cev.button == 0;
             bool cUp = cev != null && cev.type == EventType.MouseUp && cev.button == 0;
-            var cat = cev != null ? cev.mousePosition : default;
+            var cat = cev != null ? PlayPointer.Gui(cev) : default;
             if (cDown && consentSettled && card.Accept.Contains(cat)) _consentYesArmed = true;
             if (cDown && consentSettled && card.Decline.Contains(cat)) _consentNoArmed = true;
             bool yesFlip = cUp && ToggleMayFlip(consentSettled, _consentYesArmed, card.Accept.Contains(cat));

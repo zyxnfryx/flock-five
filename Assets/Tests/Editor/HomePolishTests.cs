@@ -1612,14 +1612,14 @@ namespace FlockFive.Editor
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
-                    Play = new Vector2(px, PhoneArea.H - py)
+                    Window = new Vector2(px + PhoneArea.OffX, py)
                 };
                 Method(t, "UpdateBody").Invoke(app, null);
                 int afterDown = EditorTaps(app);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 4,
-                    Play = new Vector2(px, PhoneArea.H - py)
+                    Window = new Vector2(px + PhoneArea.OffX, py)
                 };
                 SeatOpenLesson(app);
                 Method(t, "TakeGuiPointer").Invoke(app, null);
@@ -1647,14 +1647,14 @@ namespace FlockFive.Editor
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
-                    Play = new Vector2(px, PhoneArea.H - py)
+                    Window = new Vector2(px + PhoneArea.OffX, py)
                 };
                 Method(t, "TakeGuiPointer").Invoke(app, null);
                 bool hopLatched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 4,
-                    Play = new Vector2(px, PhoneArea.H - py)
+                    Window = new Vector2(px + PhoneArea.OffX, py)
                 };
                 Method(t, "TakeGuiPointer").Invoke(app, null);
                 var hopTr = FlockFiveApp.EditorGloveTraceNow;
@@ -1821,14 +1821,14 @@ namespace FlockFive.Editor
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
-                    Play = new Vector2(px, PhoneArea.H - py)
+                    Window = new Vector2(px + PhoneArea.OffX, py)
                 };
                 Method(t, "UpdateBody").Invoke(app, null);
                 bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 5,
-                    Play = new Vector2(px, PhoneArea.H - py)
+                    Window = new Vector2(px + PhoneArea.OffX, py)
                 };
                 try { Method(t, "OnGUIBody").Invoke(app, null); }
                 catch (System.Exception) { }
@@ -1864,7 +1864,7 @@ namespace FlockFive.Editor
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = true, Up = false, Id = 4,
-                    Play = new Vector2(px, PhoneArea.H - py)
+                    Window = new Vector2(px + PhoneArea.OffX, py)
                 };
                 Method(t, "UpdateBody").Invoke(app, null);
                 bool splashLatched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
@@ -1882,7 +1882,7 @@ namespace FlockFive.Editor
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 5,
-                    Play = new Vector2(px, PhoneArea.H - py)
+                    Window = new Vector2(px + PhoneArea.OffX, py)
                 };
                 int tapsBeforeUp = EditorTaps(app);
                 try { Method(t, "OnGUIBody").Invoke(app, null); }
@@ -4338,7 +4338,7 @@ namespace FlockFive.Editor
             Event.current = new Event
             {
                 type = down ? EventType.MouseDown : EventType.MouseUp,
-                mousePosition = pad.center,
+                mousePosition = new Vector2(pad.center.x + PhoneArea.OffX, pad.center.y),
                 button = 0
             };
             FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
@@ -4347,7 +4347,7 @@ namespace FlockFive.Editor
                 Down = down,
                 Up = !down,
                 Id = 1,
-                Play = pad.center
+                Window = new Vector2(pad.center.x + PhoneArea.OffX, pad.center.y)
             };
         }
 
@@ -4364,7 +4364,7 @@ namespace FlockFive.Editor
                 Down = down,
                 Up = !down,
                 Id = id,
-                Play = play
+                Window = new Vector2(play.x + PhoneArea.OffX, PhoneArea.H - play.y)
             };
             Method(t, "TakeGuiPointer").Invoke(app, null);
             Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { play });
@@ -5226,10 +5226,10 @@ namespace FlockFive.Editor
                 {
                     Offer();
                     t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
-                    var play = new Vector2(gui.x - PhoneArea.OffX, PhoneArea.H - gui.y);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
-                        On = true, Down = false, Up = true, Id = 3, Play = play
+                        On = true, Down = false, Up = true, Id = 3,
+                        Window = new Vector2(gui.x + PhoneArea.OffX, gui.y)
                     };
                     Method(t, "TakeGuiPointer").Invoke(app, null);
                     FlockFiveApp.EditorPointerInject = default;

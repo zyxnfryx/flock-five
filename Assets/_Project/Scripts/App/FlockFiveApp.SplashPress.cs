@@ -191,12 +191,12 @@ namespace FlockFive
                 SynthesizeMouse(into);
                 return;
             }
-            var m = PhoneArea.In(mouse.position.ReadValue());
-            var pos = new Vector2(m.x, h - m.y);
+            PlayPointer.CaptureScreenBottom(mouse.position.ReadValue(), btn.wasPressedThisFrame, btn.wasReleasedThisFrame, SplashPress.MouseId);
+            var pos = PlayPointer.At;
             var ev = Event.current;
             if (ev != null && ev.button == 0 &&
                 (ev.type == EventType.MouseDown || ev.type == EventType.MouseUp || ev.type == EventType.MouseDrag))
-                pos = ev.mousePosition;
+                pos = PlayPointer.Gui(ev);
             SplashPress.Phase phase;
             if (btn.wasPressedThisFrame && btn.wasReleasedThisFrame) phase = SplashPress.Phase.Tap;
             else if (btn.wasPressedThisFrame) phase = SplashPress.Phase.Began;
@@ -217,8 +217,8 @@ namespace FlockFive
                 t.press.wasPressedThisFrame,
                 out var kind))
                 return;
-            var p = PhoneArea.In(t.position.ReadValue());
-            var pos = new Vector2(p.x, screenH - p.y);
+            PlayPointer.CaptureScreenBottom(t.position.ReadValue(), false, false, t.touchId.ReadValue());
+            var pos = PlayPointer.At;
             into.Add(SampleAt(t.touchId.ReadValue(), pos, kind));
         }
 
@@ -227,11 +227,11 @@ namespace FlockFive
             var e = Event.current;
             if (e == null || e.button != 0) return;
             if (e.type == EventType.MouseDown)
-                into.Add(SampleAt(SplashPress.MouseId, e.mousePosition, SplashPress.Phase.Began));
+                into.Add(SampleAt(SplashPress.MouseId, PlayPointer.Gui(e), SplashPress.Phase.Began));
             else if (e.type == EventType.MouseUp)
-                into.Add(SampleAt(SplashPress.MouseId, e.mousePosition, SplashPress.Phase.Ended));
+                into.Add(SampleAt(SplashPress.MouseId, PlayPointer.Gui(e), SplashPress.Phase.Ended));
             else if (e.type == EventType.MouseDrag)
-                into.Add(SampleAt(SplashPress.MouseId, e.mousePosition, SplashPress.Phase.Held));
+                into.Add(SampleAt(SplashPress.MouseId, PlayPointer.Gui(e), SplashPress.Phase.Held));
         }
 
         static SplashPress.Sample SampleAt(int id, Vector2 pos, SplashPress.Phase phase)

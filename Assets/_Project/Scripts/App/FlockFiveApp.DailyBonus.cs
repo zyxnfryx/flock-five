@@ -465,7 +465,7 @@ namespace FlockFive
                 claim = HitPad(claimHit, out claimHeld);
             HitPad(swallow, out _);
             bool outside = HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
-            if (outside && swallow.Contains(Event.current.mousePosition)) outside = false;
+            if (outside && swallow.Contains(PlayPointer.Gui(Event.current))) outside = false;
 
             float t = AdPause.Unscaled;
             bool closing = _dailyCloseAt >= 0f;
@@ -2348,7 +2348,7 @@ namespace FlockFive
             bool yes = HitPad(yesHit, out bool yesHeld);
             bool no = HitPad(noHit, out bool noHeld);
             var e = Event.current;
-            bool onButton = e != null && (yesHit.Contains(e.mousePosition) || noHit.Contains(e.mousePosition));
+            bool onButton = e != null && (yesHit.Contains(PlayPointer.Gui(e)) || noHit.Contains(PlayPointer.Gui(e)));
             if (!onButton)
                 HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
 

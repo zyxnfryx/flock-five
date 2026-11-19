@@ -415,7 +415,7 @@ namespace FlockFive
                 var swallow = new Rect(body.x - 12f, body.y - 12f, body.width + 24f, body.height + 24f);
                 bool onCard = HitPad(swallow, out _);
                 bool outside = HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
-                if (outside && (swallow.Contains(Event.current.mousePosition) || link.Contains(Event.current.mousePosition)))
+                if (outside && (swallow.Contains(PlayPointer.Gui(Event.current)) || link.Contains(PlayPointer.Gui(Event.current))))
                     outside = false;
 
                 float breathe = 0.5f + 0.5f * Mathf.Sin(now * 2.05f);

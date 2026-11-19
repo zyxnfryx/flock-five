@@ -158,7 +158,7 @@ namespace FlockFive
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag)
                 return;
-            if (!BlocksPoint(veil, e.mousePosition)) return;
+            if (!BlocksPoint(veil, PlayPointer.Gui(e))) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
             e.Use();
         }

@@ -232,6 +232,12 @@ namespace FlockFive
         bool _avatarRenameFocus;
         string _avatarRenameText = "";
         Rect _avatarRenameR;
+        Rect _avatarFieldR;
+        Rect _avatarDoneR;
+        // Interactive controls on the name plate, filled by RegisterAvatarPlate
+        // from the same rects DrawAvatarRename paints. The hit test does not
+        // list them, so a new control is exempt only when it is registered here.
+        readonly System.Collections.Generic.List<Rect> _plateControls = new System.Collections.Generic.List<Rect>(8);
         Rect _avatarPlateR;
         // Pose offset from the bird center. Not a screen point, so a glide
         // does not leave the tag behind.
@@ -952,7 +958,7 @@ namespace FlockFive
             if (!_avatarRename || Event.current == null) return;
             if (Event.current.type != EventType.MouseDown || Event.current.button != 0) return;
             AvatarRenameLayout(s, out _, out _, out _);
-            if (_avatarRenameR.Contains(Event.current.mousePosition)) return;
+            if (_avatarRenameR.Contains(PlayPointer.Gui(Event.current))) return;
             CloseAvatarRename();
             Event.current.Use();
         }
@@ -1113,7 +1119,8 @@ namespace FlockFive
                 else if (id == 1) bow = _avatarKitR[i];
                 else if (id == 2) crown = _avatarKitR[i];
             }
-            int hit = AvatarKitChipHit(none, bow, crown, e.mousePosition, PhoneArea.OffX);
+            PlayPointer.CaptureEvent(e);
+            int hit = AvatarKitChipHit(none, bow, crown, PlayPointer.At, 0);
             if (hit < 0) return;
             e.Use();
             PickAvatarKit(hit);
@@ -1134,11 +1141,10 @@ namespace FlockFive
                 else if (id == 1) bow = _avatarKitR[i];
                 else if (id == 2) crown = _avatarKitR[i];
             }
-            int ox = PhoneArea.OffX;
             string line = "FF_AVATAR_KIT_CHIPS selected=" + SavedAvatarKit()
-                + " none=" + ChipLog(none, ox)
-                + " bow=" + ChipLog(bow, ox)
-                + " crown=" + ChipLog(crown, ox);
+                + " none=" + ChipLog(none, 0)
+                + " bow=" + ChipLog(bow, 0)
+                + " crown=" + ChipLog(crown, 0);
             if (line == _avatarKitChipLog) return;
             _avatarKitChipLog = line;
             Debug.Log(line);
@@ -1331,11 +1337,37 @@ namespace FlockFive
             }
         }
 
+        void RegisterAvatarPlate(float s)
+        {
+            _plateControls.Clear();
+            if (!_avatarRename) return;
+            AvatarRenameLayout(s, out _, out var field, out var done);
+            _avatarFieldR = field;
+            _avatarDoneR = done;
+            for (int i = 0; i < 5; i++) NotePlateControl(_avatarSwatch[i]);
+            for (int i = 0; i < _avatarKitN; i++) NotePlateControl(_avatarKitR[i]);
+            NotePlateControl(field);
+            NotePlateControl(done);
+        }
+
+        void NotePlateControl(Rect r)
+        {
+            if (r.width > 2f && r.height > 2f) _plateControls.Add(r);
+        }
+
+        bool PlateControlAt(Vector2 play)
+        {
+            for (int i = 0; i < _plateControls.Count; i++)
+                if (_plateControls[i].Contains(play)) return true;
+            return false;
+        }
+
         void DrawAvatarRename(float s)
         {
             if (!_avatarRename) return;
             bool cue = AvatarNeedsName();
             string prompt = cue ? AdoptNameLine : AvatarRenameLine;
+            RegisterAvatarPlate(s);
             AvatarRenameLayout(s, out var line, out var field, out var done);
             // Inverse of CoachPanelRect. Subtracting the old fixed 18×12 and then
             // drawing applied BoxPad a second time, so the plate ran off both sides.
