@@ -93,6 +93,7 @@ namespace FlockFive.Editor
             CheckPillarRuleHud(Check);
             CheckSecondAppDoesNotPaint(Check);
             CheckAppHandoff(Check);
+            CheckSuccessorLowestId(Check);
 
             Check("reminder-waits-for-reward",
                 !FlockFiveApp.ReminderOpensNow(false) && FlockFiveApp.ReminderOpensNow(true),
@@ -342,7 +343,12 @@ namespace FlockFive.Editor
                 var b = bGo.AddComponent<FlockFiveApp>();
                 var owner = field.GetValue(null) as FlockFiveApp;
                 bool aOwned = ReferenceEquals(owner, a);
+                // Edit mode does not call OnDisable when enabled is cleared, unless
+                // the behaviour is ExecuteAlways. The shipping method is the same
+                // one play mode calls, so invoke it after the component is disabled
+                // and FindObjects can no longer treat it as the live owner.
                 a.enabled = false;
+                typeof(FlockFiveApp).GetMethod("OnDisable", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(a, null);
                 var next = field.GetValue(null) as FlockFiveApp;
                 bool promoted = ReferenceEquals(next, b) && b.isActiveAndEnabled;
                 var passes = typeof(FlockFiveApp).GetField("EditorGuiPasses", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
@@ -352,6 +358,7 @@ namespace FlockFive.Editor
                 bool painted = (int)passes.GetValue(b) == before + 1 && (int)depth.GetValue(b) == 0;
                 int aBefore = (int)passes.GetValue(a);
                 a.enabled = true;
+                typeof(FlockFiveApp).GetMethod("OnEnable", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(a, null);
                 var after = field.GetValue(null) as FlockFiveApp;
                 InvokeOnGui(a);
                 bool onePainter = ReferenceEquals(after, b) && (int)passes.GetValue(a) == aBefore;
@@ -374,15 +381,85 @@ namespace FlockFive.Editor
             }
         }
 
+        static void CheckSuccessorLowestId(System.Action<string, bool, string> Check)
+        {
+            var gos = new[] { new GameObject("succ-a"), new GameObject("succ-b"), new GameObject("succ-c") };
+            FlockFiveApp[] parked = null;
+            bool[] was = null;
+            try
+            {
+                var field = typeof(FlockFiveApp).GetField("_app", BindingFlags.NonPublic | BindingFlags.Static);
+                var off = typeof(FlockFiveApp).GetMethod("OnDisable", BindingFlags.NonPublic | BindingFlags.Instance);
+                parked = UnityEngine.Object.FindObjectsByType<FlockFiveApp>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+                was = new bool[parked.Length];
+                for (int i = 0; i < parked.Length; i++)
+                {
+                    was[i] = parked[i] != null && parked[i].enabled;
+                    if (was[i]) parked[i].enabled = false;
+                }
+                var apps = new FlockFiveApp[3];
+                for (int i = 0; i < 3; i++)
+                    apps[i] = gos[i].AddComponent<FlockFiveApp>();
+                var owner = field.GetValue(null) as FlockFiveApp;
+                bool oneOf = owner == apps[0] || owner == apps[1] || owner == apps[2];
+                int want = LowestEnabledId(apps, owner);
+                owner.enabled = false;
+                off.Invoke(owner, null);
+                var first = field.GetValue(null) as FlockFiveApp;
+                bool handed = first != null && first.GetInstanceID() == want && first.isActiveAndEnabled;
+                field.SetValue(null, owner);
+                off.Invoke(owner, null);
+                var second = field.GetValue(null) as FlockFiveApp;
+                bool stable = ReferenceEquals(second, first);
+                Check("successor-lowest-id", oneOf && handed && stable,
+                    "one " + oneOf + " handed " + handed + " stable " + stable
+                    + " want " + want + " got " + (first != null ? first.GetInstanceID() : 0));
+            }
+            catch (System.Exception ex)
+            {
+                Check("successor-lowest-id", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                for (int i = 0; i < gos.Length; i++)
+                    UnityEngine.Object.DestroyImmediate(gos[i]);
+                if (parked != null)
+                {
+                    for (int i = 0; i < parked.Length; i++)
+                        if (parked[i] != null) parked[i].enabled = was[i];
+                }
+            }
+        }
+
+        static int LowestEnabledId(FlockFiveApp[] apps, FlockFiveApp leaving)
+        {
+            int want = 0;
+            bool any = false;
+            for (int i = 0; i < apps.Length; i++)
+            {
+                var c = apps[i];
+                if (c == null || c == leaving || !c.enabled) continue;
+                int id = c.GetInstanceID();
+                if (!any || id < want)
+                {
+                    want = id;
+                    any = true;
+                }
+            }
+            return want;
+        }
+
         static void CheckPillarRuleHud(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("pillar-rule-hud");
             var camGo = new GameObject("pillar-rule-cam");
             int streak = Purse.Streak;
-            var offOn = typeof(PhoneArea).GetField("EditorOffXOn", BindingFlags.NonPublic | BindingFlags.Static);
-            var offValue = typeof(PhoneArea).GetField("EditorOffXValue", BindingFlags.NonPublic | BindingFlags.Static);
-            bool keepOn = (bool)offOn.GetValue(null);
-            int keepValue = (int)offValue.GetValue(null);
+            var winOn = typeof(PhoneArea).GetField("EditorWindowOn", BindingFlags.NonPublic | BindingFlags.Static);
+            var winW = typeof(PhoneArea).GetField("EditorWindowW", BindingFlags.NonPublic | BindingFlags.Static);
+            var winH = typeof(PhoneArea).GetField("EditorWindowH", BindingFlags.NonPublic | BindingFlags.Static);
+            bool keepOn = (bool)winOn.GetValue(null);
+            int keepW = (int)winW.GetValue(null);
+            int keepH = (int)winH.GetValue(null);
             var resume = typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
             float keepResume = (float)resume.GetValue(null);
             bool hadFeeder = PlayerPrefs.HasKey(RuleTips.FeederKey);
@@ -407,17 +484,24 @@ namespace FlockFive.Editor
                 garden.Branches = new BranchView[0];
                 garden.Feeders = new FeederView[0];
                 t.GetField("_garden", flags).SetValue(app, garden);
-                // 820 pillar first (OffX 78), then the phones (OffX 0).
+                // 820 pillar first, then the phones. The window drives W, H, and OffX,
+                // so each size lays out its own Restart and Home.
                 foreach (var size in new[] { new Vector2(820f, 1180f), new Vector2(402f, 874f), new Vector2(412f, 915f) })
                 {
-                    int off = size.x > 500f ? (820 - 664) / 2 : 0;
-                    offOn.SetValue(null, true);
-                    offValue.SetValue(null, off);
+                    winOn.SetValue(null, true);
+                    winW.SetValue(null, (int)size.x);
+                    winH.SetValue(null, (int)size.y);
+                    int off = PhoneArea.OffX;
+                    int areaW = PhoneArea.W;
                     string tag = size.x.ToString("0");
+                    bool sized = size.x > 500f
+                        ? areaW > 600 && off == ((int)size.x - areaW) / 2 && off > 0
+                        : areaW == (int)size.x && off == 0;
                     object[] hud = { default(Rect), default(Rect) };
                     t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
                     var restart = (Rect)hud[0];
                     var home = (Rect)t.GetMethod("HomeHudRect", flags).Invoke(app, null);
+                    bool onGlass = restart.xMax <= areaW + 0.5f && home.xMax <= areaW + 0.5f && restart.xMin > home.xMax;
                     bool restartHit = false, homeHit = false, outRestart = false, outHome = false;
                     bool falseRestart = false, falseHome = false;
                     RuleHudTap(app, t, flags, new Vector2(restart.center.x + off, restart.center.y), out restartHit, out _);
@@ -426,8 +510,9 @@ namespace FlockFive.Editor
                     if (off != 0)
                         RuleHudTap(app, t, flags, new Vector2(restart.center.x, restart.center.y), out falseRestart, out falseHome);
                     Check("pillar-rule-hud-" + tag,
-                        restartHit && homeHit && !outRestart && !outHome && !falseRestart && !falseHome,
-                        "off " + off + " restart " + restartHit + " home " + homeHit
+                        sized && onGlass && restartHit && homeHit && !outRestart && !outHome && !falseRestart && !falseHome,
+                        "off " + off + " w " + areaW
+                        + " restart " + restartHit + " home " + homeHit
                         + " outR " + outRestart + " outH " + outHome
                         + " bare " + falseRestart + "/" + falseHome
                         + " r " + restart + " h " + home);
@@ -440,8 +525,9 @@ namespace FlockFive.Editor
             finally
             {
                 Event.current = prev;
-                offOn.SetValue(null, keepOn);
-                offValue.SetValue(null, keepValue);
+                winOn.SetValue(null, keepOn);
+                winW.SetValue(null, keepW);
+                winH.SetValue(null, keepH);
                 resume.SetValue(null, keepResume);
                 GamePause.Reset();
                 Purse.SetStreak(streak);
@@ -462,7 +548,25 @@ namespace FlockFive.Editor
             t.GetField("EditorRuleRestartDirect", flags).SetValue(app, false);
             t.GetField("EditorSnapRound", flags).SetValue(app, null);
             Event.current = new Event { type = EventType.MouseDown, mousePosition = windowGui, button = 0 };
-            t.GetMethod("SwallowRuleTipPointer", flags).Invoke(app, null);
+            // SwallowRuleTipPointer runs from PaintAfterPointer, and that runs only
+            // while this instance's OnGUI is on the stack. A direct call sits at
+            // depth 0, so the press never enters that path.
+            var depth = t.GetField("_onGuiDepth", flags);
+            int was = (int)depth.GetValue(app);
+            depth.SetValue(app, was + 1);
+            try
+            {
+                t.GetMethod("OnGUIBody", flags).Invoke(app, null);
+            }
+            catch (System.Reflection.TargetInvocationException)
+            {
+                // Draws after the swallow throw outside a native OnGUI. The tip
+                // press has already been taken.
+            }
+            finally
+            {
+                depth.SetValue(app, was);
+            }
             bool direct = (bool)t.GetField("EditorRuleRestartDirect", flags).GetValue(app);
             bool snapped = t.GetField("EditorSnapRound", flags).GetValue(app) != null;
             bool splash = (bool)t.GetField("_splash", flags).GetValue(app);

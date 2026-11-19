@@ -19,6 +19,10 @@ namespace FlockFive
         {
             get
             {
+#if UNITY_EDITOR
+                if (EditorWindowOn)
+                    return EditorWindowH > 0 && (float)EditorWindowW / EditorWindowH > DeviceFit.PhoneAspect + Slack;
+#endif
                 if (Application.isBatchMode) return false;
                 int sw = Screen.width, sh = Screen.height;
                 return sh > 0 && (float)sw / sh > DeviceFit.PhoneAspect + Slack;
@@ -34,22 +38,49 @@ namespace FlockFive
             h = screenH;
         }
 
-        public static int W => Pillar ? Mathf.Min(Screen.width, Mathf.RoundToInt(Screen.height * DeviceFit.PhoneAspect)) : Screen.width;
-        public static int H => Screen.height;
-        // Left edge of the area in screen pixels.
 #if UNITY_EDITOR
-        // Edit-mode pillar tests. Off when EditorOffXOn is false. A set value is
-        // the pillar shift, including 0 on a phone, so a batch run can still move OffX.
-        internal static bool EditorOffXOn;
-        internal static int EditorOffXValue;
+        // Edit-mode layout. Off, W/H/Pillar/OffX/Safe follow the device. On, they
+        // follow this window, including a pillar OffX, so a batch run can lay out
+        // 820, 402, and 412 without a matching Game view.
+        internal static bool EditorWindowOn;
+        internal static int EditorWindowW;
+        internal static int EditorWindowH;
 #endif
 
+        public static int W
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (EditorWindowOn)
+                {
+                    PlayPixels(EditorWindowW, EditorWindowH, out int w, out _);
+                    return w;
+                }
+#endif
+                return Pillar ? Mathf.Min(Screen.width, Mathf.RoundToInt(Screen.height * DeviceFit.PhoneAspect)) : Screen.width;
+            }
+        }
+
+        public static int H
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (EditorWindowOn) return EditorWindowH;
+#endif
+                return Screen.height;
+            }
+        }
+
+        // Left edge of the area in screen pixels.
         public static int OffX
         {
             get
             {
 #if UNITY_EDITOR
-                if (EditorOffXOn) return EditorOffXValue;
+                if (EditorWindowOn)
+                    return Pillar ? (EditorWindowW - W) / 2 : 0;
 #endif
                 return Pillar ? (Screen.width - W) / 2 : 0;
             }
@@ -61,6 +92,9 @@ namespace FlockFive
         {
             get
             {
+#if UNITY_EDITOR
+                if (EditorWindowOn) return new Rect(0f, 0f, W, H);
+#endif
                 var s = Screen.safeArea;
 #if UNITY_WEBGL && DEVELOPMENT_BUILD
                 // DEV-ONLY inspect hook. Not a shipping-path proof. WebGL reports

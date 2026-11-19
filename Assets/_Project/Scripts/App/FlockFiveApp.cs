@@ -597,7 +597,7 @@ namespace FlockFive
                 RewardedGrant.TryApply = null;
             if (_app != this) return;
             _app = null;
-            var next = EnabledSuccessor();
+            var next = EnabledSuccessor(this);
             if (next == null) return;
             _app = next;
             RewardedGrant.TryApply = next.ApplyRewardedTicket;
@@ -617,15 +617,25 @@ namespace FlockFive
             return app != null && app.isActiveAndEnabled;
         }
 
-        static FlockFiveApp EnabledSuccessor()
+        // Lowest instance id among enabled, non-destroyed apps other than the
+        // one leaving. FindObjects order is not stable, so the id is the pick.
+        static FlockFiveApp EnabledSuccessor(FlockFiveApp leaving)
         {
             var all = UnityEngine.Object.FindObjectsByType<FlockFiveApp>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            FlockFiveApp best = null;
+            int bestId = 0;
             for (int i = 0; i < all.Length; i++)
             {
                 var c = all[i];
-                if (LiveApp(c)) return c;
+                if (!c || ReferenceEquals(c, leaving) || !c.isActiveAndEnabled) continue;
+                int id = c.GetInstanceID();
+                if (best == null || id < bestId)
+                {
+                    best = c;
+                    bestId = id;
+                }
             }
-            return null;
+            return best;
         }
 
         // Pause and focus both bookend a suspend. One call per frame drops the
