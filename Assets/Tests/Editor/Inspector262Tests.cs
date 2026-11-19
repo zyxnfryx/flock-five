@@ -100,6 +100,8 @@ namespace FlockFive.Editor
             CheckBirdBeatsHomeGate(Check);
             CheckNotNowDuringOpen(Check);
             CheckFivesClose(Check);
+            CheckFivesCloseConsumesPointer(Check);
+            CheckBirdTapConsumesPointer(Check);
             CheckReminderAfterReward(Check);
             Check("reminder-waits-for-reward",
                 !FlockFiveApp.ReminderOpensNow(false) && FlockFiveApp.ReminderOpensNow(true),
@@ -900,6 +902,106 @@ namespace FlockFive.Editor
             {
                 UnityEngine.Object.DestroyImmediate(go);
             }
+        }
+
+        static void CheckFivesCloseConsumesPointer(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("fives-pointer");
+            var prev = Event.current;
+            var inject = FlockFiveApp.EditorPointerInject;
+            try
+            {
+                FlockFiveApp.EditorPointerInject = default;
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                float s = DeviceFit.Ui();
+                var geo = FlockFiveApp.LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
+                var close = FlockFiveApp.FivesCloseRect(geo.Panel, s);
+                t.GetField("_fivesOpen", flags).SetValue(app, true);
+                t.GetField("_fivesAnim", flags).SetValue(app, 1f);
+                t.GetField("_pokerPayOpen", flags).SetValue(app, true);
+                t.GetField("_pokerPayAnim", flags).SetValue(app, 1f);
+                t.GetField("_pokerHover", flags).SetValue(app, 7);
+                var up = new Event { type = EventType.MouseUp, mousePosition = close.center, button = 0 };
+                Event.current = up;
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                bool closed = !(bool)t.GetField("_fivesOpen", flags).GetValue(app);
+                bool used = up.type == EventType.Used;
+                string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
+                t.GetMethod("TickPokerPayTable", flags).Invoke(app, new object[] { 80f, s });
+                bool payStayed = (bool)t.GetField("_pokerPayOpen", flags).GetValue(app);
+                t.GetMethod("HitPokerCards", flags).Invoke(app, new object[] { true, new Rect(0f, 0f, 40f, 60f), 0f, 0f, 40f, 60f, 4f });
+                int hover = (int)t.GetField("_pokerHover", flags).GetValue(app);
+                Check("fives-x-consumes-pointer",
+                    close.width > 8f && closed && used && who == "fives-close" && payStayed && hover == 7,
+                    "closed " + closed + " used " + used + " who " + who + " pay " + payStayed + " hover " + hover);
+            }
+            catch (System.Exception ex)
+            {
+                Check("fives-x-consumes-pointer", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                Event.current = prev;
+                FlockFiveApp.EditorPointerInject = inject;
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckBirdTapConsumesPointer(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("bird-pointer");
+            var prev = Event.current;
+            var inject = FlockFiveApp.EditorPointerInject;
+            try
+            {
+                FlockFiveApp.EditorPointerInject = default;
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                t.GetField("_splash", flags).SetValue(app, true);
+                var home = t.GetField("_home", flags);
+                home.SetValue(app, System.Enum.ToObject(home.FieldType, 0));
+                t.GetField("_adoptLive", flags).SetValue(app, true);
+                var step = t.GetField("_adoptStep", flags);
+                step.SetValue(app, System.Enum.ToObject(step.FieldType, 2));
+                t.GetField("_adoptPick", flags).SetValue(app, 0);
+                var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                var at = level.width > 2f ? level.center : new Vector2(220f, 280f);
+                var shown = (Vector2[])t.GetField("_adoptShown", flags).GetValue(app);
+                shown[0] = at;
+                var up = new Event { type = EventType.MouseUp, mousePosition = at, button = 0 };
+                Event.current = up;
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                bool named = (bool)t.GetField("_avatarRename", flags).GetValue(app);
+                bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
+                string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
+                bool used = up.type == EventType.Used;
+                bool play = HitPadQuiet(level.width > 2f ? level : new Rect(at.x - 4f, at.y - 4f, 8f, 8f));
+                Check("bird-tap-consumes-pointer",
+                    named && splash && who == "adopt-look" && used && !play,
+                    "named " + named + " splash " + splash + " who " + who + " used " + used + " play " + play);
+            }
+            catch (System.Exception ex)
+            {
+                Check("bird-tap-consumes-pointer", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                Event.current = prev;
+                FlockFiveApp.EditorPointerInject = inject;
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        // Editor HitPad with whatever Event.current is. No draw.
+        static bool HitPadQuiet(Rect r)
+        {
+            var hit = typeof(FlockFiveApp).GetMethod("HitPad", BindingFlags.NonPublic | BindingFlags.Static, null,
+                new[] { typeof(Rect), typeof(bool).MakeByRefType() }, null);
+            object[] args = { r, false };
+            return (bool)hit.Invoke(null, args);
         }
 
         static void CheckReminderAfterReward(System.Action<string, bool, string> Check)

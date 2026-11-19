@@ -563,6 +563,9 @@ namespace FlockFive
 
         HomeGate _homeGate;
         string _tapWho;
+        // Set when a yield already performed the tap (Watch, gift X). TakeGuiPointer
+        // then Uses the event and returns so nothing else sees it.
+        bool _pointerClaimed;
         bool _tapEdge, _tapDown;
         Vector2 _tapAt;
         bool _dnsArmed, _animArmed, _soundArmed;
@@ -8423,8 +8426,9 @@ namespace FlockFive
             _tapAt = tapEv != null ? tapEv.mousePosition : default;
             bool tapEdge = _tapEdge;
             _tapWho = null;
-            if (tapEdge && tapEv.type == EventType.MouseUp && TakeFivesClose(tapEv.mousePosition))
-                _tapWho = "fives-close";
+            _pointerClaimed = false;
+            if (tapEdge && ClaimFivesClose(tapEv)) return;
+            if (tapEdge && ClaimDailyAskNotNow(tapEv)) return;
             if (tapEdge && ResumeGloveEdge(tapEv.mousePosition) && HudControl(tapEv.mousePosition) != 2)
             {
                 int gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
@@ -8432,6 +8436,15 @@ namespace FlockFive
                 {
                     _tapWho = "glove";
                     tapEv.Use();
+                    return;
+                }
+                // Watch (and the gift X) already ran inside the yield. Eat the
+                // event so the card, Play, and the cards do not see it too.
+                if (_pointerClaimed)
+                {
+                    if (_tapWho == null) _tapWho = "watch";
+                    tapEv.Use();
+                    return;
                 }
             }
             if (tapEdge && _splash && _home == HomeFace.Splash)
@@ -8442,8 +8455,12 @@ namespace FlockFive
                 // The bird look opens naming. The home gate must not eat that tap
                 // and send the player back into the garden.
                 if (up && TakeAdoptLookTap(tapEv.mousePosition))
+                {
                     _tapWho = "adopt-look";
-                else if (!AdoptLookOwnsTap(tapEv.mousePosition)
+                    tapEv.Use();
+                    return;
+                }
+                if (!AdoptLookOwnsTap(tapEv.mousePosition)
                     && !HomeGateAllows(ref _homeGate, down, up, id))
                 {
                     GUIUtility.hotControl = 0;
@@ -8455,22 +8472,65 @@ namespace FlockFive
             if (EditorPointerInject.On && (EditorPointerInject.Down || EditorPointerInject.Up))
             {
                 var injected = new Vector2(EditorPointerInject.Play.x + PhoneArea.OffX, PhoneArea.H - EditorPointerInject.Play.y);
-                if (ResumeGloveEdge(injected) && TryDrawnGlove(injected, EditorPointerInject.Up, EditorPointerInject.Id))
-                    _tapWho = "glove";
-                if (EditorPointerInject.Up && TakeAdoptLookTap(injected))
-                    _tapWho = "adopt-look";
                 if (EditorPointerInject.Up && TakeFivesClose(injected))
+                {
                     _tapWho = "fives-close";
+                    if (tapEdge) tapEv.Use();
+                    return;
+                }
+                if (EditorPointerInject.Up && _dailyAskNoHitOn && TakeDailyAskNotNow(_dailyAskNoHit, injected))
+                {
+                    _tapWho = "not-now";
+                    if (tapEdge) tapEv.Use();
+                    return;
+                }
+                if (ResumeGloveEdge(injected) && TryDrawnGlove(injected, EditorPointerInject.Up, EditorPointerInject.Id))
+                {
+                    _tapWho = "glove";
+                    if (tapEdge) tapEv.Use();
+                    return;
+                }
+                if (_pointerClaimed)
+                {
+                    if (_tapWho == null) _tapWho = "watch";
+                    if (tapEdge) tapEv.Use();
+                    return;
+                }
+                if (EditorPointerInject.Up && TakeAdoptLookTap(injected))
+                {
+                    _tapWho = "adopt-look";
+                    if (tapEdge) tapEv.Use();
+                    return;
+                }
                 if (_splash && _home == HomeFace.Splash
-                    && _tapWho != "adopt-look"
                     && !AdoptLookOwnsTap(injected)
                     && !HomeGateAllows(ref _homeGate, EditorPointerInject.Down, EditorPointerInject.Up, EditorPointerInject.Id))
                 {
                     GUIUtility.hotControl = 0;
                     if (_tapWho == null) _tapWho = "home-gate";
+                    if (tapEdge) tapEv.Use();
                 }
             }
 #endif
+        }
+
+        // The fives X owns this event. Later poker hits must not see it.
+        bool ClaimFivesClose(Event tapEv)
+        {
+            if (tapEv.type != EventType.MouseUp || !TakeFivesClose(tapEv.mousePosition)) return false;
+            _tapWho = "fives-close";
+            tapEv.Use();
+            return true;
+        }
+
+        // Not now owns this event once the ask is up. The rect was stored on the
+        // last draw, so this does not call GUI.
+        bool ClaimDailyAskNotNow(Event tapEv)
+        {
+            if (!_dailyAskNoHitOn || !TakeDailyAskNotNow(_dailyAskNoHit, tapEv.mousePosition)) return false;
+            _tapWho = "not-now";
+            tapEv.Use();
+            return true;
         }
 
         void PaintAfterPointer()
@@ -18776,6 +18836,10 @@ namespace FlockFive
         void HitPokerCards(bool canHold, Rect rowBox, float rowX, float rowY, float cardW, float cardH, float gap)
         {
             var e = Event.current;
+            // A used or missing event is not a card tap. This also keeps a batch
+            // probe off GUIUtility, which throws outside a real OnGUI.
+            if (e == null || (e.type != EventType.MouseDown && e.type != EventType.MouseUp && e.type != EventType.MouseDrag))
+                return;
             var mouse = e.mousePosition;
             _pokerHover = -1;
             if (canHold)
@@ -22006,6 +22070,8 @@ namespace FlockFive
             if (onX)
             {
                 if (releaseEdge) CloseGift();
+                _pointerClaimed = true;
+                _tapWho = "gift-x";
                 return true;
             }
             bool gift = _adHand && _gift == GiftFace.Card;
@@ -22033,6 +22099,8 @@ namespace FlockFive
                 if (FlowerHit(cta, s).Contains(windowGui))
                 {
                     if (releaseEdge) StartWatchGift();
+                    _pointerClaimed = true;
+                    _tapWho = "watch";
                     return true;
                 }
             }

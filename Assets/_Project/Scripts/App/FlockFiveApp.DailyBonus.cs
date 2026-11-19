@@ -41,6 +41,8 @@ namespace FlockFive
         bool _dailyAskOpen;
         float _dailyPopAt = -1f;
         float _dailyAskAt = -1f;
+        Rect _dailyAskNoHit;
+        bool _dailyAskNoHitOn;
         // Pay stays up until the coins have landed and the balance has counted.
         // Then the card eases out. -1 means the card is not on its exit beat.
         bool _dailyPayHold;
@@ -2341,6 +2343,8 @@ namespace FlockFive
             // A tap on Not now is not waiting for the card to finish growing.
             var yesHit = k > 0.01f ? yesR : PopupHitDuringOpen(yesR, card.center, k);
             var noHit = k > 0.01f ? noR : PopupHitDuringOpen(noR, card.center, k);
+            _dailyAskNoHit = noHit;
+            _dailyAskNoHitOn = true;
             bool yes = HitPad(yesHit, out bool yesHeld);
             bool no = HitPad(noHit, out bool noHeld);
             var e = Event.current;
@@ -2376,6 +2380,7 @@ namespace FlockFive
             if (!_dailyAskOpen) return;
             _dailyAskOpen = false;
             _dailyAskAt = -1f;
+            _dailyAskNoHitOn = false;
             if (yes) DailyReminder.Accept();
             else DailyReminder.Decline();
             Sfx.CardTap();
