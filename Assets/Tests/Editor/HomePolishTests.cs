@@ -5345,7 +5345,12 @@ namespace FlockFive.Editor
                 bool opened = (bool)t.GetField("_splash", flags).GetValue(app);
                 var garden = SeatGarden(out limb, out camGo);
                 t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
                 t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                // Home occupied this frame. The glove's own Down must clear that.
                 t.GetField("_gloveTookFrame", flags).SetValue(app, Time.frameCount);
                 float w = PhoneArea.W > 2f ? PhoneArea.W : 400f;
                 float h = PhoneArea.H > 2f ? PhoneArea.H : 800f;
@@ -5435,6 +5440,17 @@ namespace FlockFive.Editor
                 bool gearOpen = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
                 try { Check("touch-down-gear-mouse-up-opens", gearOpen, "gear " + gearOpen); }
                 catch (System.Exception hopEx) { Check("touch-down-gear-mouse-up-opens", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                t.GetField("_downPointer", flags).SetValue(app, int.MinValue);
+                t.GetField("_downControl", flags).SetValue(app, -2);
+                Method(t, "ClearResumeOrigins").Invoke(app, null);
+                PressHud(app, t, restartPlay, -1, false);
+                bool bare = !RestartBegan(app, t, flags);
+                try { Check("restart-without-down-record-stays", bare, "restarted " + !bare); }
+                catch (System.Exception hopEx) { Check("restart-without-down-record-stays", false, ThrowText(hopEx)); }
             }
             finally
             {

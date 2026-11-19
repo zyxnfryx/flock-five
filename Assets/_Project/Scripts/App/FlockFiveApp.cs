@@ -4186,7 +4186,8 @@ namespace FlockFive
             // id equality, so it cannot see this pair.
             if (_glovePressLatched && GloveOwnsRelease(_gloveEdgeId)) return true;
             int down = DownControlOf(_gloveEdgeId);
-            if (down == -1) return true;
+            // -1 glove, -2 no Down. A fresh tap's Down is 0 or 2.
+            if (down < 0) return true;
             if (down > 0 && down != 2) return true;
             if (_resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId)) return true;
             return false;
@@ -4374,9 +4375,10 @@ namespace FlockFive
         bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge, int pointerId)
         {
             _gloveEdgeId = pointerId;
-            // The drawn glove, including on the home face. Garden hops still
-            // require the splash to be down. The down-control uses the sprite.
-            bool drawnGlove = _gloveVis && _cueBranch >= 0
+            // The drawn glove, including on the home face and after the cue
+            // has been cleared. Garden hops still require the splash to be down.
+            // The down-control uses the sprite.
+            bool drawnGlove = _gloveVis
                 && GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX);
             bool onGlove = !_splash && _board != null && drawnGlove;
             int hud = HudControl(windowGui);
@@ -8139,8 +8141,11 @@ namespace FlockFive
             // Retry uses this same entry, so it keeps the same rule.
             // A touch that went down on Home or the gear, released as mouse -1, is
             // still that press. It must not restart.
+            // -2 is no Down at all. A fresh tap writes its control on the Down,
+            // including a drag that started on empty space (0). A bare release
+            // has nothing to restart from.
             int down = DownControlOf(_gloveEdgeId);
-            if (down == -1 || (down > 0 && down != 2))
+            if (down < 0 || (down > 0 && down != 2))
                 return true;
             if (ResumeSwallowsRestart() || GloveOwnsHudPress() || _resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId))
             {
@@ -16770,7 +16775,10 @@ namespace FlockFive
 
         void TryPokerDeal()
         {
-            FinishPokerWarm();
+            // Catalog warm only. The offscreen texture blit stays on the OnGUI
+            // repaint (TouchPokerSprite). A press must not draw.
+            Sfx.PokerWarmFinish();
+            SpriteCatalog.PokerArtWarmFinish();
             if (BirdPoker.PhaseNow != BirdPoker.Phase.Dealt)
                 BirdPoker.SyncBet();
             if (!BirdPoker.CanDeal() || !BirdPoker.Deal())
@@ -17612,7 +17620,8 @@ namespace FlockFive
 
         static void TouchPokerSprite(Sprite spr)
         {
-            if (!GuiPaint()) return;
+            // A null event is the editor batch, not a repaint. Drawing here throws.
+            if (!GuiRepaint()) return;
             if (spr == null || spr.texture == null) return;
             var prev = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, 0.004f);
@@ -17657,17 +17666,29 @@ namespace FlockFive
             return new Rect(actX, btnY, btnSize, btnSize);
         }
 
-        // The page's DEAL HitPad. A Down only arms it. The Up deals.
+        // The page's DEAL hit. A Down only arms it. The Up deals.
+        // Hit logic only: no GUI, no DrawTexture. Drawing stays in OnGUI.
         public void PokerPageDealHit()
         {
-            float s = DeviceFit.Ui();
-            var safe = PhoneArea.Safe;
-            if (safe.width < 2f || safe.height < 2f)
-                safe = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
-            var actR = PokerDealButtonRect();
-            float clusterL = Mathf.Max(12f, safe.xMin + 10f);
-            var betR = new Rect(clusterL, actR.y, Mathf.Max(80f, actR.x - 10f * s - clusterL), actR.height);
-            TakePokerDealPress(betR, actR, s);
+            if (!PokerDealPadFired()) return;
+            OnPokerDealPressed();
+        }
+
+        // The deal button's press. Same gates as the dash, without painting it.
+        // A null event and no injected pointer does not deal.
+        bool PokerDealPadFired()
+        {
+            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f || _fivesOpen || _fivesAnim > 0.35f;
+            bool winFlying = PokerWinFlying();
+            bool busy = PokerMotionBusy() || _pokerStamp || payBlocked || winFlying;
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && !busy && !PokerBackGateLive())
+                BirdPoker.Settle();
+            if (BirdPoker.BetOpen && !PokerMotionBusy())
+                BirdPoker.SyncBet();
+            string act = PokerActLabel();
+            if (string.IsNullOrEmpty(act) || PokerFirstHandResultHoldsBetBar())
+                return false;
+            return HitPad(PokerDealButtonRect(), out _);
         }
 
         bool TakePokerDealPress(Rect betR, Rect actR, float s)

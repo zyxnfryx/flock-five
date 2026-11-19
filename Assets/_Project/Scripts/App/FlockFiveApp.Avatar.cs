@@ -442,8 +442,8 @@ namespace FlockFive
             var boot = AdoptResume.Plan(LevelData.NextPlay, AvatarAdopted(),
                 PlayerPrefs.GetInt(AvatarNamedPref, -1),
                 ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0);
-            // Saved adopt state wins over the in-memory park, so a kill mid-garden
-            // still resumes the look before garden 1 is cleared.
+            // The save wins. flockfive.chain.look resumes the look after a kill
+            // even while garden 1 is still uncleared.
             if (boot == AdoptBoot.ResumeLook || ChainLookParked())
             {
                 ResumeAdoptLook();
