@@ -45,10 +45,12 @@ namespace FlockFive
 
         public static AdoptBoot Plan(int nextPlay, bool adopted, int namedFlag, bool hasName)
         {
-            if (LookOwed(adopted, namedFlag, hasName)) return AdoptBoot.ResumeLook;
+            // Level 1 has not cleared yet. A boot with nothing parked stays quiet.
+            // A Play that left the greet or the look writes flockfive.chain.look,
+            // and ArmAdopt resumes from that even while nextPlay is still 0.
             if (nextPlay < 1) return AdoptBoot.None;
             if (!adopted) return AdoptBoot.Begin;
-            return AdoptBoot.None;
+            return LookOwed(adopted, namedFlag, hasName) ? AdoptBoot.ResumeLook : AdoptBoot.None;
         }
 
         // Daily intro caption width: the band the rails leave, never wider than the safe text width

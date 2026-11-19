@@ -646,26 +646,37 @@ namespace FlockFive
             AdLog.Add("app started");
             // iOS defaults to 30 fps. Ask for an even rate the panel can hold: 60 on
             // 60/120 Hz screens, 90 on 90 Hz ones (60 judders there). See FramePace.
-            ApplyFramePace();
-            BackgroundMotion.Probe();
-            AdLog.Add("frame pace " + Application.targetFrameRate + " fps on "
-                + Mathf.RoundToInt((float)Screen.currentResolution.refreshRateRatio.value) + " Hz");
-            Application.runInBackground = true;
-            Screen.orientation = ScreenOrientation.Portrait;
-            Screen.autorotateToPortrait = true;
-            Screen.autorotateToPortraitUpsideDown = false;
-            Screen.autorotateToLandscapeLeft = false;
-            Screen.autorotateToLandscapeRight = false;
-            using (StartupTrace.Begin("Sfx.Warm"))
-                Sfx.Warm();
-            using (StartupTrace.Begin("Ads.Warm"))
-                Ads.Warm();
-            using (StartupTrace.Begin("NoAds.Warm"))
-                NoAds.Warm();
-            using (StartupTrace.Begin("Invite.Warm"))
-                Invite.Warm();
-            using (StartupTrace.Begin("DropPokerArt"))
-                SpriteCatalog.DropPokerArt();
+            // Orientation and warm-up throw in an editor batch. The splash still
+            // has to run so a relaunch can resume a parked look and Tap Daily.
+            try
+            {
+                ApplyFramePace();
+                BackgroundMotion.Probe();
+                AdLog.Add("frame pace " + Application.targetFrameRate + " fps on "
+                    + Mathf.RoundToInt((float)Screen.currentResolution.refreshRateRatio.value) + " Hz");
+                Application.runInBackground = true;
+                Screen.orientation = ScreenOrientation.Portrait;
+                Screen.autorotateToPortrait = true;
+                Screen.autorotateToPortraitUpsideDown = false;
+                Screen.autorotateToLandscapeLeft = false;
+                Screen.autorotateToLandscapeRight = false;
+                using (StartupTrace.Begin("Sfx.Warm"))
+                    Sfx.Warm();
+                using (StartupTrace.Begin("Ads.Warm"))
+                    Ads.Warm();
+                using (StartupTrace.Begin("NoAds.Warm"))
+                    NoAds.Warm();
+                using (StartupTrace.Begin("Invite.Warm"))
+                    Invite.Warm();
+                using (StartupTrace.Begin("DropPokerArt"))
+                    SpriteCatalog.DropPokerArt();
+            }
+            catch (System.Exception e)
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Debug.LogException(e);
+#endif
+            }
             try
             {
                 using (StartupTrace.Begin("ShowSplash"))
@@ -4138,6 +4149,11 @@ namespace FlockFive
         {
             LiftResumeOrigin(pointerId);
             _resumeOriginRelease = false;
+            // The finger is gone. A later mouse Down is a new press, not the
+            // synthesized echo of the touch that was canceled.
+            if (_glovePressLatched && (GloveFingerMatches(_glovePressId, pointerId)
+                || (pointerId < 0 && _glovePressId >= 0)))
+                DropGlovePress();
             if (_gloveSwallowedId == int.MinValue) return;
             if (!GloveFingerMatches(_gloveSwallowedId, pointerId)) return;
             _gloveCancelFrame = Time.frameCount;
@@ -4318,6 +4334,25 @@ namespace FlockFive
                 if (resumeOriginUp) _resumeOriginRelease = true;
                 LiftResumeOrigin(pointerId);
             }
+            // Home and the gear stay live for the whole resume window, even when
+            // the drawn glove covers them. A glove hop only wins once that window
+            // has closed and the finger went down on the sprite.
+            if (GateNow < _resumeInputUntil && (hud == 1 || hud == 3))
+            {
+                if (!releaseEdge)
+                {
+                    _gloveSwallowedId = pointerId;
+                    _gloveSwallowHud = hud;
+                }
+                DropGlovePress();
+                if (releaseEdge)
+                {
+                    if (hud == 1) ShowSplash();
+                    else ApplySettingsHit(SettingsMotion.Hit.Gear);
+                }
+                StampGlove("resume-hud", windowGui, onGlove, true, false);
+                return false;
+            }
             if (ResumeHolds(resumeId))
             {
                 if (!releaseEdge && hud != 0)
@@ -4363,6 +4398,31 @@ namespace FlockFive
             {
                 StampGlove("control", windowGui, onGlove, hud != 0, false);
                 return false;
+            }
+            // Not a glove press. Home, the gear, and a fresh Restart run here so
+            // HitHud is not required, and a later hop cannot set the took-frame
+            // that would make ActRestart refuse. A latched glove release falls
+            // through and still hops.
+            if (releaseEdge && !_glovePressLatched && !GloveOwnsRelease(pointerId) && !SwallowedUp(pointerId))
+            {
+                if (hud == 1)
+                {
+                    ShowSplash();
+                    StampGlove("control", windowGui, onGlove, true, false);
+                    return false;
+                }
+                if (hud == 3)
+                {
+                    ApplySettingsHit(SettingsMotion.Hit.Gear);
+                    StampGlove("control", windowGui, onGlove, true, false);
+                    return false;
+                }
+                if (hud == 2 && !ResumeSwallowsRestart() && !ResumeOriginBlocks(pointerId))
+                {
+                    ActRestart();
+                    StampGlove("control", windowGui, onGlove, true, false);
+                    return false;
+                }
             }
             if (releaseEdge && SwallowedUp(pointerId))
             {
@@ -11809,13 +11869,20 @@ namespace FlockFive
                 held = false;
                 return false;
             }
-            int id = GuiPadId(r);
             var e = Event.current;
             if (e == null)
             {
                 held = false;
                 return false;
             }
+            // An editor batch has no OnGUI id sequence. GetControlID counts up
+            // across the Down call and the Up call, so the pad never fires.
+            // The rect hash is the same on both.
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                return HitPadStable(r, e, out held);
+#endif
+            int id = GuiPadId(r);
             bool inside = r.Contains(e.mousePosition);
             bool fired = false;
             switch (e.GetTypeForControl(id))
@@ -11840,6 +11907,36 @@ namespace FlockFive
                     break;
             }
             held = GUIUtility.hotControl == id;
+            return fired;
+        }
+
+        // Editor batch: one id per rect, shared by the Down call and the Up call.
+        static int _editPadDown;
+
+        static int StableRectId(Rect r)
+        {
+            int h = (int)(r.x * 3f + r.y * 5f + r.width * 7f + r.height * 11f);
+            if (h == 0 || h == int.MinValue) h = 1;
+            return h;
+        }
+
+        static bool HitPadStable(Rect r, Event e, out bool held)
+        {
+            int id = StableRectId(r);
+            bool inside = r.Contains(e.mousePosition);
+            bool fired = false;
+            if (e.type == EventType.MouseDown && inside && e.button == 0)
+            {
+                _editPadDown = id;
+                e.Use();
+            }
+            else if (e.type == EventType.MouseUp && e.button == 0 && _editPadDown == id)
+            {
+                _editPadDown = 0;
+                e.Use();
+                if (inside) fired = true;
+            }
+            held = _editPadDown == id;
             return fired;
         }
 
@@ -17439,10 +17536,12 @@ namespace FlockFive
             float lift = _pokerDash * (betR.height + 48f * s);
             var bet = new Rect(betR.x, betR.y + lift, betR.width, betR.height);
             var actBox = actR;
+            // The DEAL pad is hit before the bet steppers. They share the bar's
+            // row, and the first pad that contains the point owns the gesture.
+            bool deal = !string.IsNullOrEmpty(act) && !PokerFirstHandResultHoldsBetBar();
+            bool fire = deal && DrawFloralBtn(actBox, act, s, true);
             DrawPokerBetBar(bet, s, busy, steppers);
             if (GuiRepaint()) DrawPokerWinBanner(betR, actR, s);
-            if (string.IsNullOrEmpty(act) || PokerFirstHandResultHoldsBetBar()) return false; // the dealer button does not return
-            bool fire = DrawFloralBtn(actBox, act, s, true);
             return fire;
         }
 
@@ -21547,9 +21646,14 @@ namespace FlockFive
         // press that did not start on the glove falls through so HitHud can open Home.
         bool CoachControlYields(Vector2 windowGui, bool releaseEdge)
         {
-            // The gift X is a small corner inside a larger Restart or gear hit.
-            // Its own center closes the card. Home and Restart still win at their centers.
-            if (GiftCloseExempt(windowGui))
+            // The gift X sits inside a larger Restart or gear hit. The nearer
+            // center wins, so the X center closes the card and the Restart
+            // center still restarts.
+            int which = HudControl(windowGui);
+            bool onX = GiftCloseExempt(windowGui);
+            if (onX && which != 0 && !CloserToGiftX(windowGui, which))
+                onX = false;
+            if (onX)
             {
                 if (releaseEdge) CloseGift();
                 return true;
@@ -21557,7 +21661,6 @@ namespace FlockFive
             bool gift = _adHand && _gift == GiftFace.Card;
             bool button = ButtonCoachGlove();
             if (!gift && !button) return false;
-            int which = HudControl(windowGui);
             if (which == 1)
             {
                 if (releaseEdge) ShowSplash();
@@ -21591,6 +21694,23 @@ namespace FlockFive
             var drawn = OnScreenGlove();
             bool onHand = _gloveVis && drawn.width > 2f && GloveWindowHit(windowGui, drawn, PhoneArea.OffX);
             return !onHand;
+        }
+
+        // True when this point is nearer the gift X than the HUD button it also hits.
+        bool CloserToGiftX(Vector2 gui, int which)
+        {
+            float s = DeviceFit.Ui();
+            var x = CloseTapRect(CornerCloseRect(s, TopHud()));
+            HudShaken(out var restart, out _);
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            var hud = which == 1 ? home : which == 3 ? gear : restart;
+            if (x.width < 2f || hud.width < 2f) return true;
+            float dx = gui.x - x.center.x;
+            float dy = gui.y - x.center.y;
+            float hx = gui.x - hud.center.x;
+            float hy = gui.y - hud.center.y;
+            return dx * dx + dy * dy <= hx * hx + hy * hy;
         }
 
         // The gift card's X is always accepted, even while the ad-hand glove owns the screen.

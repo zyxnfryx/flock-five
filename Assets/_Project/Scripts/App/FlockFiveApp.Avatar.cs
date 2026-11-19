@@ -148,6 +148,9 @@ namespace FlockFive
         const string AvatarAdoptedPref = "flockfive.avatar.adopted";
         const string AvatarKitPref = "flockfive.avatar.kit";
         const string AvatarNamedPref = "flockfive.avatar.named";
+        // Set only when Play leaves the greet or the look. Level 1 otherwise
+        // boots to nothing (b131). Cleared when the name is saved.
+        const string ChainLookParkPref = "flockfive.chain.look";
         const string AdoptGreetLine = CaptionLayout.AdoptGreetLine;
         const string AdoptLookLine = "Tap your bird for a closer look.";
         const string AdoptNameLine = "Please give me a name!";
@@ -404,6 +407,22 @@ namespace FlockFive
         // Tap Daily while the greet has been seen and the coach key is still 0.
         void ParkHomeChainForPlay()
         {
+            if (_avatarRename || !HomeChainOpen()) return;
+            bool look = _adoptLive && (_adoptStep == AdoptStep.Fly || _adoptStep == AdoptStep.Look);
+            if (!look) return;
+            PlayerPrefs.SetInt(ChainLookParkPref, 1);
+            PlayerPrefs.Save();
+        }
+
+        bool ChainLookParked()
+        {
+            if (PlayerPrefs.GetInt(ChainLookParkPref, 0) == 0) return false;
+            if (AdoptResume.LookOwed(AvatarAdopted(),
+                PlayerPrefs.GetInt(AvatarNamedPref, -1),
+                ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0))
+                return true;
+            PlayerPrefs.DeleteKey(ChainLookParkPref);
+            return false;
         }
 
         void ArmAdopt()
@@ -418,7 +437,7 @@ namespace FlockFive
                 ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0);
             // Saved adopt state wins over the in-memory park, so a kill mid-garden
             // still resumes the look before garden 1 is cleared.
-            if (boot == AdoptBoot.ResumeLook)
+            if (boot == AdoptBoot.ResumeLook || ChainLookParked())
             {
                 ResumeAdoptLook();
                 return;
@@ -936,6 +955,7 @@ namespace FlockFive
             _adoptName = n;
             PlayerPrefs.SetString(AvatarNamePref, n);
             PlayerPrefs.SetInt(AvatarNamedPref, 1);
+            PlayerPrefs.DeleteKey(ChainLookParkPref);
             PlayerPrefs.Save();
             bool look = _adoptLive && _adoptStep == AdoptStep.Look;
             CloseAvatarRename();
