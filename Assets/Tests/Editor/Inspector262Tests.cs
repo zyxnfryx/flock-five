@@ -110,6 +110,7 @@ namespace FlockFive.Editor
             CheckFivesPressSkipsRestart(Check);
             CheckNotNowPressSkipsRestart(Check);
             CheckNamingPressSkipsRestart(Check);
+            CheckNamingControls(Check);
             CheckReminderAfterReward(Check);
             Check("reminder-waits-for-reward",
                 !FlockFiveApp.ReminderOpensNow(false) && FlockFiveApp.ReminderOpensNow(true),
@@ -1145,9 +1146,10 @@ namespace FlockFive.Editor
 
         static void CheckGiftPressSkipsRestart(System.Action<string, bool, string> Check)
         {
-            RunOverlayPress(Check, "gift-x-press-skips-restart", (app, t, flags) =>
+            EachPhoneWidth(Check, "gift-x-press-skips-restart", (app, t, flags) =>
             {
                 var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                t.GetField("_splash", flags).SetValue(app, false);
                 t.GetField("_adHand", flags).SetValue(app, true);
                 t.GetField("_freezeOffer", flags).SetValue(app, false);
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
@@ -1158,19 +1160,19 @@ namespace FlockFive.Editor
                     .Invoke(null, new object[] { s, top });
                 var x = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
                     .Invoke(null, new object[] { xBtn });
-                return x.center;
-            }, app =>
-            {
-                var gift = typeof(FlockFiveApp).GetField("_gift", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(app).ToString();
-                return gift == "None";
+                PressThenRelease(app, t, flags, x.center);
+                string gift = t.GetField("_gift", flags).GetValue(app).ToString();
+                bool home = (bool)t.GetField("_splash", flags).GetValue(app);
+                return gift == "None" && !home && !RestartLive(t, flags, app) && !FlockFiveApp.EditorPointerInject.On;
             });
         }
 
         static void CheckWatchPressStartsOnRelease(System.Action<string, bool, string> Check)
         {
-            RunOverlayPress(Check, "watch-press-starts-on-release", (app, t, flags) =>
+            EachPhoneWidth(Check, "watch-press-starts-on-release", (app, t, flags) =>
             {
                 var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                t.GetField("_splash", flags).SetValue(app, false);
                 t.GetField("_adHand", flags).SetValue(app, true);
                 t.GetField("_freezeOffer", flags).SetValue(app, false);
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
@@ -1181,11 +1183,10 @@ namespace FlockFive.Editor
                 t.GetMethod("GiftCardPlaced", flags).Invoke(app, placed);
                 var watch = (Rect)t.GetMethod("FlowerHit", BindingFlags.NonPublic | BindingFlags.Static)
                     .Invoke(null, new object[] { (Rect)placed[2], s });
-                return watch.center;
-            }, app =>
-            {
-                int starts = (int)typeof(FlockFiveApp).GetField("_watchStarts", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(app);
-                return starts == 1;
+                PressThenRelease(app, t, flags, watch.center);
+                int starts = (int)t.GetField("_watchStarts", flags).GetValue(app);
+                bool home = (bool)t.GetField("_splash", flags).GetValue(app);
+                return starts == 1 && !home && !RestartLive(t, flags, app) && !FlockFiveApp.EditorPointerInject.On;
             });
         }
 
@@ -1263,85 +1264,185 @@ namespace FlockFive.Editor
 
         static void CheckNotNowPressSkipsRestart(System.Action<string, bool, string> Check)
         {
-            RunOverlayPress(Check, "not-now-press-skips-restart", (app, t, flags) =>
+            EachPhoneWidth(Check, "not-now-press-skips-restart", (app, t, flags) =>
             {
-                object[] hud = { default(Rect), default(Rect) };
-                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
-                var restart = (Rect)hud[0];
-                var no = new Rect(restart.center.x - 24f, restart.center.y - 24f, 48f, 48f);
+                var home = t.GetField("_home", flags);
+                home.SetValue(app, System.Enum.ToObject(home.FieldType, 0));
+                t.GetField("_splash", flags).SetValue(app, true);
+                float s = DeviceFit.Ui();
+                float btnH = 48f * s;
+                var card = new Rect(24f, PhoneArea.H * 0.42f, PhoneArea.W - 48f, 220f * s);
+                FlockFiveApp.AskButtonRects(card, s, btnH, out _, out var no);
                 t.GetField("_dailyAskOpen", flags).SetValue(app, true);
                 t.GetField("_dailyAskAt", flags).SetValue(app, AdPause.Unscaled);
                 t.GetField("_dailyAskNoHit", flags).SetValue(app, no);
                 t.GetField("_dailyAskNoHitOn", flags).SetValue(app, true);
-                return no.center;
-            }, app => !(bool)typeof(FlockFiveApp).GetField("_dailyAskOpen", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(app));
+                PressThenRelease(app, t, flags, no.center);
+                bool closed = !(bool)t.GetField("_dailyAskOpen", flags).GetValue(app);
+                return closed && !RestartLive(t, flags, app) && !FlockFiveApp.EditorPointerInject.On;
+            });
         }
 
         static void CheckNamingPressSkipsRestart(System.Action<string, bool, string> Check)
         {
-            RunOverlayPress(Check, "naming-press-skips-restart", (app, t, flags) =>
+            EachPhoneWidth(Check, "naming-press-skips-restart", (app, t, flags) =>
             {
-                object[] hud = { default(Rect), default(Rect) };
-                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
-                var restart = (Rect)hud[0];
-                var plate = new Rect(restart.x - 8f, restart.y - 8f, restart.width + 16f, restart.height + 16f);
+                var home = t.GetField("_home", flags);
+                home.SetValue(app, System.Enum.ToObject(home.FieldType, 0));
+                t.GetField("_splash", flags).SetValue(app, true);
                 t.GetField("_avatarRename", flags).SetValue(app, true);
-                t.GetField("_avatarRenameR", flags).SetValue(app, plate);
-                return restart.center;
-            }, app =>
-            {
-                var who = (string)typeof(FlockFiveApp).GetField("_tapWho", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(app) ?? "";
-                bool still = (bool)typeof(FlockFiveApp).GetField("_avatarRename", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(app);
-                return still && who == "naming";
+                object[] laid = { DeviceFit.Ui(), default(Rect), default(Rect), default(Rect) };
+                var layout = t.GetMethod("AvatarRenameLayout", flags);
+                layout.Invoke(app, laid);
+                var plate = (Rect)t.GetField("_avatarRenameR", flags).GetValue(app);
+                var done = (Rect)laid[3];
+                var at = new Vector2(plate.center.x, done.yMax + 8f);
+                if (!plate.Contains(at) || done.Contains(at))
+                    at = new Vector2(plate.xMin + 6f, plate.yMin + 6f);
+                PressThenRelease(app, t, flags, at);
+                string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
+                bool still = (bool)t.GetField("_avatarRename", flags).GetValue(app);
+                return still && who == "naming" && !RestartLive(t, flags, app) && !FlockFiveApp.EditorPointerInject.On;
             });
         }
 
-        static void RunOverlayPress(System.Action<string, bool, string> Check, string name,
-            System.Func<FlockFiveApp, System.Type, BindingFlags, Vector2> aim,
-            System.Func<FlockFiveApp, bool> closed)
+        static void CheckNamingControls(System.Action<string, bool, string> Check)
         {
-            var go = new GameObject(name);
-            var prev = Event.current;
-            var inject = FlockFiveApp.EditorPointerInject;
-            int streak = Purse.Streak;
-            var resume = typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
-            float keepResume = (float)resume.GetValue(null);
+            var bow = typeof(FlockFiveApp).GetField("_avatarBowArt", BindingFlags.NonPublic | BindingFlags.Static);
+            int keepBow = (int)bow.GetValue(null);
             try
             {
-                Event.current = null;
-                Purse.SetStreak(0);
-                resume.SetValue(null, float.NegativeInfinity);
-                var app = go.AddComponent<FlockFiveApp>();
-                var t = typeof(FlockFiveApp);
-                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
-                t.GetField("_splash", flags).SetValue(app, false);
-                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
-                t.GetField("_garden", flags).SetValue(app, new WorldBuilder.Garden());
-                t.GetField("_busy", flags).SetValue(app, false);
-                t.GetField("_restarting", flags).SetValue(app, false);
-                var at = aim(app, t, flags);
-                InjectGuiPress(at, 9);
-                t.GetMethod("UpdateBody", flags).Invoke(app, null);
-                bool restarted = RestartLive(t, flags, app);
-                InjectGuiRelease(at, 9);
-                t.GetMethod("UpdateBody", flags).Invoke(app, null);
-                restarted = restarted || RestartLive(t, flags, app);
-                bool done = closed(app);
-                bool eaten = !FlockFiveApp.EditorPointerInject.On;
-                Check(name, done && !restarted && eaten, "done " + done + " restart " + restarted + " eaten " + eaten);
-            }
-            catch (System.Exception ex)
-            {
-                Check(name, false, ex.GetType().Name + " " + ex.Message);
+                bow.SetValue(null, 1);
+                EachPhoneWidth(Check, "naming-done-and-chip", (app, t, flags) =>
+                {
+                    if (PhoneArea.W > 500f && PhoneArea.OffX != 78) return false;
+                    if (PhoneArea.W < 500f && PhoneArea.OffX != 0) return false;
+                    if ((int)PhoneArea.W != 664 && PhoneArea.OffX == 78) { }
+                    var home = t.GetField("_home", flags);
+                    home.SetValue(app, System.Enum.ToObject(home.FieldType, 0));
+                    t.GetField("_splash", flags).SetValue(app, true);
+                    t.GetField("_avatarRename", flags).SetValue(app, true);
+                    t.GetField("_avatarRenameText", flags).SetValue(app, "Pip");
+                    object[] laid = { DeviceFit.Ui(), default(Rect), default(Rect), default(Rect) };
+                    t.GetMethod("AvatarRenameLayout", flags).Invoke(app, laid);
+                    var done = (Rect)laid[3];
+                    var kits = (Rect[])t.GetField("_avatarKitR", flags).GetValue(app);
+                    int n = (int)t.GetField("_avatarKitN", flags).GetValue(app);
+                    if (done.width < 2f || n < 1 || kits[0].width < 2f) return false;
+                    InjectGuiRelease(done.center, 11);
+                    t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                    bool doneLeft = FlockFiveApp.EditorPointerInject.On;
+                    string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
+                    bool doneHit = done.Contains(FlockFiveApp.ToPhoneLocal(new Vector2(
+                        FlockFiveApp.EditorPointerInject.Play.x + PhoneArea.OffX,
+                        PhoneArea.H - FlockFiveApp.EditorPointerInject.Play.y)));
+                    if (doneLeft && doneHit && who != "naming")
+                        t.GetMethod("CommitAvatarRename", flags).Invoke(app, null);
+                    bool named = !(bool)t.GetField("_avatarRename", flags).GetValue(app);
+                    t.GetField("_avatarRename", flags).SetValue(app, true);
+                    InjectGuiRelease(kits[0].center, 12);
+                    t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                    bool chipLeft = FlockFiveApp.EditorPointerInject.On;
+                    int chip = FlockFiveApp.AvatarKitChipHit(kits[0], default, default, new Vector2(
+                        FlockFiveApp.EditorPointerInject.Play.x + PhoneArea.OffX,
+                        PhoneArea.H - FlockFiveApp.EditorPointerInject.Play.y), PhoneArea.OffX);
+                    return named && doneLeft && chipLeft && chip == 0 && !RestartLive(t, flags, app);
+                }, new[] { 820, 402 });
             }
             finally
             {
-                Event.current = prev;
-                FlockFiveApp.EditorPointerInject = inject;
-                resume.SetValue(null, keepResume);
-                Purse.SetStreak(streak);
-                UnityEngine.Object.DestroyImmediate(go);
+                bow.SetValue(null, keepBow);
             }
+        }
+
+        static void EachPhoneWidth(System.Action<string, bool, string> Check, string name,
+            System.Func<FlockFiveApp, System.Type, BindingFlags, bool> body, int[] widths = null)
+        {
+            if (widths == null) widths = new[] { 820, 402, 412, 360 };
+            var winOn = typeof(PhoneArea).GetField("EditorWindowOn", BindingFlags.NonPublic | BindingFlags.Static);
+            var winW = typeof(PhoneArea).GetField("EditorWindowW", BindingFlags.NonPublic | BindingFlags.Static);
+            var winH = typeof(PhoneArea).GetField("EditorWindowH", BindingFlags.NonPublic | BindingFlags.Static);
+            var safeTop = typeof(PhoneArea).GetField("EditorSafeTop", BindingFlags.NonPublic | BindingFlags.Static);
+            var safeBot = typeof(PhoneArea).GetField("EditorSafeBottom", BindingFlags.NonPublic | BindingFlags.Static);
+            bool keepOn = (bool)winOn.GetValue(null);
+            int keepW = (int)winW.GetValue(null);
+            int keepH = (int)winH.GetValue(null);
+            float keepTop = (float)safeTop.GetValue(null);
+            float keepBot = (float)safeBot.GetValue(null);
+            try
+            {
+                for (int i = 0; i < widths.Length; i++)
+                {
+                    int w = widths[i];
+                    int h = w == 820 ? 1180 : w == 402 ? 874 : w == 412 ? 915 : 800;
+                    winOn.SetValue(null, true);
+                    winW.SetValue(null, w);
+                    winH.SetValue(null, h);
+                    safeTop.SetValue(null, 59f);
+                    safeBot.SetValue(null, 34f);
+                    int wantOff = w == 820 ? 78 : 0;
+                    if (PhoneArea.OffX != wantOff)
+                    {
+                        Check(name + "-" + w, false, "off " + PhoneArea.OffX + " want " + wantOff);
+                        continue;
+                    }
+                    var go = new GameObject(name + "-" + w);
+                    var prev = Event.current;
+                    var inject = FlockFiveApp.EditorPointerInject;
+                    int streak = Purse.Streak;
+                    var resume = typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
+                    float keepResume = (float)resume.GetValue(null);
+                    try
+                    {
+                        Event.current = null;
+                        Purse.SetStreak(0);
+                        resume.SetValue(null, float.NegativeInfinity);
+                        var app = go.AddComponent<FlockFiveApp>();
+                        var t = typeof(FlockFiveApp);
+                        var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                        t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                        t.GetField("_garden", flags).SetValue(app, new WorldBuilder.Garden());
+                        t.GetField("_busy", flags).SetValue(app, false);
+                        t.GetField("_restarting", flags).SetValue(app, false);
+                        bool ok = body(app, t, flags);
+                        Check(name + "-" + w, ok, "off " + PhoneArea.OffX + " playW " + PhoneArea.W);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Check(name + "-" + w, false, ex.GetType().Name + " " + ex.Message);
+                    }
+                    finally
+                    {
+                        Event.current = prev;
+                        FlockFiveApp.EditorPointerInject = inject;
+                        resume.SetValue(null, keepResume);
+                        Purse.SetStreak(streak);
+                        UnityEngine.Object.DestroyImmediate(go);
+                    }
+                }
+            }
+            finally
+            {
+                winOn.SetValue(null, keepOn);
+                winW.SetValue(null, keepW);
+                winH.SetValue(null, keepH);
+                safeTop.SetValue(null, keepTop);
+                safeBot.SetValue(null, keepBot);
+            }
+        }
+
+        static bool PressThenRelease(FlockFiveApp app, System.Type t, BindingFlags flags, Vector2 gui)
+        {
+            InjectGuiPress(gui, 9);
+            t.GetMethod("UpdateBody", flags).Invoke(app, null);
+            if (RestartLive(t, flags, app)) return false;
+            t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+            if (RestartLive(t, flags, app)) return false;
+            InjectGuiRelease(gui, 9);
+            t.GetMethod("UpdateBody", flags).Invoke(app, null);
+            if (RestartLive(t, flags, app)) return false;
+            t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+            return !RestartLive(t, flags, app) && !FlockFiveApp.EditorPointerInject.On;
         }
 
         static bool RestartLive(System.Type t, BindingFlags flags, FlockFiveApp app)

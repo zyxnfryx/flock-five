@@ -4364,7 +4364,7 @@ namespace FlockFive
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            var play = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
+            var play = ToPhoneLocal(windowGui);
             if (home.width > 2f && home.Contains(play)) return 1;
             if (restart.width > 2f && restart.Contains(play)) return 2;
             // The gear is drawn only on the home face. The same rect in the garden
@@ -4385,7 +4385,7 @@ namespace FlockFive
                 return false;
             }
             held = false;
-            var play = new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
+            var play = ToPhoneLocal(windowGui);
             bool inside = playRect.width > 2f && playRect.Contains(play);
             bool pad = false;
             if (Event.current != null)
@@ -8548,6 +8548,7 @@ namespace FlockFive
         // either edge. Release performs the overlay's action. Press only claims.
         bool OverlayOwnsPress(Vector2 windowGui, bool release)
         {
+            var phone = ToPhoneLocal(windowGui);
             if (_gift == GiftFace.Card && !_freezeOffer)
             {
                 int which = HudControl(windowGui);
@@ -8564,7 +8565,7 @@ namespace FlockFive
                 {
                     float s = DeviceFit.Ui();
                     GiftCardPlaced(s, out _, out var cta);
-                    if (FlowerHit(cta, s).Contains(windowGui))
+                    if (FlowerHit(cta, s).Contains(phone))
                     {
                         if (release) StartWatchGift();
                         _tapWho = "watch";
@@ -8572,28 +8573,42 @@ namespace FlockFive
                     }
                 }
             }
-            if (_fivesOpen)
+            if (_fivesOpen && phone.x >= 0f && phone.y >= 0f && phone.x <= PhoneArea.W && phone.y <= PhoneArea.H)
             {
+                // The glass covers Restart and Home. The X and a tap on the glass both close.
+                if (release)
+                {
+                    _fivesOpen = false;
+                    _fivesAnim = 0f;
+                    _fivesChipHeld = false;
+                }
                 float s = DeviceFit.Ui();
                 var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
-                if (FivesCloseRect(g.Panel, s).Contains(windowGui))
-                {
-                    if (release) TakeFivesClose(windowGui);
-                    _tapWho = "fives-close";
-                    return true;
-                }
+                _tapWho = FivesCloseRect(g.Panel, s).Contains(phone) ? "fives-close" : "fives-glass";
+                return true;
             }
-            if (_dailyAskOpen && _dailyAskNoHitOn && _dailyAskNoHit.Contains(windowGui))
+            if (_dailyAskOpen && _dailyAskNoHitOn && _dailyAskNoHit.Contains(phone))
             {
-                if (release) TakeDailyAskNotNow(_dailyAskNoHit, windowGui);
+                if (release) TakeDailyAskNotNow(_dailyAskNoHit, phone);
                 _tapWho = "not-now";
                 return true;
             }
-            if (_avatarRename && _avatarRenameR.width > 2f && _avatarRenameR.Contains(windowGui))
+            if (_avatarRename && _avatarRenameR.width > 2f && _avatarRenameR.Contains(phone) && !NamingControlHit(phone))
             {
                 _tapWho = "naming";
                 return true;
             }
+            return false;
+        }
+
+        // Done and the kit chips have their own pads. Claiming them would Use the
+        // event before DrawAvatarRename, so those taps would never land.
+        bool NamingControlHit(Vector2 phone)
+        {
+            AvatarRenameLayout(DeviceFit.Ui(), out _, out _, out var done);
+            if (done.width > 2f && done.Contains(phone)) return true;
+            for (int i = 0; i < _avatarKitN; i++)
+                if (_avatarKitR[i].width > 2f && _avatarKitR[i].Contains(phone)) return true;
             return false;
         }
 
@@ -8635,7 +8650,7 @@ namespace FlockFive
             if (!_adHand) return false;
             float s = DeviceFit.Ui();
             GiftCardPlaced(s, out _, out var cta);
-            if (!FlowerHit(cta, s).Contains(gui)) return false;
+            if (!FlowerHit(cta, s).Contains(ToPhoneLocal(gui))) return false;
             StartWatchGift();
             who = "watch";
             return true;
@@ -22217,7 +22232,7 @@ namespace FlockFive
             {
                 float s = DeviceFit.Ui();
                 GiftCardPlaced(s, out _, out var cta);
-                if (FlowerHit(cta, s).Contains(windowGui))
+                if (FlowerHit(cta, s).Contains(ToPhoneLocal(windowGui)))
                 {
                     if (releaseEdge) StartWatchGift();
                     _pointerClaimed = true;
@@ -22236,7 +22251,7 @@ namespace FlockFive
         }
 
         // True when this point is nearer the gift X than the HUD button it also hits.
-        bool CloserToGiftX(Vector2 gui, int which)
+        bool CloserToGiftX(Vector2 windowGui, int which)
         {
             float s = DeviceFit.Ui();
             var x = CloseTapRect(CornerCloseRect(s, TopHud()));
@@ -22244,20 +22259,21 @@ namespace FlockFive
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             var hud = which == 1 ? home : which == 3 ? gear : restart;
+            var phone = ToPhoneLocal(windowGui);
             if (x.width < 2f || hud.width < 2f) return true;
-            float dx = gui.x - x.center.x;
-            float dy = gui.y - x.center.y;
-            float hx = gui.x - hud.center.x;
-            float hy = gui.y - hud.center.y;
+            float dx = phone.x - x.center.x;
+            float dy = phone.y - x.center.y;
+            float hx = phone.x - hud.center.x;
+            float hy = phone.y - hud.center.y;
             return dx * dx + dy * dy <= hx * hx + hy * hy;
         }
 
         // The gift card's X is always accepted, even while the ad-hand glove owns the screen.
-        bool GiftCloseExempt(Vector2 gui)
+        bool GiftCloseExempt(Vector2 windowGui)
         {
             if (_gift != GiftFace.Card || _freezeOffer) return false;
             var x = CloseTapRect(CornerCloseRect(DeviceFit.Ui(), TopHud()));
-            return x.width > 2f && x.Contains(gui);
+            return x.width > 2f && x.Contains(ToPhoneLocal(windowGui));
         }
 
         void CloseGift()

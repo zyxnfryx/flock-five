@@ -278,7 +278,7 @@ namespace FlockFive
             if (!_fivesOpen) return false;
             float s = DeviceFit.Ui();
             var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
-            if (!FivesCloseRect(g.Panel, s).Contains(windowGui)) return false;
+            if (!FivesCloseRect(g.Panel, s).Contains(ToPhoneLocal(windowGui))) return false;
             _fivesOpen = false;
             _fivesAnim = 0f;
             _fivesChipHeld = false;

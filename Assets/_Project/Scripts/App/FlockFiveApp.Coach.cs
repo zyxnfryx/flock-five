@@ -5923,6 +5923,14 @@ namespace FlockFive
             return new Vector2(windowGui.x - PhoneArea.OffX, PhoneArea.H - windowGui.y);
         }
 
+        // Window GUI (pillar included, y down) to phone-local GUI (0..PhoneArea.W, y down).
+        // HUD rects and overlay rects are phone-local. Press and release hit-tests
+        // all go through this, so a pillar cannot slide the point onto Restart.
+        public static Vector2 ToPhoneLocal(Vector2 windowGui)
+        {
+            return new Vector2(windowGui.x - PhoneArea.OffX, windowGui.y);
+        }
+
         void DrawGloveAt(Vector2 pivot, float ang, float dh, float alpha, float dip, bool mirror = false)
         {
             var tex = CoachGloveCurl(dip);
