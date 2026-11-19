@@ -1191,13 +1191,74 @@ namespace FlockFive.Editor
 
         static void CheckFivesPressSkipsRestart(System.Action<string, bool, string> Check)
         {
-            RunOverlayPress(Check, "fives-press-skips-restart", (app, t, flags) =>
+            // The collection stays open only on the poker splash (FivesMayStayOpen).
+            // UpdateBody clears it otherwise, then returns while the splash is up,
+            // before HitHud. The release is TakeGuiPointer, which must eat the tap
+            // so the pay table and the cards never see it.
+            var go = new GameObject("fives-press-skips-restart");
+            var prev = Event.current;
+            var inject = FlockFiveApp.EditorPointerInject;
+            int streak = Purse.Streak;
+            var resume = typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
+            float keepResume = (float)resume.GetValue(null);
+            try
             {
+                Event.current = null;
+                Purse.SetStreak(0);
+                resume.SetValue(null, float.NegativeInfinity);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var home = t.GetField("_home", flags);
+                home.SetValue(app, System.Enum.ToObject(home.FieldType, 2));
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_garden", flags).SetValue(app, new WorldBuilder.Garden());
                 t.GetField("_fivesOpen", flags).SetValue(app, true);
+                t.GetField("_pokerPayOpen", flags).SetValue(app, true);
+                t.GetField("_pokerPayAnim", flags).SetValue(app, 1f);
+                t.GetField("_pokerHover", flags).SetValue(app, 7);
+                t.GetField("_busy", flags).SetValue(app, false);
+                t.GetField("_restarting", flags).SetValue(app, false);
                 float s = DeviceFit.Ui();
                 var geo = FlockFiveApp.LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
-                return FlockFiveApp.FivesCloseRect(geo.Panel, s).center;
-            }, app => !(bool)typeof(FlockFiveApp).GetField("_fivesOpen", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(app));
+                var at = FlockFiveApp.FivesCloseRect(geo.Panel, s).center;
+                InjectGuiPress(at, 9);
+                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                bool openAfterPress = (bool)t.GetField("_fivesOpen", flags).GetValue(app);
+                bool restarted = RestartLive(t, flags, app);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                openAfterPress = openAfterPress && (bool)t.GetField("_fivesOpen", flags).GetValue(app);
+                bool pressEaten = !FlockFiveApp.EditorPointerInject.On;
+                restarted = restarted || RestartLive(t, flags, app);
+                InjectGuiRelease(at, 9);
+                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                openAfterPress = openAfterPress && (bool)t.GetField("_fivesOpen", flags).GetValue(app);
+                restarted = restarted || RestartLive(t, flags, app);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                bool closed = !(bool)t.GetField("_fivesOpen", flags).GetValue(app);
+                bool eaten = !FlockFiveApp.EditorPointerInject.On;
+                restarted = restarted || RestartLive(t, flags, app);
+                t.GetMethod("TickPokerPayTable", flags).Invoke(app, new object[] { 80f, s });
+                bool payStayed = (bool)t.GetField("_pokerPayOpen", flags).GetValue(app);
+                t.GetMethod("HitPokerCards", flags).Invoke(app, new object[] { true, new Rect(0f, 0f, 40f, 60f), 0f, 0f, 40f, 60f, 4f });
+                int hover = (int)t.GetField("_pokerHover", flags).GetValue(app);
+                Check("fives-press-skips-restart",
+                    openAfterPress && closed && pressEaten && eaten && !restarted && payStayed && hover == 7,
+                    "open " + openAfterPress + " closed " + closed + " pressEaten " + pressEaten
+                    + " eaten " + eaten + " restart " + restarted + " payStayed " + payStayed + " hover " + hover);
+            }
+            catch (System.Exception ex)
+            {
+                Check("fives-press-skips-restart", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                Event.current = prev;
+                FlockFiveApp.EditorPointerInject = inject;
+                resume.SetValue(null, keepResume);
+                Purse.SetStreak(streak);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
 
         static void CheckNotNowPressSkipsRestart(System.Action<string, bool, string> Check)
