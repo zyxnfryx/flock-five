@@ -2507,28 +2507,28 @@ namespace FlockFive
         // old middle-right run. The hand hangs below the fingertip, in the left column.
         public const float PokerBackGloveHopHands = 0.50f;
 
-        // Phone windows only. The drawn index tip sits this far southeast of the pivot,
-        // and the phone medal is small enough that a center aim leaves the fingertip
-        // outside the hit (402: (68,60) vs Back (49,41); 412: (67,62) vs (50,43)).
-        // The iPad pillar medal already contains the unshifted tip.
+        // Layout clearance for the upright hand, not the settle. The pivot used
+        // to sit a full nudge left of center; the medal is still seated for that.
         public const float PokerBackPhoneTipNudgeX = -18f;
         public const float PokerBackPhoneTipNudgeY = -19f;
 
-        // Settled fingertip target. Phones shift the pivot up-left so the drawn tip
-        // lands inside the medal. Wider windows (the 820 pillar) keep the center.
+        // Phones: fingertip this far up-left of the medal center. More than the
+        // 8px glove-snug gap, and still ~10px inside a 44px hit (not on the rim).
+        // The upright hand hangs below the tip, so the palm sits under the word.
+        public const float PokerBackInsideNudge = 12f;
+
+        // Settled fingertip. Phones sit up-left of the word, inside the hit.
+        // The 820 pillar keeps the center exactly: that is the snug hit there.
         public static Vector2 PokerBackSettleAim(Vector2 medalCenter, Rect medal, float windowW, float windowH)
         {
-            // Left side of the medal. The hand hangs to the left of the pivot,
-            // so a center aim covers the word Back. The tip still sits on the medal.
-            var aim = medal.width > 2f
-                ? new Vector2(medal.xMin + Mathf.Max(6f, medal.width * 0.22f), medal.center.y)
-                : medalCenter;
             float aspect = windowH > 1f ? windowW / windowH : 1f;
-            if (aspect <= DeviceFit.PhoneAspect + 0.04f)
-                aim += new Vector2(PokerBackPhoneTipNudgeX * 0.35f, PokerBackPhoneTipNudgeY * 0.35f);
+            bool phone = aspect <= DeviceFit.PhoneAspect + 0.04f;
+            if (!phone)
+                return medalCenter;
+            var aim = medalCenter + new Vector2(-PokerBackInsideNudge, -PokerBackInsideNudge);
             if (medal.width > 2f && medal.height > 2f)
             {
-                float inset = Mathf.Min(3f, medal.width * 0.15f);
+                float inset = Mathf.Min(8f, medal.width * 0.18f);
                 float x0 = medal.xMin + inset, x1 = medal.xMax - inset;
                 float y0 = medal.yMin + inset, y1 = medal.yMax - inset;
                 if (x1 < x0) { x0 = x1 = medal.center.x; }
