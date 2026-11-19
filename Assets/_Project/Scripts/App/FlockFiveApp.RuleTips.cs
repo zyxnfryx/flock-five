@@ -201,10 +201,17 @@ namespace FlockFive
 #if UNITY_EDITOR
         // True only when TakeRuleTipPress hit Restart itself, not the GardenPressFate fallback.
         internal bool EditorRuleRestartDirect;
+        // How many times the caption press methods were entered. Editor tests read
+        // these to see whether a tap died before the hit test.
+        internal int EditorRuleSwallowEntered;
+        internal int EditorRulePressEntered;
 #endif
 
         void TakeRuleTipPress(Vector2 screen)
         {
+#if UNITY_EDITOR
+            EditorRulePressEntered++;
+#endif
             // screen is bottom-origin play pixels. Pressed returns that point.
             // SwallowRuleTipPointer builds it with WindowGuiToPlay, which subtracts
             // OffX before the Y flip. RestartHudRect is top-origin play GUI.
@@ -279,6 +286,9 @@ namespace FlockFive
         // first press dismisses and is eaten here, not one frame later on the board.
         void SwallowRuleTipPointer()
         {
+#if UNITY_EDITOR
+            EditorRuleSwallowEntered++;
+#endif
             var e = Event.current;
             if (e == null) return;
             var t = e.type;

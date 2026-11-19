@@ -504,18 +504,25 @@ namespace FlockFive.Editor
                     bool onGlass = restart.xMax <= areaW + 0.5f && home.xMax <= areaW + 0.5f && restart.xMin > home.xMax;
                     bool restartHit = false, homeHit = false, outRestart = false, outHome = false;
                     bool falseRestart = false, falseHome = false;
-                    RuleHudTap(app, t, flags, new Vector2(restart.center.x + off, restart.center.y), out restartHit, out _);
-                    RuleHudTap(app, t, flags, new Vector2(home.center.x + off, home.center.y), out _, out homeHit);
-                    RuleHudTap(app, t, flags, new Vector2(restart.xMax + 6f + off, restart.center.y), out outRestart, out outHome);
+                    int swR = 0, prR = 0, swH = 0, prH = 0, swO = 0, prO = 0, swB = 0, prB = 0;
+                    string faultR = null, faultH = null, faultO = null, faultB = null;
+                    RuleHudTap(app, t, flags, new Vector2(restart.center.x + off, restart.center.y), out restartHit, out _, out swR, out prR, out faultR);
+                    RuleHudTap(app, t, flags, new Vector2(home.center.x + off, home.center.y), out _, out homeHit, out swH, out prH, out faultH);
+                    RuleHudTap(app, t, flags, new Vector2(restart.xMax + 6f + off, restart.center.y), out outRestart, out outHome, out swO, out prO, out faultO);
                     if (off != 0)
-                        RuleHudTap(app, t, flags, new Vector2(restart.center.x, restart.center.y), out falseRestart, out falseHome);
+                        RuleHudTap(app, t, flags, new Vector2(restart.center.x, restart.center.y), out falseRestart, out falseHome, out swB, out prB, out faultB);
+                    bool reached = prR > 0 && prH > 0 && prO > 0 && (off == 0 || prB > 0);
+                    string faults = faultR ?? faultH ?? faultO ?? faultB;
                     Check("pillar-rule-hud-" + tag,
-                        sized && onGlass && restartHit && homeHit && !outRestart && !outHome && !falseRestart && !falseHome,
-                        "off " + off + " w " + areaW
+                        faults == null && reached && sized && onGlass && restartHit && homeHit && !outRestart && !outHome && !falseRestart && !falseHome,
+                        "reached swallow " + swR + "/" + swH + "/" + swO + "/" + swB
+                        + " press " + prR + "/" + prH + "/" + prO + "/" + prB
+                        + " off " + off + " w " + areaW
                         + " restart " + restartHit + " home " + homeHit
                         + " outR " + outRestart + " outH " + outHome
                         + " bare " + falseRestart + "/" + falseHome
-                        + " r " + restart + " h " + home);
+                        + " r " + restart + " h " + home
+                        + (faults == null ? "" : " THREW " + faults));
                 }
             }
             catch (System.Exception ex)
@@ -538,40 +545,59 @@ namespace FlockFive.Editor
             }
         }
 
-        static void RuleHudTap(FlockFiveApp app, System.Type t, BindingFlags flags, Vector2 windowGui, out bool restart, out bool home)
+        static void RuleHudTap(FlockFiveApp app, System.Type t, BindingFlags flags, Vector2 windowGui, out bool restart, out bool home, out int swallow, out int press, out string fault)
         {
+            swallow = 0;
+            press = 0;
+            fault = null;
             t.GetField("_splash", flags).SetValue(app, false);
             t.GetField("_busy", flags).SetValue(app, false);
             t.GetField("_restarting", flags).SetValue(app, false);
+            t.GetField("_gloveVis", flags).SetValue(app, false);
+            t.GetField("_ruleEatGesture", flags).SetValue(app, false);
+            var guard = t.GetField("_lessonGuardUntil", BindingFlags.NonPublic | BindingFlags.Static);
+            if (guard != null) guard.SetValue(null, 0f);
             t.GetField("_ruleTip", flags).SetValue(app, RuleTip.Feeder);
             t.GetField("_cueLine", flags).SetValue(app, "Nice! That feeder now wants\na new color. Check the top.");
             t.GetField("EditorRuleRestartDirect", flags).SetValue(app, false);
             t.GetField("EditorSnapRound", flags).SetValue(app, null);
+            t.GetField("EditorRuleSwallowEntered", flags).SetValue(app, 0);
+            t.GetField("EditorRulePressEntered", flags).SetValue(app, 0);
+            // OnGUIBody draws after the swallow and throws outside a native OnGUI.
+            // Event.current is also not a reliable MouseDown there. Drive the
+            // caption methods directly. Swallow still runs first so its counter
+            // shows whether the event arrived; if it never calls the press, the
+            // point goes through WindowGuiToPlay into TakeRuleTipPress.
             Event.current = new Event { type = EventType.MouseDown, mousePosition = windowGui, button = 0 };
-            // SwallowRuleTipPointer runs from PaintAfterPointer, and that runs only
-            // while this instance's OnGUI is on the stack. A direct call sits at
-            // depth 0, so the press never enters that path.
-            var depth = t.GetField("_onGuiDepth", flags);
-            int was = (int)depth.GetValue(app);
-            depth.SetValue(app, was + 1);
-            try
+            fault = InvokeRule(t, flags, app, "SwallowRuleTipPointer", null);
+            if (fault == null && (int)t.GetField("EditorRulePressEntered", flags).GetValue(app) == 0)
             {
-                t.GetMethod("OnGUIBody", flags).Invoke(app, null);
+                var play = FlockFiveApp.WindowGuiToPlay(windowGui);
+                fault = InvokeRule(t, flags, app, "TakeRuleTipPress", new object[] { play });
             }
-            catch (System.Reflection.TargetInvocationException)
-            {
-                // Draws after the swallow throw outside a native OnGUI. The tip
-                // press has already been taken.
-            }
-            finally
-            {
-                depth.SetValue(app, was);
-            }
+            swallow = (int)t.GetField("EditorRuleSwallowEntered", flags).GetValue(app);
+            press = (int)t.GetField("EditorRulePressEntered", flags).GetValue(app);
             bool direct = (bool)t.GetField("EditorRuleRestartDirect", flags).GetValue(app);
             bool snapped = t.GetField("EditorSnapRound", flags).GetValue(app) != null;
             bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
             restart = direct && snapped && !splash;
             home = splash && !direct && !snapped;
+        }
+
+        static string InvokeRule(System.Type t, BindingFlags flags, FlockFiveApp app, string methodName, object[] args)
+        {
+            var method = t.GetMethod(methodName, flags);
+            if (method == null) return "missing " + methodName;
+            try
+            {
+                method.Invoke(app, args);
+                return null;
+            }
+            catch (System.Reflection.TargetInvocationException ex)
+            {
+                var inner = ex.InnerException ?? ex;
+                return inner.GetType().Name + ": " + inner.Message + "\n" + inner.StackTrace;
+            }
         }
 
         static void InvokeOnGui(FlockFiveApp app)
