@@ -4245,15 +4245,22 @@ namespace FlockFive
         static int EdgeIdNow(bool release)
         {
 #if UNITY_EDITOR
-            if (EditorPointerInject.On)
+            if (EditorPointerInject.On && (EditorPointerInject.Down || EditorPointerInject.Up))
                 return EditorPointerInject.Id;
 #endif
-            if (!release)
+            // Same source TakeGuiPointer uses. A shipping release is the touch
+            // that ended, not a blanket -1 that would lift every finger.
+            if (release)
             {
-                int id = PressIdNow();
-                if (id != int.MinValue) return id;
+                int released;
+                if (PressReleased(out released)) return released;
+                var e = Event.current;
+                if (e != null && e.type == EventType.MouseUp && e.button == 0)
+                    return HomeEventId(e, false, true);
+                return -1;
             }
-            return -1;
+            int id = PressIdNow();
+            return id == int.MinValue ? -1 : id;
         }
 
         // Where this finger went down, including a press an overlay then claims.
@@ -8532,13 +8539,7 @@ namespace FlockFive
                 return;
             }
             var play = PlayPointer.At;
-            int edgeId = -1;
-            if (tapEdge)
-                edgeId = HomeEventId(tapEv, !release, release);
-#if UNITY_EDITOR
-            else edgeId = EditorPointerInject.Id;
-#endif
-            NotePointerEdge(edgeId, release, play);
+            NotePointerEdge(EdgeIdNow(release), release, play);
             if (_avatarRename) RegisterAvatarPlate(DeviceFit.Ui());
             if (_avatarRename && PlateControlAt(play))
             {

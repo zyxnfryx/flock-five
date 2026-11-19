@@ -115,6 +115,8 @@ namespace FlockFive.Editor
             CheckPointerGuard(Check);
             CheckRuleReentrant(Check);
             CheckGiftStampBeforeGui(Check);
+            CheckDistinctReleaseIds(Check);
+            CheckRestartAskAfterResume(Check);
             CheckReminderAfterReward(Check);
             Check("reminder-waits-for-reward",
                 !FlockFiveApp.ReminderOpensNow(false) && FlockFiveApp.ReminderOpensNow(true),
@@ -1347,7 +1349,29 @@ namespace FlockFive.Editor
                 object[] hud = { default(Rect), default(Rect) };
                 t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
                 var restart = (Rect)hud[0];
-                var window = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                float s = DeviceFit.Ui();
+                float top = (float)t.GetMethod("TopHud", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(float) }, null)
+                    .Invoke(null, new object[] { 0f });
+                var xBtn = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { s, top });
+                var xHit = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { xBtn });
+                Vector2 aim = restart.center;
+                Vector2[] candidates =
+                {
+                    new Vector2(restart.xMin + 4f, restart.center.y),
+                    new Vector2(restart.center.x, restart.yMax - 4f),
+                    restart.center
+                };
+                for (int i = 0; i < candidates.Length; i++)
+                {
+                    if (restart.Contains(candidates[i]) && !xHit.Contains(candidates[i]))
+                    {
+                        aim = candidates[i];
+                        break;
+                    }
+                }
+                var window = new Vector2(aim.x + PhoneArea.OffX, aim.y);
                 string One(bool freeze)
                 {
                     t.GetField("_splash", flags).SetValue(app, false);
@@ -1404,6 +1428,75 @@ namespace FlockFive.Editor
                 string gift = One(false);
                 if (gift != null) return gift;
                 return One(true);
+            }, new[] { 820, 402 });
+        }
+
+        static void CheckDistinctReleaseIds(System.Action<string, bool, string> Check)
+        {
+            EachPhoneWidth(Check, "release-id-keeps-other-finger", (app, t, flags) =>
+            {
+                var resume = t.GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
+                resume.SetValue(null, AdPause.Unscaled + 5f);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("EditorEdgeStamps", flags).SetValue(app, 0);
+                t.GetField("EditorSnapRound", flags).SetValue(app, null);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var window = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                void Edge(int id, bool down)
+                {
+                    FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                    {
+                        On = true, Down = down, Up = !down, Id = id, Window = window
+                    };
+                    t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                    t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                }
+                Edge(4, true);
+                Edge(9, false);
+                int stamps = (int)t.GetField("EditorEdgeStamps", flags).GetValue(app);
+                bool otherUp = RestartLive(t, flags, app);
+                resume.SetValue(null, AdPause.Unscaled - 5f);
+                Edge(4, false);
+                bool matched = RestartLive(t, flags, app);
+                if (stamps >= 2 && !otherUp && !matched) return null;
+                return "stamps " + stamps + " otherUp " + otherUp + " matched " + matched;
+            }, new[] { 820, 402 });
+        }
+
+        static void CheckRestartAskAfterResume(System.Action<string, bool, string> Check)
+        {
+            EachPhoneWidth(Check, "restart-ask-after-resume", (app, t, flags) =>
+            {
+                var resume = t.GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
+                resume.SetValue(null, AdPause.Unscaled - 5f);
+                Purse.SetStreak(2);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(t.GetNestedType("GiftFace", BindingFlags.NonPublic), 0));
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                t.GetField("EditorSnapRound", flags).SetValue(app, null);
+                t.GetField("_restarting", flags).SetValue(app, false);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var window = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Up = false, Id = 12, Window = window
+                };
+                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = false, Up = true, Id = 12, Window = window
+                };
+                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                var ask = t.GetField("_restartAsk", flags).GetValue(app).ToString();
+                bool snap = t.GetField("EditorSnapRound", flags).GetValue(app) != null;
+                bool live = RestartLive(t, flags, app);
+                if (ask != "None" && !snap && live) return null;
+                return "ask " + ask + " snap " + snap + " live " + live + " off " + PhoneArea.OffX;
             }, new[] { 820, 402 });
         }
 
@@ -1676,8 +1769,10 @@ namespace FlockFive.Editor
 
         static bool RestartLive(System.Type t, BindingFlags flags, FlockFiveApp app)
         {
+            var ask = t.GetField("_restartAsk", flags).GetValue(app);
             return t.GetField("EditorSnapRound", flags).GetValue(app) != null
-                || (bool)t.GetField("_restarting", flags).GetValue(app);
+                || (bool)t.GetField("_restarting", flags).GetValue(app)
+                || (ask != null && ask.ToString() != "None");
         }
 
         // gui is phone-local (the rects). The inject stores the real window point,

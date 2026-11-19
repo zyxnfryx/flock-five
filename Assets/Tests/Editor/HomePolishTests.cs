@@ -4997,18 +4997,57 @@ namespace FlockFive.Editor
                 var gift = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(gift, 1));
                 t.GetField("_freezeOffer", flags).SetValue(app, false);
+                t.GetField("_watchStarts", flags).SetValue(app, 0);
+                t.GetField("_watchGiftLive", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, false);
+                var keptEvent = Event.current;
+                Event.current = null;
                 object[] placed = { DeviceFit.Ui(), default(Rect), default(Rect) };
                 Method(t, "GiftCardPlaced", typeof(float), typeof(Rect).MakeByRefType(), typeof(Rect).MakeByRefType()).Invoke(app, placed);
                 var flower = (Rect)placed[2];
                 var watch = (Rect)t.GetMethod("FlowerHit", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { flower, DeviceFit.Ui() });
-                // Bottom-origin play pixels. PressHud adds the pillar itself.
-                var watchPlay = new Vector2(watch.center.x, (PhoneArea.H > 2f ? PhoneArea.H : h) - watch.center.y);
-                PressHud(app, t, watchPlay, 4, true);
-                PressHud(app, t, watchPlay, 4, false);
-                PressHud(app, t, watchPlay, 4, true);
-                PressHud(app, t, watchPlay, 4, false);
+                // What PressHud used to inject: a bottom-origin play point, then a Y flip.
+                var oldPlay = new Vector2(watch.center.x - PhoneArea.OffX, h - watch.center.y);
+                var oldWindow = new Vector2(oldPlay.x + PhoneArea.OffX, PhoneArea.H - oldPlay.y);
+                var oldEnter = PlayPointer.Enter(oldWindow);
+                // The path that already passes: a real window point, UpdateBody, then OnGUI.
+                var window = new Vector2(watch.center.x + PhoneArea.OffX, watch.center.y);
+                string Trace(string edge, Vector2 win, bool down)
+                {
+                    var entered = PlayPointer.Enter(win);
+                    int which = (int)t.GetMethod("HudControl", flags).Invoke(app, new object[] { entered });
+                    bool contains = watch.Contains(entered);
+                    FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                    {
+                        On = true, Down = down, Up = !down, Id = 4, Window = win
+                    };
+                    int edgeId = (int)t.GetMethod("EdgeIdNow", BindingFlags.NonPublic | BindingFlags.Static)
+                        .Invoke(null, new object[] { !down });
+                    Method(t, "UpdateBody").Invoke(app, null);
+                    Method(t, "TakeGuiPointer").Invoke(app, null);
+                    string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
+                    int startsNow = (int)t.GetField("_watchStarts", flags).GetValue(app);
+                    int seam = (int)t.GetField("EditorWatchRequests", flags).GetValue(app);
+                    bool live = (bool)t.GetField("_watchGiftLive", flags).GetValue(app);
+                    string giftNow = t.GetField("_gift", flags).GetValue(app).ToString();
+                    return edge
+                        + " win " + win + " enter " + entered
+                        + " watch " + watch + " contains " + contains
+                        + " hud " + which + " who " + who
+                        + " edgeId " + edgeId + " injectId 4"
+                        + " gift " + giftNow + " adHand " + t.GetField("_adHand", flags).GetValue(app)
+                        + " live " + live + " starts " + startsNow + " seam " + seam;
+                }
+                string pressTrace = Trace("press", window, true);
+                string releaseTrace = Trace("release", window, false);
                 int starts = (int)t.GetField("_watchStarts", flags).GetValue(app);
-                try { Check("yield-watch-starts-once", starts == 1, "starts " + starts); }
+                Event.current = keptEvent;
+                try { Check("yield-watch-starts-once", starts == 1,
+                    "starts " + starts
+                    + " | oldPlay " + oldPlay + " oldWindow " + oldWindow + " oldEnter " + oldEnter
+                    + " oldContains " + watch.Contains(oldEnter)
+                    + " | " + pressTrace + " | " + releaseTrace); }
                 catch (System.Exception hopEx) { Check("yield-watch-starts-once", false, ThrowText(hopEx)); }
                 t.GetField("_adHand", flags).SetValue(app, false);
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(gift, 0));
