@@ -142,6 +142,8 @@ namespace FlockFive.Editor
             Gate("CheckRestartRecue", () => CheckRestartRecue(Check));
             Gate("CheckRestartActRound", () => CheckRestartActRound(Check));
             Gate("CheckHudSameFrameHop", () => CheckHudSameFrameHop(Check));
+            Gate("CheckHomeThenSameFrameHop", () => CheckHomeThenSameFrameHop(Check));
+            Gate("CheckTouchMouseUp", () => CheckTouchMouseUp(Check));
             Gate("CheckAdHandOffer", () => CheckAdHandOffer(Check));
             Gate("CheckInspectorGates", () => CheckInspectorGates(Check));
             Gate("CheckResumeYield", () => CheckResumeYield(Check));
@@ -3382,6 +3384,10 @@ namespace FlockFive.Editor
                 t = typeof(FlockFiveApp);
                 t.GetField("_railInit", flags).SetValue(homeApp, true);
                 t.GetField("_splash", flags).SetValue(homeApp, true);
+                // A relaunch already resumed from the save. Opening Home again
+                // in that same boot must not count the look or Tap Daily twice.
+                if (relaunch)
+                    Method(t, "ShowSplash").Invoke(homeApp, null);
                 app = homeApp;
                 int looks = (int)t.GetField("_chainLookRuns", flags).GetValue(app);
                 var stepNow = t.GetField("_adoptStep", flags).GetValue(app).ToString();
@@ -4366,6 +4372,28 @@ namespace FlockFive.Editor
                 + " tip " + now + " line \"" + line + "\"";
         }
 
+        // The deal pad is the same Down then Up the HUD buttons take in batch.
+        // Event.current is set too, for an editor that still has IMGUI. A batch
+        // with no GUI event reads EditorPointerInject instead. A null event
+        // alone does not deal.
+        static void PressDealPad(Rect pad, bool down)
+        {
+            Event.current = new Event
+            {
+                type = down ? EventType.MouseDown : EventType.MouseUp,
+                mousePosition = pad.center,
+                button = 0
+            };
+            FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+            {
+                On = true,
+                Down = down,
+                Up = !down,
+                Id = 1,
+                Play = pad.center
+            };
+        }
+
         // EditorPointerInject drives these presses. The cases are inspect-only:
         // edit mode has no touch screen, so this is the real Down then Up the
         // game reads, not a device recording.
@@ -4871,12 +4899,12 @@ namespace FlockFive.Editor
                 int bet = BirdPoker.Bet;
                 GUIUtility.hotControl = 0;
                 var rect = app.PokerDealButtonRect();
-                Event.current = new Event { type = EventType.MouseDown, mousePosition = rect.center, button = 0 };
+                PressDealPad(rect, true);
                 app.PokerPageDealHit();
                 bool armed = (bool)t.GetField("_pokerDealHint", flags).GetValue(app)
                     && BirdPoker.PhaseNow == BirdPoker.Phase.Idle
                     && Purse.Coins == before;
-                Event.current = new Event { type = EventType.MouseUp, mousePosition = rect.center, button = 0 };
+                PressDealPad(rect, false);
                 app.PokerPageDealHit();
                 bool dealt = armed
                     && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt
@@ -4890,6 +4918,7 @@ namespace FlockFive.Editor
             finally
             {
                 Event.current = prev;
+                FlockFiveApp.EditorPointerInject = default;
                 GUIUtility.hotControl = 0;
                 UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", hands);
                 GamePause.Reset();
@@ -4947,11 +4976,12 @@ namespace FlockFive.Editor
                 var dealRect = app.PokerDealButtonRect();
                 var dealEvent = Event.current;
                 GUIUtility.hotControl = 0;
-                Event.current = new Event { type = EventType.MouseDown, mousePosition = dealRect.center, button = 0 };
+                PressDealPad(dealRect, true);
                 app.PokerPageDealHit();
-                Event.current = new Event { type = EventType.MouseUp, mousePosition = dealRect.center, button = 0 };
+                PressDealPad(dealRect, false);
                 app.PokerPageDealHit();
                 Event.current = dealEvent;
+                FlockFiveApp.EditorPointerInject = default;
                 bool dealt = held && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt && Purse.Coins == before - bet;
                 try { Check("yield-deal-deals-once", dealt,
                     "phase " + BirdPoker.PhaseNow + " coins " + Purse.Coins + " before " + before + " bet " + bet); }
@@ -5286,6 +5316,130 @@ namespace FlockFive.Editor
                 GamePause.Reset();
                 if (had) PlayerPrefs.SetInt(key, keep);
                 else PlayerPrefs.DeleteKey(key);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckHomeThenSameFrameHop(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("home-then-hop");
+            float keep = ResumeUntil();
+            GameObject limb = null, camGo = null;
+            try
+            {
+                SetResumeUntil(float.NegativeInfinity);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                PressHud(app, t, homePlay, 3, true);
+                PressHud(app, t, homePlay, 3, false);
+                bool opened = (bool)t.GetField("_splash", flags).GetValue(app);
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveTookFrame", flags).SetValue(app, Time.frameCount);
+                float w = PhoneArea.W > 2f ? PhoneArea.W : 400f;
+                float h = PhoneArea.H > 2f ? PhoneArea.H : 800f;
+                var away = new Vector2(w * 0.5f, h * 0.55f);
+                if (home.Contains(away) || restart.Contains(away))
+                    away = new Vector2(restart.center.x, restart.yMax + 80f);
+                ReadyHop(app);
+                PoseGlove(app, away, 72f);
+                SetEditorTaps(app, 0);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var at = new Vector2(away.x + PhoneArea.OffX, away.y);
+                bool down = (bool)glove.Invoke(app, new object[] { at, false, 4 });
+                bool up = (bool)glove.Invoke(app, new object[] { at, true, 4 });
+                bool hopped = opened && down && up && EditorTaps(app) == 1
+                    && FlockFiveApp.EditorGloveTraceNow.Exit == "handle";
+                try { Check("home-then-same-frame-hop", hopped,
+                    "home " + opened + " down " + down + " up " + up
+                    + " taps " + EditorTaps(app) + " exit " + FlockFiveApp.EditorGloveTraceNow.Exit); }
+                catch (System.Exception hopEx) { Check("home-then-same-frame-hop", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        // A touch Down and the mouse -1 Up are one press. The down-control decides.
+        static void CheckTouchMouseUp(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("touch-mouse-up");
+            float keep = ResumeUntil();
+            try
+            {
+                SetResumeUntil(float.NegativeInfinity);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                var restartPlay = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                var gearPlay = new Vector2(gear.center.x, PhoneArea.H - gear.center.y);
+
+                ClearRestart(app, t, flags);
+                PressHud(app, t, homePlay, 4, true);
+                PressHud(app, t, restartPlay, -1, false);
+                bool homeDownQuiet = !RestartBegan(app, t, flags);
+                try { Check("touch-down-home-mouse-up-restart-stays", homeDownQuiet,
+                    "restarted " + !homeDownQuiet); }
+                catch (System.Exception hopEx) { Check("touch-down-home-mouse-up-restart-stays", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                PressHud(app, t, gearPlay, 5, true);
+                t.GetField("_splash", flags).SetValue(app, false);
+                PressHud(app, t, restartPlay, -1, false);
+                bool gearDownQuiet = !RestartBegan(app, t, flags);
+                try { Check("touch-down-gear-mouse-up-restart-stays", gearDownQuiet,
+                    "restarted " + !gearDownQuiet); }
+                catch (System.Exception hopEx) { Check("touch-down-gear-mouse-up-restart-stays", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, false);
+                PressHud(app, t, homePlay, 6, true);
+                PressHud(app, t, homePlay, -1, false);
+                bool homeOpen = (bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("touch-down-home-mouse-up-opens", homeOpen, "home " + homeOpen); }
+                catch (System.Exception hopEx) { Check("touch-down-home-mouse-up-opens", false, ThrowText(hopEx)); }
+
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                PressHud(app, t, gearPlay, 7, true);
+                PressHud(app, t, gearPlay, -1, false);
+                bool gearOpen = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("touch-down-gear-mouse-up-opens", gearOpen, "gear " + gearOpen); }
+                catch (System.Exception hopEx) { Check("touch-down-gear-mouse-up-opens", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }

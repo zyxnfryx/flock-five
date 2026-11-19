@@ -429,6 +429,11 @@ namespace FlockFive
 
         void ArmAdopt()
         {
+            // One Home press opens from the glove release and from HitHud.
+            // The first call already resumed the look and cleared the park.
+            // Resetting here would leave the step Off with the count already at 1.
+            if (_lookResumedThisVisit && _adoptLive && _adoptStep == AdoptStep.Look)
+                return;
             _adoptLive = false;
             _adoptStep = AdoptStep.Off;
             _adoptOwed = false;

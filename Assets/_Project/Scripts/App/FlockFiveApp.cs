@@ -903,6 +903,16 @@ namespace FlockFive
 #endif
         }
 
+        bool _homeOpenedThisEdge;
+
+        // One gesture, one rebuild. The glove release and HitHud both reach Home.
+        void OpenHomeFromPress()
+        {
+            if (_homeOpenedThisEdge) return;
+            _homeOpenedThisEdge = true;
+            ShowSplash();
+        }
+
         void ShowSplash()
         {
             ClearSwallowedGlove();
@@ -989,6 +999,7 @@ namespace FlockFive
             ClearResumeOrigins();
             _lookResumedThisVisit = false;
             _dailyResumedThisVisit = false;
+            _homeOpenedThisEdge = false;
             AudioGuard.OnSceneOrPopupClosed();
             // Before the garden (and its season banner) is built. A solved board
             // that is still browsing the inspect does not come through here.
@@ -3994,11 +4005,20 @@ namespace FlockFive
         // The release belongs to that down, same as a drag onto Restart.
         int _gestureId = int.MinValue;
         int _gestureHud;
+        // The one down-control for the pointer that is down now. -2 means this
+        // pointer has not gone down through the glove path (a held finger, or a
+        // finger that was already down at hide).
+        int _downPointer = int.MinValue;
+        int _downControl = -2;
 
         void DropGlovePress()
         {
             _glovePressLatched = false;
             _glovePressId = -1;
+            // A stale down id must not own the next release. The down-control
+            // record stays until the next Down. The hop stamp stays too: clearing
+            // it here lets a second hop through on a HUD release.
+            _gestureId = int.MinValue;
         }
 
         readonly System.Collections.Generic.HashSet<int> _downAtHide = new System.Collections.Generic.HashSet<int>();
@@ -4128,16 +4148,47 @@ namespace FlockFive
         // on that same control, is not an echo. Home and the gear stay live
         // for that tap inside the resume window. Restart never takes a press
         // that began in the window.
+        void NoteDownControl(int pointerId, int control)
+        {
+            _downPointer = ResumeFinger(pointerId);
+            _downControl = control;
+        }
+
+        // -2 when this pointer has no down of its own. A mouse -1 up is the
+        // touch that went down. Another finger's down is not this one.
+        int DownControlOf(int pointerId)
+        {
+            if (_downPointer == int.MinValue) return -2;
+            int id = ResumeFinger(pointerId);
+            if (id == _downPointer) return _downControl;
+            if (id == -1 && _downPointer >= 0) return _downControl;
+            return -2;
+        }
+
+        // Home and the gear: the down-control of THIS pointer. A glove down
+        // never opens them. A down on a different control does not either.
+        // A held finger, or a finger already down at hide, has no glove down,
+        // so a release on the control opens it.
+        bool HomeGearReleaseBlocks(int which)
+        {
+            if (_glovePressLatched && GloveOwnsRelease(_gloveEdgeId)) return true;
+            int down = DownControlOf(_gloveEdgeId);
+            if (down == -1) return true;
+            if (down >= 0 && down != which) return true;
+            return false;
+        }
+
         bool EchoReleaseBlocks(int which)
         {
-            if (_glovePressLatched || GloveOwnsRelease(_gloveEdgeId)) return true;
-            bool same = GloveFingerMatches(_gestureId, _gloveEdgeId);
-            if (same && _gestureHud < 0) return true;
-            if (same && _gestureHud > 0 && _gestureHud != which) return true;
-            bool beganBefore = _resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId);
-            bool downOnThis = same && _gestureHud == which;
-            if (which == 2 && beganBefore) return true;
-            if (beganBefore && !downOnThis) return true;
+            if (which == 1 || which == 3) return HomeGearReleaseBlocks(which);
+            // Restart. DownControlOf is the one record of where this press went
+            // down, and a mouse -1 Up is that touch. GloveFingerMatches is only
+            // id equality, so it cannot see this pair.
+            if (_glovePressLatched && GloveOwnsRelease(_gloveEdgeId)) return true;
+            int down = DownControlOf(_gloveEdgeId);
+            if (down == -1) return true;
+            if (down > 0 && down != 2) return true;
+            if (_resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId)) return true;
             return false;
         }
 
@@ -4323,8 +4374,11 @@ namespace FlockFive
         bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge, int pointerId)
         {
             _gloveEdgeId = pointerId;
-            bool onGlove = !_splash && _board != null && _gloveVis && _cueBranch >= 0
+            // The drawn glove, including on the home face. Garden hops still
+            // require the splash to be down. The down-control uses the sprite.
+            bool drawnGlove = _gloveVis && _cueBranch >= 0
                 && GloveWindowHit(windowGui, OnScreenGlove(), PhoneArea.OffX);
+            bool onGlove = !_splash && _board != null && drawnGlove;
             int hud = HudControl(windowGui);
             // Same resume gate as Pressed. This runs before SwallowResumePointer,
             // so a glove edge in that 0.35 s would otherwise become a move. Drop
@@ -4349,10 +4403,12 @@ namespace FlockFive
                 // not come through here, and neither does the synthesized mouse Down
                 // beside a touch: that one keeps the touch's same-frame ownership.
                 _gloveTookFrame = -1;
+                _homeOpenedThisEdge = false;
                 RememberResumeOrigin(pointerId);
                 if (!(GateNow < _resumeInputUntil)) _resumeOriginRelease = false;
                 _gestureId = pointerId;
-                _gestureHud = onGlove ? -1 : hud;
+                _gestureHud = drawnGlove ? -1 : hud;
+                NoteDownControl(pointerId, _gestureHud);
             }
             else if (releaseEdge)
             {
@@ -4378,7 +4434,7 @@ namespace FlockFive
                 // The gear stays live for a tap that began on it. A drag from
                 // the glove or another control does not.
                 if (releaseEdge && hud == 1 && !EchoReleaseBlocks(1))
-                    ShowSplash();
+                    OpenHomeFromPress();
                 if (releaseEdge && hud == 3 && !EchoReleaseBlocks(3))
                     ApplySettingsHit(SettingsMotion.Hit.Gear);
                 StampGlove("resume-hud", windowGui, onGlove, true, false);
@@ -4457,7 +4513,7 @@ namespace FlockFive
                 // HitHud would then refuse Home and Restart.
                 if (hud == 1 && !EchoReleaseBlocks(1))
                 {
-                    ShowSplash();
+                    OpenHomeFromPress();
                     StampGlove("control", windowGui, onGlove, true, false);
                     return false;
                 }
@@ -4470,14 +4526,20 @@ namespace FlockFive
             }
             if (releaseEdge && SwallowedUp(pointerId))
             {
-                // The press began on this button, so the button still runs.
-                // A glove press that slid here follows the old rule: no hop, and
-                // Home does not open through that press. HitHud opens Home.
-                // The gear has no HitHud path, so a swallowed finger on it still
-                // opens settings here.
+                // This finger owns the release. A down on Home or the gear opens
+                // it, and so does a held finger or a finger down at hide: those
+                // have no glove down. A down on the glove does not.
+                int down = DownControlOf(pointerId);
                 bool button = hud != 0 && hud == _gloveSwallowHud;
+                bool heldHud = (hud == 1 || hud == 3) && down != -1 && (down < 0 || down == hud);
                 ClearSwallowedGlove();
-                if (hud == 3 && button && !EchoReleaseBlocks(3))
+                if (hud == 1 && (button || heldHud) && !EchoReleaseBlocks(1))
+                {
+                    OpenHomeFromPress();
+                    StampGlove("hud", windowGui, onGlove, true, false);
+                    return false;
+                }
+                if (hud == 3 && (button || heldHud) && !EchoReleaseBlocks(3))
                 {
                     ApplySettingsHit(SettingsMotion.Hit.Gear);
                     StampGlove("hud", windowGui, onGlove, true, false);
@@ -4526,7 +4588,7 @@ namespace FlockFive
                 _gloveEchoFrame = -1;
                 _gloveEchoId = int.MinValue;
                 _gloveTookFrame = -1;
-                if (!onGlove)
+                if (!onGlove && !drawnGlove)
                 {
                     DropGlovePress();
                     StampGlove(hud != 0 ? "button" : "off-glove", windowGui, false, hud != 0, false);
@@ -8075,6 +8137,11 @@ namespace FlockFive
         {
             // Time window, a glove-owned press, or a press that started in the window.
             // Retry uses this same entry, so it keeps the same rule.
+            // A touch that went down on Home or the gear, released as mouse -1, is
+            // still that press. It must not restart.
+            int down = DownControlOf(_gloveEdgeId);
+            if (down == -1 || (down > 0 && down != 2))
+                return true;
             if (ResumeSwallowsRestart() || GloveOwnsHudPress() || _resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId))
             {
                 _resumeOriginRelease = false;
@@ -8115,7 +8182,7 @@ namespace FlockFive
                     // was already down when the resume window began does not.
                     if (GloveOwnsHudPress() || EchoReleaseBlocks(1)) return true;
                     _tapWho = "home";
-                    ShowSplash();
+                    OpenHomeFromPress();
                 }
                 else ActRestart();
                 return true;
@@ -11929,9 +11996,15 @@ namespace FlockFive
                 return false;
             }
             var e = Event.current;
+#if UNITY_EDITOR
+            // Batch tests have no IMGUI event. The HUD buttons already take
+            // EditorPointerInject. The pad uses that same Down then Up.
+            // A null event with no injected press is not a deal.
+            if (!Application.isPlaying && !PadEventLive(e) && EditorPointerInject.On)
+                return HitPadPointer(r, out held);
+#endif
             if (e == null)
             {
-                Debug.Log("[deal-trace] hit-pad event-null lock=" + _hitLock + " rect=" + r);
                 held = false;
                 return false;
             }
@@ -11997,15 +12070,40 @@ namespace FlockFive
                 if (inside) fired = true;
             }
             held = _editPadDown == id;
-            Debug.Log("[deal-trace] hit-pad stable id=" + id
-                + " type=" + e.type
-                + " inside=" + inside
-                + " armed=" + _editPadDown
-                + " fire=" + fired
-                + " lock=" + _hitLock
-                + " rect=" + r);
             return fired;
         }
+
+#if UNITY_EDITOR
+        static bool PadEventLive(Event e)
+        {
+            if (e == null) return false;
+            return e.type == EventType.MouseDown || e.type == EventType.MouseUp || e.type == EventType.MouseDrag;
+        }
+
+        // Editor batch pointer. Play is the pad point, in GUI space or in
+        // bottom-up screen space, the same two spaces the HUD presses use.
+        static bool HitPadPointer(Rect r, out bool held)
+        {
+            var p = EditorPointerInject;
+            bool inside = r.Contains(p.Play);
+            if (!inside && PhoneArea.H > 2f)
+            {
+                var gui = new Vector2(p.Play.x + PhoneArea.OffX, PhoneArea.H - p.Play.y);
+                inside = r.Contains(gui);
+            }
+            int id = StableRectId(r);
+            bool fired = false;
+            if (p.Down && inside)
+                _editPadDown = id;
+            else if (p.Up && _editPadDown == id)
+            {
+                _editPadDown = 0;
+                if (inside) fired = true;
+            }
+            held = _editPadDown == id;
+            return fired;
+        }
+#endif
 
         // OnGUI uses the IMGUI id. An editor batch has no window, so the same
         // rect keeps one id and no texture is drawn.
@@ -16672,26 +16770,13 @@ namespace FlockFive
 
         void TryPokerDeal()
         {
-            Debug.Log("[deal-trace] action enter phase=" + BirdPoker.PhaseNow
-                + " canDeal=" + BirdPoker.CanDeal()
-                + " bet=" + BirdPoker.Bet
-                + " coins=" + Purse.Coins
-                + " hint=" + _pokerDealHint);
             FinishPokerWarm();
             if (BirdPoker.PhaseNow != BirdPoker.Phase.Dealt)
                 BirdPoker.SyncBet();
             if (!BirdPoker.CanDeal() || !BirdPoker.Deal())
-            {
-                Debug.Log("[deal-trace] action early phase=" + BirdPoker.PhaseNow
-                    + " canDeal=" + BirdPoker.CanDeal()
-                    + " bet=" + BirdPoker.Bet
-                    + " coins=" + Purse.Coins);
                 Sfx.Deny();
-            }
             else
             {
-                Debug.Log("[deal-trace] action dealt phase=" + BirdPoker.PhaseNow
-                    + " coins=" + Purse.Coins);
                 BeginPokerDeal();
                 Sfx.CardRustle();
             }
@@ -17601,14 +17686,6 @@ namespace FlockFive
             TickPokerStamp();
             if (winFlying && !_pokerStamp && !payBlocked) SkipPokerWinOnTap();
             string act = PokerActLabel();
-            Debug.Log("[deal-trace] lesson phase=" + BirdPoker.PhaseNow
-                + " canDeal=" + BirdPoker.CanDeal()
-                + " hint=" + _pokerDealHint
-                + " act=" + (act ?? "null")
-                + " bet=" + BirdPoker.Bet
-                + " coins=" + Purse.Coins
-                + " holdBar=" + PokerFirstHandResultHoldsBetBar()
-                + " event=" + (Event.current == null ? "null" : Event.current.type.ToString()));
             // Between hands (idle or showing a result) the bet steers the next DEAL.
             bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
             if (steppers) BirdPoker.SyncBet();
@@ -17627,11 +17704,7 @@ namespace FlockFive
             // The DEAL pad is hit before the bet steppers. They share the bar's
             // row, and the first pad that contains the point owns the gesture.
             bool deal = !string.IsNullOrEmpty(act) && !PokerFirstHandResultHoldsBetBar();
-            if (!deal)
-                Debug.Log("[deal-trace] lesson early act=" + (act ?? "null")
-                    + " holdBar=" + PokerFirstHandResultHoldsBetBar());
             bool fire = deal && DrawFloralBtn(actBox, act, s, true);
-            Debug.Log("[deal-trace] lesson fire=" + fire);
             DrawPokerBetBar(bet, s, busy, steppers);
             if (GuiRepaint()) DrawPokerWinBanner(betR, actR, s);
             return fire;
@@ -21755,7 +21828,7 @@ namespace FlockFive
             if (!gift && !button) return false;
             if (which == 1)
             {
-                if (releaseEdge && !EchoReleaseBlocks(1)) ShowSplash();
+                if (releaseEdge && !EchoReleaseBlocks(1)) OpenHomeFromPress();
                 return true;
             }
             if (which == 3)
