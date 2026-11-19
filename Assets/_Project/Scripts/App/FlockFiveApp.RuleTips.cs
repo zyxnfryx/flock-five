@@ -205,9 +205,10 @@ namespace FlockFive
 
         void TakeRuleTipPress(Vector2 screen)
         {
-            // screen is bottom-origin, the point Pressed returns and the point
-            // SwallowRuleTipPointer builds with PhoneArea.H - mousePosition.y.
-            // RestartHudRect is top-origin GUI. GardenHudPoint is the one flip.
+            // screen is bottom-origin play pixels. Pressed returns that point.
+            // SwallowRuleTipPointer builds it with WindowGuiToPlay, which subtracts
+            // OffX before the Y flip. RestartHudRect is top-origin play GUI.
+            // GardenHudPoint is the one flip. A raw window x is OffX too far right.
             // A raw Contains(screen) matched the bottom of the glass to the
             // top-bar button.
 #if UNITY_EDITOR
@@ -286,8 +287,7 @@ namespace FlockFive
             {
                 if (t == EventType.MouseDown && e.button == 0)
                 {
-                    var screen = new Vector2(e.mousePosition.x, PhoneArea.H - e.mousePosition.y);
-                    TakeRuleTipPress(screen);
+                    TakeRuleTipPress(WindowGuiToPlay(e.mousePosition));
                 }
                 if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
                 return;

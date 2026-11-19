@@ -37,7 +37,23 @@ namespace FlockFive
         public static int W => Pillar ? Mathf.Min(Screen.width, Mathf.RoundToInt(Screen.height * DeviceFit.PhoneAspect)) : Screen.width;
         public static int H => Screen.height;
         // Left edge of the area in screen pixels.
-        public static int OffX => Pillar ? (Screen.width - W) / 2 : 0;
+#if UNITY_EDITOR
+        // Edit-mode pillar tests. Off when EditorOffXOn is false. A set value is
+        // the pillar shift, including 0 on a phone, so a batch run can still move OffX.
+        internal static bool EditorOffXOn;
+        internal static int EditorOffXValue;
+#endif
+
+        public static int OffX
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (EditorOffXOn) return EditorOffXValue;
+#endif
+                return Pillar ? (Screen.width - W) / 2 : 0;
+            }
+        }
 
         // Screen.safeArea in area coordinates (bottom-up, like Screen.safeArea).
         // Every top-anchored control reads Safe, then GuiTopInset, and nothing else.

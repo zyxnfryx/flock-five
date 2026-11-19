@@ -5735,10 +5735,20 @@ namespace FlockFive
 
         public static bool GardenHudPoint(Vector2 screen, float screenH, Rect home, Rect restart, out bool homeHit, out bool restartHit)
         {
+            // screen is bottom-origin play pixels. Pressed already subtracted OffX.
+            // OnGUI mouse is not that point: WindowGuiToPlay does the one conversion.
             var gui = new Vector2(screen.x, screenH - screen.y);
             homeHit = home.width > 2f && home.Contains(gui);
             restartHit = !homeHit && restart.width > 2f && restart.Contains(gui);
             return homeHit || restartHit;
+        }
+
+        // Event.mousePosition is window GUI: top-left origin, x includes the pillar.
+        // Home and Restart rects are play-area GUI. Subtract OffX, then flip Y into
+        // the bottom-origin play point GardenHudPoint expects.
+        public static Vector2 WindowGuiToPlay(Vector2 windowGui)
+        {
+            return new Vector2(windowGui.x - PhoneArea.OffX, PhoneArea.H - windowGui.y);
         }
 
         void DrawGloveAt(Vector2 pivot, float ang, float dh, float alpha, float dip, bool mirror = false)
@@ -6879,7 +6889,7 @@ namespace FlockFive
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             bool homeHit, restartHit;
-            return GardenHudPoint(new Vector2(gui.x, PhoneArea.H - gui.y), PhoneArea.H, home, restart, out homeHit, out restartHit);
+            return GardenHudPoint(WindowGuiToPlay(gui), PhoneArea.H, home, restart, out homeHit, out restartHit);
         }
 
         bool GardenHudAct(Vector2 screen)

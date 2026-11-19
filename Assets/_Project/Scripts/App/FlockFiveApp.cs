@@ -572,12 +572,16 @@ namespace FlockFive
         // unscaled time. PlayClock stalls under any GamePause, so a pause leak froze them shut.
         static float GateNow => AdPause.Unscaled;
 
+        // Editor AddComponent calls Reset even when OnEnable has not run yet.
+        // Play mode claims from OnEnable. A disabled owner is not a live app.
+        void Reset()
+        {
+            ClaimAppSlot();
+        }
+
         void OnEnable()
         {
-            // A second instance must not steal the live app. Its OnGUI stays
-            // dark and its depth stays 0, so it cannot paint.
-            if (_app == null)
-                _app = this;
+            ClaimAppSlot();
             // A new instance must not inherit another session's dismiss guard.
             _lessonGuardUntil = 0f;
             if (_app == this)
@@ -591,7 +595,37 @@ namespace FlockFive
         {
             if (RewardedGrant.TryApply == ApplyRewardedTicket)
                 RewardedGrant.TryApply = null;
-            if (_app == this) _app = null;
+            if (_app != this) return;
+            _app = null;
+            var next = EnabledSuccessor();
+            if (next == null) return;
+            _app = next;
+            RewardedGrant.TryApply = next.ApplyRewardedTicket;
+            RewardedGrant.Boot();
+        }
+
+        // The enabled owner paints and takes input. A second enabled instance
+        // does not replace it. A null or disabled owner is free to claim.
+        void ClaimAppSlot()
+        {
+            if (!LiveApp(_app))
+                _app = this;
+        }
+
+        static bool LiveApp(FlockFiveApp app)
+        {
+            return app != null && app.isActiveAndEnabled;
+        }
+
+        static FlockFiveApp EnabledSuccessor()
+        {
+            var all = UnityEngine.Object.FindObjectsByType<FlockFiveApp>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            for (int i = 0; i < all.Length; i++)
+            {
+                var c = all[i];
+                if (LiveApp(c)) return c;
+            }
+            return null;
         }
 
         // Pause and focus both bookend a suspend. One call per frame drops the
@@ -8246,10 +8280,18 @@ namespace FlockFive
         // OnGUIBody is also invoked from editor tests. Paint only while this
         // real OnGUI call is on the stack, so a batch Repaint event cannot blit.
         int _onGuiDepth;
+#if UNITY_EDITOR
+        // Counts OnGUI entries that passed the owner check. The depth field
+        // returns to 0 when OnGUI returns, so tests read this instead.
+        internal int EditorGuiPasses;
+#endif
 
         void OnGUI()
         {
             if (_app != this) return;
+#if UNITY_EDITOR
+            EditorGuiPasses++;
+#endif
             _onGuiDepth++;
             try { OnGUICore(); }
             finally { _onGuiDepth--; }
