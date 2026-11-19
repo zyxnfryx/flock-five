@@ -102,6 +102,9 @@ namespace FlockFive.Editor
             CheckFivesClose(Check);
             CheckFivesCloseConsumesPointer(Check);
             CheckBirdTapConsumesPointer(Check);
+            CheckNotNowRelease(Check);
+            CheckWatchConsumesPointer(Check);
+            CheckGiftXConsumesPointer(Check);
             CheckReminderAfterReward(Check);
             Check("reminder-waits-for-reward",
                 !FlockFiveApp.ReminderOpensNow(false) && FlockFiveApp.ReminderOpensNow(true),
@@ -995,13 +998,158 @@ namespace FlockFive.Editor
             }
         }
 
+        static void CheckNotNowRelease(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("not-now-pointer");
+            var prev = Event.current;
+            var inject = FlockFiveApp.EditorPointerInject;
+            try
+            {
+                Event.current = null;
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var no = new Rect(80f, 420f, 120f, 48f);
+                t.GetField("_dailyAskOpen", flags).SetValue(app, true);
+                t.GetField("_dailyAskAt", flags).SetValue(app, AdPause.Unscaled);
+                t.GetField("_dailyAskNoHit", flags).SetValue(app, no);
+                t.GetField("_dailyAskNoHitOn", flags).SetValue(app, true);
+                InjectGuiPress(no.center, 6);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                bool still = (bool)t.GetField("_dailyAskOpen", flags).GetValue(app);
+                InjectGuiRelease(no.center, 6);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                bool closed = !(bool)t.GetField("_dailyAskOpen", flags).GetValue(app);
+                bool eaten = !FlockFiveApp.EditorPointerInject.On;
+                string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
+                Check("not-now-release-consumes-pointer", still && closed && eaten && who == "not-now",
+                    "pressOpen " + still + " closed " + closed + " eaten " + eaten + " who " + who);
+            }
+            catch (System.Exception ex)
+            {
+                Check("not-now-release-consumes-pointer", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                Event.current = prev;
+                FlockFiveApp.EditorPointerInject = inject;
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckWatchConsumesPointer(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("watch-pointer");
+            var prev = Event.current;
+            var inject = FlockFiveApp.EditorPointerInject;
+            try
+            {
+                Event.current = null;
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_adHand", flags).SetValue(app, true);
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
+                t.GetField("_watchGiftLive", flags).SetValue(app, false);
+                t.GetField("_watchStarts", flags).SetValue(app, 0);
+                float s = DeviceFit.Ui();
+                object[] placed = { s, default(Rect), default(Rect) };
+                t.GetMethod("GiftCardPlaced", flags).Invoke(app, placed);
+                var watch = (Rect)t.GetMethod("FlowerHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { (Rect)placed[2], s });
+                InjectGuiRelease(watch.center, 7);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                int starts = (int)t.GetField("_watchStarts", flags).GetValue(app);
+                bool eaten = !FlockFiveApp.EditorPointerInject.On;
+                string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
+                InjectGuiRelease(watch.center, 7);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                int again = (int)t.GetField("_watchStarts", flags).GetValue(app);
+                Check("watch-consumes-pointer", starts == 1 && again == 1 && eaten && who == "watch",
+                    "starts " + starts + "/" + again + " eaten " + eaten + " who " + who);
+            }
+            catch (System.Exception ex)
+            {
+                Check("watch-consumes-pointer", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                Event.current = prev;
+                FlockFiveApp.EditorPointerInject = inject;
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckGiftXConsumesPointer(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("gift-x-pointer");
+            var prev = Event.current;
+            var inject = FlockFiveApp.EditorPointerInject;
+            int streak = Purse.Streak;
+            var resume = typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
+            float keepResume = (float)resume.GetValue(null);
+            try
+            {
+                Event.current = null;
+                Purse.SetStreak(0);
+                resume.SetValue(null, float.NegativeInfinity);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_adHand", flags).SetValue(app, true);
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
+                t.GetField("_busy", flags).SetValue(app, false);
+                t.GetField("_restarting", flags).SetValue(app, false);
+                float s = DeviceFit.Ui();
+                float top = (float)t.GetMethod("TopHud", BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(float) }, null)
+                    .Invoke(null, new object[] { 0f });
+                var xBtn = (Rect)t.GetMethod("CornerCloseRect", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { s, top });
+                var x = (Rect)t.GetMethod("CloseTapRect", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { xBtn });
+                InjectGuiRelease(x.center, 8);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                string gift = t.GetField("_gift", flags).GetValue(app).ToString();
+                bool eaten = !FlockFiveApp.EditorPointerInject.On;
+                string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
+                bool restart = t.GetField("EditorSnapRound", flags).GetValue(app) != null
+                    || (bool)t.GetField("_restarting", flags).GetValue(app);
+                Check("gift-x-consumes-pointer", gift == "None" && eaten && who == "gift-x" && !restart,
+                    "gift " + gift + " eaten " + eaten + " who " + who + " restart " + restart);
+            }
+            catch (System.Exception ex)
+            {
+                Check("gift-x-consumes-pointer", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                Event.current = prev;
+                FlockFiveApp.EditorPointerInject = inject;
+                resume.SetValue(null, keepResume);
+                Purse.SetStreak(streak);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
         // Same release PressHud feeds. gui is window space (y down, includes the pillar).
-        static void InjectGuiRelease(Vector2 gui, int id)
+        static void InjectGuiRelease(Vector2 gui, int id) => InjectGuiEdge(gui, id, false);
+
+        static void InjectGuiPress(Vector2 gui, int id) => InjectGuiEdge(gui, id, true);
+
+        static void InjectGuiEdge(Vector2 gui, int id, bool down)
         {
             FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
             {
                 On = true,
-                Up = true,
+                Down = down,
+                Up = !down,
                 Id = id,
                 Play = new Vector2(gui.x - PhoneArea.OffX, PhoneArea.H - gui.y)
             };

@@ -8429,6 +8429,13 @@ namespace FlockFive
             _pointerClaimed = false;
             if (tapEdge && ClaimFivesClose(tapEv)) return;
             if (tapEdge && ClaimDailyAskNotNow(tapEv)) return;
+            // Gift X sits inside Restart, and Watch on the splash is not Home or
+            // the gear, so the glove gate below never reaches them. Own both here.
+            if (tapEdge && tapEv.type == EventType.MouseUp && ClaimGiftRelease(tapEv.mousePosition, out var giftWho))
+            {
+                FinishPointerClaim(giftWho, tapEv);
+                return;
+            }
             if (tapEdge && ResumeGloveEdge(tapEv.mousePosition) && HudControl(tapEv.mousePosition) != 2)
             {
                 int gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
@@ -8479,6 +8486,11 @@ namespace FlockFive
                     FinishPointerClaim("not-now", tapEdge ? tapEv : null);
                     return;
                 }
+                if (EditorPointerInject.Up && ClaimGiftRelease(injected, out var injectedGift))
+                {
+                    FinishPointerClaim(injectedGift, tapEdge ? tapEv : null);
+                    return;
+                }
                 if (ResumeGloveEdge(injected) && TryDrawnGlove(injected, EditorPointerInject.Up, EditorPointerInject.Id))
                 {
                     FinishPointerClaim("glove", tapEdge ? tapEv : null);
@@ -8518,8 +8530,35 @@ namespace FlockFive
         // last draw, so this does not call GUI.
         bool ClaimDailyAskNotNow(Event tapEv)
         {
+            // Same as the fives X: the press does not close the ask. The release does.
+            if (tapEv.type != EventType.MouseUp) return false;
             if (!_dailyAskNoHitOn || !TakeDailyAskNotNow(_dailyAskNoHit, tapEv.mousePosition)) return false;
             FinishPointerClaim("not-now", tapEv);
+            return true;
+        }
+
+        // Gift X and Watch, before the glove gate. Release only, so a press on
+        // the X cannot become a Restart. Home and the gear are not touched.
+        bool ClaimGiftRelease(Vector2 gui, out string who)
+        {
+            who = null;
+            if (_gift != GiftFace.Card || _freezeOffer) return false;
+            int which = HudControl(gui);
+            bool onX = GiftCloseExempt(gui);
+            if (onX && which != 0 && !CloserToGiftX(gui, which))
+                onX = false;
+            if (onX)
+            {
+                CloseGift();
+                who = "gift-x";
+                return true;
+            }
+            if (!_adHand) return false;
+            float s = DeviceFit.Ui();
+            GiftCardPlaced(s, out _, out var cta);
+            if (!FlowerHit(cta, s).Contains(gui)) return false;
+            StartWatchGift();
+            who = "watch";
             return true;
         }
 
