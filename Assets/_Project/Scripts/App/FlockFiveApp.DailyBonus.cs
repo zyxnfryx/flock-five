@@ -2320,11 +2320,16 @@ namespace FlockFive
             // Hits use the open-tween scale from the first frame, so Not now
             // accepts the tap that lands on the button while it is still growing.
             float k = DailyPop(_dailyAskAt);
-            var yesHit = PopupHitDuringOpen(yesR, card.center, k);
-            var noHit = PopupHitDuringOpen(noR, card.center, k);
+            // The resting button is live from the first frame of the open tween.
+            // A tap on Not now is not waiting for the card to finish growing.
+            var yesHit = k > 0.01f ? yesR : PopupHitDuringOpen(yesR, card.center, k);
+            var noHit = k > 0.01f ? noR : PopupHitDuringOpen(noR, card.center, k);
             bool yes = HitPad(yesHit, out bool yesHeld);
             bool no = HitPad(noHit, out bool noHeld);
-            HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
+            var e = Event.current;
+            bool onButton = e != null && (yesHit.Contains(e.mousePosition) || noHit.Contains(e.mousePosition));
+            if (!onButton)
+                HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
 
             float t = AdPause.Unscaled;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);

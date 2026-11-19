@@ -456,7 +456,10 @@ namespace FlockFive
                     var plate = DrawAdCardFrame(card, s, breathe, frameA, true);
                     float titleA = TitleAlpha(age) * outCopy * frameA;
                     RowAlphas(age, outCopy * frameA);
-                    DrawCopy(plate, s, card.width, titleA, _member ? MemberHeadline : Headline, _member ? MemberPerks : Benefits);
+                    float aboveBuy = 0f;
+                    if (!_member && flower.height > 2f && flower.y < plate.yMax)
+                        aboveBuy = Mathf.Max(0f, plate.yMax - flower.y + 8f * s);
+                    DrawCopy(plate, s, card.width, titleA, _member ? MemberHeadline : Headline, _member ? MemberPerks : Benefits, aboveBuy);
                     if (!entering && !Closing)
                         DrawVipFrameTwinkles(card, plate, 0.55f, 0.055f);
                     GUI.matrix = prev;
@@ -541,7 +544,7 @@ namespace FlockFive
                 _noteUntil = string.IsNullOrEmpty(NoAds.RestoreNote) ? 0f : AdPause.Unscaled + 3.6f;
             }
 
-            static float TitleStart => _member ? MemberTitleStart : (_full ? FullTitleStart : ShortTitleStart);
+            static float TitleStart => 0f;
             static float TitleFade => _full ? FullTitleFade : ShortTitleFade;
             static float RowStep => _full ? FullRowStep : ShortRowStep;
             static float RowFade => _full ? FullRowFade : ShortRowFade;
@@ -599,7 +602,7 @@ namespace FlockFive
             static float BurstScale(float s, Rect card) =>
                 s * Mathf.Max(1f, card.width / Mathf.Max(1f, StandardPopupWidth(s))) * 1.6f;
 
-            static float PanelStart => _full ? FullPanelStart : ShortGlow;
+            static float PanelStart => 0f;
             static float PanelDur => _full ? FullPanelDur : ShortPanelDur;
 
             static float PanelScale(float age)
@@ -869,15 +872,16 @@ namespace FlockFive
                 return fit;
             }
 
-            static void DrawCopy(Rect plate, float s, float cardW, float titleA, string headline, string[] rows)
+            static void DrawCopy(Rect plate, float s, float cardW, float titleA, string headline, string[] rows, float aboveBuy = 0f)
             {
                 float insetX = Mathf.Max(14f * s, plate.width * 0.05f);
                 float insetY = Mathf.Max(12f * s, plate.height * 0.045f);
+                float blockH = Mathf.Max(48f, plate.height - insetY * 2f - Mathf.Max(0f, aboveBuy));
                 var block = new Rect(
                     plate.x + insetX,
                     plate.y + insetY,
                     plate.width - insetX * 2f,
-                    Mathf.Max(48f, plate.height - insetY * 2f));
+                    blockH);
                 EnsureCopyStyles();
                 int n = Mathf.Min(rows.Length, _rowA.Length);
                 var fit = FitCopy(block, s, headline, rows, n);

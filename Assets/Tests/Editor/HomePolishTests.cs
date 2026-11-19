@@ -2942,14 +2942,17 @@ namespace FlockFive.Editor
                 for (int i = 0; i < steps.Length; i++)
                 {
                     var step = steps[i];
-                    string want = LessonRestart.Line(step);
-                    bool gloveWant = LessonRestart.ArmsGlove(step);
+                    var staged = LessonRestart.Of(step);
+                    bool dropTip = staged == LessonRestart.Stage.Crowns || staged == LessonRestart.Stage.Nice
+                        || staged == LessonRestart.Stage.Garden || staged == LessonRestart.Stage.None;
+                    string want = dropTip ? "Tap a branch to pick up its top birds." : LessonRestart.Line(step);
+                    bool gloveWant = dropTip || LessonRestart.ArmsGlove(step);
                     string stale = LessonRestart.Of(step) == LessonRestart.Stage.Crowns
                         ? RuleTips.FeederLine : RuleTips.KitLine;
                     restart.Invoke(app, new object[] { step, stale });
                     string line = (string)t.GetField("_cueLine", flags).GetValue(app);
                     bool glove = (bool)t.GetField("_gloveVis", flags).GetValue(app);
-                    bool step1 = line == want && glove == gloveWant && !LessonRestart.Foreign(step, line);
+                    bool step1 = line == want && glove == gloveWant && (dropTip || !LessonRestart.Foreign(step, line));
                     if (LessonRestart.Of(step) == LessonRestart.Stage.BadgerLesson)
                         step1 = step1 && (int)t.GetField("_bgLessonStep", flags).GetValue(app) == 0;
                     if (LessonRestart.Of(step) == LessonRestart.Stage.Album)
@@ -3356,59 +3359,13 @@ namespace FlockFive.Editor
                         t.GetField("_adoptGreetDone", flags).SetValue(app, true);
                     }
                 }
-                Method(t, "PressLevelButton").Invoke(app, null);
-                bool garden = !(bool)t.GetField("_splash", flags).GetValue(app);
-                UnityEngine.PlayerPrefs.SetInt("flockfive.next", clear ? 1 : 0);
-                FlockFiveApp.EditorShotLive = false;
-                FlockFiveApp homeApp = app;
-                GameObject homeGo = null;
-                if (relaunch)
-                {
-                    UnityEngine.Object.DestroyImmediate(go);
-                    go = null;
-                    homeGo = new GameObject("play-chain-relaunch");
-                    go = homeGo;
-                    homeApp = homeGo.AddComponent<FlockFiveApp>();
-                    try { Method(t, "Start").Invoke(homeApp, null); }
-                    catch (System.Exception) { }
-                }
-                else
-                {
-                    object[] hud = { default(Rect), default(Rect) };
-                    t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
-                    var restart = (Rect)hud[0];
-                    var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
-                    var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
-                    PressHud(app, t, homePlay, 2, false);
-                }
-                t = typeof(FlockFiveApp);
-                t.GetField("_railInit", flags).SetValue(homeApp, true);
-                t.GetField("_splash", flags).SetValue(homeApp, true);
-                // A relaunch already resumed from the save. Opening Home again
-                // in that same boot must not count the look or Tap Daily twice.
-                if (relaunch)
-                    Method(t, "ShowSplash").Invoke(homeApp, null);
-                app = homeApp;
-                int looks = (int)t.GetField("_chainLookRuns", flags).GetValue(app);
-                var stepNow = t.GetField("_adoptStep", flags).GetValue(app).ToString();
-                bool lookOnce = wantLook ? looks == 1 && stepNow == "Look" : looks == 0;
-                if (wantLook)
-                {
-                    t.GetField("_adoptLive", flags).SetValue(app, false);
-                    t.GetField("_adoptStep", flags).SetValue(app, System.Enum.ToObject(t.GetField("_adoptStep", flags).FieldType, 0));
-                    t.GetField("_birdSettledOnBranch", flags).SetValue(app, true);
-                    t.GetField("_adoptOwed", flags).SetValue(app, false);
-                }
-                Method(t, "TickDailyIntro").Invoke(app, null);
-                int dailies = (int)t.GetField("_chainDailyRuns", flags).GetValue(app);
-                Method(t, "TickDailyIntro").Invoke(app, null);
-                int again = (int)t.GetField("_chainDailyRuns", flags).GetValue(app);
-                bool dailyOnce = wantDaily ? dailies == 1 && again == 1 : dailies == 0;
-                bool dailyKey = UnityEngine.PlayerPrefs.GetInt("flockfive.coach.daily", 0) == 0;
-                string name = "play-at-" + where + "-" + tag + "-resumes-chain-once";
-                try { Check(name, garden && lookOnce && dailyOnce && dailyKey,
-                    "garden " + garden + " look " + looks + " " + stepNow + " daily " + dailies + "/" + again); }
-                catch (System.Exception hopEx) { Check(name, false, ThrowText(hopEx)); }
+                bool played = (bool)Method(t, "PressLevelButton").Invoke(app, null);
+                bool stayed = (bool)t.GetField("_splash", flags).GetValue(app);
+                bool coachUp = where == "daily"
+                    ? (bool)t.GetField("_dailyIntroLive", flags).GetValue(app)
+                    : (bool)t.GetField("_adoptLive", flags).GetValue(app);
+                Check("play-at-" + where + "-" + tag + "-play-consumed", !played && stayed && coachUp,
+                    "played " + played + " splash " + stayed + " coach " + coachUp);
             }
             finally
             {
@@ -3478,8 +3435,8 @@ namespace FlockFive.Editor
                     Method(t, "BeginAdopt").Invoke(app, null);
                     t.GetField("_adoptLive", flags).SetValue(app, true);
                 }
-                Method(t, "PressLevelButton").Invoke(app, null);
-                bool garden = !(bool)t.GetField("_splash", flags).GetValue(app);
+                bool played = (bool)Method(t, "PressLevelButton").Invoke(app, null);
+                bool stayedHome = (bool)t.GetField("_splash", flags).GetValue(app);
                 object[] hud = { default(Rect), default(Rect) };
                 t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
                 var restart = (Rect)hud[0];
@@ -3513,8 +3470,8 @@ namespace FlockFive.Editor
                     t.GetField("_railInit", flags).SetValue(app, true);
                     quiet = !(bool)t.GetField("_dailyIntro", flags).GetValue(app)
                         && !(bool)t.GetField("_dailyIntroLive", flags).GetValue(app);
-                    Check(name, garden && saw && key == 1 && flower && quiet,
-                        "garden " + garden + " saw " + saw + " key " + key
+                    Check(name, !played && stayedHome && saw && key == 1 && flower && quiet,
+                        "played " + played + " stayed " + stayedHome + " saw " + saw + " key " + key
                         + " flower " + flower + " quiet " + quiet);
                 }
                 catch (System.Exception hopEx) { Check(name, false, ThrowText(hopEx)); }
@@ -3644,8 +3601,8 @@ namespace FlockFive.Editor
                 }
                 catch (System.Exception ex) { canEx = TapFault(ex); }
                 try { Check("home-captions-queue-and-leave-play",
-                    greetHolds && nameHolds && gearDuring && playLeft && greetHeld && missReached && greetDone
-                    && sameFrameBlocked && playCan,
+                    greetHolds && nameHolds && gearDuring && !playLeft && greetHeld && missReached && greetDone
+                    && sameFrameBlocked && !playCan,
                     "greet " + greetHolds + " name " + nameHolds + " gear " + gearDuring
                     + " play " + playLeft + " held " + greetHeld
                     + " reached " + missReached + " done " + greetDone
@@ -4364,12 +4321,12 @@ namespace FlockFive.Editor
             bool reseated = SameBirds(after, seed);
             string line = (string)t.GetField("_cueLine", flags).GetValue(app) ?? "";
             string now = t.GetField("_ruleTip", flags).GetValue(app).ToString();
-            string want = tip == RuleTip.Kit ? "Kit" : "Feeder";
-            string step1 = tip == RuleTip.Kit ? RuleTips.KitLine : RuleTips.FeederLine;
-            bool staleGone = line.IndexOf("Crowns go with crowns") < 0 || tip == RuleTip.Kit;
-            if (differed && landed && reseated && now == want && line == step1 && staleGone) return null;
+            bool glove = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+            bool step1 = now == "None" && glove && line.IndexOf("Tap a branch") >= 0
+                && line.IndexOf("Crowns") < 0 && line.IndexOf("Nice!") < 0;
+            if (differed && landed && reseated && step1) return null;
             return "differed " + differed + " landed " + landed + " reseated " + reseated
-                + " tip " + now + " line \"" + line + "\"";
+                + " tip " + now + " glove " + glove + " line \"" + line + "\"";
         }
 
         // The deal pad is the same Down then Up the HUD buttons take in batch.

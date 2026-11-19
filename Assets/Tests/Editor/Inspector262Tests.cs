@@ -96,6 +96,10 @@ namespace FlockFive.Editor
             CheckSuccessorLowestId(Check);
 
             CheckFirstGardenGloves(Check);
+            CheckBirdBeatsHomeGate(Check);
+            CheckNotNowDuringOpen(Check);
+            CheckFivesClose(Check);
+            CheckReminderAfterReward(Check);
             Check("reminder-waits-for-reward",
                 !FlockFiveApp.ReminderOpensNow(false) && FlockFiveApp.ReminderOpensNow(true),
                 "");
@@ -228,6 +232,30 @@ namespace FlockFive.Editor
                 bool step1 = line.IndexOf("Tap a branch") >= 0 && glove && now == "None";
                 Check("restart-reenters-step-1", step1,
                     "tip " + now + " glove " + glove + " frames " + frames + " line \"" + line + "\"");
+                t.GetField("_busy", flags).SetValue(app, false);
+                t.GetField("_restarting", flags).SetValue(app, false);
+                tip.SetValue(app, RuleTip.Kit);
+                t.GetField("_cueLine", flags).SetValue(app, "Crowns go with crowns. Stack five the same.");
+                t.GetMethod("ActRestart", flags).Invoke(app, null);
+                var snap2 = (System.Collections.IEnumerator)t.GetField("EditorSnapRound", flags).GetValue(app);
+                if (snap2 != null)
+                {
+                    var stack2 = new System.Collections.Generic.Stack<System.Collections.IEnumerator>();
+                    stack2.Push(snap2);
+                    int frames2 = 0;
+                    while (stack2.Count > 0 && frames2 < 80)
+                    {
+                        var top2 = stack2.Peek();
+                        if (!top2.MoveNext()) { stack2.Pop(); continue; }
+                        var child2 = top2.Current as System.Collections.IEnumerator;
+                        if (child2 != null) stack2.Push(child2);
+                        else frames2++;
+                    }
+                }
+                string line2 = (string)t.GetField("_cueLine", flags).GetValue(app) ?? "";
+                bool again = line2.IndexOf("Tap a branch") >= 0
+                    && line2.IndexOf("Crowns") < 0 && line2.IndexOf("Nice!") < 0;
+                Check("restart-second-tap-stays-step-1", again, "line \"" + line2 + "\"");
             }
             catch (System.Exception ex)
             {
@@ -282,7 +310,21 @@ namespace FlockFive.Editor
                 t.GetField("_tutorialOfferSeen", flags).SetValue(app, true);
                 t.GetField("_tutorialWatchReopen", flags).SetValue(app, false);
                 t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 0));
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                t.GetField("_gloveTapRect", flags).SetValue(app, new Rect(10f, 10f, 80f, 40f));
+                t.GetMethod("CoachDone", flags).Invoke(app, null);
+                bool lessonClear = !(bool)t.GetField("_gloveVis", flags).GetValue(app)
+                    && !(bool)t.GetField("_gloveTapRectOn", flags).GetValue(app);
+                Check("lesson-end-clears-glove-rect", lessonClear, "vis "
+                    + t.GetField("_gloveVis", flags).GetValue(app) + " rect "
+                    + t.GetField("_gloveTapRectOn", flags).GetValue(app));
+                t.GetField("_adHand", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
                 t.GetMethod("RaiseGiftCard", flags).Invoke(app, null);
+                bool cardClear = !(bool)t.GetField("_gloveTapRectOn", flags).GetValue(app);
+                Check("gift-card-clears-step-glove", cardClear, "rect " + t.GetField("_gloveTapRectOn", flags).GetValue(app));
                 bool reopen = (bool)t.GetField("_tutorialWatchReopen", flags).GetValue(app);
                 var body = (System.Collections.IEnumerator)t.GetMethod("WatchGiftBody", flags).Invoke(app, null);
                 bool moved = body.MoveNext();
@@ -655,7 +697,7 @@ namespace FlockFive.Editor
             {
                 var app = go.AddComponent<FlockFiveApp>();
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
-                var coach = typeof(FlockFiveApp).GetMethod("CoachGloveAt", flags);
+                var coach = typeof(FlockFiveApp).GetMethod("CoachTapAt", flags);
                 foreach (var size in new[] { new Vector2(820f, 1180f), new Vector2(402f, 874f), new Vector2(412f, 915f), new Vector2(360f, 800f) })
                 {
                     winOn.SetValue(null, true);
@@ -666,22 +708,16 @@ namespace FlockFive.Editor
                     float w = PhoneArea.W, h = PhoneArea.H;
                     string tag = ((int)size.x).ToString();
                     string bad = "";
-                    bad += SampleGlove(app, flags, coach, "branch", FlockFiveApp.GloveTarget(FlockFiveApp.L1BranchRect(0, w, h)), FlockFiveApp.L1BranchRect(0, w, h));
-                    var bird = new Rect(w * 0.62f, 59f + 28f, 54f, 48f);
-                    bad += SampleGlove(app, flags, coach, "bird", FlockFiveApp.GloveTarget(bird), bird);
-                    var daily = new Rect(18f, 59f + 86f, 64f, 64f);
-                    bad += SampleGlove(app, flags, coach, "daily", FlockFiveApp.GloveTarget(daily), daily);
-                    var claim = new Rect(w * 0.5f - 80f, h * 0.62f, 160f, 110f);
-                    bad += SampleGlove(app, flags, coach, "claim", FlockFiveApp.DailyClaimGloveSeat(claim), claim);
-                    var deal = new Rect(w - 86f, h - 34f - 96f, 72f, 72f);
-                    var dealAim = (Vector2)typeof(FlockFiveApp).GetMethod("DealPlatformAim", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { deal });
-                    bad += SampleGlove(app, flags, coach, "deal", dealAim, deal);
-                    var medal = new Rect(16f, 59f + 8f, 48f, 48f);
-                    bad += SampleGlove(app, flags, coach, "back", FlockFiveApp.PokerBackSettleAim(medal.center, medal, w, h), medal);
-                    var poker = new Rect(w - 86f, 59f + 150f, 64f, 64f);
-                    bad += SampleGlove(app, flags, coach, "poker", FlockFiveApp.GloveTarget(poker), poker);
-                    var watch = new Rect(w * 0.28f, h * 0.58f, 140f, 52f);
-                    bad += SampleGlove(app, flags, coach, "watch", FlockFiveApp.GloveTarget(watch), watch);
+                    bad += SampleTap(app, flags, coach, "branch", FlockFiveApp.L1BranchRect(0, w, h));
+                    bad += SampleTap(app, flags, coach, "bird", new Rect(w * 0.62f, 59f + 28f, 54f, 48f));
+                    bad += SampleTap(app, flags, coach, "daily", new Rect(18f, 59f + 86f, 64f, 64f));
+                    bad += SampleTap(app, flags, coach, "claim", new Rect(w * 0.5f - 80f, h * 0.62f, 160f, 110f));
+                    bad += SampleTap(app, flags, coach, "deal", new Rect(w - 86f, h - 34f - 96f, 72f, 72f));
+                    bad += SampleTap(app, flags, coach, "back", new Rect(16f, 59f + 8f, 48f, 48f));
+                    bad += SampleTap(app, flags, coach, "poker", new Rect(w - 86f, 59f + 150f, 64f, 64f));
+                    bad += SampleTap(app, flags, coach, "watch", new Rect(w * 0.28f, h * 0.58f, 140f, 52f));
+                    var play = new Rect(w * 0.5f - 70f, h * 0.72f, 140f, 64f);
+                    bad += SampleTap(app, flags, coach, "play", play);
                     Check("first-garden-glove-" + tag, bad.Length == 0, bad);
                 }
             }
@@ -700,22 +736,177 @@ namespace FlockFive.Editor
             }
         }
 
-        static string SampleGlove(FlockFiveApp app, BindingFlags flags, System.Reflection.MethodInfo coach, string name, Vector2 aim, Rect target)
+        static string SampleTap(FlockFiveApp app, BindingFlags flags, System.Reflection.MethodInfo coach, string name, Rect target)
         {
-            if (target.width < 2f || !target.Contains(aim))
-                return name + " aim " + aim + " off " + target + "; ";
+            var label = FlockFiveApp.CoachTapLabel(target);
             var t = typeof(FlockFiveApp);
-            t.GetField("_gloveAct", flags).SetValue(app, System.Enum.ToObject(t.GetField("_gloveAct", flags).FieldType, 0));
+            t.GetField("_coachTapOn", flags).SetValue(app, false);
             t.GetField("_gloveVis", flags).SetValue(app, false);
-            Vector2 tip = aim;
-            for (int i = 0; i < 6; i++)
-                coach.Invoke(app, new object[] { aim, 0.2f, 1f, float.NaN, false, float.NaN, target, null });
-            tip = (Vector2)t.GetField("_cueAimGui", flags).GetValue(app);
-            var drawn = (Vector2)t.GetField("_gloveTip", flags).GetValue(app);
-            bool aimOk = target.Contains(tip);
-            bool drawnOk = drawn.sqrMagnitude < 1f || target.Contains(drawn) || (drawn - aim).magnitude <= FlockFiveApp.GloveDh(1f) * 1.3f;
-            if (aimOk && drawnOk) return "";
-            return name + " tip " + tip + " drawn " + drawn + " target " + target + "; ";
+            t.GetField("_coachFade", flags).SetValue(app, 1f);
+            Vector2 first = default;
+            float span = 0f;
+            bool vis = false;
+            bool inside = true;
+            bool offLabel = true;
+            for (int i = 0; i < 8; i++)
+            {
+                coach.Invoke(app, new object[] { target, label, 0.2f, null });
+                vis = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+                var tip = (Vector2)t.GetField("_gloveShown", flags).GetValue(app);
+                if (i == 0) first = tip;
+                span = Mathf.Max(span, (tip - first).magnitude);
+                if (!target.Contains(tip)) inside = false;
+                if (label.width > 2f && label.Contains(tip)) offLabel = false;
+            }
+            bool still = span <= FlockFiveApp.CoachTapPressPx + 0.6f;
+            if (vis && inside && offLabel && still) return "";
+            return name + " vis " + vis + " inside " + inside + " label " + offLabel
+                + " span " + span.ToString("0.0") + " target " + target + "; ";
+        }
+
+        static void CheckBirdBeatsHomeGate(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("bird-beats-gate");
+            var prev = Event.current;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                t.GetField("_splash", flags).SetValue(app, true);
+                var home = t.GetField("_home", flags);
+                home.SetValue(app, System.Enum.ToObject(home.FieldType, 0));
+                t.GetField("_adoptLive", flags).SetValue(app, true);
+                var step = t.GetField("_adoptStep", flags);
+                step.SetValue(app, System.Enum.ToObject(step.FieldType, 2));
+                t.GetField("_adoptPick", flags).SetValue(app, 0);
+                var shown = (Vector2[])t.GetField("_adoptShown", flags).GetValue(app);
+                shown[0] = new Vector2(220f, 280f);
+                var owns = t.GetMethod("AdoptLookOwnsTap", flags);
+                bool hit = (bool)owns.Invoke(app, new object[] { shown[0] });
+                var take = t.GetMethod("TakeGuiPointer", flags);
+                var birds = t.GetMethod("HitAdoptBirds", flags);
+                string who = "";
+                foreach (var kind in new[] { EventType.MouseDown, EventType.MouseUp })
+                {
+                    Event.current = new Event { type = kind, mousePosition = shown[0], button = 0 };
+                    take.Invoke(app, null);
+                    who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
+                    if (who == "home-gate") break;
+                    birds.Invoke(app, new object[] { 48f });
+                }
+                bool named = (bool)t.GetField("_avatarRename", flags).GetValue(app);
+                Check("bird-tap-beats-home-gate", hit && who != "home-gate" && named,
+                    "owns " + hit + " who " + who + " rename " + named);
+            }
+            catch (System.Exception ex)
+            {
+                Check("bird-tap-beats-home-gate", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                Event.current = prev;
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckNotNowDuringOpen(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("not-now-open");
+            var prev = Event.current;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                FlockFiveApp.DailyAskLayout(1f, out _, out _, out _, out var no);
+                t.GetField("_dailyAskOpen", flags).SetValue(app, true);
+                t.GetField("_dailyAskAt", flags).SetValue(app, AdPause.Unscaled);
+                var draw = t.GetMethod("DrawDailyAsk", flags);
+                Event.current = new Event { type = EventType.MouseDown, mousePosition = no.center, button = 0 };
+                try { draw.Invoke(app, new object[] { 1f }); }
+                catch (System.Reflection.TargetInvocationException) { }
+                Event.current = new Event { type = EventType.MouseUp, mousePosition = no.center, button = 0 };
+                try { draw.Invoke(app, new object[] { 1f }); }
+                catch (System.Reflection.TargetInvocationException) { }
+                bool closed = !(bool)t.GetField("_dailyAskOpen", flags).GetValue(app);
+                Check("not-now-takes-first-tap", closed, "open " + !closed + " at " + no.center);
+            }
+            catch (System.Exception ex)
+            {
+                Check("not-now-takes-first-tap", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                Event.current = prev;
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckFivesClose(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("fives-close");
+            var prev = Event.current;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var geo = FlockFiveApp.LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, 1f);
+                var close = FlockFiveApp.FivesCloseRect(geo.Panel, 1f);
+                t.GetField("_fivesOpen", flags).SetValue(app, true);
+                t.GetField("_fivesAnim", flags).SetValue(app, 1f);
+                var tick = t.GetMethod("TickPokerFives", flags);
+                Event.current = new Event { type = EventType.MouseDown, mousePosition = close.center, button = 0 };
+                tick.Invoke(app, new object[] { new Rect(20f, 80f, 90f, 28f), 1f });
+                Event.current = new Event { type = EventType.MouseUp, mousePosition = close.center, button = 0 };
+                tick.Invoke(app, new object[] { new Rect(20f, 80f, 90f, 28f), 1f });
+                bool shut = !(bool)t.GetField("_fivesOpen", flags).GetValue(app);
+                Check("fives-close-x", close.width > 8f && shut, "rect " + close + " open " + !shut);
+            }
+            catch (System.Exception ex)
+            {
+                Check("fives-close-x", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                Event.current = prev;
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckReminderAfterReward(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("reminder-reward");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var idle = t.GetMethod("IdleAfterReward", flags);
+                t.GetField("_welcomeOpen", flags).SetValue(app, true);
+                t.GetField("_streakSlide", flags).SetValue(app, -1f);
+                t.GetField("_rewardGap", flags).SetValue(app, false);
+                PlayerPrefs.SetInt("flockfive.welcome.pending", 0);
+                bool during = (bool)idle.Invoke(app, null);
+                t.GetField("_welcomeOpen", flags).SetValue(app, false);
+                t.GetField("_dailyOpen", flags).SetValue(app, false);
+                t.GetField("_dailyAskOpen", flags).SetValue(app, false);
+                t.GetField("_welcomeQueued", flags).SetValue(app, false);
+                t.GetField("_welcomeGlove", flags).SetValue(app, false);
+                bool after = (bool)idle.Invoke(app, null);
+                bool queued = !FlockFiveApp.ReminderOpensNow(during) && FlockFiveApp.ReminderOpensNow(after);
+                Check("streak-reminder-waits-for-reward-card", queued,
+                    "during " + during + " after " + after);
+            }
+            catch (System.Exception ex)
+            {
+                Check("streak-reminder-waits-for-reward-card", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
         }
     }
 }

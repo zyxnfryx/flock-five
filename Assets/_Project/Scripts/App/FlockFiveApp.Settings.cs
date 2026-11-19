@@ -225,6 +225,7 @@ namespace FlockFive
         // The post-level captions leave Play alone, the same way they leave the gear.
         bool PlayExempt(Vector2 p)
         {
+            if (HomeDialogBlocksPlay()) return false;
             if (!HomeChainOpen() || _home != HomeFace.Splash) return false;
             var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             return level.width >= 2f && level.Contains(p);
@@ -653,12 +654,15 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        // A modal on the home face eats Play. The adoption chain does not:
-        // an early Play there parks the look and Tap Daily.
+        // A home coach or a modal eats Play. Greet, the bird, naming, and
+        // Tap Daily are coaches: Play must not skip them into the garden.
         bool HomeDialogBlocksPlay()
         {
             if (!_splash || _home != HomeFace.Splash) return false;
-            return _welcomeOpen || _dailyAskOpen || _settingsOpen || _avatarRename
+            if (_avatarRename || _adoptLive || _adoptStep != AdoptStep.Off) return true;
+            if ((_dailyIntro || _dailyIntroLive) && !_dailyOpen) return true;
+            if (_hiveIntroLive || _pokerIntroLive) return true;
+            return _welcomeOpen || _dailyAskOpen || _settingsOpen
                 || _restartAsk != RestartAsk.None;
         }
 

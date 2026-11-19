@@ -873,6 +873,15 @@ namespace FlockFive
             return bird.width > 2f;
         }
 
+        // Window GUI point. True when this tap is the bird or its name plate,
+        // so the home gate leaves it for naming.
+        bool AdoptLookOwnsTap(Vector2 windowGui)
+        {
+            if (!AdoptLookRects(HomeAvatarIcon(DeviceFit.Ui()), out var bird, out var plate)) return false;
+            if (bird.width > 2f && bird.Contains(windowGui)) return true;
+            return plate.width > 2f && plate.Contains(windowGui);
+        }
+
         void HitAdoptBirds(float icon)
         {
             if (!AdoptLookRects(icon, out var r, out var plate)) return;
@@ -1696,14 +1705,19 @@ namespace FlockFive
         // bird is met from the left.
         void AdoptPlaceGlove(float dt, float s)
         {
-            if (!AdoptGloveAim(s, out var aim))
+            if (_avatarRename)
             {
-                _gloveVis = false;
+                AvatarRenameLayout(s, out _, out _, out var done);
+                CoachTapAt(done, CoachTapLabel(done), dt, null);
                 return;
             }
-            // The fingertip is the bird, not a hand-height above it. Layout has
-            // already landed the perch by the time this pose runs.
-            CoachGloveAt(aim, dt, s, 0f, false, float.NaN, default, FnAdoptTap());
+            if (!AdoptLookRects(HomeAvatarIcon(s), out var bird, out var plate))
+            {
+                HideCoachTap();
+                return;
+            }
+            // Fingertip on the bird, off the name tag. Already seated.
+            CoachTapAt(bird, plate, dt, FnAdoptTap());
         }
 
         // Bird body or name plate. Same rects HitAdoptBirds claims, without using the event.

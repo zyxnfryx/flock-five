@@ -29,16 +29,11 @@ namespace FlockFive
         {
             if (!HomeChainOpen()) return;
             if (_settingsOpen || _dailyOpen || _dailyAskOpen || _welcomeOpen || VipOffer.IsOpen) return;
-            // Hive and poker captions, and the name dialog, keep Play down.
-            // The greet, the look, and Tap Daily are this chain: Play stays up.
-            if (_avatarRename)
-            {
-                gates.HardModal = true;
-                return;
-            }
-            bool chainCaption = _adoptLive || _adoptStep != AdoptStep.Off
-                || ((_dailyIntro || _dailyIntroLive) && !_dailyOpen);
-            if (!chainCaption && (_hiveIntroLive || _pokerIntroLive))
+            // Greet, the bird look, naming, and Tap Daily consume Play.
+            // They are not a skip into the garden.
+            if (_avatarRename || _adoptLive || _adoptStep != AdoptStep.Off
+                || ((_dailyIntro || _dailyIntroLive) && !_dailyOpen)
+                || _hiveIntroLive || _pokerIntroLive)
             {
                 gates.HardModal = true;
                 return;

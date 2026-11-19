@@ -4428,6 +4428,12 @@ namespace FlockFive
 
         bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge, int pointerId)
         {
+            if (_gift == GiftFace.Card)
+            {
+                GiftCardPlaced(DeviceFit.Ui(), out _, out var cta);
+                if (FlowerHit(cta, DeviceFit.Ui()).Contains(windowGui))
+                    return false;
+            }
             _gloveEdgeId = pointerId;
             // The drawn glove, including on the home face and after the cue
             // has been cleared. Garden hops still require the splash to be down.
@@ -8423,7 +8429,7 @@ namespace FlockFive
             _tapAt = tapEv != null ? tapEv.mousePosition : default;
             bool tapEdge = _tapEdge;
             _tapWho = null;
-            if (tapEdge && ResumeGloveEdge(tapEv.mousePosition))
+            if (tapEdge && ResumeGloveEdge(tapEv.mousePosition) && HudControl(tapEv.mousePosition) != 2)
             {
                 int gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
                 if (TryDrawnGlove(tapEv.mousePosition, tapEv.type == EventType.MouseUp, gloveId))
@@ -8437,7 +8443,10 @@ namespace FlockFive
                 bool down = tapEv.type == EventType.MouseDown;
                 bool up = tapEv.type == EventType.MouseUp;
                 int id = HomeEventId(tapEv, down, up);
-                if (!HomeGateAllows(ref _homeGate, down, up, id))
+                // The bird look opens naming. The home gate must not eat that tap
+                // and send the player back into the garden. HitAdoptBirds claims it.
+                if (!AdoptLookOwnsTap(tapEv.mousePosition)
+                    && !HomeGateAllows(ref _homeGate, down, up, id))
                 {
                     GUIUtility.hotControl = 0;
                     if (_tapWho == null) _tapWho = "home-gate";
@@ -15299,10 +15308,10 @@ namespace FlockFive
             // Live DEAL rect every frame. A cached aim was landing on card 4
             // after the first poke cycle.
             var deal = PokerDealButtonRect();
-            _pokerTutorAim = DealPlatformAim(deal);
+            _pokerTutorAim = CoachTapSeat(deal, CoachTapLabel(deal), PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             _pokerTutorTap = deal;
             _pokerTutorAimOk = true;
-            CoachGloveAt(_pokerTutorAim, dt, s, float.NaN, false, float.NaN, _pokerTutorTap);
+            CoachTapAt(deal, CoachTapLabel(deal), dt, null);
             bool parked = Vector2.Distance(_gloveTip, _gloveRest) > 32f * s;
             if (parked) _pokerPageAge = 0f;
             else _pokerPageAge += dt;
@@ -15478,8 +15487,17 @@ namespace FlockFive
         }
 
         // Top of the hold band: under the PAY TABLE tab and the logo halo, PokerCapClearGap clear.
-        static float PokerHoldCeiling(PokerCapGeo g) =>
-            Mathf.Max(g.LogoClear, g.Tab.width > 2f ? g.Tab.yMax : 0f) + PokerCapClearGap * DeviceFit.Ui();
+        static float PokerHoldCeiling(PokerCapGeo g)
+        {
+            float tab = g.Tab.width > 2f ? g.Tab.yMax : 0f;
+            float trophy = 0f;
+            if (g.Tab.width > 2f)
+            {
+                var chip = PokerFivesIconBox(g.Tab, DeviceFit.Ui());
+                if (chip.height > 2f) trophy = chip.yMax;
+            }
+            return Mathf.Max(g.LogoClear, tab, trophy) + PokerCapClearGap * DeviceFit.Ui();
+        }
 
         // Top of a bottom-seated poker plate: the garden lesson seat (lifted share of screen height above the bottom safe edge).
         public static float PokerBottomPlateTop(float plateH, float screenH, Rect safe, float s)
@@ -15550,9 +15568,9 @@ namespace FlockFive
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBetLine);
             var dealNow = PokerDealButtonRect();
-            _pokerDealAim = DealPlatformAim(dealNow);
+            _pokerDealAim = CoachTapSeat(dealNow, CoachTapLabel(dealNow), PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             _pokerDealTap = dealNow;
-            CoachGloveAt(_pokerDealAim, dt, handS, float.NaN, false, float.NaN, _pokerDealTap);
+            CoachTapAt(dealNow, CoachTapLabel(dealNow), dt, null);
             return true;
         }
 
@@ -15686,11 +15704,8 @@ namespace FlockFive
             LessonLine(PokerBackLine);
             // Short rise from just under the medal. The hop ends on the medal and stays
             // there, so the settled fingertip is inside the Back hit. Only that rect counts.
-            var gloveSafe = CoachSafeGui(8f * handS);
-            _gloveEntryOverride = PokerBackGloveStart(_pokerBackAim, handS, gloveSafe, PhoneArea.W, PhoneArea.H);
-            _gloveEntryOverrideOn = true;
-            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, 0f, _pokerBackTap);
-            _gloveEntryOverrideOn = false;
+            var medal = _pokerBackTap.width > 2f ? _pokerBackTap : new Rect(_pokerBackAim.x - 22f, _pokerBackAim.y - 22f, 44f, 44f);
+            CoachTapAt(medal, CoachTapLabel(medal), dt, null);
             return true;
         }
 
@@ -19065,7 +19080,16 @@ namespace FlockFive
             }
             var st = PokerBold(ref _pokerStep, TextAnchor.MiddleCenter);
             st.fontSize = Mathf.RoundToInt(chip.height * 0.56f);
-            StampLight(chip, glyph, st, new Color(0.36f, 0.18f, 0.07f, a));
+            StampLight(chip, glyph == "−" || glyph == "-" ? "" : glyph, st, new Color(0.36f, 0.18f, 0.07f, a));
+            if (glyph == "−" || glyph == "-")
+            {
+                float barW = chip.width * 0.42f;
+                float barH = Mathf.Max(3f, chip.height * 0.10f);
+                var bar = new Rect(chip.center.x - barW * 0.5f, chip.center.y - barH * 0.5f, barW, barH);
+                GUI.color = new Color(0.36f, 0.18f, 0.07f, a);
+                GUI.DrawTexture(bar, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
             return fire;
         }
 
@@ -21924,6 +21948,7 @@ namespace FlockFive
             if (_adHand)
                 _tutorialOfferSeen = true;
             _gift = GiftFace.Card;
+            HideCoachTap();
             if (_freezeOffer) _freezeShownAt = AdPause.Unscaled;
             AdLog.Add("branch offer shown (" + OfferReason() + ")");
         }
