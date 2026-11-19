@@ -5012,7 +5012,7 @@ namespace FlockFive.Editor
                 var oldWindow = new Vector2(oldPlay.x + PhoneArea.OffX, PhoneArea.H - oldPlay.y);
                 var oldEnter = PlayPointer.Enter(oldWindow);
                 // The path that already passes: a real window point, UpdateBody, then OnGUI.
-                var window = new Vector2(watch.center.x + PhoneArea.OffX, watch.center.y);
+                var watchWindow = new Vector2(watch.center.x + PhoneArea.OffX, watch.center.y);
                 string Trace(string edge, Vector2 win, bool down)
                 {
                     var entered = PlayPointer.Enter(win);
@@ -5039,8 +5039,8 @@ namespace FlockFive.Editor
                         + " gift " + giftNow + " adHand " + t.GetField("_adHand", flags).GetValue(app)
                         + " live " + live + " starts " + startsNow + " seam " + seam;
                 }
-                string pressTrace = Trace("press", window, true);
-                string releaseTrace = Trace("release", window, false);
+                string pressTrace = Trace("press", watchWindow, true);
+                string releaseTrace = Trace("release", watchWindow, false);
                 int starts = (int)t.GetField("_watchStarts", flags).GetValue(app);
                 Event.current = keptEvent;
                 try { Check("yield-watch-starts-once", starts == 1,
