@@ -1202,21 +1202,25 @@ namespace FlockFive.Editor
                 };
                 t.GetMethod("UpdateBody", flags).Invoke(app, null);
                 t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
-                int afterPress = (int)t.GetField("EditorWatchRequests", flags).GetValue(app);
+                int afterPress = (int)t.GetField("_watchStarts", flags).GetValue(app);
+                int seamPress = (int)t.GetField("EditorWatchRequests", flags).GetValue(app);
                 FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                 {
                     On = true, Down = false, Up = true, Id = 9, Window = window
                 };
                 t.GetMethod("UpdateBody", flags).Invoke(app, null);
                 t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
-                int afterRelease = (int)t.GetField("EditorWatchRequests", flags).GetValue(app);
+                int afterRelease = (int)t.GetField("_watchStarts", flags).GetValue(app);
+                int seamRelease = (int)t.GetField("EditorWatchRequests", flags).GetValue(app);
                 bool home = (bool)t.GetField("_splash", flags).GetValue(app);
                 bool restart = RestartLive(t, flags, app);
                 var entered = PlayPointer.Enter(window);
                 bool onWatch = Mathf.Abs(entered.x - watch.center.x) < 0.6f && Mathf.Abs(entered.y - watch.center.y) < 0.6f;
-                if (afterPress == 0 && afterRelease == 1 && !home && !restart && onWatch) return null;
-                return "press " + afterPress + " release " + afterRelease + " splash " + home
-                    + " restart " + restart + " entered " + entered + " watch " + watch.center;
+                bool once = afterPress == 0 && afterRelease == 1 && seamPress == afterPress && seamRelease == afterRelease;
+                if (once && !home && !restart && onWatch) return null;
+                return "press " + afterPress + " release " + afterRelease
+                    + " seam " + seamPress + "/" + seamRelease
+                    + " splash " + home + " restart " + restart + " entered " + entered;
             });
         }
 
@@ -1328,8 +1332,8 @@ namespace FlockFive.Editor
                 }
                 int presses = (int)t.GetField("EditorRulePressEntered", flags).GetValue(app);
                 bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
-                if (fault == null && presses > 0 && presses < 4 && splash) return null;
-                return "fault " + fault + " presses " + presses + " splash " + splash;
+                if (fault == null && presses == 1 && splash) return null;
+                return "fault " + (fault ?? "none") + " presses " + presses + " splash " + splash;
             }, new[] { 820, 402 });
         }
 

@@ -5001,7 +5001,8 @@ namespace FlockFive.Editor
                 Method(t, "GiftCardPlaced", typeof(float), typeof(Rect).MakeByRefType(), typeof(Rect).MakeByRefType()).Invoke(app, placed);
                 var flower = (Rect)placed[2];
                 var watch = (Rect)t.GetMethod("FlowerHit", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { flower, DeviceFit.Ui() });
-                var watchPlay = new Vector2(watch.center.x - PhoneArea.OffX, h - watch.center.y);
+                // Bottom-origin play pixels. PressHud adds the pillar itself.
+                var watchPlay = new Vector2(watch.center.x, (PhoneArea.H > 2f ? PhoneArea.H : h) - watch.center.y);
                 PressHud(app, t, watchPlay, 4, true);
                 PressHud(app, t, watchPlay, 4, false);
                 PressHud(app, t, watchPlay, 4, true);

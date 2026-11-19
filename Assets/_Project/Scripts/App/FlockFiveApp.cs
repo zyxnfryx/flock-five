@@ -4003,7 +4003,10 @@ namespace FlockFive
                     int gloveId = PressIdNow();
                     if (gloveId == int.MinValue) gloveId = -1;
                     if (PlayPointer.Inside(PlayPointer.At) && TryDrawnGlove(PlayPointer.At, false, gloveId)) return;
-                    if (PlayPointer.Inside(PlayPointer.At)) OverlayOwnsPress(PlayPointer.At, false);
+                    // Home and Restart are not claimed by the caption. This call
+                    // opens Home or restarts after that decline.
+                    if (PlayPointer.Inside(PlayPointer.At) && OverlayOwnsPress(PlayPointer.At, false)) return;
+                    TakeRuleTipPress(ruleTap);
                 }
                 return;
             }
@@ -8640,6 +8643,10 @@ namespace FlockFive
             }
             if (_ruleTip != RuleTip.None)
             {
+                // Home and Restart stay live under a caption. Claiming them
+                // here returned before GardenHudAct could open Home.
+                int which = HudControl(play);
+                if (which == 1 || which == 2) return false;
                 if (!release) TakeRuleTipPress(PlayPointer.PlayBottom);
                 _tapWho = "rule";
                 return true;
