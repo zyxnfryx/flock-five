@@ -1721,14 +1721,22 @@ namespace FlockFive
         {
             aim = default;
             if (_avatarRename) return false;
-            if (_avatarPose != AvatarPose.GlovePointing) return false;
-            // After the bird has landed. A wander point before that puts the
-            // fingertip on empty air. The drawn rect is the live perch.
-            if (!_birdSettledOnBranch) return false;
+            bool look = AdoptCaptionLine() == AdoptLookLine || _avatarPose == AvatarPose.GlovePointing;
+            if (!look) return false;
+            if (!_birdSettledOnBranch && _avatarPose != AvatarPose.GlovePointing && _avatarPose != AvatarPose.Perched)
+                return false;
+            // The painted bird, once this frame has drawn it. Otherwise the
+            // landed perch: a small bird on the twig at the pad's top-right.
             Rect bird = _adoptBirdR;
-            if (bird.width < 2f) return false;
+            if (bird.width < 2f)
+            {
+                float icon = HomeAvatarIcon(s);
+                if (icon < 8f) return false;
+                var c = AvatarHomePoint();
+                bird = new Rect(c.x - icon * 0.28f, c.y - icon * 0.42f, icon * 0.56f, icon * 0.56f);
+            }
             aim = BodyTouch(bird);
-            return true;
+            return bird.width > 2f;
         }
 
         // Rest pose only. The shared arc still lands the fingertip on BodyTouch.

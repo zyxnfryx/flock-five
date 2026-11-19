@@ -2402,6 +2402,17 @@ namespace FlockFive
             return (aim - _gloveStepAim).sqrMagnitude <= lim * lim;
         }
 
+        // Wind-up stays within a bit over one hand of the fingertip. Farther than
+        // that, a narrow phone parks the hand on the screen edge or the caption.
+        static void KeepPerchNear(ref Vector2 rest, Vector2 aim, float s)
+        {
+            float max = 1.15f * GloveDh(s);
+            var d = rest - aim;
+            float len = d.magnitude;
+            if (len <= max || len < 0.01f) return;
+            rest = aim + d * (max / len);
+        }
+
         // Arc start for this aim. Drawn once, then left alone while the hand is visible.
         void GloveLockPose(Vector2 aimGui, float s, float perchLift, bool fromLeft, float approachDeg)
         {
@@ -2415,6 +2426,10 @@ namespace FlockFive
             ClearGloveOfCaption(_cueAimGui, s, ref rest, ref away, ref _gloveMirror, ref ang, approachDeg);
             _glovePosing = false;
             bool angled = !float.IsNaN(approachDeg);
+            // The avoidance perch can sit on the screen edge, the caption, or the
+            // next control. The fingertip still lands on the aim; the wind-up has
+            // to start beside that same control or the poke never rests there.
+            KeepPerchNear(ref rest, aimGui, s);
             _gloveRest = rest;
             _gloveRestAng = ang;
             _gloveAway = away;

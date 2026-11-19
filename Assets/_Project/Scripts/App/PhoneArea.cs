@@ -45,6 +45,8 @@ namespace FlockFive
         internal static bool EditorWindowOn;
         internal static int EditorWindowW;
         internal static int EditorWindowH;
+        internal static float EditorSafeTop;
+        internal static float EditorSafeBottom;
 #endif
 
         public static int W
@@ -93,7 +95,13 @@ namespace FlockFive
             get
             {
 #if UNITY_EDITOR
-                if (EditorWindowOn) return new Rect(0f, 0f, W, H);
+                if (EditorWindowOn)
+                {
+                    float top = Mathf.Max(0f, EditorSafeTop);
+                    float bot = Mathf.Max(0f, EditorSafeBottom);
+                    float h = Mathf.Max(0f, EditorWindowH - top - bot);
+                    return new Rect(0f, bot, W, h);
+                }
 #endif
                 var s = Screen.safeArea;
 #if UNITY_WEBGL && DEVELOPMENT_BUILD

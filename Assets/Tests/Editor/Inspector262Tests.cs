@@ -95,6 +95,7 @@ namespace FlockFive.Editor
             CheckAppHandoff(Check);
             CheckSuccessorLowestId(Check);
 
+            CheckFirstGardenGloves(Check);
             Check("reminder-waits-for-reward",
                 !FlockFiveApp.ReminderOpensNow(false) && FlockFiveApp.ReminderOpensNow(true),
                 "");
@@ -635,6 +636,86 @@ namespace FlockFive.Editor
                 // A real entry reaches GUI calls. Outside the player loop those throw
                 // after the owner check has already counted the pass.
             }
+        }
+
+        static void CheckFirstGardenGloves(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("first-garden-gloves");
+            var winOn = typeof(PhoneArea).GetField("EditorWindowOn", BindingFlags.NonPublic | BindingFlags.Static);
+            var winW = typeof(PhoneArea).GetField("EditorWindowW", BindingFlags.NonPublic | BindingFlags.Static);
+            var winH = typeof(PhoneArea).GetField("EditorWindowH", BindingFlags.NonPublic | BindingFlags.Static);
+            var safeTop = typeof(PhoneArea).GetField("EditorSafeTop", BindingFlags.NonPublic | BindingFlags.Static);
+            var safeBot = typeof(PhoneArea).GetField("EditorSafeBottom", BindingFlags.NonPublic | BindingFlags.Static);
+            bool keepOn = (bool)winOn.GetValue(null);
+            int keepW = (int)winW.GetValue(null);
+            int keepH = (int)winH.GetValue(null);
+            float keepTop = (float)safeTop.GetValue(null);
+            float keepBot = (float)safeBot.GetValue(null);
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var coach = typeof(FlockFiveApp).GetMethod("CoachGloveAt", flags);
+                foreach (var size in new[] { new Vector2(820f, 1180f), new Vector2(402f, 874f), new Vector2(412f, 915f), new Vector2(360f, 800f) })
+                {
+                    winOn.SetValue(null, true);
+                    winW.SetValue(null, (int)size.x);
+                    winH.SetValue(null, (int)size.y);
+                    safeTop.SetValue(null, 59f);
+                    safeBot.SetValue(null, 34f);
+                    float w = PhoneArea.W, h = PhoneArea.H;
+                    string tag = ((int)size.x).ToString();
+                    string bad = "";
+                    bad += SampleGlove(app, flags, coach, "branch", FlockFiveApp.GloveTarget(FlockFiveApp.L1BranchRect(0, w, h)), FlockFiveApp.L1BranchRect(0, w, h));
+                    var bird = new Rect(w * 0.62f, 59f + 28f, 54f, 48f);
+                    bad += SampleGlove(app, flags, coach, "bird", FlockFiveApp.GloveTarget(bird), bird);
+                    var daily = new Rect(18f, 59f + 86f, 64f, 64f);
+                    bad += SampleGlove(app, flags, coach, "daily", FlockFiveApp.GloveTarget(daily), daily);
+                    var claim = new Rect(w * 0.5f - 80f, h * 0.62f, 160f, 110f);
+                    bad += SampleGlove(app, flags, coach, "claim", FlockFiveApp.DailyClaimGloveSeat(claim), claim);
+                    var deal = new Rect(w - 86f, h - 34f - 96f, 72f, 72f);
+                    var dealAim = (Vector2)typeof(FlockFiveApp).GetMethod("DealPlatformAim", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { deal });
+                    bad += SampleGlove(app, flags, coach, "deal", dealAim, deal);
+                    var medal = new Rect(16f, 59f + 8f, 48f, 48f);
+                    bad += SampleGlove(app, flags, coach, "back", FlockFiveApp.PokerBackSettleAim(medal.center, medal, w, h), medal);
+                    var poker = new Rect(w - 86f, 59f + 150f, 64f, 64f);
+                    bad += SampleGlove(app, flags, coach, "poker", FlockFiveApp.GloveTarget(poker), poker);
+                    var watch = new Rect(w * 0.28f, h * 0.58f, 140f, 52f);
+                    bad += SampleGlove(app, flags, coach, "watch", FlockFiveApp.GloveTarget(watch), watch);
+                    Check("first-garden-glove-" + tag, bad.Length == 0, bad);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Check("first-garden-glove", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                winOn.SetValue(null, keepOn);
+                winW.SetValue(null, keepW);
+                winH.SetValue(null, keepH);
+                safeTop.SetValue(null, keepTop);
+                safeBot.SetValue(null, keepBot);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static string SampleGlove(FlockFiveApp app, BindingFlags flags, System.Reflection.MethodInfo coach, string name, Vector2 aim, Rect target)
+        {
+            if (target.width < 2f || !target.Contains(aim))
+                return name + " aim " + aim + " off " + target + "; ";
+            var t = typeof(FlockFiveApp);
+            t.GetField("_gloveAct", flags).SetValue(app, System.Enum.ToObject(t.GetField("_gloveAct", flags).FieldType, 0));
+            t.GetField("_gloveVis", flags).SetValue(app, false);
+            Vector2 tip = aim;
+            for (int i = 0; i < 6; i++)
+                coach.Invoke(app, new object[] { aim, 0.2f, 1f, float.NaN, false, float.NaN, target, null });
+            tip = (Vector2)t.GetField("_cueAimGui", flags).GetValue(app);
+            var drawn = (Vector2)t.GetField("_gloveTip", flags).GetValue(app);
+            bool aimOk = target.Contains(tip);
+            bool drawnOk = drawn.sqrMagnitude < 1f || target.Contains(drawn) || (drawn - aim).magnitude <= FlockFiveApp.GloveDh(1f) * 1.3f;
+            if (aimOk && drawnOk) return "";
+            return name + " tip " + tip + " drawn " + drawn + " target " + target + "; ";
         }
     }
 }

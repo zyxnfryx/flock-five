@@ -15425,11 +15425,11 @@ namespace FlockFive
                     // never above the safe top or into the coin pill.
                     if (line == PokerBackLine)
                     {
-                        float wide = Mathf.Min(PhoneArea.W - 24f, Mathf.Max(w, w * 1.35f));
-                        w = wide;
-                        x = (PhoneArea.W - w) * 0.5f;
-                        float cap = 22f * s * 3f;
-                        if (boxH > cap) boxH = cap;
+                        float side = 12f;
+                        w = Mathf.Max(48f, PhoneArea.W - side * 2f);
+                        x = side;
+                        float capH = 22f * s * 3f;
+                        if (boxH > capH) boxH = capH;
                         float inset = GuiTopInset(PhoneArea.H, PhoneArea.Safe);
                         if (y < inset + 8f) y = inset + 8f;
                     }
