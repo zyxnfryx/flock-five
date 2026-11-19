@@ -8287,7 +8287,12 @@ namespace FlockFive
                 _dailyGloveOnClaim = false;
                 _glovePhase = 0f;
                 _tapSent = false;
-                _chainDailyRuns++;
+                // One count per home visit. A second ShowSplash must not arm it again.
+                if (!_dailyResumedThisVisit)
+                {
+                    _chainDailyRuns++;
+                    _dailyResumedThisVisit = true;
+                }
             }
             _dailyIntroLive = true;
             _dailyIntroSaw = true;

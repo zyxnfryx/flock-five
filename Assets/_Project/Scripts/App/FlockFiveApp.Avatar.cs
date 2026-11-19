@@ -223,6 +223,8 @@ namespace FlockFive
         bool _adoptGreetDone;
         // How many times this session resumed the look, then Tap Daily.
         int _chainLookRuns;
+        bool _lookResumedThisVisit;
+        bool _dailyResumedThisVisit;
         int _chainDailyRuns;
         Rect _adoptBirdR;
 
@@ -478,7 +480,13 @@ namespace FlockFive
             _avatarPerchHold = 0f;
             _adoptGreetDone = true;
             _adoptLive = true;
-            _chainLookRuns++;
+            // Home can be opened from the glove release and from HitHud.
+            // Count the look once per visit. Load clears the mark.
+            if (!_lookResumedThisVisit)
+            {
+                _chainLookRuns++;
+                _lookResumedThisVisit = true;
+            }
             // One resume, in-session or after a kill. A second Home must not
             // play the look again off the same Play.
             PlayerPrefs.DeleteKey(ChainLookParkPref);

@@ -987,6 +987,8 @@ namespace FlockFive
         {
             ClearSwallowedGlove();
             ClearResumeOrigins();
+            _lookResumedThisVisit = false;
+            _dailyResumedThisVisit = false;
             AudioGuard.OnSceneOrPopupClosed();
             // Before the garden (and its season banner) is built. A solved board
             // that is still browsing the inspect does not come through here.
@@ -4371,9 +4373,12 @@ namespace FlockFive
                     _gloveSwallowHud = hud;
                 }
                 DropGlovePress();
-                // A fresh tap on the gear (this down began there) stays live.
-                // A drag from the glove, another control, or a press that was
-                // already down when the window began does not open it.
+                // Home opens here, as it did before the chain was resumed twice.
+                // HitHud may open it again; ResumeAdoptLook counts that once.
+                // The gear stays live for a tap that began on it. A drag from
+                // the glove or another control does not.
+                if (releaseEdge && hud == 1 && !EchoReleaseBlocks(1))
+                    ShowSplash();
                 if (releaseEdge && hud == 3 && !EchoReleaseBlocks(3))
                     ApplySettingsHit(SettingsMotion.Hit.Gear);
                 StampGlove("resume-hud", windowGui, onGlove, true, false);
@@ -4448,6 +4453,14 @@ namespace FlockFive
             if (releaseEdge && !_glovePressLatched && !GloveOwnsRelease(pointerId)
                 && !SwallowedUp(pointerId) && !otherFinger)
             {
+                // Return before any hop. A hop would set the took-frame and
+                // HitHud would then refuse Home and Restart.
+                if (hud == 1 && !EchoReleaseBlocks(1))
+                {
+                    ShowSplash();
+                    StampGlove("control", windowGui, onGlove, true, false);
+                    return false;
+                }
                 if (hud == 3 && !EchoReleaseBlocks(3))
                 {
                     ApplySettingsHit(SettingsMotion.Hit.Gear);
@@ -11918,6 +11931,7 @@ namespace FlockFive
             var e = Event.current;
             if (e == null)
             {
+                Debug.Log("[deal-trace] hit-pad event-null lock=" + _hitLock + " rect=" + r);
                 held = false;
                 return false;
             }
@@ -11983,6 +11997,13 @@ namespace FlockFive
                 if (inside) fired = true;
             }
             held = _editPadDown == id;
+            Debug.Log("[deal-trace] hit-pad stable id=" + id
+                + " type=" + e.type
+                + " inside=" + inside
+                + " armed=" + _editPadDown
+                + " fire=" + fired
+                + " lock=" + _hitLock
+                + " rect=" + r);
             return fired;
         }
 
@@ -16651,13 +16672,26 @@ namespace FlockFive
 
         void TryPokerDeal()
         {
+            Debug.Log("[deal-trace] action enter phase=" + BirdPoker.PhaseNow
+                + " canDeal=" + BirdPoker.CanDeal()
+                + " bet=" + BirdPoker.Bet
+                + " coins=" + Purse.Coins
+                + " hint=" + _pokerDealHint);
             FinishPokerWarm();
             if (BirdPoker.PhaseNow != BirdPoker.Phase.Dealt)
                 BirdPoker.SyncBet();
             if (!BirdPoker.CanDeal() || !BirdPoker.Deal())
+            {
+                Debug.Log("[deal-trace] action early phase=" + BirdPoker.PhaseNow
+                    + " canDeal=" + BirdPoker.CanDeal()
+                    + " bet=" + BirdPoker.Bet
+                    + " coins=" + Purse.Coins);
                 Sfx.Deny();
+            }
             else
             {
+                Debug.Log("[deal-trace] action dealt phase=" + BirdPoker.PhaseNow
+                    + " coins=" + Purse.Coins);
                 BeginPokerDeal();
                 Sfx.CardRustle();
             }
@@ -17567,6 +17601,14 @@ namespace FlockFive
             TickPokerStamp();
             if (winFlying && !_pokerStamp && !payBlocked) SkipPokerWinOnTap();
             string act = PokerActLabel();
+            Debug.Log("[deal-trace] lesson phase=" + BirdPoker.PhaseNow
+                + " canDeal=" + BirdPoker.CanDeal()
+                + " hint=" + _pokerDealHint
+                + " act=" + (act ?? "null")
+                + " bet=" + BirdPoker.Bet
+                + " coins=" + Purse.Coins
+                + " holdBar=" + PokerFirstHandResultHoldsBetBar()
+                + " event=" + (Event.current == null ? "null" : Event.current.type.ToString()));
             // Between hands (idle or showing a result) the bet steers the next DEAL.
             bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
             if (steppers) BirdPoker.SyncBet();
@@ -17585,7 +17627,11 @@ namespace FlockFive
             // The DEAL pad is hit before the bet steppers. They share the bar's
             // row, and the first pad that contains the point owns the gesture.
             bool deal = !string.IsNullOrEmpty(act) && !PokerFirstHandResultHoldsBetBar();
+            if (!deal)
+                Debug.Log("[deal-trace] lesson early act=" + (act ?? "null")
+                    + " holdBar=" + PokerFirstHandResultHoldsBetBar());
             bool fire = deal && DrawFloralBtn(actBox, act, s, true);
+            Debug.Log("[deal-trace] lesson fire=" + fire);
             DrawPokerBetBar(bet, s, busy, steppers);
             if (GuiRepaint()) DrawPokerWinBanner(betR, actR, s);
             return fire;
