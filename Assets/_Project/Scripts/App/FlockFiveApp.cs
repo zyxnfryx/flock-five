@@ -3929,7 +3929,7 @@ namespace FlockFive
                 StartCoroutine(GardenFit.Tween(_garden, _board, false));
             if (_gift != GiftFace.None || _frozen)
             {
-                if (PointerEdge(out var tap, out bool offerRelease))
+                if (TryPointerSample(out var tap, out bool offerRelease))
                 {
                     var window = new Vector2(tap.x + PhoneArea.OffX, PhoneArea.H - tap.y);
                     // The X lives inside Restart. Owning it here stops the press
@@ -4007,7 +4007,7 @@ namespace FlockFive
                 if (edge || RulePointerHeld()) return;
                 _ruleEatGesture = false;
             }
-            if (PointerEdge(out var screen, out bool pressRelease))
+            if (TryPointerSample(out var screen, out bool pressRelease))
             {
                 var owned = new Vector2(screen.x + PhoneArea.OffX, PhoneArea.H - screen.y);
                 if (OverlayOwnsPress(owned, pressRelease))
@@ -8528,7 +8528,8 @@ namespace FlockFive
         }
 
         // Editor batch reports the release on the inject, not on Pressed().
-        bool PointerEdge(out Vector2 screen, out bool release)
+        // Named apart from the PointerEdge enum, which already owns that word.
+        bool TryPointerSample(out Vector2 screen, out bool release)
         {
 #if UNITY_EDITOR
             if (EditorPointerInject.On && EditorPointerInject.Up && !EditorPointerInject.Down)
