@@ -4186,9 +4186,12 @@ namespace FlockFive
             // id equality, so it cannot see this pair.
             if (_glovePressLatched && GloveOwnsRelease(_gloveEdgeId)) return true;
             int down = DownControlOf(_gloveEdgeId);
-            // -1 glove, -2 no Down. A fresh tap's Down is 0 or 2.
-            if (down < 0) return true;
+            // -1 is the glove. A down on Home or the gear is that control.
+            // -2 is no Down. The plain echo refuses it. A coach glove that is
+            // yielding this release to Restart is the button tap, so it does not.
+            if (down == -1) return true;
             if (down > 0 && down != 2) return true;
+            if (down < 0 && !ButtonCoachGlove()) return true;
             if (_resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId)) return true;
             return false;
         }
@@ -4863,7 +4866,9 @@ namespace FlockFive
                     return;
                 }
                 Select(hit);
-                DropRouted("select");
+                // A free tap picks the branch. A routed glove release is the hop
+                // that already stamped "handle"; labeling it select overwrites that.
+                if (!routed) DropRouted("select");
                 return;
             }
             if (hit == _sel)
@@ -8139,13 +8144,13 @@ namespace FlockFive
         {
             // Time window, a glove-owned press, or a press that started in the window.
             // Retry uses this same entry, so it keeps the same rule.
-            // A touch that went down on Home or the gear, released as mouse -1, is
-            // still that press. It must not restart.
-            // -2 is no Down at all. A fresh tap writes its control on the Down,
-            // including a drag that started on empty space (0). A bare release
-            // has nothing to restart from.
+            // A touch that went down on the glove, Home, or the gear is still
+            // that press. It must not restart.
+            // No record (-2) is allowed here. GardenHudAct, a rule-tip tap, and
+            // the Restart button call this without a glove Down. The echo path
+            // refuses a bare release before it gets here.
             int down = DownControlOf(_gloveEdgeId);
-            if (down < 0 || (down > 0 && down != 2))
+            if (down == -1 || (down > 0 && down != 2))
                 return true;
             if (ResumeSwallowsRestart() || GloveOwnsHudPress() || _resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId))
             {

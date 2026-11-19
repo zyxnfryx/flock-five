@@ -5444,10 +5444,15 @@ namespace FlockFive.Editor
                 ClearRestart(app, t, flags);
                 t.GetField("_splash", flags).SetValue(app, false);
                 t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
                 t.GetField("_downPointer", flags).SetValue(app, int.MinValue);
                 t.GetField("_downControl", flags).SetValue(app, -2);
                 Method(t, "ClearResumeOrigins").Invoke(app, null);
-                PressHud(app, t, restartPlay, -1, false);
+                // The echo release, not the button hit. A bare Up with no Down
+                // must not restart. GardenHudAct and ActRestart still do.
+                var restartGui = new Vector2(restartPlay.x + PhoneArea.OffX, restart.center.y);
+                Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int))
+                    .Invoke(app, new object[] { restartGui, true, -1 });
                 bool bare = !RestartBegan(app, t, flags);
                 try { Check("restart-without-down-record-stays", bare, "restarted " + !bare); }
                 catch (System.Exception hopEx) { Check("restart-without-down-record-stays", false, ThrowText(hopEx)); }
