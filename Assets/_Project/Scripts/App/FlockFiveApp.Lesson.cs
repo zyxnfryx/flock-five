@@ -116,7 +116,7 @@ namespace FlockFive
                 CaptionLayout.AlbumHoneyBlock,
                 "Tap the hive to see your bee collection.",
                 "You earned coins!\nTap poker to bet them.",
-                "Tap Daily for\nyour bonus!",
+                "Tap Daily\nfor a bonus!",
                 "Tap to claim!",
                 CaptionLayout.LeafLine,
                 CaptionLayout.SparrowLine,

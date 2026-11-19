@@ -56,7 +56,7 @@ namespace FlockFive
         // Two lines, snug. The break is the wrap; the plate is measured to these lines.
         const string PokerIntroLine = "You earned coins!\nTap poker to bet them.";
         // Break is the two-line wrap. The plate is measured to these lines.
-        const string DailyIntroLine = "Tap Daily for\nyour bonus!";
+        const string DailyIntroLine = "Tap Daily\nfor a bonus!";
         const string DailyClaimLine = "Tap to claim!";
         // Informational only. Any tap dismisses it, and so does a collect (that
         // collect is what calls Board.Breeze). It does not point a glove, and it
@@ -132,7 +132,7 @@ namespace FlockFive
 
         // Center of the real control. The fingertip lands here. The perch, via
         // GloveRise and _gloveKeepOff, keeps the palm off the button.
-        static Vector2 GloveTarget(Rect r) => r.center;
+        public static Vector2 GloveTarget(Rect r) => r.center;
 
         // Fingertip for a Claim or Upgrade label. On the plate, just off the word,
         // on the side the hand approaches from, so the palm and the tip leave the glyphs readable.
@@ -1065,18 +1065,34 @@ namespace FlockFive
             _gloveReady = glove;
         }
 
+        // Nice and Crowns are queued captions. Restart drops them.
+        public static bool RestartDropsQueuedCaption(bool crownsOrNice) => crownsOrNice;
+
         // Unfinished level-1 coach still comes back as its own step 1.
         // Every other live lesson comes back as that lesson's step 1, and the
         // previous lesson's caption does not stay on the new board.
         void ApplyRestartRecue()
         {
             bool garden = _coach && PlayerPrefs.GetInt(CoachKey, 0) == 0 && LevelData.DisplayNumber == 1;
+            var stage = _restartFrom < 0 ? LessonRestart.Stage.None : (LessonRestart.Stage)_restartFrom;
+            // Nice and Crowns are queued captions. Restart cancels them and
+            // comes back as step 1, with that caption and its glove.
+            bool cancelCaption = stage == LessonRestart.Stage.Crowns || stage == LessonRestart.Stage.Nice;
+            if (cancelCaption)
+            {
+                _ruleTip = RuleTip.None;
+                _cueLine = null;
+                _cueSpoken = null;
+                _gloveVis = false;
+                if (PlayerPrefs.GetInt(CoachKey, 0) == 0 && LevelData.DisplayNumber == 1)
+                    SettleRestartLesson();
+                return;
+            }
             if (garden)
             {
                 SettleRestartLesson();
                 return;
             }
-            var stage = _restartFrom < 0 ? LessonRestart.Stage.None : (LessonRestart.Stage)_restartFrom;
             ArmRestartStep1(stage);
         }
 
@@ -1898,8 +1914,9 @@ namespace FlockFive
                     // spot the glove showed. The glove's tap check is the real tap rect.
                     var box = SplashDailyRect();
                     if (!RailGloveSettled(RailDaily, box)) return;
-                    dailyAim = box.center;
-                    CoachGloveAt(dailyAim, dt, handS, float.NaN, false, float.NaN, SplashDailyTapRect());
+                    // The icon, every frame. Not the caption plate under it.
+                    dailyAim = GloveTarget(box);
+                    CoachGloveAt(dailyAim, dt, handS, float.NaN, false, float.NaN, box);
                 }
                 return;
             }
@@ -2508,10 +2525,14 @@ namespace FlockFive
         // lands inside the medal. Wider windows (the 820 pillar) keep the center.
         public static Vector2 PokerBackSettleAim(Vector2 medalCenter, Rect medal, float windowW, float windowH)
         {
-            var aim = medalCenter;
+            // Left side of the medal. The hand hangs to the left of the pivot,
+            // so a center aim covers the word Back. The tip still sits on the medal.
+            var aim = medal.width > 2f
+                ? new Vector2(medal.xMin + Mathf.Max(6f, medal.width * 0.22f), medal.center.y)
+                : medalCenter;
             float aspect = windowH > 1f ? windowW / windowH : 1f;
             if (aspect <= DeviceFit.PhoneAspect + 0.04f)
-                aim += new Vector2(PokerBackPhoneTipNudgeX, PokerBackPhoneTipNudgeY);
+                aim += new Vector2(PokerBackPhoneTipNudgeX * 0.35f, PokerBackPhoneTipNudgeY * 0.35f);
             if (medal.width > 2f && medal.height > 2f)
             {
                 float inset = Mathf.Min(3f, medal.width * 0.15f);

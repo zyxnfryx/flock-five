@@ -200,6 +200,17 @@ namespace FlockFive
 
         void TakeRuleTipPress(Vector2 screen)
         {
+            var restart = RestartHudRect();
+            if (restart.width > 2f && restart.Contains(screen))
+            {
+                // One tap restarts while the caption is up. The caption is
+                // dropped here; the fresh board re-enters step 1.
+                _ruleTip = RuleTip.None;
+                _cueLine = null;
+                _cueSpoken = null;
+                ActRestart();
+                return;
+            }
             var drawn = OnScreenGlove();
             var fate = GardenPressFate(screen, PhoneArea.H, HomeHudRect(), RestartHudRect(), drawn, true, false);
             if (fate == PressFate.Home || fate == PressFate.Restart)

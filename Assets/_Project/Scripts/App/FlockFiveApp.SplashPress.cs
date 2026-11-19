@@ -114,6 +114,7 @@ namespace FlockFive
         {
             if (!StepTapGate(out var gate)) return false;
             if (gate.Pass) return false;
+            if (HomeDialogBlocksPlay()) return true;
             if (HomeChainOpen() && PlayRect(button)) return false;
             if (gate.AnyTap) return true;
             if (button.width < 2f || button.height < 2f) return true;

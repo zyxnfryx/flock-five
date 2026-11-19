@@ -1722,13 +1722,10 @@ namespace FlockFive
             aim = default;
             if (_avatarRename) return false;
             if (_avatarPose != AvatarPose.GlovePointing) return false;
+            // After the bird has landed. A wander point before that puts the
+            // fingertip on empty air. The drawn rect is the live perch.
+            if (!_birdSettledOnBranch) return false;
             Rect bird = _adoptBirdR;
-            if (bird.width < 2f)
-            {
-                float icon = HomeAvatarIcon(s);
-                var c = AvatarHomePoint();
-                bird = new Rect(c.x - icon * 0.5f, c.y - icon * 0.5f, icon, icon);
-            }
             if (bird.width < 2f) return false;
             aim = BodyTouch(bird);
             return true;

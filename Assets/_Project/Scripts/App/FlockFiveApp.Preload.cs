@@ -363,6 +363,7 @@ namespace FlockFive
         // painted a few times under it.
         void DrawWarmCover()
         {
+            if (_onGuiDepth <= 0) return;
 #if UNITY_EDITOR
             if (ShotLoadingProgress >= 0f)
             {

@@ -653,10 +653,20 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // A modal on the home face eats Play. The adoption chain does not:
+        // an early Play there parks the look and Tap Daily.
+        bool HomeDialogBlocksPlay()
+        {
+            if (!_splash || _home != HomeFace.Splash) return false;
+            return _welcomeOpen || _dailyAskOpen || _settingsOpen || _avatarRename
+                || _restartAsk != RestartAsk.None;
+        }
+
         // Same path as the LEVEL flower: badger leap, otherwise the gate sting and Load.
         bool PressLevelButton()
         {
             if (StartupInputHeld) return false; // b112: cover holds input
+            if (HomeDialogBlocksPlay()) return false;
             ParkHomeChainForPlay();
             ClearCaptionForWipe();
             if (!HomeChainOwed() && TakeBadgerFlower())

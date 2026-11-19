@@ -3825,6 +3825,7 @@ namespace FlockFive
 
         void UpdateBody()
         {
+            FlushGiftSignQueue();
             ClearSwallowedOnCancel();
             ArmSceneInputSettle();
             AudioGuard.Tick();
@@ -4813,7 +4814,8 @@ namespace FlockFive
                 int sign = HitGiftSign(world);
                 if (sign >= 0)
                 {
-                    if (CanOfferBonus(sign)) OpenBonus(sign);
+                    if (CanOfferBonus(sign) || _busy || _collecting || GateNow < _suppressGiftUntil)
+                        QueueGiftSign(sign);
                     DropRouted("gift-sign");
                     return;
                 }
@@ -8237,7 +8239,7 @@ namespace FlockFive
         public static bool ShotNoGui; // editor clips: background only
         // OnGUIBody is also invoked from editor tests. Paint only while this
         // real OnGUI call is on the stack, so a batch Repaint event cannot blit.
-        static int _onGuiDepth;
+        int _onGuiDepth;
 
         void OnGUI()
         {
@@ -8249,7 +8251,7 @@ namespace FlockFive
         void OnGUICore()
         {
             // iPad pillarbox: garden bars + play image, then the GUI runs in the phone area.
-            PhoneArea.BeginGui();
+            if (_onGuiDepth > 0) PhoneArea.BeginGui();
             if (PhoneArea.Pillar) GUI.depth = 1; // under the Ads consent prompt, as before
             if (ShotNoGui) return;
             // Item 8: the warm cover eats taps until the home is shown.
@@ -8281,7 +8283,7 @@ namespace FlockFive
         static bool _rainbowMaskLogged;
         static void PaintPressRainbow()
         {
-            if (!GuiPaint()) return;
+            if (!OnGuiOpen || !GuiPaint()) return;
             var m = GUI.matrix;
             GUI.matrix = PhoneArea.GuiBase;
             int glints = PressRainbow.Draw(out float t, out float washA);
@@ -11980,8 +11982,11 @@ namespace FlockFive
             }
         }
 
+        static bool OnGuiOpen => _app != null && _app._onGuiDepth > 0;
+
         static bool GuiPaint()
         {
+            if (!OnGuiOpen) return false;
             var e = Event.current;
             return e == null || e.type == EventType.Repaint;
         }
@@ -11992,7 +11997,7 @@ namespace FlockFive
         static bool GuiRepaint()
         {
             var e = Event.current;
-            return _onGuiDepth > 0 && e != null && e.type == EventType.Repaint;
+            return OnGuiOpen && e != null && e.type == EventType.Repaint;
         }
 
         // This OnGUI pass: a tiny home target (bird or name plate) owns the pointer.
@@ -15231,13 +15236,16 @@ namespace FlockFive
             float s = DeviceFit.Ui();
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBetLine);
+            // Live DEAL rect every frame. A cached aim was landing on card 4
+            // after the first poke cycle.
+            var deal = PokerDealButtonRect();
+            _pokerTutorAim = DealPlatformAim(deal);
+            _pokerTutorTap = deal;
+            _pokerTutorAimOk = true;
             CoachGloveAt(_pokerTutorAim, dt, s, float.NaN, false, float.NaN, _pokerTutorTap);
             bool parked = Vector2.Distance(_gloveTip, _gloveRest) > 32f * s;
             if (parked) _pokerPageAge = 0f;
             else _pokerPageAge += dt;
-            // Both early steps aim at DEAL. Crossing 1 → 2 does not restart the poke.
-            if (_pokerPageStep <= 1 && _pokerPageAge >= TapCycle)
-                AdvancePokerTutor(2);
             return true;
         }
 
@@ -15353,6 +15361,18 @@ namespace FlockFive
                     float plateTop = PokerBottomPlateTop(plateH, PhoneArea.H, PhoneArea.Safe, s);
                     boxH = h;
                     y = plateTop + plateH * 0.5f - h * 0.5f;
+                    // 412: three lines, no clip. Wider than the standard box, and
+                    // never above the safe top or into the coin pill.
+                    if (line == PokerBackLine)
+                    {
+                        float wide = Mathf.Min(PhoneArea.W - 24f, Mathf.Max(w, w * 1.35f));
+                        w = wide;
+                        x = (PhoneArea.W - w) * 0.5f;
+                        float cap = 22f * s * 3f;
+                        if (boxH > cap) boxH = cap;
+                        float inset = GuiTopInset(PhoneArea.H, PhoneArea.Safe);
+                        if (y < inset + 8f) y = inset + 8f;
+                    }
                     break;
                 }
                 case PokerCapAnchor.BelowCards:
@@ -15469,6 +15489,9 @@ namespace FlockFive
             float handS = DeviceFit.Ui();
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBetLine);
+            var dealNow = PokerDealButtonRect();
+            _pokerDealAim = DealPlatformAim(dealNow);
+            _pokerDealTap = dealNow;
             CoachGloveAt(_pokerDealAim, dt, handS, float.NaN, false, float.NaN, _pokerDealTap);
             return true;
         }
@@ -21684,6 +21707,30 @@ namespace FlockFive
             OpenGiftCard();
         }
 
+        int _giftSignQueued = -1;
+
+        // A tap on a gift sign during flight, or in the beat after a grant,
+        // is kept and opened once the board is still again.
+        void QueueGiftSign(int branch)
+        {
+            if (branch < 0) return;
+            if (_busy || _collecting || GateNow < _suppressGiftUntil)
+            {
+                _giftSignQueued = branch;
+                return;
+            }
+            OpenBonus(branch);
+        }
+
+        void FlushGiftSignQueue()
+        {
+            if (_giftSignQueued < 0) return;
+            if (_busy || _collecting || GateNow < _suppressGiftUntil) return;
+            int branch = _giftSignQueued;
+            _giftSignQueued = -1;
+            if (CanOfferBonus(branch)) OpenBonus(branch);
+        }
+
         void OpenBonus(int branch)
         {
             if (LessonTapBlocked()) return;
@@ -21971,6 +22018,10 @@ namespace FlockFive
             }
         }
 
+        // Tutorial, ads on, nothing loaded: do not wait out the fill.
+        public static bool WatchReopenSkipsLoadWait(bool tutorial, bool adsOn, bool ready)
+            => tutorial && adsOn && !ready;
+
         IEnumerator WatchGiftBody()
         {
             bool keep = _keepStreak;
@@ -21987,7 +22038,14 @@ namespace FlockFive
             int payload = keep ? _restartSavedMul : _giftBranch;
             string placement = keep ? Ads.PlacementKeep : Ads.PlacementBonus;
             bool tutorial = _adHand && !keep;
-            yield return Ads.Rewarded(placement, payload, tutorial);
+            // A reopened tutorial offer must not sit dead for the load wait.
+            // No fill grants the branch (tutorial) or closes with a line.
+            bool skipWait = WatchReopenSkipsLoadWait(tutorial, Ads.Enabled, Ads.RewardedReady);
+            // No fill grants the branch (tutorial) or closes with a line.
+            if (skipWait)
+                AdLog.Add("gift ad unavailable (reopened offer, not ready)");
+            else
+                yield return Ads.Rewarded(placement, payload, tutorial);
             // Freeze continue pays for a finished view (or ads switched off).
             // A skip or a failed show leaves the card up. A late reward still
             // grants after this coroutine has gone.
@@ -22015,6 +22073,7 @@ namespace FlockFive
                 if (AdFailDecision(keep, freeze, tutorial, AdRetry.Skipped) == AdFailAction.Close)
                 {
                     AdLog.Add("gift ad unavailable: closing the offer (" + AdRetry.Reason + ")");
+                    _cueLine = "Ad unavailable.";
                     _gift = GiftFace.None;
                     AdRetry.Clear();
                     DismissAdHand();
