@@ -574,11 +574,17 @@ namespace FlockFive
 
         void OnEnable()
         {
-            _app = this;
+            // A second instance must not steal the live app. Its OnGUI stays
+            // dark and its depth stays 0, so it cannot paint.
+            if (_app == null)
+                _app = this;
             // A new instance must not inherit another session's dismiss guard.
             _lessonGuardUntil = 0f;
-            RewardedGrant.TryApply = ApplyRewardedTicket;
-            RewardedGrant.Boot();
+            if (_app == this)
+            {
+                RewardedGrant.TryApply = ApplyRewardedTicket;
+                RewardedGrant.Boot();
+            }
         }
 
         void OnDisable()
@@ -8243,6 +8249,7 @@ namespace FlockFive
 
         void OnGUI()
         {
+            if (_app != this) return;
             _onGuiDepth++;
             try { OnGUICore(); }
             finally { _onGuiDepth--; }
@@ -8252,7 +8259,8 @@ namespace FlockFive
         {
             // iPad pillarbox: garden bars + play image, then the GUI runs in the phone area.
             if (_onGuiDepth > 0) PhoneArea.BeginGui();
-            if (PhoneArea.Pillar) GUI.depth = 1; // under the Ads consent prompt, as before
+            // Depth 0 is a test call, not a real OnGUI. GUI.depth throws there.
+            if (_onGuiDepth > 0 && PhoneArea.Pillar) GUI.depth = 1;
             if (ShotNoGui) return;
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))

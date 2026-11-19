@@ -198,13 +198,30 @@ namespace FlockFive
             return true;
         }
 
+#if UNITY_EDITOR
+        // True only when TakeRuleTipPress hit Restart itself, not the GardenPressFate fallback.
+        internal bool EditorRuleRestartDirect;
+#endif
+
         void TakeRuleTipPress(Vector2 screen)
         {
-            var restart = RestartHudRect();
-            if (restart.width > 2f && restart.Contains(screen))
+            // screen is bottom-origin, the point Pressed returns and the point
+            // SwallowRuleTipPointer builds with PhoneArea.H - mousePosition.y.
+            // RestartHudRect is top-origin GUI. GardenHudPoint is the one flip.
+            // A raw Contains(screen) matched the bottom of the glass to the
+            // top-bar button.
+#if UNITY_EDITOR
+            EditorRuleRestartDirect = false;
+#endif
+            bool homeHit, restartHit;
+            if (GardenHudPoint(screen, PhoneArea.H, HomeHudRect(), RestartHudRect(), out homeHit, out restartHit)
+                && restartHit)
             {
                 // One tap restarts while the caption is up. SnapRound reads the
                 // lesson first, then drops the plate and arms it again.
+#if UNITY_EDITOR
+                EditorRuleRestartDirect = true;
+#endif
                 ActRestart();
                 return;
             }
