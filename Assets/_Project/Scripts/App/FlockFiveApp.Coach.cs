@@ -5836,20 +5836,6 @@ namespace FlockFive
             return drawn.Contains(PointerToGui(screen, screenH));
         }
 
-        // The drawn quad in window GUI pixels, pillar shift included.
-        // PlayPointer.Gui(Event) is already in that space.
-        public static Rect GloveWindowRect(Rect playGui, float offX)
-        {
-            if (playGui.width < 2f) return playGui;
-            return new Rect(playGui.x + offX, playGui.y, playGui.width, playGui.height);
-        }
-
-        public static bool GloveWindowHit(Vector2 windowGui, Rect playGui, float offX)
-        {
-            var box = GloveWindowRect(playGui, offX);
-            return box.width > 2f && box.height > 2f && box.Contains(windowGui);
-        }
-
         // Bottom-up screen pixels to GUI y-down. One flip, matching Pressed.
         public static Vector2 PointerToGui(Vector2 screenBottomUp, float screenH)
         {
@@ -5907,21 +5893,11 @@ namespace FlockFive
 
         public static bool GardenHudPoint(Vector2 screen, float screenH, Rect home, Rect restart, out bool homeHit, out bool restartHit)
         {
-            // screen is bottom-origin play pixels. Pressed already subtracted OffX.
-            // OnGUI mouse is not that point: WindowGuiToPlay does the one conversion.
+            // screen is bottom-origin play pixels. PlayPointer already removed the pillar.
             var gui = new Vector2(screen.x, screenH - screen.y);
             homeHit = home.width > 2f && home.Contains(gui);
             restartHit = !homeHit && restart.width > 2f && restart.Contains(gui);
             return homeHit || restartHit;
-        }
-
-        // PlayPointer.Gui(Event) is window GUI: top-left origin, x includes the pillar.
-        // Home and Restart rects are play-area GUI. Subtract OffX, then flip Y into
-        // the bottom-origin play point GardenHudPoint expects.
-        public static Vector2 WindowGuiToPlay(Vector2 windowGui)
-        {
-            var play = PlayPointer.Enter(windowGui);
-            return new Vector2(play.x, PhoneArea.H - play.y);
         }
 
         void DrawGloveAt(Vector2 pivot, float ang, float dh, float alpha, float dip, bool mirror = false)
@@ -7548,6 +7524,10 @@ namespace FlockFive
         // True while the WatchGift coroutine (the ad stage behind the Watch lesson) is alive.
         bool _watchGiftLive;
         int _watchStarts;
+#if UNITY_EDITOR
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        internal int EditorWatchRequests;
+#endif
 
         // THE interruption check, shared by every tutorial. A lesson that is backgrounded,
         // closed, or cut off half-way can leave a flag, a pause, an ad stage or a tap gate

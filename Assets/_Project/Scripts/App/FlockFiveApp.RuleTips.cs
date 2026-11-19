@@ -212,12 +212,8 @@ namespace FlockFive
 #if UNITY_EDITOR
             EditorRulePressEntered++;
 #endif
-            // screen is bottom-origin play pixels. Pressed returns that point.
-            // SwallowRuleTipPointer builds it with WindowGuiToPlay, which subtracts
-            // OffX before the Y flip. RestartHudRect is top-origin play GUI.
-            // GardenHudPoint is the one flip. A raw window x is OffX too far right.
-            // A raw Contains(screen) matched the bottom of the glass to the
-            // top-bar button.
+            // screen is bottom-origin play pixels. PlayPointer.Enter already
+            // removed the pillar. GardenHudPoint flips Y into the top-bar rects.
 #if UNITY_EDITOR
             EditorRuleRestartDirect = false;
 #endif

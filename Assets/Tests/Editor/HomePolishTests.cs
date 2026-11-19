@@ -2692,17 +2692,17 @@ namespace FlockFive.Editor
             }
         }
 
-        static void SetInject(bool on, bool down, Vector2 play)
+        static void SetInject(bool on, bool down, Vector2 playBottom)
         {
-            var nested = typeof(FlockFiveApp).GetNestedType("EditorPointer",
-                BindingFlags.Public | BindingFlags.NonPublic);
-            object box = System.Activator.CreateInstance(nested);
-            nested.GetField("On").SetValue(box, on);
-            nested.GetField("Down").SetValue(box, down);
-            nested.GetField("Up").SetValue(box, false);
-            nested.GetField("Id").SetValue(box, -1);
-            nested.GetField("Play").SetValue(box, play);
-            EditorField("EditorPointerInject").SetValue(null, box);
+            // playBottom is phone-local, y up. The inject stores the real window point.
+            FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+            {
+                On = on,
+                Down = down,
+                Up = false,
+                Id = -1,
+                Window = new Vector2(playBottom.x + PhoneArea.OffX, PhoneArea.H - playBottom.y)
+            };
         }
 
         static void CheckGlovePressOwner(System.Action<string, bool, string> Check)

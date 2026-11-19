@@ -1362,6 +1362,35 @@ namespace FlockFive
             return false;
         }
 
+        // The same controls DrawAvatarRename paints. A release on one of them
+        // changes the bird, the kit, the field, or the name.
+        void ApplyAvatarPlate(Vector2 play)
+        {
+            if (_avatarDoneR.width > 2f && _avatarDoneR.Contains(play))
+            {
+                CommitAvatarRename();
+                return;
+            }
+            for (int i = 0; i < 5; i++)
+            {
+                if (_avatarSwatch[i].width > 2f && _avatarSwatch[i].Contains(play))
+                {
+                    PickAvatarColor(i);
+                    return;
+                }
+            }
+            for (int i = 0; i < _avatarKitN; i++)
+            {
+                if (_avatarKitR[i].width > 2f && _avatarKitR[i].Contains(play))
+                {
+                    PickAvatarKit(_avatarKitId[i]);
+                    return;
+                }
+            }
+            if (_avatarFieldR.width > 2f && _avatarFieldR.Contains(play))
+                _avatarRenameFocus = true;
+        }
+
         void DrawAvatarRename(float s)
         {
             if (!_avatarRename) return;

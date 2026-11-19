@@ -4234,6 +4234,30 @@ namespace FlockFive
         // on that same control, is not an echo. Home and the gear stay live
         // for that tap inside the resume window. Restart never takes a press
         // that began in the window.
+        // Where this finger went down, including a press an overlay then claims.
+        // A Down inside the resume window is stamped. Its Up, even after the
+        // window, must not become a Restart or a freeze Retry.
+        void NotePointerEdge(int pointerId, bool releaseEdge, Vector2 play)
+        {
+            _gloveEdgeId = pointerId;
+            if (!releaseEdge && !(pointerId < 0 && _glovePressLatched && _glovePressId >= 0))
+            {
+                _gloveTookFrame = -1;
+                _homeOpenedThisEdge = false;
+                RememberResumeOrigin(pointerId);
+                if (!(GateNow < _resumeInputUntil)) _resumeOriginRelease = false;
+                _gestureId = pointerId;
+                bool onGlove = _gloveVis && OnScreenGlove().Contains(play);
+                _gestureHud = onGlove ? -1 : HudControl(play);
+                NoteDownControl(pointerId, _gestureHud);
+            }
+            else if (releaseEdge)
+            {
+                if (ResumeOriginBlocks(pointerId)) _resumeOriginRelease = true;
+                LiftResumeOrigin(pointerId);
+            }
+        }
+
         void NoteDownControl(int pointerId, int control)
         {
             _downPointer = ResumeFinger(pointerId);
@@ -4483,30 +4507,10 @@ namespace FlockFive
             int resumeId = pointerId;
             if (releaseEdge && pointerId == -1 && _glovePressLatched && _glovePressId >= 0)
                 resumeId = _glovePressId;
-            // Remember a Down that starts inside the window, per finger. A fresh Down
-            // of that finger drops only its own stamp. The synthesized mouse Down
-            // beside a touch is not a new press.
-            bool resumeOriginUp = false;
-            if (!releaseEdge && !(pointerId < 0 && _glovePressLatched && _glovePressId >= 0))
-            {
-                // A real new Down is a new press, so a Home later in this same editor
-                // frame is not blocked by the hop that already landed. A release does
-                // not come through here, and neither does the synthesized mouse Down
-                // beside a touch: that one keeps the touch's same-frame ownership.
-                _gloveTookFrame = -1;
-                _homeOpenedThisEdge = false;
-                RememberResumeOrigin(pointerId);
-                if (!(GateNow < _resumeInputUntil)) _resumeOriginRelease = false;
-                _gestureId = pointerId;
-                _gestureHud = drawnGlove ? -1 : hud;
-                NoteDownControl(pointerId, _gestureHud);
-            }
-            else if (releaseEdge)
-            {
-                resumeOriginUp = ResumeOriginBlocks(pointerId);
-                if (resumeOriginUp) _resumeOriginRelease = true;
-                LiftResumeOrigin(pointerId);
-            }
+            // The edge stamp also runs before an overlay claim, so a second pass
+            // here must not drop the resume flag the first pass just set.
+            bool resumeOriginUp = ResumeOriginBlocks(pointerId) && releaseEdge;
+            NotePointerEdge(pointerId, releaseEdge, windowGui);
             // Home and the gear stay live for the whole resume window, even when
             // the drawn glove covers them. A glove hop only wins once that window
             // has closed and the finger went down on the sprite.
@@ -8495,12 +8499,29 @@ namespace FlockFive
                 return;
             }
             var play = PlayPointer.At;
+            int edgeId = -1;
+            if (tapEdge)
+                edgeId = HomeEventId(tapEv, !release, release);
+#if UNITY_EDITOR
+            else edgeId = EditorPointerInject.Id;
+#endif
+            NotePointerEdge(edgeId, release, play);
+            if (_avatarRename) RegisterAvatarPlate(DeviceFit.Ui());
+            if (_avatarRename && PlateControlAt(play))
+            {
+                if (release) ApplyAvatarPlate(play);
+                FinishPointerClaim("naming-control", tapEdge ? tapEv : null);
+                return;
+            }
             if (OverlayOwnsPress(play, release))
             {
                 FinishPointerClaim(_tapWho ?? "overlay", tapEdge ? tapEv : null);
                 return;
             }
-            if (ResumeGloveEdge(play) && HudControl(play) != 2)
+            // A live IMGUI Restart belongs to its own button. An editor inject has
+            // no button, so Restart still goes through the glove yield.
+            bool liveRestart = tapEdge && HudControl(play) == 2;
+            if (ResumeGloveEdge(play) && !liveRestart)
             {
                 int gloveId = -1;
                 if (tapEdge)
@@ -8562,7 +8583,19 @@ namespace FlockFive
         // One owner for every overlay control. Update presses and TakeGuiPointer
         // both ask this, so the HUD and the board cannot take the point on
         // either edge. Release performs the overlay's action. Press only claims.
+        int _overlayDepth;
+
         bool OverlayOwnsPress(Vector2 play, bool release)
+        {
+            // GardenHudAct and TakeRuleTipPress call back in. A second entry
+            // would loop. The outer call owns the decision.
+            if (_overlayDepth > 0) return false;
+            _overlayDepth++;
+            try { return OverlayOwnsPressBody(play, release); }
+            finally { _overlayDepth--; }
+        }
+
+        bool OverlayOwnsPressBody(Vector2 play, bool release)
         {
             if (!PlayPointer.Inside(play)) return false;
             if (GiftOverlayOwns(play, release)) return true;
@@ -8644,6 +8677,9 @@ namespace FlockFive
                     _tapWho = "gift-x";
                     return true;
                 }
+                // Home and Restart stay live under the card. The X already won
+                // when the point was closer to it than to the button.
+                if (which == 1 || which == 2 || which == 3) return false;
                 float s = DeviceFit.Ui();
                 GiftCardPlaced(s, out var card, out var cta);
                 if (_adHand && FlowerHit(cta, s).Contains(play))
@@ -22339,11 +22375,12 @@ namespace FlockFive
         }
 
         // The gift card's X is always accepted, even while the ad-hand glove owns the screen.
-        bool GiftCloseExempt(Vector2 windowGui)
+        // play is portrait-canvas pixels, the same space as the X rect.
+        bool GiftCloseExempt(Vector2 play)
         {
             if (_gift != GiftFace.Card || _freezeOffer) return false;
             var x = CloseTapRect(CornerCloseRect(DeviceFit.Ui(), TopHud()));
-            return x.width > 2f && x.Contains(windowGui);
+            return x.width > 2f && x.Contains(play);
         }
 
         void CloseGift()
@@ -22365,7 +22402,10 @@ namespace FlockFive
             _watchGiftLive = true;
             _watchStarts++;
 #if UNITY_EDITOR
-            // EditMode has no player loop, so the coroutine is not the claim.
+            // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+            // EditMode never runs the rewarded coroutine, so a test reads this
+            // count to see that the request fired once, on the release.
+            EditorWatchRequests++;
             if (!Application.isPlaying) return;
 #endif
             StartCoroutine(WatchGift());
