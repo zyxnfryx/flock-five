@@ -4428,12 +4428,6 @@ namespace FlockFive
 
         bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge, int pointerId)
         {
-            if (_gift == GiftFace.Card)
-            {
-                GiftCardPlaced(DeviceFit.Ui(), out _, out var cta);
-                if (FlowerHit(cta, DeviceFit.Ui()).Contains(windowGui))
-                    return false;
-            }
             _gloveEdgeId = pointerId;
             // The drawn glove, including on the home face and after the cue
             // has been cleared. Garden hops still require the splash to be down.
@@ -8429,6 +8423,8 @@ namespace FlockFive
             _tapAt = tapEv != null ? tapEv.mousePosition : default;
             bool tapEdge = _tapEdge;
             _tapWho = null;
+            if (tapEdge && tapEv.type == EventType.MouseUp && TakeFivesClose(tapEv.mousePosition))
+                _tapWho = "fives-close";
             if (tapEdge && ResumeGloveEdge(tapEv.mousePosition) && HudControl(tapEv.mousePosition) != 2)
             {
                 int gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
@@ -8444,8 +8440,10 @@ namespace FlockFive
                 bool up = tapEv.type == EventType.MouseUp;
                 int id = HomeEventId(tapEv, down, up);
                 // The bird look opens naming. The home gate must not eat that tap
-                // and send the player back into the garden. HitAdoptBirds claims it.
-                if (!AdoptLookOwnsTap(tapEv.mousePosition)
+                // and send the player back into the garden.
+                if (up && TakeAdoptLookTap(tapEv.mousePosition))
+                    _tapWho = "adopt-look";
+                else if (!AdoptLookOwnsTap(tapEv.mousePosition)
                     && !HomeGateAllows(ref _homeGate, down, up, id))
                 {
                     GUIUtility.hotControl = 0;
@@ -8459,7 +8457,13 @@ namespace FlockFive
                 var injected = new Vector2(EditorPointerInject.Play.x + PhoneArea.OffX, PhoneArea.H - EditorPointerInject.Play.y);
                 if (ResumeGloveEdge(injected) && TryDrawnGlove(injected, EditorPointerInject.Up, EditorPointerInject.Id))
                     _tapWho = "glove";
+                if (EditorPointerInject.Up && TakeAdoptLookTap(injected))
+                    _tapWho = "adopt-look";
+                if (EditorPointerInject.Up && TakeFivesClose(injected))
+                    _tapWho = "fives-close";
                 if (_splash && _home == HomeFace.Splash
+                    && _tapWho != "adopt-look"
+                    && !AdoptLookOwnsTap(injected)
                     && !HomeGateAllows(ref _homeGate, EditorPointerInject.Down, EditorPointerInject.Up, EditorPointerInject.Id))
                 {
                     GUIUtility.hotControl = 0;

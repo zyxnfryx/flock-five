@@ -72,14 +72,10 @@ namespace FlockFive
             if (_fivesOpen)
             {
                 _fivesChipHeld = false;
+                if (FivesReleasePoint(out var gui) && TakeFivesClose(gui))
+                    return;
                 var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
                 var close = FivesCloseRect(g.Panel, s);
-                if (HitPad(close, out _))
-                {
-                    _fivesOpen = false;
-                    Sfx.Chirp(BirdColor.Gold);
-                    return;
-                }
                 var e = Event.current;
                 bool onClose = e != null && close.Contains(e.mousePosition);
                 if (!onClose && _fivesAnim > 0.55f && HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _))
@@ -254,6 +250,40 @@ namespace FlockFive
 
         public static string FivesCaption(BirdPoker.FiveRecord r)
             => "×" + r.Count + " · " + BirdPoker.DayLabel(r.FirstDay) + (r.Natural ? " ★" : "");
+
+        // Release point in window GUI, from the editor inject or a live IMGUI event.
+        // The close decision itself does not read Event.current.
+        bool FivesReleasePoint(out Vector2 gui)
+        {
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Up)
+            {
+                gui = new Vector2(EditorPointerInject.Play.x + PhoneArea.OffX, PhoneArea.H - EditorPointerInject.Play.y);
+                return true;
+            }
+#endif
+            var e = Event.current;
+            if (e != null && e.type == EventType.MouseUp && e.button == 0)
+            {
+                gui = e.mousePosition;
+                return true;
+            }
+            gui = default;
+            return false;
+        }
+
+        // Closes the Five-of-a-Kind board when the point is on the X. No GUI.
+        bool TakeFivesClose(Vector2 windowGui)
+        {
+            if (!_fivesOpen) return false;
+            float s = DeviceFit.Ui();
+            var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
+            if (!FivesCloseRect(g.Panel, s).Contains(windowGui)) return false;
+            _fivesOpen = false;
+            _fivesAnim = 0f;
+            _fivesChipHeld = false;
+            return true;
+        }
 
         public static Rect FivesCloseRect(Rect panel, float s)
         {

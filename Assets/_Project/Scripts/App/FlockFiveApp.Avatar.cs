@@ -882,6 +882,15 @@ namespace FlockFive
             return plate.width > 2f && plate.Contains(windowGui);
         }
 
+        // The look tap, with no IMGUI event. The home gate calls this on release
+        // so naming opens before that gate can send the player back into a level.
+        bool TakeAdoptLookTap(Vector2 windowGui)
+        {
+            if (!AdoptLookOwnsTap(windowGui)) return false;
+            NoteAdoptLook();
+            return _avatarRename;
+        }
+
         void HitAdoptBirds(float icon)
         {
             if (!AdoptLookRects(icon, out var r, out var plate)) return;
@@ -950,7 +959,11 @@ namespace FlockFive
 
         void OpenAvatarRename()
         {
-            if (_avatarRename || !AvatarAdopted()) return;
+            if (_avatarRename) return;
+            // The look tap is how a first bird gets its name. A bird already
+            // saved opens the same page when the player comes Home.
+            bool look = _adoptLive && _adoptStep == AdoptStep.Look;
+            if (!AvatarAdopted() && !look) return;
             _avatarRename = true;
             _avatarRenameText = SavedAvatarName();
             _avatarRenameFocus = AvatarNeedsName();

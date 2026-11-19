@@ -3601,7 +3601,7 @@ namespace FlockFive.Editor
                 }
                 catch (System.Exception ex) { canEx = TapFault(ex); }
                 try { Check("home-captions-queue-and-leave-play",
-                    greetHolds && nameHolds && gearDuring && !playLeft && greetHeld && missReached && greetDone
+                    greetHolds && nameHolds && gearDuring && playLeft && greetHeld && missReached && greetDone
                     && sameFrameBlocked && !playCan,
                     "greet " + greetHolds + " name " + nameHolds + " gear " + gearDuring
                     + " play " + playLeft + " held " + greetHeld

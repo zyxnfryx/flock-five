@@ -225,7 +225,8 @@ namespace FlockFive
         // The post-level captions leave Play alone, the same way they leave the gear.
         bool PlayExempt(Vector2 p)
         {
-            if (HomeDialogBlocksPlay()) return false;
+            // Play does not dismiss the caption. Loading the level is a
+            // separate gate (HomeDialogBlocksPlay), so the greet stays up.
             if (!HomeChainOpen() || _home != HomeFace.Splash) return false;
             var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             return level.width >= 2f && level.Contains(p);

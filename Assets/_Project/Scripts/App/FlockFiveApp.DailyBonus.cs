@@ -2310,6 +2310,23 @@ namespace FlockFive
             GUI.matrix = pressed;
         }
 
+        // True when Not now should take this point. The open tween has started
+        // (k > 0) and the point is on the button. No GUI.
+        public static bool NotNowAccepts(bool askOpen, float openK, Rect noButton, Vector2 gui)
+        {
+            if (!askOpen || openK <= 0.01f || noButton.width < 2f || noButton.height < 2f) return false;
+            return noButton.Contains(gui);
+        }
+
+        // The boot reminder's Not now. The caller passes the button rect and the
+        // point. DrawDailyAsk uses the same decision once HitPad reports the release.
+        bool TakeDailyAskNotNow(Rect noButton, Vector2 gui)
+        {
+            if (!NotNowAccepts(_dailyAskOpen, DailyPop(_dailyAskAt), noButton, gui)) return false;
+            CloseDailyAsk(false);
+            return true;
+        }
+
         void DrawDailyAsk(float s)
         {
             if (!_dailyAskOpen) return;
@@ -2351,7 +2368,7 @@ namespace FlockFive
             GUI.color = Color.white;
 
             if (yes) CloseDailyAsk(true);
-            else if (no) CloseDailyAsk(false);
+            else if (no) TakeDailyAskNotNow(noHit, noHit.center);
         }
 
         void CloseDailyAsk(bool yes)

@@ -96,6 +96,7 @@ namespace FlockFive.Editor
             CheckSuccessorLowestId(Check);
 
             CheckFirstGardenGloves(Check);
+            CheckStationaryTaps(Check);
             CheckBirdBeatsHomeGate(Check);
             CheckNotNowDuringOpen(Check);
             CheckFivesClose(Check);
@@ -764,10 +765,53 @@ namespace FlockFive.Editor
                 + " span " + span.ToString("0.0") + " target " + target + "; ";
         }
 
+        static void CheckStationaryTaps(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("stationary-taps");
+            var winOn = typeof(PhoneArea).GetField("EditorWindowOn", BindingFlags.NonPublic | BindingFlags.Static);
+            var winW = typeof(PhoneArea).GetField("EditorWindowW", BindingFlags.NonPublic | BindingFlags.Static);
+            var winH = typeof(PhoneArea).GetField("EditorWindowH", BindingFlags.NonPublic | BindingFlags.Static);
+            var safeTop = typeof(PhoneArea).GetField("EditorSafeTop", BindingFlags.NonPublic | BindingFlags.Static);
+            var safeBot = typeof(PhoneArea).GetField("EditorSafeBottom", BindingFlags.NonPublic | BindingFlags.Static);
+            bool keepOn = (bool)winOn.GetValue(null);
+            int keepW = (int)winW.GetValue(null);
+            int keepH = (int)winH.GetValue(null);
+            float keepTop = (float)safeTop.GetValue(null);
+            float keepBot = (float)safeBot.GetValue(null);
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var coach = typeof(FlockFiveApp).GetMethod("CoachTapAt", flags);
+                foreach (var size in new[] { new Vector2(820f, 1180f), new Vector2(402f, 874f), new Vector2(412f, 915f), new Vector2(360f, 800f) })
+                {
+                    winOn.SetValue(null, true);
+                    winW.SetValue(null, (int)size.x);
+                    winH.SetValue(null, (int)size.y);
+                    safeTop.SetValue(null, 59f);
+                    safeBot.SetValue(null, 34f);
+                    string bad = SampleTap(app, flags, coach, "rail", new Rect(size.x - 86f, 59f + 150f, 64f, 64f));
+                    Check("stationary-tap-" + (int)size.x, bad.Length == 0, bad);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Check("stationary-tap", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                winOn.SetValue(null, keepOn);
+                winW.SetValue(null, keepW);
+                winH.SetValue(null, keepH);
+                safeTop.SetValue(null, keepTop);
+                safeBot.SetValue(null, keepBot);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
         static void CheckBirdBeatsHomeGate(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("bird-beats-gate");
-            var prev = Event.current;
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
@@ -782,22 +826,12 @@ namespace FlockFive.Editor
                 t.GetField("_adoptPick", flags).SetValue(app, 0);
                 var shown = (Vector2[])t.GetField("_adoptShown", flags).GetValue(app);
                 shown[0] = new Vector2(220f, 280f);
-                var owns = t.GetMethod("AdoptLookOwnsTap", flags);
-                bool hit = (bool)owns.Invoke(app, new object[] { shown[0] });
-                var take = t.GetMethod("TakeGuiPointer", flags);
-                var birds = t.GetMethod("HitAdoptBirds", flags);
-                string who = "";
-                foreach (var kind in new[] { EventType.MouseDown, EventType.MouseUp })
-                {
-                    Event.current = new Event { type = kind, mousePosition = shown[0], button = 0 };
-                    take.Invoke(app, null);
-                    who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
-                    if (who == "home-gate") break;
-                    birds.Invoke(app, new object[] { 48f });
-                }
+                bool hit = (bool)t.GetMethod("AdoptLookOwnsTap", flags).Invoke(app, new object[] { shown[0] });
+                bool opened = (bool)t.GetMethod("TakeAdoptLookTap", flags).Invoke(app, new object[] { shown[0] });
                 bool named = (bool)t.GetField("_avatarRename", flags).GetValue(app);
-                Check("bird-tap-beats-home-gate", hit && who != "home-gate" && named,
-                    "owns " + hit + " who " + who + " rename " + named);
+                bool missed = (bool)t.GetMethod("TakeAdoptLookTap", flags).Invoke(app, new object[] { new Vector2(8f, 8f) });
+                Check("bird-tap-beats-home-gate", hit && opened && named && !missed,
+                    "owns " + hit + " opened " + opened + " rename " + named + " miss " + missed);
             }
             catch (System.Exception ex)
             {
@@ -805,7 +839,6 @@ namespace FlockFive.Editor
             }
             finally
             {
-                Event.current = prev;
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
@@ -813,24 +846,22 @@ namespace FlockFive.Editor
         static void CheckNotNowDuringOpen(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("not-now-open");
-            var prev = Event.current;
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
-                FlockFiveApp.DailyAskLayout(1f, out _, out _, out _, out var no);
+                var no = new Rect(80f, 420f, 120f, 48f);
                 t.GetField("_dailyAskOpen", flags).SetValue(app, true);
                 t.GetField("_dailyAskAt", flags).SetValue(app, AdPause.Unscaled);
-                var draw = t.GetMethod("DrawDailyAsk", flags);
-                Event.current = new Event { type = EventType.MouseDown, mousePosition = no.center, button = 0 };
-                try { draw.Invoke(app, new object[] { 1f }); }
-                catch (System.Reflection.TargetInvocationException) { }
-                Event.current = new Event { type = EventType.MouseUp, mousePosition = no.center, button = 0 };
-                try { draw.Invoke(app, new object[] { 1f }); }
-                catch (System.Reflection.TargetInvocationException) { }
+                bool took = (bool)t.GetMethod("TakeDailyAskNotNow", flags).Invoke(app, new object[] { no, no.center });
                 bool closed = !(bool)t.GetField("_dailyAskOpen", flags).GetValue(app);
-                Check("not-now-takes-first-tap", closed, "open " + !closed + " at " + no.center);
+                t.GetField("_dailyAskOpen", flags).SetValue(app, true);
+                t.GetField("_dailyAskAt", flags).SetValue(app, AdPause.Unscaled);
+                bool missed = (bool)t.GetMethod("TakeDailyAskNotNow", flags).Invoke(app, new object[] { no, new Vector2(4f, 4f) });
+                bool stayed = (bool)t.GetField("_dailyAskOpen", flags).GetValue(app);
+                Check("not-now-takes-first-tap", took && closed && !missed && stayed,
+                    "took " + took + " closed " + closed + " miss " + missed + " stayed " + stayed);
             }
             catch (System.Exception ex)
             {
@@ -838,7 +869,6 @@ namespace FlockFive.Editor
             }
             finally
             {
-                Event.current = prev;
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
@@ -846,23 +876,21 @@ namespace FlockFive.Editor
         static void CheckFivesClose(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("fives-close");
-            var prev = Event.current;
             try
             {
                 var app = go.AddComponent<FlockFiveApp>();
                 var t = typeof(FlockFiveApp);
                 var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
-                var geo = FlockFiveApp.LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, 1f);
-                var close = FlockFiveApp.FivesCloseRect(geo.Panel, 1f);
+                var geo = FlockFiveApp.LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, DeviceFit.Ui());
+                var close = FlockFiveApp.FivesCloseRect(geo.Panel, DeviceFit.Ui());
                 t.GetField("_fivesOpen", flags).SetValue(app, true);
-                t.GetField("_fivesAnim", flags).SetValue(app, 1f);
-                var tick = t.GetMethod("TickPokerFives", flags);
-                Event.current = new Event { type = EventType.MouseDown, mousePosition = close.center, button = 0 };
-                tick.Invoke(app, new object[] { new Rect(20f, 80f, 90f, 28f), 1f });
-                Event.current = new Event { type = EventType.MouseUp, mousePosition = close.center, button = 0 };
-                tick.Invoke(app, new object[] { new Rect(20f, 80f, 90f, 28f), 1f });
-                bool shut = !(bool)t.GetField("_fivesOpen", flags).GetValue(app);
-                Check("fives-close-x", close.width > 8f && shut, "rect " + close + " open " + !shut);
+                bool shut = (bool)t.GetMethod("TakeFivesClose", flags).Invoke(app, new object[] { close.center });
+                bool closed = !(bool)t.GetField("_fivesOpen", flags).GetValue(app);
+                t.GetField("_fivesOpen", flags).SetValue(app, true);
+                bool missed = (bool)t.GetMethod("TakeFivesClose", flags).Invoke(app, new object[] { new Vector2(4f, 4f) });
+                bool still = (bool)t.GetField("_fivesOpen", flags).GetValue(app);
+                Check("fives-close-x", close.width > 8f && shut && closed && !missed && still,
+                    "rect " + close + " shut " + shut + " closed " + closed + " miss " + missed);
             }
             catch (System.Exception ex)
             {
@@ -870,7 +898,6 @@ namespace FlockFive.Editor
             }
             finally
             {
-                Event.current = prev;
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
