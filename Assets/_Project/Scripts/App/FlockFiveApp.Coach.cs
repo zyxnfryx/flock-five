@@ -89,9 +89,10 @@ namespace FlockFive
         const float BeePlateSeconds = 8f;
         // Hawk waits out the sparrow line, then this long, so the two never share a frame.
         const float PestCueGap = 1.05f;
-        // One pointing-finger size for every glove draw. 94.4 is about 20% under
-        // the old 118px hand. Horizontal and upright poses share it.
-        public const float GlovePx = 94.4f;
+        // One pointing-finger size for every glove draw. 64 keeps the sideways
+        // hand inside a 360-wide play canvas and the 59/34 safe band. The old
+        // lesson hand was 94.4, itself about 20% under 118.
+        public const float GlovePx = 64f;
         public static float GloveSize(float s) => GlovePx * s;
         public static float GloveDh(float s) => GloveSize(s);
         static float GloveDrawW(float dh)
@@ -201,60 +202,66 @@ namespace FlockFive
                 }
             }
             bool preferLeft = target.center.x >= playW * 0.5f;
-            float y0 = Mathf.Max(target.yMin + 1f, top + 1f);
-            float y1 = Mathf.Min(target.yMax - 1f, bot - 1f);
-            if (y1 < y0)
-            {
-                y0 = Mathf.Clamp(target.center.y, top + 1f, Mathf.Max(top + 1f, bot - 1f));
-                y1 = y0;
-            }
-            var ys = new[]
-            {
-                Mathf.Clamp(target.center.y, y0, y1),
-                y0, y1, (y0 + y1) * 0.5f
-            };
-            CoachTapPose best = default;
-            float bestScore = float.MaxValue;
-            bool any = false;
-            for (int side = 0; side < 2; side++)
-            {
-                bool fromLeft = side == 0 ? preferLeft : !preferLeft;
-                for (int i = 0; i < ys.Length; i++)
-                {
-                    var pose = BuildCoachTap(target, fromLeft, ys[i], playW, playH);
-                    pose.Flipped = fromLeft != preferLeft;
-                    float score = CoachTapOverflow(pose.Glove, playW, top, bot, avoid, home, restart, giftX);
-                    if (!any || score < bestScore)
-                    {
-                        best = pose;
-                        bestScore = score;
-                        any = true;
-                    }
-                    if (score <= 0.5f) return pose;
-                }
-            }
-            return best;
+            bool fitPrefer = TryCoachTap(target, preferLeft, playW, playH, top, bot, avoid, home, restart, giftX, out var prefer, out float preferBad);
+            bool fitOther = TryCoachTap(target, !preferLeft, playW, playH, top, bot, avoid, home, restart, giftX, out var other, out float otherBad);
+            prefer.Flipped = false;
+            other.Flipped = true;
+            if (fitPrefer) return prefer;
+            if (fitOther) return other;
+            var pick = preferBad <= otherBad ? prefer : other;
+            Debug.Log("[coach-tap] neither side fits target " + target
+                + " preferLeft " + preferLeft
+                + " leftBad " + (preferLeft ? preferBad : otherBad).ToString("0.0")
+                + " rightBad " + (preferLeft ? otherBad : preferBad).ToString("0.0")
+                + " chose " + (pick.FromLeft ? "left" : "right"));
+            return pick;
         }
 
-        static CoachTapPose BuildCoachTap(Rect target, bool fromLeft, float y, float playW, float playH)
+        // The sprite hangs past the fingertip. Place the pivot so the leading
+        // bound touches the target edge and no pixel of the settled glove enters it.
+        static bool TryCoachTap(Rect target, bool fromLeft, float playW, float playH, float top, float bot,
+            Rect avoid, Rect home, Rect restart, Rect giftX, out CoachTapPose pose, out float bad)
         {
-            float xIn = fromLeft ? target.xMin + 1f : Mathf.Max(target.xMin + 1.5f, target.xMax - 1.01f);
-            var end = new Vector2(xIn, y);
-            var rest = end + new Vector2(fromLeft ? -CoachTapPressPx : CoachTapPressPx, 0f);
             float s = DeviceFit.Ui(playW, playH);
-            var landed = TapGloveBox(end, fromLeft, s);
-            var held = TapGloveBox(rest, fromLeft, s);
-            return new CoachTapPose
+            var probe = TapGloveBox(Vector2.zero, fromLeft, s);
+            float past = fromLeft ? probe.xMax : -probe.xMin;
+            float back = fromLeft ? -probe.xMin : probe.xMax;
+            float above = -probe.yMin;
+            float below = probe.yMax;
+            float contact = fromLeft ? target.xMin - 0.05f : target.xMax + 0.05f;
+            float pivotX = fromLeft ? contact - past : contact + past;
+            float yLo = Mathf.Max(target.yMin, top + above);
+            float yHi = Mathf.Min(target.yMax, bot - below);
+            bool yOnEdge = yHi >= yLo - 0.01f;
+            float y = yOnEdge
+                ? Mathf.Clamp(target.center.y, yLo, yHi)
+                : Mathf.Clamp(target.center.y, top + above, Mathf.Max(top + above, bot - below));
+            var end = new Vector2(pivotX, y);
+            var rest = end + new Vector2((fromLeft ? -1f : 1f) * CoachTapPressPx, 0f);
+            var glove = TapGloveBox(end, fromLeft, s);
+            float x0 = 0f;
+            bad = 0f;
+            if (glove.xMin < x0) bad += x0 - glove.xMin;
+            if (glove.yMin < top) bad += top - glove.yMin;
+            if (glove.xMax > playW) bad += glove.xMax - playW;
+            if (glove.yMax > bot) bad += glove.yMax - bot;
+            if (bad > 0.01f) bad += 5000f;
+            bad += CoachTapOverlap(glove, avoid);
+            bad += CoachTapOverlap(glove, home);
+            bad += CoachTapOverlap(glove, restart);
+            bad += CoachTapOverlap(glove, giftX);
+            bad += CoachTapOverlap(glove, target) * 4f;
+            if (!yOnEdge) bad += 1000f;
+            pose = new CoachTapPose
             {
                 FromLeft = fromLeft,
                 Mirror = fromLeft,
                 Angle = ClampUpright(fromLeft),
                 Rest = rest,
                 End = end,
-                Glove = Rect.MinMaxRect(
-                    Mathf.Min(landed.xMin, held.xMin), Mathf.Min(landed.yMin, held.yMin),
-                    Mathf.Max(landed.xMax, held.xMax), Mathf.Max(landed.yMax, held.yMax))
+                Glove = glove
             };
+            return bad <= 0.5f;
         }
 
         static Rect TapGloveBox(Vector2 tip, bool fromLeft, float s)
@@ -262,20 +269,6 @@ namespace FlockFive
             float dh = GloveSize(s);
             GloveSpan(tip, ClampUpright(fromLeft), dh, 0f, fromLeft, out float x0, out float y0, out float x1, out float y1);
             return Rect.MinMaxRect(x0, y0, x1, y1);
-        }
-
-        static float CoachTapOverflow(Rect box, float playW, float top, float bot, Rect avoid, Rect home, Rect restart, Rect giftX)
-        {
-            float over = 0f;
-            if (box.xMin < 0f) over += -box.xMin;
-            if (box.yMin < top) over += top - box.yMin;
-            if (box.xMax > playW) over += box.xMax - playW;
-            if (box.yMax > bot) over += box.yMax - bot;
-            over += CoachTapOverlap(box, avoid);
-            over += CoachTapOverlap(box, home);
-            over += CoachTapOverlap(box, restart);
-            over += CoachTapOverlap(box, giftX);
-            return over;
         }
 
         static float CoachTapOverlap(Rect a, Rect b)

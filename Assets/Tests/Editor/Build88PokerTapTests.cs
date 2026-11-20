@@ -172,7 +172,12 @@ namespace FlockFive.Editor
                     path.Append(tip.x.ToString("0")).Append(',').Append(tip.y.ToString("0")).Append(' ');
                     if (dip >= bestDip) { bestDip = dip; settled = tip; }
                 }
-                onRail = rail.Contains(settled) && bestDip > 0.9f;
+                var railPose = FlockFiveApp.CoachTapSide(rail, new Rect(rail.x, rail.yMax + 12f, rail.width, 36f),
+                    PhoneArea.W, PhoneArea.H, PhoneArea.Safe, default, default, default);
+                bool touch = railPose.FromLeft
+                    ? Mathf.Abs(railPose.Glove.xMax - rail.xMin) <= 1.2f
+                    : Mathf.Abs(railPose.Glove.xMin - rail.xMax) <= 1.2f;
+                onRail = touch && bestDip > 0.9f && Mathf.Abs(settled.x - railPose.End.x) < 1.5f;
                 Debug.Log("[coach-tap] poker-rail start " + start + " path " + path
                     + " end " + settled + " dip " + bestDip.ToString("0.00"));
                 Check("poker-cue-fingertip-on-rail", onRail, rail + " end " + settled);

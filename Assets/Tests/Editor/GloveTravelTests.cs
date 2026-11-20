@@ -69,8 +69,12 @@ namespace FlockFive.Editor
                         span = Mathf.Max(span, (tip - start).magnitude);
                         if (dip >= bestDip) { bestDip = dip; end = tip; }
                     }
-                    bool onEdge = target.Contains(end) && !label.Contains(end);
-                    bool poke = span <= FlockFiveApp.CoachTapPressPx + 1.5f && Mathf.Abs(start.y - end.y) < 1.5f;
+                    var pose = FlockFiveApp.CoachTapSide(target, label, PhoneArea.W, PhoneArea.H, PhoneArea.Safe, default, default, default);
+                    bool touch = pose.FromLeft
+                        ? Mathf.Abs(pose.Glove.xMax - target.xMin) <= 1.2f
+                        : Mathf.Abs(pose.Glove.xMin - target.xMax) <= 1.2f;
+                    bool onEdge = touch && Mathf.Abs(end.x - pose.End.x) < 1.5f && !label.Contains(pose.End);
+                    bool poke = span <= FlockFiveApp.CoachTapPressPx + 0.6f && Mathf.Abs(start.y - end.y) < 1.5f;
                     Debug.Log("[coach-tap] travel " + (int)size.x
                         + " start " + start + " path " + path + " end " + end + " dip " + bestDip.ToString("0.00"));
                     Check("stationary-tap-" + (int)size.x, vis && onEdge && poke && bestDip > 0.9f,
