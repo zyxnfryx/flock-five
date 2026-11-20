@@ -217,31 +217,37 @@ namespace FlockFive
             return pick;
         }
 
-        // The sprite hangs past the fingertip. Place the pivot so the leading
-        // bound touches the target edge and no pixel of the settled glove enters it.
+        // The sprite hangs past the fingertip, and the press widens it. Place the
+        // pivot so the deepest dip touches the target edge, and every frame of
+        // the poke (rest, path, dip, settle) stays inside the safe band.
         static bool TryCoachTap(Rect target, bool fromLeft, float playW, float playH, float top, float bot,
             Rect avoid, Rect home, Rect restart, Rect giftX, out CoachTapPose pose, out float bad)
         {
             float s = DeviceFit.Ui(playW, playH);
-            var probe = TapGloveBox(Vector2.zero, fromLeft, s);
-            float past = fromLeft ? probe.xMax : -probe.xMin;
-            float back = fromLeft ? -probe.xMin : probe.xMax;
-            float above = -probe.yMin;
-            float below = probe.yMax;
+            MeasureTap(fromLeft, s, 1f, out float pastPress, out float backPress, out float abovePress, out float belowPress);
+            MeasureTap(fromLeft, s, 0f, out float pastRest, out float backRest, out float aboveRest, out float belowRest);
+            float above = Mathf.Max(abovePress, aboveRest);
+            float below = Mathf.Max(belowPress, belowRest);
+            float back = Mathf.Max(backPress, backRest);
             float contact = fromLeft ? target.xMin - 0.05f : target.xMax + 0.05f;
-            float pivotX = fromLeft ? contact - past : contact + past;
+            float endX = fromLeft ? contact - pastPress : contact + pastPress;
             float yLo = Mathf.Max(target.yMin, top + above);
             float yHi = Mathf.Min(target.yMax, bot - below);
             bool yOnEdge = yHi >= yLo - 0.01f;
             float y = yOnEdge
                 ? Mathf.Clamp(target.center.y, yLo, yHi)
                 : Mathf.Clamp(target.center.y, top + above, Mathf.Max(top + above, bot - below));
-            var end = new Vector2(pivotX, y);
-            var rest = end + new Vector2((fromLeft ? -1f : 1f) * CoachTapPressPx, 0f);
-            var glove = TapGloveBox(end, fromLeft, s);
-            float x0 = 0f;
+            var end = new Vector2(endX, y);
+            float outward = fromLeft ? endX - back : playW - (endX + back);
+            float need = Mathf.Max(0f, pastRest - pastPress);
+            bool pokeFits = outward + 0.01f >= need;
+            float press = pokeFits
+                ? Mathf.Clamp(CoachTapPressPx, need, Mathf.Max(need, outward))
+                : Mathf.Max(0f, outward);
+            var rest = end + new Vector2((fromLeft ? -1f : 1f) * press, 0f);
+            var glove = PokeBounds(rest, end, fromLeft, s);
             bad = 0f;
-            if (glove.xMin < x0) bad += x0 - glove.xMin;
+            if (glove.xMin < 0f) bad += -glove.xMin;
             if (glove.yMin < top) bad += top - glove.yMin;
             if (glove.xMax > playW) bad += glove.xMax - playW;
             if (glove.yMax > bot) bad += glove.yMax - bot;
@@ -251,7 +257,7 @@ namespace FlockFive
             bad += CoachTapOverlap(glove, restart);
             bad += CoachTapOverlap(glove, giftX);
             bad += CoachTapOverlap(glove, target) * 4f;
-            if (!yOnEdge) bad += 1000f;
+            if (!yOnEdge || !pokeFits) bad += 1000f;
             pose = new CoachTapPose
             {
                 FromLeft = fromLeft,
@@ -264,10 +270,52 @@ namespace FlockFive
             return bad <= 0.5f;
         }
 
-        static Rect TapGloveBox(Vector2 tip, bool fromLeft, float s)
+        static void MeasureTap(bool fromLeft, float s, float dip, out float past, out float back, out float above, out float below)
+        {
+            var box = TapGloveBox(Vector2.zero, fromLeft, s, dip);
+            if (fromLeft)
+            {
+                past = box.xMax;
+                back = -box.xMin;
+            }
+            else
+            {
+                past = -box.xMin;
+                back = box.xMax;
+            }
+            above = -box.yMin;
+            below = box.yMax;
+        }
+
+        // Rest, the press, and the points between them. This is the box the tests clamp.
+        static Rect PokeBounds(Vector2 rest, Vector2 end, bool fromLeft, float s)
+        {
+            var box = TapGloveBox(rest, fromLeft, s, 0f);
+            for (int i = 1; i <= 4; i++)
+            {
+                float dip = i / 4f;
+                var pivot = Vector2.Lerp(rest, end, dip);
+                box = Encapsulate(box, TapGloveBox(pivot, fromLeft, s, dip));
+            }
+            return box;
+        }
+
+        static Rect Encapsulate(Rect a, Rect b)
+        {
+            return Rect.MinMaxRect(
+                Mathf.Min(a.xMin, b.xMin), Mathf.Min(a.yMin, b.yMin),
+                Mathf.Max(a.xMax, b.xMax), Mathf.Max(a.yMax, b.yMax));
+        }
+
+        public static Rect CoachTapFrameBox(Vector2 pivot, bool fromLeft, float dip, float playW, float playH)
+        {
+            return TapGloveBox(pivot, fromLeft, DeviceFit.Ui(playW, playH), dip);
+        }
+
+        static Rect TapGloveBox(Vector2 tip, bool fromLeft, float s, float dip)
         {
             float dh = GloveSize(s);
-            GloveSpan(tip, ClampUpright(fromLeft), dh, 0f, fromLeft, out float x0, out float y0, out float x1, out float y1);
+            GloveSpan(tip, ClampUpright(fromLeft), dh, dip, fromLeft, out float x0, out float y0, out float x1, out float y1);
             return Rect.MinMaxRect(x0, y0, x1, y1);
         }
 

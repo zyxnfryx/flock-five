@@ -98,6 +98,7 @@ namespace FlockFive.Editor
             CheckFirstGardenGloves(Check);
             CheckCoachTapEdgeFlip(Check);
             CheckGloveClearance(Check);
+            CheckGloveDipFrames(Check);
             CheckStationaryTaps(Check);
             CheckBirdBeatsHomeGate(Check);
             CheckNotNowDuringOpen(Check);
@@ -702,6 +703,106 @@ namespace FlockFive.Editor
                 // A real entry reaches GUI calls. Outside the player loop those throw
                 // after the owner check has already counted the pass.
             }
+        }
+
+        static void CheckGloveDipFrames(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("glove-dip-frames");
+            var winOn = typeof(PhoneArea).GetField("EditorWindowOn", BindingFlags.NonPublic | BindingFlags.Static);
+            var winW = typeof(PhoneArea).GetField("EditorWindowW", BindingFlags.NonPublic | BindingFlags.Static);
+            var winH = typeof(PhoneArea).GetField("EditorWindowH", BindingFlags.NonPublic | BindingFlags.Static);
+            var safeTop = typeof(PhoneArea).GetField("EditorSafeTop", BindingFlags.NonPublic | BindingFlags.Static);
+            var safeBot = typeof(PhoneArea).GetField("EditorSafeBottom", BindingFlags.NonPublic | BindingFlags.Static);
+            bool keepOn = (bool)winOn.GetValue(null);
+            int keepW = (int)winW.GetValue(null);
+            int keepH = (int)winH.GetValue(null);
+            float keepTop = (float)safeTop.GetValue(null);
+            float keepBot = (float)safeBot.GetValue(null);
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var coach = typeof(FlockFiveApp).GetMethod("CoachTapAt", flags);
+                var t = typeof(FlockFiveApp);
+                string[] sites = { "branch", "bird", "daily", "claim", "deal", "back", "poker", "watch", "play" };
+                foreach (var size in new[] { new Vector2(820f, 1180f), new Vector2(402f, 874f), new Vector2(412f, 915f), new Vector2(360f, 800f) })
+                {
+                    winOn.SetValue(null, true);
+                    winW.SetValue(null, (int)size.x);
+                    winH.SetValue(null, (int)size.y);
+                    safeTop.SetValue(null, 59f);
+                    safeBot.SetValue(null, 34f);
+                    float w = PhoneArea.W;
+                    float h = PhoneArea.H;
+                    float top = 59f;
+                    float bot = h - 34f;
+                    string bad = "";
+                    for (int n = 0; n < sites.Length; n++)
+                        bad += SweepPoke(app, t, flags, coach, sites[n], FlockFiveApp.CoachTapSiteRect(sites[n], w, h), FlockFiveApp.CoachTapLabel(FlockFiveApp.CoachTapSiteRect(sites[n], w, h)), w, h, top, bot);
+                    float reach = FlockFiveApp.GloveSize(DeviceFit.Ui(w, h));
+                    bad += SweepEdge(app, t, flags, coach, "left", new Rect(reach + 12f, top + 160f, 72f, 64f), w, h, top, bot);
+                    bad += SweepEdge(app, t, flags, coach, "right", new Rect(w - reach - 84f, top + 160f, 72f, 64f), w, h, top, bot);
+                    bad += SweepEdge(app, t, flags, coach, "top", new Rect(w * 0.5f + 24f, top + 4f, 80f, 150f), w, h, top, bot);
+                    bad += SweepEdge(app, t, flags, coach, "bottom", new Rect(w * 0.28f, bot - 154f, 72f, 140f), w, h, top, bot);
+                    Check("glove-dip-frame-in-safe-" + (int)size.x, bad.Length == 0, bad);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Check("glove-dip-frame-in-safe", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                winOn.SetValue(null, keepOn);
+                winW.SetValue(null, keepW);
+                winH.SetValue(null, keepH);
+                safeTop.SetValue(null, keepTop);
+                safeBot.SetValue(null, keepBot);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static string SweepEdge(FlockFiveApp app, System.Type t, BindingFlags flags, System.Reflection.MethodInfo coach,
+            string name, Rect target, float w, float h, float top, float bot)
+        {
+            bool preferLeft = target.center.x >= w * 0.5f;
+            var wall = preferLeft
+                ? new Rect(0f, top, Mathf.Max(4f, target.xMin + 2f), Mathf.Max(4f, bot - top))
+                : new Rect(target.xMax - 2f, top, Mathf.Max(4f, w - (target.xMax - 2f)), Mathf.Max(4f, bot - top));
+            return SweepPoke(app, t, flags, coach, name, target, wall, w, h, top, bot);
+        }
+
+        static string SweepPoke(FlockFiveApp app, System.Type t, BindingFlags flags, System.Reflection.MethodInfo coach,
+            string name, Rect target, Rect avoid, float w, float h, float top, float bot)
+        {
+            t.GetField("_coachTapOn", flags).SetValue(app, false);
+            t.GetField("_glovePhase", flags).SetValue(app, 0f);
+            t.GetField("_coachFade", flags).SetValue(app, 1f);
+            float bestDip = -1f;
+            bool settledIn = false;
+            bool settledClear = false;
+            string bad = "";
+            for (int frame = 0; frame < 24; frame++)
+            {
+                coach.Invoke(app, new object[] { target, avoid, 0.06f, null });
+                var tip = (Vector2)t.GetField("_gloveShown", flags).GetValue(app);
+                float dip = (float)t.GetField("_gloveDip", flags).GetValue(app);
+                bool fromLeft = (bool)t.GetField("_gloveMirror", flags).GetValue(app);
+                var box = FlockFiveApp.CoachTapFrameBox(tip, fromLeft, dip, w, h);
+                bool inside = GloveInside(box, w, top, bot);
+                bool covers = GloveCovers(box, target);
+                if (!inside || covers)
+                    bad += name + " f" + frame + " dip " + dip.ToString("0.00") + " " + box + "; ";
+                if (dip >= bestDip)
+                {
+                    bestDip = dip;
+                    settledIn = inside;
+                    settledClear = !covers;
+                }
+            }
+            if (bestDip > 0.9f && settledIn && settledClear && bad.Length == 0) return "";
+            return bad + name + " settled dip " + bestDip.ToString("0.00")
+                + " in " + settledIn + " clear " + settledClear + "; ";
         }
 
         static void CheckGloveClearance(System.Action<string, bool, string> Check)
