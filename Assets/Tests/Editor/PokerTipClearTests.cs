@@ -132,10 +132,13 @@ namespace FlockFive.Editor
                 int live = coach.IndexOf("if (_pokerIntroLive)");
                 int daily = coach.IndexOf("if (_dailyIntroLive)", live);
                 string body = live >= 0 && daily > live ? coach.Substring(live, daily - live) : "";
+                int bannerAt = body.IndexOf("NoteTutorPlate(PokerIntroTipBand(");
+                int railTap = body.IndexOf("CoachTapAt(box,");
                 Check("poker step notes the banner before the glove",
-                    body.IndexOf("NoteTutorPlate(PokerIntroTipBand(") > 0
-                    && body.IndexOf("PokerGloveFromLeft") > body.IndexOf("NoteTutorPlate(PokerIntroTipBand("),
-                    "");
+                    bannerAt > 0
+                    && railTap > bannerAt
+                    && body.Contains("SplashPokerRect()"),
+                    "banner " + bannerAt + " rail " + railTap);
             }
             catch (System.Exception ex)
             {

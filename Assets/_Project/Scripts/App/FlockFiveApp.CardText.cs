@@ -42,7 +42,8 @@ namespace FlockFive
                 DrawBlock(flavorR, flavor, scale.Flavor, false, flavorFloor, ink, flavorLead, flavorHi);
             }
 
-            // Flip side: name, flavor, then honeycombs only (2 / 3 / 5 by finish).
+            // Flip side: name, flavor, then honeycombs. Rarity starts at 2 / 3 / 5.
+            // Each upgrade adds one comb (HoneyOfSlot), up to 3 / 5 / 8.
             // No text chips, stars, or Owned line — those fought the flavor on inspect.
             public static void DrawBack(
                 Rect face, string title, string flavor, int honey, Color tint, BeeFinish finish,
@@ -50,7 +51,7 @@ namespace FlockFive
             {
                 var scale = full ? Full : Mid;
                 bool showHoney = honey > 0;
-                Split(face, showHoney, scale, out var titleR, out var flavorR, out var honeyR, out _, out _);
+                Split(face, showHoney, scale, out var titleR, out var flavorR, out var honeyR, out _, out _, honey);
                 var ink = CardArt.TextInk;
                 CopyArgs(full, true, out int titleFloor, out float titleLead, out int flavorFloor, out float flavorLead, out float flavorRatio);
                 int titlePx = DrawBlock(titleR, title, scale.Title, true, titleFloor, ink, titleLead);
@@ -65,38 +66,78 @@ namespace FlockFive
             public static void DrawHoney(Rect face, int honey, Color tint, BeeFinish finish, bool full)
             {
                 if (honey <= 0) return;
-                Split(face, true, full ? Full : Mid, out _, out _, out var honeyR, out _, out _);
+                Split(face, true, full ? Full : Mid, out _, out _, out var honeyR, out _, out _, honey);
                 DrawHoneyRow(honeyR, honey, tint, finish, full);
             }
 
-            // Shared honeycomb attributes: N hex tiles from HoneyOfFinish (2/3/5).
+            // Shared honeycomb attributes: one hex per honey point (rarity plus upgrades).
             // HoneyArt is the one juicy cell (cards, badger tiles, the meter).
             // Honey cells DrawBack paints, in the face's space. Inspect hit tests these (b103 smudge).
             public static int HoneyBand(Rect face, int honey, bool full, Rect[] into)
             {
                 if (honey <= 0 || into == null) return 0;
-                Split(face, true, full ? Full : Mid, out _, out _, out var honeyR, out _, out _);
+                Split(face, true, full ? Full : Mid, out _, out _, out var honeyR, out _, out _, honey);
                 return HoneyCells(honeyR, honey, full, into);
+            }
+
+            // One centered row through 5, the wide row the backs already use.
+            // 6 is 3+3, 7 is 3 over 4, 8 is 4+4. No leftover comb on the end of a longer row.
+            public const float HoneyBandSingle = 0.24f;
+            public const float HoneyBandDouble = 0.34f;
+
+            public static int HoneyShown(int honey)
+            {
+                if (honey < 1) return 0;
+                int cap = HoneyPoke.Cap > 0 ? HoneyPoke.Cap : 8;
+                return honey > cap ? cap : honey;
+            }
+
+            public static bool HoneyTwoRows(int honey) => HoneyShown(honey) >= 6;
+
+            // Top row, then the bottom row. A one-row count leaves bottom at 0.
+            public static void HoneyRows(int honey, out int top, out int bottom)
+            {
+                int n = HoneyShown(honey);
+                bottom = 0;
+                if (n <= 5) { top = n; return; }
+                if (n == 6) { top = 3; bottom = 3; return; }
+                if (n == 7) { top = 3; bottom = 4; return; }
+                if (n == 8) { top = 4; bottom = 4; return; }
+                top = n / 2;
+                bottom = n - top;
+                if (bottom < top) { int s = top; top = bottom; bottom = s; }
             }
 
             // Same cells DrawHoneyRow paints. Drips stay inside each rect.
             public static int HoneyCells(Rect zone, int honey, bool full, Rect[] into)
             {
                 if (into == null || into.Length == 0) return 0;
-                if (!LayoutHoney(zone, honey, full, out float x, out float y, out float cellW, out float cellH, out float gap, out int n))
-                    return 0;
+                HoneyRows(honey, out int top, out int bottom);
+                int n = top + bottom;
+                if (n <= 0 || zone.height < 8f || zone.width < 8f) return 0;
                 int wrote = n < into.Length ? n : into.Length;
-                for (int i = 0; i < wrote; i++)
-                    into[i] = new Rect(x + i * (cellW + gap), y, cellW, cellH);
-                return wrote;
+                if (bottom <= 0)
+                {
+                    if (!LayoutHoneyRow(zone, top, full, out float x, out float y, out float cellW, out float cellH, out float gap))
+                        return 0;
+                    int rowN = top < wrote ? top : wrote;
+                    for (int i = 0; i < rowN; i++)
+                        into[i] = new Rect(x + i * (cellW + gap), y, cellW, cellH);
+                    return rowN;
+                }
+                if (!LayoutHoneyStack(zone, top, bottom, full, out float cellW2, out float cellH2, out float gap2, out float rowGap, out float yTop))
+                    return 0;
+                int at = 0;
+                PlaceHoneyRow(into, ref at, wrote, zone.center.x, yTop, top, cellW2, cellH2, gap2);
+                PlaceHoneyRow(into, ref at, wrote, zone.center.x, yTop + cellH2 + rowGap, bottom, cellW2, cellH2, gap2);
+                return at;
             }
 
-            static bool LayoutHoney(Rect zone, int honey, bool full, out float x, out float y, out float cellW, out float cellH, out float gap, out int n)
+            // The 2 / 3 / 5 row, and 4 beside them: one line, centered, sized to the band.
+            static bool LayoutHoneyRow(Rect zone, int n, bool full, out float x, out float y, out float cellW, out float cellH, out float gap)
             {
                 x = y = cellW = cellH = gap = 0f;
-                n = 0;
-                if (honey <= 0 || zone.height < 8f || zone.width < 8f) return false;
-                n = honey > 5 ? 5 : honey;
+                if (n <= 0 || zone.height < 8f || zone.width < 8f) return false;
                 gap = Mathf.Max(3f, zone.width * 0.02f);
                 cellH = zone.height * (full ? 0.96f : 0.92f);
                 cellW = cellH * (96f / 111f) * 0.78f;
@@ -114,20 +155,55 @@ namespace FlockFive
                 return true;
             }
 
+            // Two even rows in the taller band. Same comb, same gap, each row centered.
+            static bool LayoutHoneyStack(Rect zone, int top, int bottom, bool full,
+                out float cellW, out float cellH, out float gap, out float rowGap, out float yTop)
+            {
+                cellW = cellH = gap = rowGap = yTop = 0f;
+                if (top <= 0 || bottom <= 0 || zone.height < 8f || zone.width < 8f) return false;
+                gap = Mathf.Max(3f, zone.width * 0.02f);
+                rowGap = gap;
+                float inner = zone.height * (full ? 0.96f : 0.92f);
+                cellH = (inner - rowGap) * 0.5f;
+                if (cellH < 4f) return false;
+                cellW = cellH * (96f / 111f) * 0.78f;
+                int wide = top > bottom ? top : bottom;
+                float rowW = wide * cellW + (wide - 1) * gap;
+                if (rowW > zone.width)
+                {
+                    float k = zone.width / rowW;
+                    cellW *= k;
+                    cellH *= k;
+                    gap *= k;
+                    rowGap *= k;
+                }
+                float stack = cellH * 2f + rowGap;
+                yTop = zone.center.y - stack * 0.5f;
+                return true;
+            }
+
+            static void PlaceHoneyRow(Rect[] into, ref int at, int wrote, float centerX, float y, int count, float cellW, float cellH, float gap)
+            {
+                if (count <= 0 || at >= wrote) return;
+                float rowW = count * cellW + (count - 1) * gap;
+                float x = centerX - rowW * 0.5f;
+                for (int i = 0; i < count && at < wrote; i++)
+                    into[at++] = new Rect(x + i * (cellW + gap), y, cellW, cellH);
+            }
+
+            static readonly Rect[] _honeyDraw = new Rect[HoneyPoke.Cap];
+
             public static void DrawHoneyRow(Rect zone, int honey, Color tint, BeeFinish finish, bool full)
             {
-                if (!LayoutHoney(zone, honey, full, out float x, out float y, out float cellW, out float cellH, out float gap, out int n))
-                    return;
+                int n = HoneyCells(zone, honey, full, _honeyDraw);
+                if (n <= 0) return;
                 Color rim = HoneyRim.For(finish);
                 rim.a = tint.a <= 0f ? 1f : tint.a;
                 // Drips hang from the hex tip and stay inside the honey zone.
                 // The full inspect stretches a drip on a 3s loop. The grid stays still.
                 float now = full ? AdPause.Unscaled : 0f;
                 for (int i = 0; i < n; i++)
-                {
-                    var hex = new Rect(x + i * (cellW + gap), y, cellW, cellH);
-                    HoneyArt.DrawJuicyCell(hex, rim, now, 1f, i, true, full, true);
-                }
+                    HoneyArt.DrawJuicyCell(_honeyDraw[i], rim, now, 1f, i, true, full, true);
             }
 
             // Legacy text chips kept for any non-album caller; empty slots draw nothing.
@@ -219,7 +295,8 @@ namespace FlockFive
 
             static void Split(
                 Rect face, bool attrs, Scale scale,
-                out Rect titleR, out Rect flavorR, out Rect attrR, out Rect starR, out Rect ownR)
+                out Rect titleR, out Rect flavorR, out Rect attrR, out Rect starR, out Rect ownR,
+                int honeyCount = 0)
             {
                 // 8% inner padding. Title (2 lines) and flavor (3 lines) are separate bands.
                 float padX = face.width * 0.08f;
@@ -243,7 +320,13 @@ namespace FlockFive
                     return;
                 }
                 // Honey owns the bottom band. Flavor stops above it, with a gap.
-                float attrH = Mathf.Clamp(face.height * 0.24f, 18f, Mathf.Max(18f, midBot - midTop - gap));
+                // One row keeps the 2 / 3 / 5 band. Two rows grow upward, not into the title
+                // and not past the card edge (the MAXXED control and the tap hint sit below the card).
+                bool two = HoneyTwoRows(honeyCount);
+                float frac = two ? HoneyBandDouble : HoneyBandSingle;
+                float flavorKeep = two ? face.height * 0.10f : 0f;
+                float room = midBot - midTop - gap - flavorKeep;
+                float attrH = Mathf.Clamp(face.height * frac, 18f, Mathf.Max(18f, room));
                 attrR = new Rect(x, midBot - attrH, w, attrH);
                 float flavorH2 = Mathf.Max(8f, attrR.y - gap - midTop);
                 flavorR = new Rect(x, midTop, w, flavorH2);
@@ -979,13 +1062,13 @@ namespace FlockFive
             // Title, flavor, and the honey icon band for a lesson that points at this card.
             // Body is empty: these faces have no third text block. Honey is icons, not text.
             public static void LessonBands(Rect card, bool full, bool back, bool honey,
-                out Rect title, out Rect body, out Rect flavor, out Rect icons)
+                out Rect title, out Rect body, out Rect flavor, out Rect icons, int honeyCount = 0)
             {
                 body = default;
                 icons = default;
                 var face = FaceOf(card);
                 var host = back ? face : TextFaceOf(face, full);
-                Split(host, back && honey, full ? Full : Mid, out title, out flavor, out icons, out _, out _);
+                Split(host, back && honey, full ? Full : Mid, out title, out flavor, out icons, out _, out _, honey ? honeyCount : 0);
                 if (!(back && honey)) icons = default;
             }
 
@@ -998,10 +1081,10 @@ namespace FlockFive
             // Title and flavor inside an already-inset face. The bake and the live
             // draw share this so a stretched flip matches the settled lines.
             public static void FaceBands(Rect face, bool full, bool back, bool honey,
-                out Rect title, out Rect flavor)
+                out Rect title, out Rect flavor, int honeyCount = 0)
             {
                 var host = back ? face : TextFaceOf(face, full);
-                Split(host, back && honey, full ? Full : Mid, out title, out flavor, out _, out _, out _);
+                Split(host, back && honey, full ? Full : Mid, out title, out flavor, out _, out _, out _, honey ? honeyCount : 0);
             }
 
             // Top band of the face, inner width, tall enough for two wrapped lines.

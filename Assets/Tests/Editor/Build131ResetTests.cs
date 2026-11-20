@@ -48,6 +48,23 @@ namespace FlockFive.Editor
                     "restart " + rs.xMin.ToString("0") + "," + rs.yMin.ToString("0") + " " + rs.width.ToString("0") + "px yMax " + rs.yMax.ToString("0")
                     + " fieldTop " + field.ToString("0") + " hudTop " + hudTop.ToString("0"));
 
+                // Restart's right edge is the hive halo (plate is InsetRef * scale inside safe.xMax,
+                // halo is HiveGlowPadFrac past the plate), so the button is not flush with the glass
+                // and does not move when the hive appears.
+                float sc = DeviceFit.Ui(w, h);
+                float edge = CornerAnchor.RightEdge(w, safe, sc);
+                float art = CornerAnchor.HiveArtRight(hv);
+                float halo = hv.width * CornerAnchor.HiveGlowPadFrac;
+                float inset = safe.xMax - rs.xMax;
+                bool aligned = Mathf.Abs(rs.xMax - art) <= 0.51f
+                    && Mathf.Abs(hv.xMax - edge) <= 0.51f
+                    && Mathf.Abs(inset - (CornerAnchor.InsetRef * sc - halo)) <= 0.51f
+                    && inset >= 24f;
+                Check("restart shares hive halo " + tag, aligned,
+                    "restartX " + rs.xMax.ToString("0.0") + " hivePlate " + hv.xMax.ToString("0.0")
+                    + " halo " + art.ToString("0.0")
+                    + " inset " + inset.ToString("0.0") + " want " + (CornerAnchor.InsetRef * sc - halo).ToString("0.0"));
+
                 // Hit order (HitHud then HitBranch / HitFeeder), pure geometry at this size.
                 float tall = CornerAnchor.TallFor(w, h);
                 float topNorm = (h - safe.yMax) / h;

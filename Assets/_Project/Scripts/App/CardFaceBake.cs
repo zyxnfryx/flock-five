@@ -17,6 +17,7 @@ namespace FlockFive
             public bool Full;
             public bool Back;
             public bool Honey;
+            public int HoneyCount;
             public Color Ink;
             public Color FinishInk;
             // Themed card: nameplate ribbon under the title and a rim around the lettering (matches the live path).
@@ -44,7 +45,7 @@ namespace FlockFive
         // the flip must stretch the wide bake instead of fitting the squashed rect.
         public static string FlavorJoined(Rect face, string title, string flavor, bool full, bool back, bool honey)
         {
-            Layout(face, title, flavor, full, back, honey, out _, out _, out _, out _, out var flavorFit);
+            Layout(face, title, flavor, full, back, honey, 0, out _, out _, out _, out _, out var flavorFit);
             return Join(flavorFit.Lines);
         }
 
@@ -55,7 +56,7 @@ namespace FlockFive
             if (req.Width > 720) req.Width = 720;
             if (req.Height > 1024) req.Height = 1024;
             string key = req.Width + "x" + req.Height
-                + (req.Full ? "F" : "M") + (req.Back ? "B" : "A") + (req.Honey ? "H" : "h")
+                + (req.Full ? "F" : "M") + (req.Back ? "B" : "A") + (req.Honey ? "H" + req.HoneyCount : "h")
                 + "|" + req.Title + "|" + req.Flavor + "|" + req.Finish
                 + "|" + ColorKey(req.Ink) + "|" + ColorKey(req.FinishInk)
                 + (req.Themed ? "|T" + ColorKey(req.InkOuter) : "");
@@ -67,7 +68,7 @@ namespace FlockFive
             }
 
             var face = new Rect(0f, 0f, req.Width, req.Height);
-            Layout(face, req.Title, req.Flavor, req.Full, req.Back, req.Honey,
+            Layout(face, req.Title, req.Flavor, req.Full, req.Back, req.Honey, req.HoneyCount,
                 out var titleR, out var flavorR, out var finishR, out var titleFit, out var flavorFit);
             var finishFit = string.IsNullOrEmpty(req.Finish)
                 ? default
@@ -117,11 +118,11 @@ namespace FlockFive
             return new Page { Tex = tex, TitleLines = _title[slot], FlavorLines = _flavor[slot] };
         }
 
-        static void Layout(Rect face, string title, string flavor, bool full, bool back, bool honey,
+        static void Layout(Rect face, string title, string flavor, bool full, bool back, bool honey, int honeyCount,
             out Rect titleR, out Rect flavorR, out Rect finishR,
             out FlockFiveApp.CardText.Fitted titleFit, out FlockFiveApp.CardText.Fitted flavorFit)
         {
-            FlockFiveApp.CardText.FaceBands(face, full, back, honey, out titleR, out flavorR);
+            FlockFiveApp.CardText.FaceBands(face, full, back, honey, out titleR, out flavorR, honeyCount);
             finishR = FlockFiveApp.CardText.FinishOf(face, full);
             FlockFiveApp.CardText.CopyArgs(full, back, out int titleFloor, out float titleLead, out int flavorFloor, out float flavorLead, out float flavorRatio);
             titleFit = FlockFiveApp.CardText.Fit(titleR, title ?? "", FlockFiveApp.CardText.FitKind.Title, titleFloor, titleLead, 0);

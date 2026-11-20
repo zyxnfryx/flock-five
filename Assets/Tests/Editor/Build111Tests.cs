@@ -27,7 +27,7 @@ namespace FlockFive.Editor
                 && FlockFiveApp.AdFailDecision(false, true, true, false) == FlockFiveApp.AdFailAction.KeepCard, "");
             string coach = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs");
             string app = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
-            Check("gift X exempt from the glove focus gate", coach.Contains("HomeGearExempt(p0) || GiftCloseExempt(p0)") && app.Contains("bool GiftCloseExempt(Vector2 gui)"), "");
+            Check("gift X exempt from the glove focus gate", coach.Contains("HomeGearExempt(pos) || GiftCloseExempt(pos)") && app.Contains("bool GiftCloseExempt(Vector2 gui)"), "");
             Check("unlock banner hidden while ad not ready", app.Contains("if (!(AdRetry.Active && !AdRetry.Skipped))"), "");
             AdRetry.ResetForTests();
             AdRetry.NoteFail("no fill");

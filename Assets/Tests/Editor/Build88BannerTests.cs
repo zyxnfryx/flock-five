@@ -40,17 +40,25 @@ namespace FlockFive.Editor
                     "greet " + CaptionStyles.Drop("adopt.greet") + " others " + moved);
 
                 int solid = 0;
+                bool ruleSolid = false;
                 foreach (var kv in CaptionStyles.Banner)
                 {
                     if (kv.Key == "adopt.greet") continue;
-                    if (kv.Value.Ink > 0f) solid++;
+                    if (kv.Value.Ink <= 0f) continue;
+                    if (kv.Key == "coach.rule") { ruleSolid = kv.Value.Ink >= 0.99f; continue; }
+                    solid++;
                 }
+                // The greet is solid so VIP cannot read through it. First-time rule
+                // tips are the one other solid plate (0.86 left dark type on the
+                // garden). Every other banner keeps the shared alpha.
                 Check("ink-only-adopt-greet",
-                    CaptionStyles.Ink("adopt.greet") >= 0.99f && solid == 0
+                    CaptionStyles.Ink("adopt.greet") >= 0.99f && ruleSolid && solid == 0
+                    && CaptionStyles.Ink("coach.rule") >= 0.99f
                     && Mathf.Abs(CaptionStyles.Ink("home.intro") - CaptionStyles.BannerAlpha) < 0.001f
                     && Mathf.Abs(CaptionStyles.Ink("coach.line") - CaptionStyles.BannerAlpha) < 0.001f
                     && Mathf.Abs(CaptionStyles.Ink("badger.caption") - CaptionStyles.BannerAlpha) < 0.001f,
-                    "greet " + CaptionStyles.Ink("adopt.greet") + " shared " + CaptionStyles.BannerAlpha + " overrides " + solid);
+                    "greet " + CaptionStyles.Ink("adopt.greet") + " rule " + CaptionStyles.Ink("coach.rule")
+                    + " shared " + CaptionStyles.BannerAlpha + " other " + solid);
 
                 var phone = new Rect(0f, 102f, 1179f, 2277f);
                 var pad = new Rect(0f, 20f, 1536f, 2008f);

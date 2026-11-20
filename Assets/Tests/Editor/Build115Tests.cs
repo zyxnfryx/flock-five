@@ -21,9 +21,9 @@ namespace FlockFive.Editor
             Check("glove gate still eats other off-target taps", !FlockFiveApp.GateExemptsGiftClose(9, false), "");
             Check("other gates unchanged by the exemption", !FlockFiveApp.GateExemptsGiftClose(1, true) && !FlockFiveApp.GateExemptsGiftClose(0, true), "");
             string coach = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs");
-            int kind = coach.IndexOf("var kind = t == EventType.MouseDown", System.StringComparison.Ordinal);
-            int ex = coach.IndexOf("GateExemptsGiftClose(gate.Step, GiftCloseExempt(e.mousePosition))", kind, System.StringComparison.Ordinal);
-            int any = coach.IndexOf("if (gate.AnyTap)", kind, System.StringComparison.Ordinal);
+            int kind = coach.IndexOf("var kind = type == EventType.MouseDown", System.StringComparison.Ordinal);
+            int ex = kind < 0 ? -1 : coach.IndexOf("GateExemptsGiftClose(gate.Step, GiftCloseExempt(pos))", kind, System.StringComparison.Ordinal);
+            int any = kind < 0 ? -1 : coach.IndexOf("if (gate.AnyTap)", kind, System.StringComparison.Ordinal);
             Check("exemption sits before the rect-gate eats the press", kind > 0 && ex > kind && ex < any, "");
             Check("stuck gift cue never armed", !coach.Contains("_cueGift = true;") && coach.Contains("const float GiftHintSeconds = 0f;"), "");
             string app = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");

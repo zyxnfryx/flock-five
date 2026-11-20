@@ -22,6 +22,11 @@ namespace FlockFive
         int _sel = -1;
         bool _busy;
         bool _restarting;
+#if UNITY_EDITOR
+        // The enumerator Restart just passed to StartCoroutine. Edit-mode tests
+        // step this same object. It is not read by play.
+        internal System.Collections.IEnumerator EditorSnapRound;
+#endif
         static int _motionGen;
         static int _perchWave;
         bool _won;
@@ -62,6 +67,8 @@ namespace FlockFive
         bool _clearReward;
         // Clear is saved and unspent. The homepage sign still owes the coin flight.
         bool _streakHomeDue;
+        // Album cards earned on the clear this sign is paying. 0 hides the line.
+        int _rewardCards;
         // RewardGap after that board tucks. Lessons wait. The sign is already gone.
         bool _rewardGap;
         int _rewardGapGen;
@@ -295,7 +302,7 @@ namespace FlockFive
         const string CoachHiveAlbumKey = "flockfive.coach.hivealbum";
         const string AlbumTapLine = "Tap a card you have\nto enlarge it.";
         const string AlbumFlipLine = "Tap again to flip.";
-        // After flip: honeycombs by rarity (shared CardText / HoneyOfFinish floor).
+        // After flip: honeycombs on the back (rarity floor plus one per upgrade).
         const string AlbumHoneyLine = CaptionLayout.AlbumHoneyBlock;
         // Separate post-badger step (CoachHiveUpgradeKey).
         const string AlbumUpgradeLine = CaptionLayout.AlbumUpgradeLine;
@@ -323,6 +330,8 @@ namespace FlockFive
         bool _upgradeTutorAimOk;
         Vector2 _upgradeTutorAim;
         Rect _upgradeBtnR;
+        Rect _maxxedHint;
+        Rect _upgradeLabelR;
         float _albumOpenAt = -1f;
         int _albumOpenFrames;
         int _albumAgeFrame = -1;
@@ -455,22 +464,184 @@ namespace FlockFive
         static FlockFiveApp _app;
         static int _resumeNoteFrame = -1;
         static float _resumeInputUntil = -1f;
+        // A face change (Poker Back, Collection, the contest) leaves the next
+        // control under the finger. Hold taps until that screen has settled.
+        public const float SceneInputSettle = 0.40f;
+        static float _sceneInputUntil = -1f;
+        HomeFace _sceneFace;
+        bool _sceneFaceSet;
+        // The pointer still down from the tap that left the level. Its release
+        // is swallowed. A later press is a new gesture and is not.
+        static bool _exitPointerHeld;
+        static int _exitPointerId = PlayPointer.MouseId;
+        static int _exitPointerFrame = -1;
+        bool _skipSplashSettle;
+
+        void ArmSceneInputSettle()
+        {
+            if (!_sceneFaceSet)
+            {
+                _sceneFace = _home;
+                _sceneFaceSet = true;
+                return;
+            }
+            if (_home == _sceneFace)
+            {
+                _skipSplashSettle = false;
+                return;
+            }
+            bool skipTimer = _home == HomeFace.Splash && _skipSplashSettle;
+            _sceneFace = _home;
+            _skipSplashSettle = false;
+            if (skipTimer) return;
+            _sceneInputUntil = GateNow + SceneInputSettle;
+        }
+
+        // True while a scene change is still settling. until < 0 means no hold.
+        public static bool SceneInputBlocked(float now, float until)
+        {
+            return until >= 0f && now < until;
+        }
+
+        // Home just opened from a level. A pointer that was already down is
+        // carried. Nothing on home runs until that pointer releases and a new
+        // press starts on home. The gear then opens only if that new press
+        // began on the gear and the release is still inside it.
+        public struct HomeGate
+        {
+            public bool Active;
+            public bool CarryHeld;
+            public int CarryId;
+            public bool FreshDown;
+            public int FreshId;
+        }
+
+        public static HomeGate BeginHomeGate(bool carriedDown, int carriedId)
+        {
+            return new HomeGate
+            {
+                Active = true,
+                CarryHeld = carriedDown,
+                CarryId = carriedDown ? carriedId : -2,
+                FreshDown = false,
+                FreshId = -2
+            };
+        }
+
+        public static bool HomeGateAllows(ref HomeGate g, bool down, bool up, int id)
+        {
+            if (!g.Active) return true;
+            if (g.CarryHeld)
+            {
+                if (up && id == g.CarryId)
+                    g.CarryHeld = false;
+                return false;
+            }
+            if (!g.FreshDown)
+            {
+                if (!down) return false;
+                g.FreshDown = true;
+                g.FreshId = id;
+                return true;
+            }
+            return true;
+        }
+
+        public const float SettingsToggleSettle = 0.25f;
+
+        public static bool SettingsPanelSettled(float ageSeconds)
+        {
+            return ageSeconds >= SettingsToggleSettle;
+        }
+
+        // A privacy or settings toggle flips only when the panel has settled
+        // and both the press and the release of that gesture were inside it.
+        public static bool ToggleMayFlip(bool settled, bool downInside, bool upInside)
+        {
+            return settled && downInside && upInside;
+        }
+
+        HomeGate _homeGate;
+        string _tapWho;
+        // Set when a yield already performed the tap (Watch, gift X). TakeGuiPointer
+        // then Uses the event and returns so nothing else sees it.
+        bool _pointerClaimed;
+        bool _tapEdge, _tapDown;
+        Vector2 _tapAt;
+        bool _dnsArmed, _animArmed, _soundArmed;
+        bool _consentYesArmed, _consentNoArmed;
+        float _consentShownAt = -1f;
         // b126: the three input gates (_swallowTapsUntil, _suppressGiftUntil, _resumeInputUntil) run on ad-free
         // unscaled time. PlayClock stalls under any GamePause, so a pause leak froze them shut.
         static float GateNow => AdPause.Unscaled;
 
+        // Editor AddComponent calls Reset even when OnEnable has not run yet.
+        // Play mode claims from OnEnable. A disabled owner is not a live app.
+        void Reset()
+        {
+            ClaimAppSlot();
+            // Edit-mode AddComponent runs Reset and does not run OnEnable.
+            // The field starts at 0. This drops a guard on a reset component.
+            _lessonGuardUntil = 0f;
+        }
+
         void OnEnable()
         {
-            _app = this;
-            RewardedGrant.TryApply = ApplyRewardedTicket;
-            RewardedGrant.Boot();
+            ClaimAppSlot();
+            // Play mode. A re-enabled instance must not keep a dismiss guard.
+            _lessonGuardUntil = 0f;
+            if (_app == this)
+            {
+                RewardedGrant.TryApply = ApplyRewardedTicket;
+                RewardedGrant.Boot();
+            }
         }
 
         void OnDisable()
         {
             if (RewardedGrant.TryApply == ApplyRewardedTicket)
                 RewardedGrant.TryApply = null;
-            if (_app == this) _app = null;
+            if (_app != this) return;
+            _app = null;
+            var next = EnabledSuccessor(this);
+            if (next == null) return;
+            _app = next;
+            RewardedGrant.TryApply = next.ApplyRewardedTicket;
+            RewardedGrant.Boot();
+        }
+
+        // The enabled owner paints and takes input. A second enabled instance
+        // does not replace it. A null or disabled owner is free to claim.
+        void ClaimAppSlot()
+        {
+            if (!LiveApp(_app))
+                _app = this;
+        }
+
+        static bool LiveApp(FlockFiveApp app)
+        {
+            return app != null && app.isActiveAndEnabled;
+        }
+
+        // Lowest instance id among enabled, non-destroyed apps other than the
+        // one leaving. FindObjects order is not stable, so the id is the pick.
+        static FlockFiveApp EnabledSuccessor(FlockFiveApp leaving)
+        {
+            var all = UnityEngine.Object.FindObjectsByType<FlockFiveApp>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            FlockFiveApp best = null;
+            int bestId = 0;
+            for (int i = 0; i < all.Length; i++)
+            {
+                var c = all[i];
+                if (!c || ReferenceEquals(c, leaving) || !c.isActiveAndEnabled) continue;
+                int id = c.GetInstanceID();
+                if (best == null || id < bestId)
+                {
+                    best = c;
+                    bestId = id;
+                }
+            }
+            return best;
         }
 
         // Pause and focus both bookend a suspend. One call per frame drops the
@@ -506,10 +677,13 @@ namespace FlockFive
                 if (_app != null)
                 {
                     _resumeInputUntil = GateNow + 0.35f;
+                    _app._lessonGuardUntil = 0f;
                     _app._gateBlindSince = -1f;
                     _app.FreshTutorGlove();
                     // The suspend may have cut a step off. Settle it before the first tap lands.
                     _app.HealInterruptedTutorials();
+                    // A finger still down is a resume-origin press. Its Up must not restart.
+                    _app.StampHeldResumeOrigins();
                 }
             }
             finally
@@ -528,26 +702,37 @@ namespace FlockFive
             AdLog.Add("app started");
             // iOS defaults to 30 fps. Ask for an even rate the panel can hold: 60 on
             // 60/120 Hz screens, 90 on 90 Hz ones (60 judders there). See FramePace.
-            ApplyFramePace();
-            BackgroundMotion.Probe();
-            AdLog.Add("frame pace " + Application.targetFrameRate + " fps on "
-                + Mathf.RoundToInt((float)Screen.currentResolution.refreshRateRatio.value) + " Hz");
-            Application.runInBackground = true;
-            Screen.orientation = ScreenOrientation.Portrait;
-            Screen.autorotateToPortrait = true;
-            Screen.autorotateToPortraitUpsideDown = false;
-            Screen.autorotateToLandscapeLeft = false;
-            Screen.autorotateToLandscapeRight = false;
-            using (StartupTrace.Begin("Sfx.Warm"))
-                Sfx.Warm();
-            using (StartupTrace.Begin("Ads.Warm"))
-                Ads.Warm();
-            using (StartupTrace.Begin("NoAds.Warm"))
-                NoAds.Warm();
-            using (StartupTrace.Begin("Invite.Warm"))
-                Invite.Warm();
-            using (StartupTrace.Begin("DropPokerArt"))
-                SpriteCatalog.DropPokerArt();
+            // Orientation and warm-up throw in an editor batch. The splash still
+            // has to run so a relaunch can resume a parked look and Tap Daily.
+            try
+            {
+                ApplyFramePace();
+                BackgroundMotion.Probe();
+                AdLog.Add("frame pace " + Application.targetFrameRate + " fps on "
+                    + Mathf.RoundToInt((float)Screen.currentResolution.refreshRateRatio.value) + " Hz");
+                Application.runInBackground = true;
+                Screen.orientation = ScreenOrientation.Portrait;
+                Screen.autorotateToPortrait = true;
+                Screen.autorotateToPortraitUpsideDown = false;
+                Screen.autorotateToLandscapeLeft = false;
+                Screen.autorotateToLandscapeRight = false;
+                using (StartupTrace.Begin("Sfx.Warm"))
+                    Sfx.Warm();
+                using (StartupTrace.Begin("Ads.Warm"))
+                    Ads.Warm();
+                using (StartupTrace.Begin("NoAds.Warm"))
+                    NoAds.Warm();
+                using (StartupTrace.Begin("Invite.Warm"))
+                    Invite.Warm();
+                using (StartupTrace.Begin("DropPokerArt"))
+                    SpriteCatalog.DropPokerArt();
+            }
+            catch (System.Exception e)
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Debug.LogException(e);
+#endif
+            }
             try
             {
                 using (StartupTrace.Begin("ShowSplash"))
@@ -739,6 +924,22 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-peach-flutter"); } catch { }
                 StartCoroutine(ShotPeachFlutter());
             }
+            // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+            // Touch /tmp/flock-five-gift-x-still to capture the gift card with the
+            // X below Restart at 820, then 402, 412, and 360.
+            if (System.IO.File.Exists("/tmp/flock-five-gift-x-still"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-gift-x-still"); } catch { }
+                StartCoroutine(ShotGiftXBelowRestart());
+            }
+            // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+            // Touch /tmp/flock-five-coach-tap-stills. Each still is a RenderTexture
+            // at the window size, taken at the settled end of the poke.
+            if (System.IO.File.Exists("/tmp/flock-five-coach-tap-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-coach-tap-stills"); } catch { }
+                StartCoroutine(ShotCoachTapStills());
+            }
 #endif
         }
 
@@ -765,23 +966,46 @@ namespace FlockFive
                 Sfx.CardTap();
                 return;
             }
+#if UNITY_EDITOR
+            var round = SnapRound();
+            EditorSnapRound = round;
+            StartCoroutine(round);
+#else
             StartCoroutine(SnapRound());
+#endif
+        }
+
+        bool _homeOpenedThisEdge;
+
+        // One gesture, one rebuild. The glove release and HitHud both reach Home.
+        void OpenHomeFromPress()
+        {
+            if (_homeOpenedThisEdge) return;
+            _homeOpenedThisEdge = true;
+            ShowSplash();
         }
 
         void ShowSplash()
         {
+            ClearSwallowedGlove();
+            DropGlovePress();
+            _splash = true;
+            if (!_exitPointerHeld) CaptureLevelExitPointer();
+            _homeGate = BeginHomeGate(_exitPointerHeld, _exitPointerId);
+            GUIUtility.hotControl = 0;
+            ReleaseCaptionPause();
             AudioGuard.OnSceneOrPopupClosed();
             ClearTransientFx();
             CloseHiveInspect();
             SeasonCrossfade.RetireLive();
             GardenLife.DetachHome();
-            _splash = true;
             _clearReward = false;
             CancelRewardGap();
             _gardenScoring = false;
             _gardenStampAt = -1f;
             _collectDepth = 0;
             _turnGate.Reset();
+            StopOstrichEntrance();
             GardenFit.ClearBusy();
             _leafIntro = false;
             PestSchedule.SetTutorialPause(false);
@@ -803,6 +1027,14 @@ namespace FlockFive
             StopPests();
             PestSchedule.Watch(null, null);
             _lessonGuardUntil = 0f;
+            // The dismiss that closed a garden tip arms an eat with no timer. It used to
+            // still be set when this card appeared, so the first taps on it did nothing.
+            bool ruleTipUp = _ruleTip != RuleTip.None;
+            _ruleEatGesture = false;
+            _ruleTip = RuleTip.None;
+            _ruleHeld = 0f;
+            _ostrichFight = false;
+            if (ruleTipUp) ReleaseTutorPause();
             // Destroy lands at frame end. Hide now so the old painting cannot flash over home.
             if (_garden.Root != null)
             {
@@ -835,6 +1067,11 @@ namespace FlockFive
 
         void Load(int index)
         {
+            ClearSwallowedGlove();
+            ClearResumeOrigins();
+            _lookResumedThisVisit = false;
+            _dailyResumedThisVisit = false;
+            _homeOpenedThisEdge = false;
             AudioGuard.OnSceneOrPopupClosed();
             // Before the garden (and its season banner) is built. A solved board
             // that is still browsing the inspect does not come through here.
@@ -905,6 +1142,8 @@ namespace FlockFive
             SpriteCatalog.ForgetBirds();
             _garden = WorldBuilder.Build(transform);
             AlignBranchViews();
+            if (_garden.Ostrich != null && _board != null && _board.Ostrich != null && _board.Ostrich.Alive)
+                _garden.Ostrich.BeginEntrance();
             SyncAll();
             RewardedGrant.Flush();
             StartCoroutine(GardenFit.Tween(_garden, _board, true));
@@ -919,6 +1158,7 @@ namespace FlockFive
             _hawkRun = StartCoroutine(HawkView.Patrol(
                 CanHawkVisit, PestsArmed, LevelData.HawkVisits, _garden.Feeders, _garden.Root));
             ArmGardenStamp();
+            ArmOstrichEntrance();
             // Board is open and the garden is built. The smoke test waits for this line.
             if (_board != null && !_splash)
                 Debug.Log("FF_LEVEL_STARTED");
@@ -1138,6 +1378,219 @@ namespace FlockFive
             EditorShotLive = false;
 #endif
         }
+
+#if UNITY_EDITOR
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // Portrait stills of the gift card. The X hit stays below Restart.
+        IEnumerator ShotGiftXBelowRestart()
+        {
+            const string dir = "/tmp/flock-five-gift-x-stills";
+            System.IO.Directory.CreateDirectory(dir);
+            _splash = false;
+            _adHand = true;
+            _freezeOffer = false;
+            _gift = GiftFace.Card;
+            int[] widths = { 820, 402, 412, 360 };
+            int[] heights = { 1180, 874, 915, 800 };
+            for (int i = 0; i < widths.Length; i++)
+            {
+                int w = widths[i];
+                int h = heights[i];
+                Screen.SetResolution(w, h, false);
+                PhoneArea.EditorWindowOn = true;
+                PhoneArea.EditorWindowW = w;
+                PhoneArea.EditorWindowH = h;
+                PhoneArea.EditorSafeTop = 59f;
+                PhoneArea.EditorSafeBottom = 34f;
+                yield return null;
+                yield return new WaitForEndOfFrame();
+                yield return SnapShot(dir + "/gift-x-" + w + ".png");
+            }
+            PhoneArea.EditorWindowOn = false;
+            Debug.Log("GIFT_X_STILLS_DONE");
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // One settled poke per CoachTapAt site. The image is the window size.
+        IEnumerator ShotCoachTapStills()
+        {
+            const string dir = "/tmp/flock-five-coach-tap-stills";
+            System.IO.Directory.CreateDirectory(dir);
+            int[] widths = { 820, 402, 412, 360 };
+            int[] heights = { 1180, 874, 915, 800 };
+            string[] sites = { "branch", "bird", "daily", "claim", "deal", "back", "poker", "watch", "play" };
+            bool keepWindow = PhoneArea.EditorWindowOn;
+            int keepW = PhoneArea.EditorWindowW;
+            int keepH = PhoneArea.EditorWindowH;
+            float keepTop = PhoneArea.EditorSafeTop;
+            float keepBot = PhoneArea.EditorSafeBottom;
+            var prevActive = RenderTexture.active;
+            _splash = false;
+            _coachFade = 1f;
+            try
+            {
+            for (int i = 0; i < widths.Length; i++)
+            {
+                int winW = widths[i];
+                int winH = heights[i];
+                PhoneArea.EditorWindowOn = true;
+                PhoneArea.EditorWindowW = winW;
+                PhoneArea.EditorWindowH = winH;
+                PhoneArea.EditorSafeTop = 59f;
+                PhoneArea.EditorSafeBottom = 34f;
+                float playW = PhoneArea.W;
+                float playH = PhoneArea.H;
+                for (int s = 0; s < sites.Length; s++)
+                {
+                    var target = CoachTapSiteRect(sites[s], playW, playH);
+                    _coachTapOn = false;
+                    _glovePhase = 0f;
+                    _tapSent = false;
+                    Vector2 start = default;
+                    var path = new System.Text.StringBuilder();
+                    Vector2 settled = default;
+                    float bestDip = -1f;
+                    float settledAng = 0f;
+                    bool settledMirror = false;
+                    for (int frame = 0; frame < 24; frame++)
+                    {
+                        CoachTapAt(target, CoachTapLabel(target), 0.06f, null);
+                        var tip = _gloveShown;
+                        if (frame == 0) start = tip;
+                        path.Append(tip.x.ToString("0")).Append(',').Append(tip.y.ToString("0")).Append(' ');
+                        if (_gloveDip >= bestDip)
+                        {
+                            bestDip = _gloveDip;
+                            settled = tip;
+                            settledAng = _gloveShownAng;
+                            settledMirror = _gloveMirror;
+                        }
+                    }
+                    Debug.Log("[coach-tap-still] " + sites[s] + " " + winW
+                        + " start " + start.x.ToString("0.0") + "," + start.y.ToString("0.0")
+                        + " path " + path
+                        + " end " + settled.x.ToString("0.0") + "," + settled.y.ToString("0.0")
+                        + " dip " + bestDip.ToString("0.00")
+                        + " ang " + settledAng.ToString("0") + " mirror " + settledMirror);
+                    PaintCoachTapStill(dir + "/" + sites[s] + "-" + winW + ".png", winW, winH, target, settled, settledAng, settledMirror);
+                    yield return null;
+                }
+            }
+            Debug.Log("COACH_TAP_STILLS_DONE");
+            }
+            finally
+            {
+                PhoneArea.EditorWindowOn = keepWindow;
+                PhoneArea.EditorWindowW = keepW;
+                PhoneArea.EditorWindowH = keepH;
+                PhoneArea.EditorSafeTop = keepTop;
+                PhoneArea.EditorSafeBottom = keepBot;
+                RenderTexture.active = prevActive;
+                GL.Color(Color.white);
+            }
+        }
+
+        static void PaintCoachTapStill(string path, int winW, int winH, Rect target, Vector2 tip, float ang, bool mirror)
+        {
+            RenderTexture rt = null;
+            Material mat = null;
+            Texture2D img = null;
+            var prevActive = RenderTexture.active;
+            bool pushed = false;
+            bool drawing = false;
+            try
+            {
+                rt = new RenderTexture(winW, winH, 0, RenderTextureFormat.ARGB32);
+                rt.Create();
+                RenderTexture.active = rt;
+                GL.PushMatrix();
+                pushed = true;
+                GL.LoadPixelMatrix(0, winW, winH, 0);
+                var shader = Shader.Find("Sprites/Default");
+                if (shader == null) shader = Shader.Find("UI/Default");
+                if (shader == null) shader = Shader.Find("Hidden/Internal-Colored");
+                mat = shader != null ? new Material(shader) : null;
+                if (mat != null) mat.SetPass(0);
+                GL.Begin(GL.QUADS);
+                drawing = true;
+                GL.Color(new Color(0.15f, 0.22f, 0.16f, 1f));
+                StillQuad(0f, 0f, winW, winH);
+                int ox = PhoneArea.OffX;
+                GL.Color(new Color(0.93f, 0.95f, 0.88f, 1f));
+                StillQuad(ox, 0f, PhoneArea.W, PhoneArea.H);
+                GL.Color(new Color(0.86f, 0.55f, 0.22f, 1f));
+                StillQuad(ox + target.x, target.y, target.width, target.height);
+                GL.End();
+                drawing = false;
+                var glove = CoachGloveCurl(1f);
+                if (glove != null && mat != null)
+                {
+                    mat.mainTexture = glove;
+                    mat.SetPass(0);
+                    StillGlove(glove, tip + new Vector2(ox, 0f), ang, mirror, GloveSize(DeviceFit.Ui()));
+                }
+                img = new Texture2D(winW, winH, TextureFormat.RGB24, false);
+                img.ReadPixels(new Rect(0f, 0f, winW, winH), 0, 0);
+                img.Apply();
+                System.IO.File.WriteAllBytes(path, img.EncodeToPNG());
+            }
+            finally
+            {
+                if (drawing) GL.End();
+                if (pushed) GL.PopMatrix();
+                GL.Color(Color.white);
+                RenderTexture.active = prevActive;
+                if (rt != null)
+                {
+                    rt.Release();
+                    UnityEngine.Object.DestroyImmediate(rt);
+                }
+                if (img != null) UnityEngine.Object.DestroyImmediate(img);
+                if (mat != null) UnityEngine.Object.DestroyImmediate(mat);
+            }
+        }
+
+        static void StillQuad(float x, float y, float w, float h)
+        {
+            GL.Vertex3(x, y, 0f);
+            GL.Vertex3(x + w, y, 0f);
+            GL.Vertex3(x + w, y + h, 0f);
+            GL.Vertex3(x, y + h, 0f);
+        }
+
+        static void StillGlove(Texture tex, Vector2 pivot, float ang, bool mirror, float dh)
+        {
+            float dw = dh * (tex.width / (float)Mathf.Max(1, tex.height));
+            float left = pivot.x - _gloveTipU * dw;
+            float top = pivot.y - (1f - _gloveTipV) * dh;
+            float rad = ang * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad);
+            float sn = Mathf.Sin(rad);
+            float sx = mirror ? -1f : 1f;
+            bool drawing = false;
+            try
+            {
+                GL.Begin(GL.QUADS);
+                drawing = true;
+                GL.Color(Color.white);
+                for (int i = 0; i < 4; i++)
+                {
+                    float u = (i == 1 || i == 2) ? 1f : 0f;
+                    float v = (i == 2 || i == 3) ? 1f : 0f;
+                    float x = left + u * dw;
+                    float y = top + (1f - v) * dh;
+                    float dx = (x - pivot.x) * sx;
+                    float dy = y - pivot.y;
+                    GL.TexCoord2(u, v);
+                    GL.Vertex3(pivot.x + dx * c - dy * sn, pivot.y + dx * sn + dy * c, 0f);
+                }
+            }
+            finally
+            {
+                if (drawing) GL.End();
+            }
+        }
+#endif
 
         IEnumerator ShotGift()
         {
@@ -3573,15 +4026,41 @@ namespace FlockFive
             if (paused) SetAutoResolveSpeed(1f);
             if (paused)
             {
+                CapturePointersDownAtHide();
+                // A finger still down keeps its id, so the release after the new
+                // window does not hop. Focus loss is the path that drops it.
+                int keep = _glovePressLatched ? _glovePressId : _gloveSwallowedId;
+                int keepHud = _gloveSwallowHud;
                 NoteAppBackground();
                 DailyReminder.OnAppBackground();
+                _gloveSwallowedId = keep;
+                _gloveSwallowHud = keepHud;
+                // The held finger stays swallowed. A HUD button armed before the
+                // pause must not fire on the release after it.
+                // A lost press is not a resume-origin Up. Drop those stamps so a
+                // later mouse Restart is not refused. The new window still blocks.
+                _resumeHudArm = 0;
+                ClearResumeOrigins();
             }
             else
             {
+                // Taken before resume heal. A held finger stays swallowed so its
+                // release after the new window cannot hop. Stamp first: the resume
+                // heal can throw, and this instance may not be the static _app.
+                int keep = _glovePressLatched ? _glovePressId : _gloveSwallowedId;
+                int keepHud = _gloveSwallowHud;
+                StampHeldResumeOrigins();
                 NoteAppResume();
                 DailyReminder.OnAppForeground();
                 ResumeDailyReminder();
+                ClearLevelExit();
+                ForgetLevelPointer();
+                _gloveSwallowedId = keep;
+                _gloveSwallowHud = keepHud;
             }
+            // After the resume bookkeeping, so a heal cannot leave the home gate armed.
+            // Clear this instance too: the static path only reaches whichever object OnEnable stored.
+            if (paused) ForgetLevelPointer();
         }
 
         void OnApplicationQuit()
@@ -3592,12 +4071,33 @@ namespace FlockFive
         void OnApplicationFocus(bool focus)
         {
             if (focus) KeepAwake();
+            if (!focus)
+            {
+                CapturePointersDownAtHide();
+                ClearSwallowedGlove();
+                ClearResumeOrigins();
+            }
             if (focus)
             {
+                // A late focus gain is not a level change. Keep the swallowed
+                // finger, and a finger still down becomes swallowed too.
+                int keep = _glovePressLatched ? _glovePressId : _gloveSwallowedId;
+                int keepHud = _gloveSwallowHud;
+                StampHeldResumeOrigins();
                 NoteAppResume();
                 SyncDailyDay();
+                ForgetLevelPointer();
+                _gloveSwallowedId = keep;
+                _gloveSwallowHud = keepHud;
             }
             else NoteAppBackground();
+            // After the background bookkeeping, so a heal cannot leave the home gate armed.
+            // Clear this instance too: the static path only reaches whichever object OnEnable stored.
+            if (!focus)
+            {
+                ClearLevelExit();
+                ForgetLevelPointer();
+            }
         }
 
         void Update()
@@ -3610,6 +4110,9 @@ namespace FlockFive
 
         void UpdateBody()
         {
+            FlushGiftSignQueue();
+            ClearSwallowedOnCancel();
+            ArmSceneInputSettle();
             AudioGuard.Tick();
             if (_shot82e) MuteShotAudio();
             MaybeSmokeLaunch();
@@ -3658,14 +4161,100 @@ namespace FlockFive
                 StartCoroutine(GardenFit.Tween(_garden, _board, false));
             if (_gift != GiftFace.None || _frozen)
             {
-                if (Pressed(out var tap))
+                if (TryPointerSample(out var tap, out bool offerRelease))
                 {
-                    if (EatGardenLessonTap(tap)) return;
-                    if (LessonTapBlocked()) return;
-                    if (VeilDrops(tap)) return;
+                    // tap is play-bottom. The canvas point was captured with it.
+                    if (!PlayPointer.Inside(PlayPointer.At))
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "outside";
+                        EditorPointerInject = default;
+#endif
+                        return;
+                    }
+                    // Stamp here. OnGUI may not have run yet. The same press
+                    // stamped again from TakeGuiPointer is a no-op.
+                    NotePointerEdges(offerRelease, PlayPointer.At);
+                    // The X lives inside Restart. Owning it here stops the press
+                    // from calling ActRestart before OnGUI. The release closes.
+                    if (OverlayOwnsPress(PlayPointer.At, offerRelease))
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "overlay " + (_tapWho ?? "none");
+                        EditorPointerInject = default;
+#endif
+                        return;
+                    }
+                    if (offerRelease)
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "release-return";
+#endif
+                        return;
+                    }
+                    // A point on Restart is Restart, after the same covers HitHud
+                    // uses. The gift card's own veil is not one of them: Restart
+                    // stays live under that card. One call, then return, so the
+                    // later HitHud cannot fire Restart again. The resume window
+                    // is inside ActRestart.
+                    if (_gift == GiftFace.Card && !_freezeOffer)
+                    {
+                        HudShaken(out var restartNow, out _);
+                        if (restartNow.width > 2f && restartNow.Contains(PlayPointer.At))
+                        {
+                            if (RestartCovered(tap, PlayPointer.At))
+                            {
+#if UNITY_EDITOR
+                                EditorTapStop = "restart-covered " + (EditorRestartCover ?? "");
+#endif
+                                return;
+                            }
+#if UNITY_EDITOR
+                            EditorTapStop = "restart-point";
+#endif
+                            ActRestart();
+                            return;
+                        }
+                    }
+                    if (_adHand && _gift == GiftFace.Card)
+                    {
+                        int offerHud = HudControl(PlayPointer.At);
+#if UNITY_EDITOR
+                        EditorTapStop = "hud " + offerHud;
+#endif
+                        if (offerHud == 1 || offerHud == 2)
+                        {
+                            HitHud(tap);
+                            return;
+                        }
+                    }
+                    if (EatGardenLessonTap(tap))
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "lesson";
+#endif
+                        return;
+                    }
+                    if (LessonTapBlocked())
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "lesson-blocked";
+#endif
+                        return;
+                    }
+                    if (VeilDrops(tap))
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "veil";
+#endif
+                        return;
+                    }
                     if (HitHud(tap)) return;
                     if (_frozen && !_iceCoating && _gift == GiftFace.None) OpenGift();
                 }
+#if UNITY_EDITOR
+                else EditorTapStop = "sample-miss";
+#endif
                 return;
             }
             if (!_won && !_restarting)
@@ -3691,6 +4280,7 @@ namespace FlockFive
                 if (EatGardenLessonTap(heldTap)) return;
                 if (LessonTapBlocked()) return;
                 if (VeilDrops(heldTap)) return;
+                if (OverlayOwnsPress(PlayPointer.At, false)) return;
                 if (HitHud(heldTap)) return;
                 return;
             }
@@ -3698,7 +4288,17 @@ namespace FlockFive
             // even if the tutor pause did not catch this frame.
             if (_ruleTip != RuleTip.None)
             {
-                if (Pressed(out var ruleTap)) RuleTipTap(ruleTap);
+                if (TickRuleHold()) return;
+                if (Pressed(out var ruleTap))
+                {
+                    int gloveId = PressIdNow();
+                    if (gloveId == int.MinValue) gloveId = PlayPointer.MouseId;
+                    if (PlayPointer.Inside(PlayPointer.At) && TryDrawnGlove(PlayPointer.At, false, gloveId)) return;
+                    // Home and Restart are not claimed by the caption. This call
+                    // opens Home or restarts after that decline.
+                    if (PlayPointer.Inside(PlayPointer.At) && OverlayOwnsPress(PlayPointer.At, false)) return;
+                    TakeRuleTipPress(ruleTap);
+                }
                 return;
             }
             if (_ruleEatGesture)
@@ -3707,7 +4307,29 @@ namespace FlockFive
                 if (edge || RulePointerHeld()) return;
                 _ruleEatGesture = false;
             }
-            if (!Pressed(out var screen)) return;
+            if (TryPointerSample(out var screen, out bool pressRelease))
+            {
+                if (!PlayPointer.Inside(PlayPointer.At))
+                {
+#if UNITY_EDITOR
+                    EditorPointerInject = default;
+#endif
+                    return;
+                }
+                if (pressRelease) return;
+                int gloveId = PressIdNow();
+                if (gloveId == int.MinValue) gloveId = PlayPointer.MouseId;
+                if (TryDrawnGlove(PlayPointer.At, false, gloveId)) return;
+                if (OverlayOwnsPress(PlayPointer.At, false))
+                {
+#if UNITY_EDITOR
+                    EditorPointerInject = default;
+#endif
+                    return;
+                }
+            }
+            else return;
+            if (GardenHudAct(screen)) return;
             // Informational leaf and pest lessons eat the press before a stamp,
             // the hud, or a branch move. Restart is exempt inside the helper.
             // The dismiss also arms the short guard, so this same tap cannot
@@ -3719,9 +4341,17 @@ namespace FlockFive
             // press cannot fall through onto a branch under it.
             if (GardenStampHit(screen)) return;
             if (HitHud(screen)) return;
+            if (OstrichIntroBlocking()) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
-            HandleTap(cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f)));
+                var world = (Vector2)cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
+                var drawn = OnScreenGlove();
+                var fate = GardenPressFate(screen, PhoneArea.H, default, default, drawn, false, _gloveVis && _cueBranch >= 0);
+                _gloveRouted = fate == PressFate.Glove;
+                if (_gloveRouted && _cueAimWorld.sqrMagnitude > 0.01f)
+                    world = _cueAimWorld;
+            _gloveEdgeId = PressIdNow();
+            HandleTap(world);
         }
 
         public void ShotNow(string file)
@@ -3731,38 +4361,997 @@ namespace FlockFive
 #endif
         }
 
+        int _gloveTookFrame = -1;
+        bool _glovePressLatched;
+        int _glovePressId = PlayPointer.MouseId;
+        // Down swallowed by the resume gate. Its Up must not hop after the window.
+        int _gloveSwallowedId = int.MinValue;
+        // Fingers that went down while the resume window was open. Each id is its own
+        // stamp, so a second finger cannot erase the first. A lift drops that finger.
+        readonly System.Collections.Generic.HashSet<int> _resumeOriginIds = new System.Collections.Generic.HashSet<int>();
+        // The Up now in this OnGUI still belongs to one of those fingers. ActRestart
+        // reads it after the id has been lifted, then the pass clears it.
+        bool _resumeOriginRelease;
+        // 0 began on the glove. 1 Home, 2 Restart, 3 gear.
+        int _gloveSwallowHud;
+        // The frame a swallowed touch was canceled, and that touch's id.
+        // A mouse Up (-1) in that frame is the hop. Any other finger is not blocked.
+        int _gloveCancelFrame = -1;
+        int _gloveCancelId = int.MinValue;
+        // Which HUD button was pressed inside the resume window. 0 none, 1 Home, 2 Restart, 3 gear.
+        int _resumeHudArm;
+        int _gloveEdgeId = int.MinValue;
+        // Where this finger went down. -1 the glove, 0 empty space, 1 Home, 2 Restart, 3 gear.
+        // The release belongs to that down, same as a drag onto Restart.
+        int _gestureId = int.MinValue;
+        int _gestureHud;
+        // The one down-control for the pointer that is down now. -2 means this
+        // pointer has not gone down through the glove path (a held finger, or a
+        // finger that was already down at hide).
+        int _downPointer = int.MinValue;
+        int _downControl = -2;
+
+        void DropGlovePress()
+        {
+            _glovePressLatched = false;
+            _glovePressId = PlayPointer.MouseId;
+            // A stale down id must not own the next release. The down-control
+            // record stays until the next Down. The hop stamp stays too: clearing
+            // it here lets a second hop through on a HUD release.
+            _gestureId = int.MinValue;
+        }
+
+        readonly System.Collections.Generic.HashSet<int> _downAtHide = new System.Collections.Generic.HashSet<int>();
+
+        void NoteDownAtHide(int id)
+        {
+            if (id == int.MinValue) id = PlayPointer.MouseId;
+            _downAtHide.Add(id);
+        }
+
+        void ForPointersDown(System.Action<int> note)
+        {
+#if ENABLE_LEGACY_INPUT_MANAGER
+            bool sawTouch = false;
+#endif
+            var touch = UnityEngine.InputSystem.Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count; i++)
+                {
+                    var hit = touches[i];
+                    if (hit == null || !hit.press.isPressed) continue;
+                    note(hit.touchId.ReadValue());
+#if ENABLE_LEGACY_INPUT_MANAGER
+                    sawTouch = true;
+#endif
+                }
+            }
+#if ENABLE_LEGACY_INPUT_MANAGER
+            bool sawMouse = Mouse.current != null && Mouse.current.leftButton.isPressed;
+            if (sawMouse) note(PlayPointer.MouseId);
+            // Only when the old input backend is actually compiled in. This
+            // project is Input System only, so these reads are not called.
+            if (!sawTouch || !sawMouse)
+                NoteLegacyPointersDown(note, !sawTouch, !sawMouse);
+#else
+            if (Mouse.current != null && Mouse.current.leftButton.isPressed)
+                note(PlayPointer.MouseId);
+#endif
+            // The latched glove press is that same held contact.
+            if (_glovePressLatched) note(_glovePressId);
+        }
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+        void NoteLegacyPointersDown(System.Action<int> note, bool touches, bool mouse)
+        {
+            if (touches)
+            {
+                var legacy = UnityEngine.Input.touches;
+                for (int i = 0; i < legacy.Length; i++)
+                {
+                    var phase = legacy[i].phase;
+                    if (phase == UnityEngine.TouchPhase.Ended || phase == UnityEngine.TouchPhase.Canceled)
+                        continue;
+                    note(legacy[i].fingerId);
+                }
+            }
+            if (mouse && UnityEngine.Input.GetMouseButton(0))
+                note(PlayPointer.MouseId);
+        }
+#endif
+
+        void CapturePointersDownAtHide()
+        {
+            _downAtHide.Clear();
+            ForPointersDown(NoteDownAtHide);
+        }
+
+        // On resume, every pointer still down is a resume-origin press.
+        // The hide set is the finger iOS recorded and then stopped reporting.
+        void StampHeldResumeOrigins()
+        {
+            ForPointersDown(id => _resumeOriginIds.Add(ResumeFinger(id)));
+            foreach (int id in _downAtHide)
+                _resumeOriginIds.Add(ResumeFinger(id));
+        }
+
+        bool ResumeHolds(int pointerId)
+        {
+            if (GateNow >= _resumeInputUntil) return false;
+            if (pointerId == int.MinValue) pointerId = PlayPointer.MouseId;
+            return _downAtHide.Contains(pointerId);
+        }
+
+        void ClearSwallowedGlove()
+        {
+            _gloveSwallowedId = int.MinValue;
+            _gloveSwallowHud = 0;
+            _resumeHudArm = 0;
+        }
+
+        // Only the finger whose Down the resume gate ate.
+        bool SwallowedUp(int pointerId)
+        {
+            return _gloveSwallowedId != int.MinValue
+                && GloveFingerMatches(_gloveSwallowedId, pointerId);
+        }
+
+        static int ResumeFinger(int pointerId) => pointerId == int.MinValue ? PlayPointer.MouseId : pointerId;
+
+        void RememberResumeOrigin(int pointerId)
+        {
+            int id = ResumeFinger(pointerId);
+            if (GateNow < _resumeInputUntil) _resumeOriginIds.Add(id);
+            else _resumeOriginIds.Remove(id);
+        }
+
+        // Drop this finger only. The mouse has its own id, so its lift does not
+        // clear a touch that is still down.
+        void LiftResumeOrigin(int pointerId)
+        {
+            _resumeOriginIds.Remove(ResumeFinger(pointerId));
+        }
+
+        int _noteFrame = -1;
+        int _noteCount;
+        readonly int[] _noteFingers = new int[8];
+        readonly bool[] _noteUps = new bool[8];
+#if UNITY_EDITOR
+        // How many distinct edges were recorded. A repeat of the same press
+        // in one frame does not add another.
+        internal int EditorEdgeStamps;
+        // ActRestart entries, and how many of those called Restart.
+        internal int EditorActRestartEntered;
+        internal int EditorActRestartCommitted;
+        internal string EditorActRestartBlock;
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // Where the gift-card press stopped, and whether the edge was new.
+        internal string EditorTapStop;
+        internal string EditorNoteResult;
+        // Which RestartCovered branch returned, or "none" when Restart stays live.
+        internal string EditorRestartCover;
+        // Extra touch ids that ended on this frame. The inject carries one pointer.
+        public static readonly System.Collections.Generic.List<int> EditorEndedIds = new System.Collections.Generic.List<int>();
+#endif
+
+        static int EdgeIdNow(bool release)
+        {
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && (EditorPointerInject.Down || EditorPointerInject.Up))
+                return EditorPointerInject.Id;
+#endif
+            // Same source TakeGuiPointer uses. A shipping release is the touch
+            // that ended, not a blanket -1 that would lift every finger.
+            if (release)
+            {
+                int released;
+                if (PressReleased(out released)) return released;
+                var e = Event.current;
+                if (e != null && e.type == EventType.MouseUp && e.button == 0)
+                    return HomeEventId(e, false, true);
+                return PlayPointer.MouseId;
+            }
+            int id = PressIdNow();
+            return id == int.MinValue ? PlayPointer.MouseId : id;
+        }
+
+        // Where this finger went down, including a press an overlay then claims.
+        // A Down inside the resume window is stamped. Its Up, even after the
+        // window, must not become a Restart or a freeze Retry.
+        // One press, or every finger that ended this frame. UpdateBody and OnGUI
+        // both call this. The second call for a finger already noted is a no-op.
+        readonly System.Collections.Generic.List<int> _endedIds = new System.Collections.Generic.List<int>(4);
+
+        void NotePointerEdges(bool release, Vector2 play)
+        {
+            if (!release)
+            {
+                NotePointerEdge(EdgeIdNow(false), false, play);
+                return;
+            }
+            _endedIds.Clear();
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Up)
+                AddEnded(EditorPointerInject.Id);
+            for (int i = 0; i < EditorEndedIds.Count; i++)
+                AddEnded(EditorEndedIds[i]);
+#endif
+            var touch = Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count; i++)
+                {
+                    var t = touches[i];
+                    if (t == null) continue;
+                    var phase = t.phase.ReadValue();
+                    if (phase != UnityEngine.InputSystem.TouchPhase.Ended
+                        && phase != UnityEngine.InputSystem.TouchPhase.Canceled) continue;
+                    AddEnded(t.touchId.ReadValue());
+                }
+            }
+            if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
+                AddEnded(PlayPointer.MouseId);
+            if (_endedIds.Count == 0)
+            {
+                NotePointerEdge(EdgeIdNow(true), true, play);
+                return;
+            }
+            for (int i = 0; i < _endedIds.Count; i++)
+                NotePointerEdge(_endedIds[i], true, play);
+        }
+
+        void AddEnded(int id)
+        {
+            if (!_endedIds.Contains(id)) _endedIds.Add(id);
+        }
+
+        // UpdateBody and OnGUI deliver one edge twice. A later down, after this
+        // finger's up, is a new press even in the same edit-mode frame.
+        bool EdgeAlreadyNoted(int finger, bool releaseEdge)
+        {
+            if (_noteFrame != Time.frameCount) return false;
+            for (int i = 0; i < _noteCount; i++)
+                if (_noteFingers[i] == finger)
+                    return _noteUps[i] == releaseEdge;
+            return false;
+        }
+
+        void NotePointerEdge(int pointerId, bool releaseEdge, Vector2 play)
+        {
+            int finger = ResumeFinger(pointerId);
+            if (EdgeAlreadyNoted(finger, releaseEdge))
+            {
+#if UNITY_EDITOR
+                EditorNoteResult = "drop-same-edge";
+#endif
+                // A repeated mouse up is the OnGUI echo, or a later up the
+                // frame filter still calls the same edge. Lift the touch that
+                // went down. A different finger that is still down is not it.
+                if (releaseEdge && ResumeFinger(pointerId) == PlayPointer.MouseId && _downPointer >= 0)
+                    LiftResumeOrigin(_downPointer);
+                return;
+            }
+#if UNITY_EDITOR
+            EditorNoteResult = "accept";
+#endif
+            if (_noteFrame != Time.frameCount)
+            {
+                _noteFrame = Time.frameCount;
+                _noteCount = 0;
+            }
+            int slot = -1;
+            for (int i = 0; i < _noteCount; i++)
+                if (_noteFingers[i] == finger) { slot = i; break; }
+            if (slot >= 0)
+                _noteUps[slot] = releaseEdge;
+            else if (_noteCount < _noteFingers.Length)
+            {
+                _noteFingers[_noteCount] = finger;
+                _noteUps[_noteCount] = releaseEdge;
+                _noteCount++;
+            }
+#if UNITY_EDITOR
+            EditorEdgeStamps++;
+#endif
+            _gloveEdgeId = pointerId;
+            if (!releaseEdge && !(pointerId == PlayPointer.MouseId && _glovePressLatched && _glovePressId >= 0))
+            {
+                _gloveTookFrame = -1;
+                _homeOpenedThisEdge = false;
+                RememberResumeOrigin(pointerId);
+                if (!(GateNow < _resumeInputUntil)) _resumeOriginRelease = false;
+                _gestureId = pointerId;
+                bool onGlove = _gloveVis && OnScreenGlove().Contains(play);
+                _gestureHud = onGlove ? -1 : HudControl(play);
+                NoteDownControl(pointerId, _gestureHud);
+            }
+            else if (releaseEdge)
+            {
+                if (ResumeOriginBlocks(pointerId)) _resumeOriginRelease = true;
+                // A mouse up is the lift of the touch that went down, and of the
+                // mouse. It does not clear a different finger that is still down.
+                int echoed = ResumeFinger(pointerId) == PlayPointer.MouseId && _downPointer >= 0
+                    ? _downPointer : int.MinValue;
+                LiftResumeOrigin(pointerId);
+                if (echoed >= 0) LiftResumeOrigin(echoed);
+            }
+        }
+
+        void NoteDownControl(int pointerId, int control)
+        {
+            _downPointer = ResumeFinger(pointerId);
+            _downControl = control;
+        }
+
+        // -2 when this pointer has no down of its own. A mouse up is the
+        // touch that went down. Another finger's down is not this one.
+        int DownControlOf(int pointerId)
+        {
+            if (_downPointer == int.MinValue) return -2;
+            int id = ResumeFinger(pointerId);
+            if (id == _downPointer) return _downControl;
+            if (id == PlayPointer.MouseId && _downPointer >= 0) return _downControl;
+            return -2;
+        }
+
+        // Home and the gear: the down-control of THIS pointer. A glove down
+        // never opens them. A down on a different control does not either.
+        // A held finger, or a finger already down at hide, has no glove down,
+        // so a release on the control opens it.
+        bool HomeGearReleaseBlocks(int which)
+        {
+            if (_glovePressLatched && GloveOwnsRelease(_gloveEdgeId)) return true;
+            int down = DownControlOf(_gloveEdgeId);
+            if (down == -1) return true;
+            if (down >= 0 && down != which) return true;
+            return false;
+        }
+
+        bool EchoReleaseBlocks(int which)
+        {
+            if (which == 1 || which == 3) return HomeGearReleaseBlocks(which);
+            // Restart. DownControlOf is the one record of where this press went
+            // down, and a mouse up is that touch. GloveFingerMatches is only
+            // id equality, so it cannot see this pair.
+            if (_glovePressLatched && GloveOwnsRelease(_gloveEdgeId)) return true;
+            int down = DownControlOf(_gloveEdgeId);
+            // -1 is the glove. A down on Home or the gear is that control.
+            // -2 is no Down. The plain echo refuses it. A coach glove that is
+            // yielding this release to Restart is the button tap, so it does not.
+            if (down == -1) return true;
+            if (down > 0 && down != 2) return true;
+            if (down < 0 && !ButtonCoachGlove()) return true;
+            if (_resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId)) return true;
+            return false;
+        }
+
+        bool ResumeOriginBlocks(int pointerId)
+        {
+            if (_resumeOriginRelease) return true;
+            int id = ResumeFinger(pointerId);
+            if (_resumeOriginIds.Contains(id)) return true;
+            if (id != PlayPointer.MouseId) return false;
+            foreach (int stamped in _resumeOriginIds)
+                if (stamped >= 0) return true;
+            return false;
+        }
+
+        bool CancelBlocksHop(int pointerId)
+        {
+            if (_gloveCancelFrame != Time.frameCount || _glovePressLatched) return false;
+            // The canceled touch, and the mouse release that arrives with it.
+            // A different finger keeps its own tap.
+            return pointerId == _gloveCancelId || pointerId == PlayPointer.MouseId;
+        }
+
+        void ClearResumeOrigins()
+        {
+            _resumeOriginIds.Clear();
+            _resumeOriginRelease = false;
+        }
+
+        // TouchPhase.Canceled. The finger never lifts, so the Up path cannot drop
+        // its stamp. Drop it here. A press still inside the window is blocked by
+        // the window itself. A cancel never arrives as a glove Up.
+        void NoteSwallowedCancel(int pointerId)
+        {
+            LiftResumeOrigin(pointerId);
+            _resumeOriginRelease = false;
+            // The finger is gone. A later mouse Down is a new press, not the
+            // synthesized echo of the touch that was canceled.
+            if (_glovePressLatched && (GloveFingerMatches(_glovePressId, pointerId)
+                || (pointerId == PlayPointer.MouseId && _glovePressId >= 0)))
+                DropGlovePress();
+            if (_gloveSwallowedId == int.MinValue) return;
+            if (!GloveFingerMatches(_gloveSwallowedId, pointerId)) return;
+            _gloveCancelFrame = Time.frameCount;
+            _gloveCancelId = pointerId;
+            ClearSwallowedGlove();
+        }
+
+        void ClearSwallowedOnCancel()
+        {
+            var touch = UnityEngine.InputSystem.Touchscreen.current;
+            if (touch == null) return;
+            var touches = touch.touches;
+            for (int i = 0; i < touches.Count; i++)
+            {
+                var t = touches[i];
+                if (t == null) continue;
+                if (t.phase.ReadValue() != UnityEngine.InputSystem.TouchPhase.Canceled) continue;
+                NoteSwallowedCancel(t.touchId.ReadValue());
+            }
+        }
+
+        // The mouse is PlayPointer.MouseId. A missing id is int.MinValue. Those are not the same finger.
+        public static bool GloveFingerMatches(int pressedId, int releaseId)
+        {
+            return pressedId == releaseId;
+        }
+
+        // The player sends the press as a touch id and the release as the mouse.
+        // That pair is the same contact. Two different touch ids are not.
+        bool GloveOwnsRelease(int releaseId)
+        {
+            if (!_glovePressLatched) return false;
+            if (GloveFingerMatches(_glovePressId, releaseId)) return true;
+            return releaseId == PlayPointer.MouseId && _glovePressId >= 0;
+        }
+
+        int _gloveEchoId = int.MinValue;
+        int _gloveEchoFrame = -1;
+
+        bool EchoRelease(int releaseId)
+        {
+            // One press, one hop. A later up is the same press until a new down,
+            // however many frames sit between the releases.
+            if (_gloveEchoFrame < 0) return false;
+            if (GloveFingerMatches(_gloveEchoId, releaseId)) return true;
+            return releaseId == PlayPointer.MouseId && _gloveEchoId >= 0;
+        }
+
+        // 0 is not a button. 1 Home, 2 Restart, 3 gear. Play-canvas pixels.
+        int HudControl(Vector2 play)
+        {
+            HudShaken(out var restart, out _);
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            if (home.width > 2f && home.Contains(play)) return 1;
+            if (restart.width > 2f && restart.Contains(play)) return 2;
+            // The gear is drawn only on the home face. The same rect in the garden
+            // is empty space, so it must not steal a glove or board tap.
+            if (HomeGear.Shown(HomeGearNow()) && gear.width > 2f && gear.Contains(play)) return 3;
+            return 0;
+        }
+
+        // OnGUI calls this for Home, Restart, and the gear. HitPad arms on the down
+        // and fires on the release. Edit-mode tests have no IMGUI, so a down inside
+        // the resume window also arms here and the release calls GardenHudAct.
+        bool FeedResumeHudButton(int which, Rect playRect, Vector2 windowGui, bool down, bool up, out bool held)
+        {
+            // Restart during the resume window stays swallowed. That arm is its own commit.
+            if (which == 2)
+            {
+                held = false;
+                return false;
+            }
+            held = false;
+            // play-canvas pixels. The caller already ran them through PlayPointer.
+            var play = windowGui;
+            bool inside = playRect.width > 2f && playRect.Contains(play);
+            bool pad = false;
+            if (Event.current != null)
+            {
+                try { pad = HitPad(playRect, out held); }
+                catch (System.Exception) { pad = false; }
+            }
+            if (down && inside && GateNow < _resumeInputUntil)
+                _resumeHudArm = which;
+            bool armedUp = up && _resumeHudArm == which && inside;
+            if (up && _resumeHudArm == which && !inside)
+                _resumeHudArm = 0;
+            bool fire = which == 2 ? armedUp : (pad || armedUp);
+            if (!fire) return false;
+            _resumeHudArm = 0;
+            // The Restart commit reaches this. Other paths leave Restart down for the window.
+            if (which == 2)
+            {
+                Restart();
+                return true;
+            }
+            if (which == 3)
+            {
+                _tapWho = "gear";
+                ApplySettingsHit(SettingsMotion.Hit.Gear);
+                _hitLock = 1;
+                return true;
+            }
+            return GardenHudAct(new Vector2(play.x, PhoneArea.H - play.y));
+        }
+
+#if DEVELOPMENT_BUILD
+        // DEV-ONLY, inspect-only. Not a shipping-path proof. ?tapLog=1.
+        void EmitTap(bool down, Vector2 at, string who)
+        {
+            if (!DevLevelSkip.TapLogFromUrl(Application.absoluteURL)) return;
+            string scene = _splash ? "home" : (_ruleTip != RuleTip.None ? "caption" : "level");
+            var glove = OnScreenGlove();
+            var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            Debug.Log("[tap] " + (down ? "down" : "up")
+                + " " + at.x.ToString("0") + "," + at.y.ToString("0")
+                + " (screen px) dpr 1 " + Screen.width + "," + Screen.height
+                + " -> consumedBy=" + (string.IsNullOrEmpty(who) ? "open" : who)
+                + " scene=" + scene + " step=" + _coachMoves
+                + " glove=" + glove.x.ToString("0") + "," + glove.y.ToString("0") + "," + glove.width.ToString("0") + "," + glove.height.ToString("0")
+                + " hint=" + _maxxedHint.x.ToString("0") + "," + _maxxedHint.y.ToString("0") + "," + _maxxedHint.width.ToString("0") + "," + _maxxedHint.height.ToString("0")
+                + " gear=" + gear.x.ToString("0") + "," + gear.y.ToString("0") + "," + gear.width.ToString("0") + "," + gear.height.ToString("0"));
+        }
+#endif
+
+        // One edge only: the release. Home, Restart, and the gear win over the cuff.
+        // The hit then goes through HandleTap, so CoachReject and the turn gate still apply.
+        public static bool GloveMayAct(bool releaseEdge, bool hudHit, bool turnBusy)
+        {
+            if (!releaseEdge || hudHit || turnBusy) return false;
+            return true;
+        }
+
+        public static bool HudBeatsGlove(Vector2 windowGui, Rect home, Rect restart, Rect gear, bool gearShown)
+        {
+            if (home.width > 2f && home.Contains(windowGui)) return true;
+            if (restart.width > 2f && restart.Contains(windowGui)) return true;
+            if (gearShown && gear.width > 2f && gear.Contains(windowGui)) return true;
+            return false;
+        }
+
+        bool TryDrawnGlove(Vector2 windowGui, bool releaseEdge, int pointerId)
+        {
+            _gloveEdgeId = pointerId;
+            // The drawn glove, including on the home face and after the cue
+            // has been cleared. Garden hops still require the splash to be down.
+            // The down-control uses the sprite.
+            bool drawnGlove = _gloveVis
+                && OnScreenGlove().Contains(windowGui);
+            bool onGlove = !_splash && _board != null && drawnGlove;
+            int hud = HudControl(windowGui);
+            // Same resume gate as Pressed. This runs before SwallowResumePointer,
+            // so a glove edge in that 0.35 s would otherwise become a move. Drop
+            // the latch too, and remember the pointer: the Up after the window
+            // is still on the glove and used to reach HandleTap with no latch.
+            // A press that begins on Home or the gear still fires on release.
+            // Restart does not: a Down inside this window never restarts.
+            // A WebGL up is the mouse for the touch that went down. Match that
+            // press, not the synthesized id, or a fresh tap is eaten because
+            // the mouse was the thing down at hide.
+            int resumeId = pointerId;
+            if (releaseEdge && pointerId == PlayPointer.MouseId && _glovePressLatched && _glovePressId >= 0)
+                resumeId = _glovePressId;
+            // The edge stamp also runs before an overlay claim, so a second pass
+            // here must not drop the resume flag the first pass just set.
+            bool resumeOriginUp = ResumeOriginBlocks(pointerId) && releaseEdge;
+            NotePointerEdge(pointerId, releaseEdge, windowGui);
+            // Home and the gear stay live for the whole resume window, even when
+            // the drawn glove covers them. A glove hop only wins once that window
+            // has closed and the finger went down on the sprite.
+            // A finger already on the glove still hops, including onto Home.
+            // A finger that did not start there keeps Home and the gear.
+            if (GateNow < _resumeInputUntil && (hud == 1 || hud == 3) && !_glovePressLatched)
+            {
+                if (!releaseEdge)
+                {
+                    _gloveSwallowedId = pointerId;
+                    _gloveSwallowHud = hud;
+                }
+                DropGlovePress();
+                // Home opens here, as it did before the chain was resumed twice.
+                // HitHud may open it again; ResumeAdoptLook counts that once.
+                // The gear stays live for a tap that began on it. A drag from
+                // the glove or another control does not.
+                if (releaseEdge && hud == 1 && !EchoReleaseBlocks(1))
+                    OpenHomeFromPress();
+                if (releaseEdge && hud == 3 && !EchoReleaseBlocks(3))
+                    ApplySettingsHit(SettingsMotion.Hit.Gear);
+                StampGlove("resume-hud", windowGui, onGlove, true, false);
+                return false;
+            }
+            if (ResumeHolds(resumeId))
+            {
+                if (!releaseEdge && hud != 0)
+                {
+                    _gloveSwallowedId = pointerId;
+                    _gloveSwallowHud = hud;
+                    DropGlovePress();
+                    StampGlove("resume-hud", windowGui, onGlove, true, false);
+                    return false;
+                }
+                // Home and the gear stay usable in the resume window. Deliberate.
+                // Restart does not: its Up is swallowed here, before any yield.
+                bool homeOrGear = releaseEdge && (hud == 1 || hud == 3);
+                if (!homeOrGear)
+                {
+                    if (!releaseEdge && onGlove)
+                    {
+                        _gloveSwallowedId = pointerId;
+                        _gloveSwallowHud = 0;
+                    }
+                    else if (_glovePressLatched)
+                        _gloveSwallowedId = _glovePressId;
+                    bool held = _glovePressLatched;
+                    DropGlovePress();
+                    if (!held && !onGlove) return false;
+                    StampGlove("resume", windowGui, onGlove, hud != 0, false);
+                    return true;
+                }
+            }
+            // Press origin before any yield. A Down inside the resume window must
+            // not restart or retry on its Up, including after the window closes.
+            // Home and the gear stay allowed.
+            bool resumePress = releaseEdge && (SwallowedUp(pointerId) || resumeOriginUp);
+            // Restart falls through to the same-finger guard below. Home and the
+            // gear stay allowed. Any other resume-origin release is swallowed.
+            if (resumePress && hud != 1 && hud != 2 && hud != 3 && SwallowedUp(pointerId))
+            {
+                ClearSwallowedGlove();
+                StampGlove("swallowed-up", windowGui, onGlove, false, false);
+                return true;
+            }
+            // After that check. A coach glove over a button yields.
+            // Outside the drawn hand, the release is never a glove tap.
+            if (CoachControlYields(windowGui, releaseEdge))
+            {
+                StampGlove("control", windowGui, onGlove, hud != 0, false);
+                return false;
+            }
+            // Same finger, release on Restart. Runs for a glove press too, and
+            // refuses it: the finger that went down owns the release.
+            if (releaseEdge && hud == 2 && !EchoReleaseBlocks(2))
+            {
+                ActRestart();
+                StampGlove("control", windowGui, onGlove, true, false);
+                return false;
+            }
+            // Not a glove press. Home, the gear, and a fresh Restart run here so
+            // HitHud is not required, and a later hop cannot set the took-frame
+            // that would make ActRestart refuse. A latched glove release falls
+            // through and still hops.
+            // Home is opened by HitHud, once. Opening it here as well resumes the
+            // home chain a second time. The gear is not on that path, so it runs
+            // here. A different finger than the one the resume gate ate is not
+            // this button. A latched glove release falls through and still hops.
+            bool otherFinger = _gloveSwallowedId != int.MinValue
+                && !GloveFingerMatches(_gloveSwallowedId, pointerId);
+            if (releaseEdge && !_glovePressLatched && !GloveOwnsRelease(pointerId)
+                && !SwallowedUp(pointerId) && !otherFinger)
+            {
+                // Return before any hop. A hop would set the took-frame and
+                // HitHud would then refuse Home and Restart.
+                if (hud == 1 && !EchoReleaseBlocks(1))
+                {
+                    OpenHomeFromPress();
+                    StampGlove("control", windowGui, onGlove, true, false);
+                    return false;
+                }
+                if (hud == 3 && !EchoReleaseBlocks(3))
+                {
+                    ApplySettingsHit(SettingsMotion.Hit.Gear);
+                    StampGlove("control", windowGui, onGlove, true, false);
+                    return false;
+                }
+            }
+            if (releaseEdge && SwallowedUp(pointerId))
+            {
+                // This finger owns the release. A down on Home or the gear opens
+                // it, and so does a held finger or a finger down at hide: those
+                // have no glove down. A down on the glove does not.
+                int down = DownControlOf(pointerId);
+                bool button = hud != 0 && hud == _gloveSwallowHud;
+                bool heldHud = (hud == 1 || hud == 3) && down != -1 && (down < 0 || down == hud);
+                ClearSwallowedGlove();
+                if (hud == 1 && (button || heldHud) && !EchoReleaseBlocks(1))
+                {
+                    OpenHomeFromPress();
+                    StampGlove("hud", windowGui, onGlove, true, false);
+                    return false;
+                }
+                if (hud == 3 && (button || heldHud) && !EchoReleaseBlocks(3))
+                {
+                    ApplySettingsHit(SettingsMotion.Hit.Gear);
+                    StampGlove("hud", windowGui, onGlove, true, false);
+                    return false;
+                }
+                if (button)
+                {
+                    StampGlove("hud", windowGui, onGlove, true, false);
+                    return false;
+                }
+                StampGlove("swallowed-up", windowGui, onGlove, hud != 0, false);
+                return true;
+            }
+            if (releaseEdge && EchoRelease(pointerId))
+            {
+                StampGlove("echo", windowGui, onGlove, hud != 0, false);
+                return true;
+            }
+            if (releaseEdge && CancelBlocksHop(pointerId) && onGlove && hud == 0)
+            {
+                StampGlove("cancel-frame", windowGui, onGlove, false, false);
+                return true;
+            }
+            bool onHud = false;
+            if (onGlove || (releaseEdge && _glovePressLatched))
+            {
+                HudShaken(out var restart, out _);
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                onHud = HudBeatsGlove(windowGui, home, restart, gear, HomeGear.Shown(HomeGearNow()));
+            }
+            if (!releaseEdge)
+            {
+                // iOS and Android synthesize a mouse Down for the touch that is
+                // already on the glove. That Down is not a new press: it must not
+                // drop the touch latch or open the button under the sprite.
+                if (pointerId == PlayPointer.MouseId && _glovePressLatched && _glovePressId >= 0)
+                {
+                    StampGlove("mouse-with-touch", windowGui, onGlove, hud != 0, false);
+                    return true;
+                }
+                // A new press ends the previous one, even in the same frame, and
+                // even when this down is on Home. Otherwise the old mouse echo
+                // eats the next hop and the cue looks like it never re-armed.
+                _gloveEchoFrame = -1;
+                _gloveEchoId = int.MinValue;
+                _gloveTookFrame = -1;
+                if (!onGlove && !drawnGlove)
+                {
+                    DropGlovePress();
+                    StampGlove(hud != 0 ? "button" : "off-glove", windowGui, false, hud != 0, false);
+                    return false;
+                }
+                // The finger or the cuff. Home and Restart under the sprite wait.
+                _glovePressLatched = true;
+                _glovePressId = pointerId;
+                _gloveSwallowedId = int.MinValue;
+                _gloveSwallowHud = 0;
+                StampGlove("owned", windowGui, true, onHud, false);
+                return true;
+            }
+            // A release that never started on the glove is the button under it.
+            if (onGlove && onHud && !_glovePressLatched && !GloveOwnsRelease(pointerId))
+            {
+                StampGlove("no-glove", windowGui, onGlove, onHud, false);
+                return false;
+            }
+            bool owns = GloveOwnsRelease(pointerId);
+            if (_glovePressLatched && !owns)
+            {
+                // The other finger on the button, including where the glove and
+                // Home overlap at mid-screen, is that button. Anywhere else it
+                // is simply not this press.
+                bool button = onHud || hud != 0;
+                StampGlove(button ? "no-glove" : "other-finger", windowGui, onGlove, button, false);
+                return false;
+            }
+            if (!owns)
+            {
+                // A mouse up that is not this glove press is not a hop.
+                // On a button it stays that button. Anywhere else it is dropped.
+                bool button = onHud || hud != 0;
+                StampGlove(button ? "no-glove" : "no-press", windowGui, onGlove, button, false);
+                return !button;
+            }
+            else
+            {
+                // A touch press is echoed so its mouse up cannot hop twice.
+                // A mouse press has no separate id to pair, so a later mouse up is
+                // not that press and must not be eaten as one.
+                _gloveEchoId = _glovePressId >= 0 ? _glovePressId : int.MinValue;
+                _gloveEchoFrame = _glovePressId >= 0 ? Time.frameCount : -1;
+                // Started on the sprite. The up is often the mouse and often lands
+                // on the button the glove overlaps. That is still the one hop.
+                bool synthesized = pointerId == PlayPointer.MouseId && _glovePressId >= 0;
+                if (synthesized) _gloveEdgeId = _glovePressId;
+                DropGlovePress();
+            }
+            if (!onGlove && !owns)
+            {
+                StampGlove("off-glove", windowGui, onGlove, onHud, false);
+                return false;
+            }
+            if (!GloveMayAct(true, false, _turnGate.Busy))
+            {
+                StampGlove("may-act", windowGui, onGlove, onHud, false);
+                return true;
+            }
+            if (_gloveTookFrame == Time.frameCount)
+            {
+                StampGlove("same-frame", windowGui, onGlove, onHud, false);
+                return true;
+            }
+            _gloveTookFrame = Time.frameCount;
+            // The drawn hand is the cue. CoachReject accepts that route, then
+            // HandleTap still resolves the branch at this world point.
+            _gloveRouted = true;
+            StampGlove("handle", windowGui, onGlove, onHud, true);
+#if UNITY_EDITOR
+            EditorGloveTraceNow.Latched = true;
+#endif
+            HandleTap(CueBranchWorld());
+            return true;
+        }
+
+#if UNITY_EDITOR
+        void StampGlove(string exit, Vector2 point, bool onGlove, bool onHud, bool willHandle)
+        {
+            var g = OnScreenGlove();
+            EditorGloveTraceNow.Exit = exit;
+            EditorGloveTraceNow.Glove = g;
+            EditorGloveTraceNow.Point = point;
+            EditorGloveTraceNow.TryHit = willHandle || exit == "handle";
+            EditorGloveTraceNow.OnGlove = onGlove;
+            EditorGloveTraceNow.OnHud = onHud;
+            EditorGloveTraceNow.Latched = _glovePressLatched;
+            EditorGloveTraceNow.CueFrom = _coachFrom;
+            EditorGloveTraceNow.CueTo = _coachTo;
+            EditorGloveTraceNow.CueBranch = _cueBranch;
+            EditorGloveTraceNow.TurnBusy = _turnGate.Busy;
+            EditorGloveTraceNow.Routed = _gloveRouted;
+            EditorGloveTraceNow.CueForce = _cueForce;
+            EditorGloveTraceNow.CueFreeze = _cueFreeze;
+            EditorGloveTraceNow.CueGift = _cueGift;
+            EditorGloveTraceNow.NextTap = _nextTap;
+            EditorGloveTraceNow.SelBefore = _sel;
+            var main = Camera.main;
+            EditorGloveTraceNow.CamMain = main == null ? "null" : main.name;
+            EditorGloveTraceNow.CamUsed = _garden.Cam == null ? "null" : _garden.Cam.name;
+        }
+#else
+        void StampGlove(string exit, Vector2 point, bool onGlove, bool onHud, bool willHandle) { }
+#endif
+
+        void DropRouted(string exit)
+        {
+            _gloveRouted = false;
+#if UNITY_EDITOR
+            EditorGloveTraceNow.Exit = exit;
+            EditorGloveTraceNow.SelAfter = _sel;
+            EditorGloveTraceNow.Routed = false;
+#endif
+        }
+
+        int CueViewProbe()
+        {
+            if (_garden.Branches == null || (uint)_cueBranch >= (uint)_garden.Branches.Length) return -2;
+            var v = _garden.Branches[_cueBranch];
+            if (v == null) return -1;
+            return v.gameObject.activeInHierarchy ? 1 : 0;
+        }
+
+        Vector2 CueBranchWorld()
+        {
+            if (_garden.Branches != null && (uint)_cueBranch < (uint)_garden.Branches.Length
+                && _garden.Branches[_cueBranch] != null)
+                return _garden.Branches[_cueBranch].transform.position;
+            if (_cueAimWorld.sqrMagnitude > 0.01f) return _cueAimWorld;
+            return default;
+        }
+
         void HandleTap(Vector2 world)
         {
-            if (_ruleTip != RuleTip.None || _ruleEatGesture) return;
-            if (LessonTapBlocked()) return;
-            if (_busy || _won || _board == null) return;
-            if (GateNow < _swallowTapsUntil) return;
-            if (AdPause.Unscaled < _nextTap) return;
+            // TakeGuiPointer reaches this before SwallowResumePointer. Only a
+            // press that was already down at hide is swallowed. A fresh tap is not.
+            if (ResumeHolds(_gloveEdgeId))
+            {
+                DropGlovePress();
+                DropRouted("resume");
+                return;
+            }
+            // The glove route ate this finger. A direct tap must not hop it either,
+            // and a mouse Up on the frame that finger was canceled must not hop.
+            if (SwallowedUp(_gloveEdgeId))
+            {
+                ClearSwallowedGlove();
+                DropGlovePress();
+                DropRouted("swallowed-up");
+                return;
+            }
+            if (CancelBlocksHop(_gloveEdgeId))
+            {
+                DropGlovePress();
+                DropRouted("cancel");
+                return;
+            }
+#if UNITY_EDITOR
+            EditorHandleTaps++;
+            EditorGloveTraceNow.World = world;
+            EditorGloveTraceNow.SelBefore = _sel;
+            EditorGloveTraceNow.CueBranch = _cueBranch;
+            EditorGloveTraceNow.CueFrom = _coachFrom;
+            EditorGloveTraceNow.CueTo = _coachTo;
+            EditorGloveTraceNow.CueForce = _cueForce;
+            EditorGloveTraceNow.CueFreeze = _cueFreeze;
+            EditorGloveTraceNow.CueGift = _cueGift;
+            EditorGloveTraceNow.Routed = _gloveRouted;
+            EditorGloveTraceNow.TurnBusy = _turnGate.Busy;
+            EditorGloveTraceNow.NextTap = _nextTap;
+            EditorGloveTraceNow.Now = AdPause.Unscaled;
+            EditorGloveTraceNow.ViewProbe = CueViewProbe();
+            var mainCam = Camera.main;
+            EditorGloveTraceNow.CamMain = mainCam == null ? "null" : mainCam.name;
+            EditorGloveTraceNow.CamUsed = _garden.Cam == null ? "null" : _garden.Cam.name;
+            var cuePt = CueBranchWorld();
+            EditorGloveTraceNow.Dist = (world - cuePt).sqrMagnitude;
+            EditorGloveTraceNow.Threshold = 0.0001f;
+            EditorGloveTraceNow.Hit = -1;
+            EditorGloveTraceNow.Fallback = false;
+#endif
+            if (OstrichIntroBlocking()) { DropRouted("ostrich"); return; }
+            if (_ruleTip != RuleTip.None || _ruleEatGesture) { DropRouted("rule"); return; }
+            if (LessonTapBlocked()) { DropRouted("lesson"); return; }
+            if (_busy || _won || _board == null) { DropRouted("board"); return; }
+            if (GateNow < _swallowTapsUntil) { DropRouted("swallow"); return; }
+            if (AdPause.Unscaled < _nextTap) { DropRouted("next"); return; }
+            bool freezeReject = _cueFreeze;
+            bool routed = _gloveRouted;
+            if (CoachReject(world))
+            {
+                // A freeze nudge is not a tap. Arming _nextTap here would make the
+                // real tap 0.10 s late.
+                if (!freezeReject) _nextTap = AdPause.Unscaled + 0.10f;
+                DropRouted("reject");
+                return;
+            }
             _nextTap = AdPause.Unscaled + 0.10f;
-            if (CoachReject(world)) return;
+#if UNITY_EDITOR
+            EditorGloveTraceNow.Rejected = false;
+#endif
 
-            int sign = HitGiftSign(world);
-            if (sign >= 0)
+            int hit = -1;
+            bool cuePoint = _cueForce && _cueBranch >= 0
+                && (world - CueBranchWorld()).sqrMagnitude <= 0.0001f
+                && OstrichTurn.Tappable(_board, _cueBranch);
+#if UNITY_EDITOR
+            EditorGloveTraceNow.Fallback = cuePoint;
+#endif
+            // A glove release aimed at the cue branch resolves there before a gift
+            // sign or a feeder can swallow the same point.
+            if (routed && cuePoint)
+                hit = _cueBranch;
+            else
             {
-                if (CanOfferBonus(sign)) OpenBonus(sign);
-                return;
-            }
-            // Bird and limb taps must not open a gift a moment later.
-            _suppressGiftUntil = GateNow + 1f;
-
-            int feeder = HitFeeder(world);
-            if (feeder >= 0)
-            {
-                if (_sel >= 0)
+                int sign = HitGiftSign(world);
+                if (sign >= 0)
                 {
-                    _garden.Branches[_sel].SetReady(false);
-                    _sel = -1;
+                    if (CanOfferBonus(sign) || _busy || _collecting || GateNow < _suppressGiftUntil)
+                        QueueGiftSign(sign);
+                    DropRouted("gift-sign");
+                    return;
                 }
-                _garden.Feeders[feeder].Poke();
-                return;
-            }
+                _suppressGiftUntil = GateNow + 1f;
 
-            int hit = HitBranch(world);
+                int feeder = HitFeeder(world);
+                if (feeder >= 0)
+                {
+                    if (_sel >= 0)
+                    {
+                        _garden.Branches[_sel].SetReady(false);
+                        _sel = -1;
+                    }
+                    _garden.Feeders[feeder].Poke();
+                    DropRouted("feeder");
+                    return;
+                }
+
+                hit = HitBranch(world);
+                if (hit < 0 && cuePoint)
+                    hit = _cueBranch;
+            }
+            _suppressGiftUntil = GateNow + 1f;
+#if UNITY_EDITOR
+            EditorGloveTraceNow.Hit = hit;
+#endif
             if (hit < 0)
             {
                 if (_sel >= 0)
@@ -3770,11 +5359,13 @@ namespace FlockFive
                     _garden.Branches[_sel].SetReady(false);
                     _sel = -1;
                 }
+                DropRouted("miss");
                 return;
             }
             if (Locked(hit) && _sel < 0)
             {
                 _garden.Branches[hit].Shake();
+                DropRouted("locked");
                 return;
             }
             if (_sel < 0)
@@ -3783,20 +5374,26 @@ namespace FlockFive
                 {
                     _garden.Branches[hit].Shake();
                     if (_board.IsSleeping(hit)) { Sfx.Sleep(); RaiseRuleSleepTip(); }
+                    DropRouted("cantpick");
                     return;
                 }
                 Select(hit);
+                // A free tap picks the branch. A routed glove release is the hop
+                // that already stamped "handle"; labeling it select overwrites that.
+                if (!routed) DropRouted("select");
                 return;
             }
             if (hit == _sel)
             {
                 _garden.Branches[_sel].SetReady(false);
                 _sel = -1;
+                DropRouted("unselect");
                 return;
             }
             if (Locked(_sel) || Locked(hit))
             {
                 _garden.Branches[hit].Shake();
+                DropRouted("locked-pair");
                 return;
             }
             if (_board.CanMove(_sel, hit, out _))
@@ -3806,9 +5403,11 @@ namespace FlockFive
                 if (_turnGate.Busy)
                 {
                     _garden.Branches[hit].Shake();
+                    DropRouted("turn");
                     return;
                 }
-                StartCoroutine(DoMove(_sel, hit));
+                BeginMove(_sel, hit);
+                DropRouted("move");
                 return;
             }
             if (!_board.Branches[hit].Empty)
@@ -3839,6 +5438,26 @@ namespace FlockFive
         readonly OstrichTurnGate _turnGate = new OstrichTurnGate();
         int _turnTicket;
 
+        void BeginMove(int from, int to)
+        {
+            var move = DoMove(from, to);
+#if UNITY_EDITOR
+            EditorLiveMove = move;
+            EditorGloveTraceNow.BeginMove = true;
+            // Edit mode has no coroutine tick. StartCoroutine would run this
+            // enumerator until its first wait and leave it finished, so a test
+            // pump would see zero frames and the lesson step would never run.
+            // Play mode still schedules it on the player loop.
+            if (!Application.isPlaying)
+                return;
+#endif
+            StartCoroutine(move);
+        }
+
+#if UNITY_EDITOR
+        public System.Collections.IEnumerator EditorLiveMove;
+#endif
+
         IEnumerator DoMove(int from, int to)
         {
             bool gated = _board != null && _board.Ostrich != null && _board.Ostrich.Alive;
@@ -3849,7 +5468,18 @@ namespace FlockFive
                 if (ticket == 0) yield break; // a move is already resolving: no banking
                 _turnTicket = ticket;
             }
-            try { yield return DoMoveCore(from, to); }
+            // Commit the birds before the first wait. One step of this routine
+            // has already landed the hop; what it yields is only the flight.
+            var core = DoMoveCore(from, to);
+            try
+            {
+                if (core.MoveNext())
+                {
+                    yield return core.Current;
+                    while (core.MoveNext())
+                        yield return core.Current;
+                }
+            }
             finally { if (ticket != 0) _turnGate.End(ticket); }
         }
 
@@ -3859,6 +5489,11 @@ namespace FlockFive
         IEnumerator DoMoveCore(int from, int to)
         {
             int gen = _motionGen;
+            if (_board == null || _garden.Branches == null
+                || from < 0 || to < 0
+                || from >= _garden.Branches.Length || to >= _garden.Branches.Length
+                || _garden.Branches[from] == null || _garden.Branches[to] == null)
+                yield break;
             _garden.Branches[from].SetReady(false);
             _sel = -1;
             if (Locked(from) || Locked(to) || !_board.CanMove(from, to, out int run))
@@ -3880,7 +5515,7 @@ namespace FlockFive
             if (gen != _motionGen) yield break;
             Unlock(from);
             Unlock(to);
-            if (_board.Ostrich != null && _board.Ostrich.Alive)
+            if (_board != null && _board.Ostrich != null && _board.Ostrich.Alive)
             {
                 // The views catch up to the hop, then the ostrich's pecks are played, not teleported.
                 // He waits until the move is fully resolved, then takes exactly one turn.
@@ -3946,12 +5581,17 @@ namespace FlockFive
                 }
                 _garden.Branches[from].FlutterTip();
             }
-            if (kicked == 0 && _board.IsSleeping(to) && _board.Branches[to].IsFullMatch(out _))
+            // The nap caption pauses the garden. CheckOver stays behind it, as it
+            // did when the tip opened here, so the ice does not start under the line.
+            bool napTip = kicked == 0 && _board.IsSleeping(to) && _board.Branches[to].IsFullMatch(out _);
+            if (napTip)
             {
                 Sfx.Sleep();
-                RaiseRuleSleepTip();
+                // Stay in this move until the caption (or the wait gives up), so the
+                // turn gate does not open on the frame the birds first tuck.
+                yield return StartCoroutine(RaiseSleepTipWhenNapping(to, gen));
             }
-            if (kicked == 0)
+            else if (kicked == 0)
                 CheckOver();
         }
 
@@ -3967,35 +5607,45 @@ namespace FlockFive
         IEnumerator Hop(int from, int to, int run, int fromCount, int toCount, BirdColor col)
         {
             int gen = _motionGen;
-            var src = _garden.Branches[from];
-            var dst = _garden.Branches[to];
+            var src = _garden.Branches != null && from >= 0 && from < _garden.Branches.Length
+                ? _garden.Branches[from] : null;
+            var dst = _garden.Branches != null && to >= 0 && to < _garden.Branches.Length
+                ? _garden.Branches[to] : null;
+            if (src == null || dst == null || src.Birds == null) yield break;
             Sfx.FlockFlutter(run);
             var movers = new SpriteRenderer[run];
             var starts = new Vector3[run];
             var ends = new Vector3[run];
+            int flying = 0;
             for (int i = 0; i < run; i++)
             {
                 int oldSeat = fromCount - run + i;
                 int newSeat = toCount + i;
-                movers[i] = src.Birds[oldSeat];
-                var idle = movers[i].GetComponent<BirdIdle>();
+                if (oldSeat < 0 || oldSeat >= src.Birds.Length) continue;
+                var bird = src.Birds[oldSeat];
+                if (bird == null) continue;
+                movers[flying] = bird;
+                var idle = bird.GetComponent<BirdIdle>();
                 if (idle != null)
                 {
                     idle.Frozen = true;
                     idle.Flapping = true;
                     idle.Lift = 0f;
                 }
-                starts[i] = movers[i].transform.position;
-                ends[i] = dst.SeatWorld(newSeat) + dst.transform.TransformVector(new Vector3(0f, BranchView.RestLift, 0f));
-                movers[i].transform.SetParent(_garden.Root, true);
-                movers[i].sortingOrder = FlockSort.Lift;
+                starts[flying] = bird.transform.position;
+                ends[flying] = dst.SeatWorld(newSeat) + dst.transform.TransformVector(new Vector3(0f, BranchView.RestLift, 0f));
+                if (_garden.Root != null)
+                    bird.transform.SetParent(_garden.Root, true);
+                bird.sortingOrder = FlockSort.Lift;
+                flying++;
             }
+            run = flying;
             float t = 0f;
             const float dur = 0.48f;
             while (t < dur)
             {
                 if (gen != _motionGen) yield break;
-                t += Time.deltaTime;
+                t += ParadeStep();
                 float u = Mathf.SmoothStep(0f, 1f, t / dur);
                 for (int i = 0; i < run; i++)
                 {
@@ -5230,12 +6880,15 @@ namespace FlockFive
         void PlayClearReward()
         {
             _clearReward = false;
+            int cards = _levelBees.Count;
             if (_restarting || _splash)
             {
                 _streakHomeDue = false;
+                _rewardCards = 0;
                 return;
             }
             _streakHomeDue = Purse.Streak > 0 && Purse.Pending > 0;
+            _rewardCards = _streakHomeDue ? cards : 0;
         }
 
         bool TipLocked(int i)
@@ -5557,6 +7210,14 @@ namespace FlockFive
 
         IEnumerator SnapRound()
         {
+            // Every caller (Restart, the streak ask, FinishRestart, WatchKeepStreak)
+            // lands here. The tip's pause freezes FlyOffAll, and the seed is copied
+            // only after that flight, so the release has to happen before the first yield.
+            ClearSwallowedGlove();
+            NoteRestartLesson();
+            SuspendCaptionForRestart();
+            _lessonGuardUntil = 0f;
+            ResetLiveCoachStep();
             if (_restarting)
             {
                 // Second tap during the parade. Stay cut; do not resume in the gap.
@@ -5565,6 +7226,8 @@ namespace FlockFive
             }
             _motionGen++;
             _restarting = true;
+            StopOstrichEntrance();
+            if (_garden.Ostrich != null) _garden.Ostrich.BeginEntrance();
             _solvedMerging = false;
             SetAutoResolveSpeed(1f);
             GardenFit.ClearBusy();
@@ -5641,9 +7304,11 @@ namespace FlockFive
             // Formation is home. This frame stays dark; the interrupted step fades in next.
             _restarting = false;
             TickCoachReset(false, true);
+            ApplyRestartRecue();
             StillBirds(false);
             _busy = false;
             ArmGardenStamp();
+            ArmOstrichEntrance();
         }
 
         void RefreshBonusSigns()
@@ -6033,7 +7698,7 @@ namespace FlockFive
             {
                 if (gen != _motionGen) yield break;
                 if (GamePause.Paused) { yield return null; continue; }
-                t += Time.deltaTime;
+                t += ParadeStep();
                 for (int i = 0; i < birdN; i++)
                 {
                     var b = flock[i];
@@ -6212,7 +7877,7 @@ namespace FlockFive
             {
                 if (gen != _motionGen) yield break;
                 if (GamePause.Paused) { yield return null; continue; }
-                t += Time.deltaTime;
+                t += ParadeStep();
                 for (int i = 0; i < birds.Count; i++)
                 {
                     var b = birds[i];
@@ -6349,24 +8014,437 @@ namespace FlockFive
 
         // Resume delivers the pointer that was down when the app left. Eat it
         // once, for every IMGUI control, so a lesson cannot be tapped through.
+        public enum PointerEdge { None = 0, Down = 1, Release = 2 }
+
+        // True only for the release of the pointer that left the level.
+        // A pointer-down is a new gesture and is never swallowed.
+        public static bool SwallowLevelExit(bool held, int trackedId, PointerEdge edge, int eventId)
+        {
+            if (!held || edge != PointerEdge.Release) return false;
+            return eventId == trackedId;
+        }
+
+        // A later press, or a different finger, drops a release that never arrived.
+        // The press that left the level is the same id on the armed frame and stays.
+        public static bool DropExitOnPress(bool held, int trackedId, int eventId, int armedFrame, int nowFrame)
+        {
+            if (!held) return false;
+            if (nowFrame == armedFrame && eventId == trackedId) return false;
+            return true;
+        }
+
+        // The finger that ended, or PlayPointer.MouseId when no finger ended.
+        // The mouse matches only a mouse release, not every release while it is held.
+        public static int ExitFingerId(int trackedId, int[] endedIds, bool mouseRelease)
+        {
+            if (endedIds != null)
+            {
+                for (int i = 0; i < endedIds.Length; i++)
+                    if (endedIds[i] == trackedId) return trackedId;
+                if (endedIds.Length > 0) return endedIds[0];
+            }
+            return mouseRelease ? PlayPointer.MouseId : int.MinValue;
+        }
+
+        void ArmLevelExit(int pointerId)
+        {
+            _exitPointerHeld = true;
+            _exitPointerId = pointerId;
+            _exitPointerFrame = Time.frameCount;
+            _skipSplashSettle = true;
+        }
+
+        void ForgetLevelPointer()
+        {
+            _homeGate = default;
+            DropGlovePress();
+            // Focus(true) and resume call this. They must not wipe a swallowed
+            // press: that release still has to be eaten after the new window.
+        }
+
+        static void ClearLevelExit()
+        {
+            _exitPointerHeld = false;
+            if (_app == null) return;
+            _app.ClearSwallowedGlove();
+            _app.ForgetLevelPointer();
+        }
+
+        void CaptureLevelExitPointer()
+        {
+            _exitPointerHeld = false;
+            _exitPointerId = PlayPointer.MouseId;
+            var touch = Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count; i++)
+                {
+                    var t = touches[i];
+                    if (t == null || !t.press.isPressed) continue;
+                    ArmLevelExit(t.touchId.ReadValue());
+                    return;
+                }
+            }
+            if (Mouse.current != null && Mouse.current.leftButton.isPressed)
+                ArmLevelExit(PlayPointer.MouseId);
+        }
+
+        static int ResolveExitEventId(Event e)
+        {
+            if (e == null || e.type != EventType.MouseUp) return int.MinValue;
+            int n = 0;
+            var ids = new int[8];
+            var touch = Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count && n < ids.Length; i++)
+                {
+                    var t = touches[i];
+                    if (t == null) continue;
+                    var phase = t.phase.ReadValue();
+                    if (phase != UnityEngine.InputSystem.TouchPhase.Ended
+                        && phase != UnityEngine.InputSystem.TouchPhase.Canceled) continue;
+                    ids[n++] = t.touchId.ReadValue();
+                }
+            }
+            if (n == 0) return ExitFingerId(_exitPointerId, null, true);
+            var ended = new int[n];
+            for (int i = 0; i < n; i++) ended[i] = ids[i];
+            return ExitFingerId(_exitPointerId, ended, true);
+        }
+
+        static int PressIdNow()
+        {
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Down)
+                return EditorPointerInject.Id;
+#endif
+            var touch = Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count; i++)
+                {
+                    var t = touches[i];
+                    if (t != null && t.press.wasPressedThisFrame)
+                        return t.touchId.ReadValue();
+                }
+            }
+            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+                return PlayPointer.MouseId;
+            return int.MinValue;
+        }
+
+        static void NoteFreshPress()
+        {
+            if (!_exitPointerHeld) return;
+            int id = PressIdNow();
+            if (id == int.MinValue) return;
+            if (DropExitOnPress(_exitPointerHeld, _exitPointerId, id, _exitPointerFrame, Time.frameCount))
+                ClearLevelExit();
+        }
+
+        static bool ConsumeLevelExit(Event e)
+        {
+            if (e == null || !_exitPointerHeld) return false;
+            if (e.type == EventType.MouseDown)
+            {
+                int id = PressIdNow();
+                if (id == int.MinValue) id = PlayPointer.MouseId;
+                if (DropExitOnPress(_exitPointerHeld, _exitPointerId, id, _exitPointerFrame, Time.frameCount))
+                    ClearLevelExit();
+                return false;
+            }
+            if (e.type != EventType.MouseUp) return false;
+            int eventId = ResolveExitEventId(e);
+            if (!SwallowLevelExit(true, _exitPointerId, PointerEdge.Release, eventId)) return false;
+            ClearLevelExit();
+            return true;
+        }
+
+        static float ParadeStep()
+        {
+            float dt = Time.deltaTime;
+#if UNITY_EDITOR
+            // EditMode steps this enumerator with no player loop, so delta stays 0.
+            // A held pause never reaches here: the parade yields until it lifts.
+            if (!Application.isPlaying && dt <= 0f) dt = 0.25f;
+#endif
+            return dt;
+        }
+
         static void SwallowResumePointer()
         {
+            var leave = Event.current;
+            if (leave != null && ConsumeLevelExit(leave))
+            {
+                if (leave.type == EventType.MouseUp) GUIUtility.hotControl = 0;
+                leave.Use();
+                return;
+            }
             // Also while the level transition covers the screen (held splash / mask).
-            if (GateNow >= _resumeInputUntil && !PressRainbow.StageHeld() && !StartupInputHeld) return;
+            bool resumeHold = GateNow < _resumeInputUntil;
+            bool otherHold = GateNow < _sceneInputUntil || PressRainbow.StageHeld() || StartupInputHeld;
+            if (!resumeHold && !otherHold) return;
             var e = Event.current;
             if (e == null) return;
+            // Home, Restart, and the gear arm in HitPad later this OnGUI pass.
+            // Swallowing the down here leaves hotControl unset, so the release never fires.
+            // A scene cover or the startup hold still swallows those buttons.
             var t = e.type;
-            if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            bool pointer = t == EventType.MouseDown || t == EventType.MouseUp || t == EventType.MouseDrag;
+            // Destroyed app: Unity's == is null. Do not eat Home, the gear, or the board.
+            if (_app == null) return;
+            bool held = false;
+            if (pointer)
+            {
+                int heldId = HomeEventId(e, t == EventType.MouseDown, t == EventType.MouseUp);
+                held = _app.ResumeHolds(heldId);
+            }
+            int hud = _app.HudControl(PlayPointer.Gui(e));
+            // Fresh Home and gear. A finger already down at hide is swallowed.
+            // Fresh Restart stays swallowed until its own commit.
+            if (resumeHold && !otherHold && (hud == 1 || hud == 3) && !held)
+                return;
+            if (resumeHold && !otherHold && hud == 2 && pointer)
+            {
+                if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+                e.Use();
+                return;
+            }
+            if (!pointer) return;
+            if (!held) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
             e.Use();
+        }
+
+        // A resolved mouse id of -1 is not a finger. The touch release still counts.
+        public static int HomePointerId(int resolved, bool released, int releasedId)
+        {
+            if (resolved >= 0) return resolved;
+            if (released) return releasedId;
+            return resolved == int.MinValue ? PlayPointer.MouseId : resolved;
+        }
+
+        static int HomeEventId(Event e, bool down, bool up)
+        {
+            if (up)
+            {
+                int resolved = ResolveExitEventId(e);
+                int released;
+                bool had = PressReleased(out released);
+                return HomePointerId(resolved, had, released);
+            }
+            int press = PressIdNow();
+            if (down && press != int.MinValue) return press;
+            return PlayPointer.MouseId;
+        }
+
+#if UNITY_EDITOR
+        public struct EditorPointer
+        {
+            public bool On;
+            public bool Down;
+            public bool Up;
+            public int Id;
+            // Raw window GUI (top-origin, pillar included). PlayPointer converts it once.
+            public Vector2 Window;
+        }
+
+        public static EditorPointer EditorPointerInject;
+        public int EditorHandleTaps;
+
+        // DEV-ONLY. The player press is a touch id and the release is the mouse,
+        // in that order. Editor tests inject one id, so they never saw the miss.
+        public int DevReplayGloveTap(Vector2 downGui, int downId, Vector2 upGui, int upId)
+        {
+            int before = EditorHandleTaps;
+            PlayPointer.CaptureWindow(downGui, true, false, downId);
+            TryDrawnGlove(PlayPointer.At, false, downId);
+            PlayPointer.CaptureWindow(upGui, false, true, upId);
+            TryDrawnGlove(PlayPointer.At, true, upId);
+            return EditorHandleTaps - before;
+        }
+
+        // What the last Pressed call did with the home gate. Inspect-only.
+        public struct EditorPressTrace
+        {
+            public bool HasApp;
+            public bool Splash;
+            public bool Active;
+            public bool BlockRan;
+            public bool Down;
+            public bool Up;
+            public bool CarryBefore;
+            public bool CarryAfter;
+            public int CarryId;
+            public int PressId;
+            public int UpId;
+            public int EventId;
+        }
+
+        public static EditorPressTrace LastPressTrace;
+
+        // Last glove release the tests drove. Inspect-only. One line, every step.
+        public struct EditorGloveTrace
+        {
+            public string Exit;
+            public Rect Glove;
+            public Vector2 Point;
+            public bool TryHit, OnGlove, OnHud, Latched;
+            public int CueFrom, CueTo, CueBranch;
+            public Vector2 World;
+            public int ViewProbe;
+            public int Hit;
+            public bool Fallback;
+            public float Dist, Threshold;
+            public string CamMain, CamUsed;
+            public bool TurnBusy, Rejected, Routed, CueForce, CueFreeze, CueGift, BeginMove;
+            public float NextTap, Now;
+            public int SelBefore, SelAfter;
+
+            public override string ToString()
+            {
+                return "exit=" + Exit
+                    + " glove=" + Glove.x.ToString("0") + "," + Glove.y.ToString("0") + "," + Glove.width.ToString("0") + "," + Glove.height.ToString("0")
+                    + " pt=" + Point.x.ToString("0") + "," + Point.y.ToString("0")
+                    + " try=" + TryHit + " on=" + OnGlove + "/" + OnHud + " latch=" + Latched
+                    + " cue=" + CueFrom + "->" + CueTo + " branch=" + CueBranch
+                    + " world=" + World.x.ToString("0.00") + "," + World.y.ToString("0.00")
+                    + " view=" + ViewProbe + " hit=" + Hit
+                    + " fall=" + Fallback + " dist=" + Dist.ToString("0.0000") + " thr=" + Threshold.ToString("0.0000")
+                    + " camMain=" + CamMain + " cam=" + CamUsed
+                    + " turn=" + TurnBusy + " reject=" + Rejected + " routed=" + Routed
+                    + " next=" + NextTap.ToString("0.00") + " now=" + Now.ToString("0.00")
+                    + " begin=" + BeginMove
+                    + " force=" + CueForce + " freeze=" + CueFreeze + " gift=" + CueGift
+                    + " sel=" + SelBefore + "->" + SelAfter;
+            }
+        }
+
+        public static EditorGloveTrace EditorGloveTraceNow;
+#endif
+
+        static bool FreshTouchDown()
+        {
+            var touch = Touchscreen.current;
+            if (touch == null) return false;
+            var touches = touch.touches;
+            for (int i = 0; i < touches.Count; i++)
+            {
+                var t = touches[i];
+                if (t != null && t.press.wasPressedThisFrame) return true;
+            }
+            return false;
+        }
+
+        static bool PressReleased(out int id)
+        {
+            id = PlayPointer.MouseId;
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Up)
+            {
+                id = EditorPointerInject.Id;
+                return true;
+            }
+#endif
+            var touch = Touchscreen.current;
+            if (touch != null)
+            {
+                var touches = touch.touches;
+                for (int i = 0; i < touches.Count; i++)
+                {
+                    var t = touches[i];
+                    if (t == null) continue;
+                    var phase = t.phase.ReadValue();
+                    if (phase != UnityEngine.InputSystem.TouchPhase.Ended
+                        && phase != UnityEngine.InputSystem.TouchPhase.Canceled) continue;
+                    id = t.touchId.ReadValue();
+                    return true;
+                }
+            }
+            if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
+            {
+                id = PlayPointer.MouseId;
+                return true;
+            }
+            return false;
         }
 
         static bool Pressed(out Vector2 screen)
         {
             screen = default;
-            if (GateNow < _resumeInputUntil) return false;
+            NoteFreshPress();
+#if UNITY_EDITOR
+            var trace = new EditorPressTrace
+            {
+                HasApp = _app != null,
+                Splash = _app != null && _app._splash,
+                Active = _app != null && _app._homeGate.Active,
+                CarryBefore = _app != null && _app._homeGate.CarryHeld,
+                CarryId = _app != null ? _app._homeGate.CarryId : -2,
+                PressId = int.MinValue,
+                UpId = int.MinValue,
+                EventId = int.MinValue
+            };
+#endif
+            if (_app != null && _app._splash && _app._homeGate.Active)
+            {
+                int pressId = PressIdNow();
+                bool down = pressId != int.MinValue;
+                int upId;
+                bool up = PressReleased(out upId);
+                int id = down ? pressId : PlayPointer.MouseId;
+                if (up)
+                {
+                    // The finger that left the level still clears the gate when another
+                    // press is reported on the same call. HomePointerId keeps a
+                    // nonnegative press and would leave that release unread.
+                    bool carryUp = _app._homeGate.CarryHeld && upId == _app._homeGate.CarryId;
+                    id = carryUp ? upId : HomePointerId(down ? pressId : PlayPointer.MouseId, true, upId);
+                }
+                else if (!down)
+                    id = PlayPointer.MouseId;
+#if UNITY_EDITOR
+                trace.BlockRan = true;
+                trace.Down = down;
+                trace.Up = up;
+                trace.PressId = pressId;
+                trace.UpId = upId;
+                trace.EventId = id;
+#endif
+                if (!HomeGateAllows(ref _app._homeGate, down, up, id))
+                {
+#if UNITY_EDITOR
+                    trace.CarryAfter = _app._homeGate.CarryHeld;
+                    LastPressTrace = trace;
+#endif
+                    return false;
+                }
+            }
+#if UNITY_EDITOR
+            if (_app != null) trace.CarryAfter = _app._homeGate.CarryHeld;
+            LastPressTrace = trace;
+#endif
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Down)
+            {
+                PlayPointer.CaptureInject();
+                screen = PlayPointer.PlayBottom;
+                return true;
+            }
+#endif
+            if (GateNow < _sceneInputUntil) return false;
+            if (GateNow < _resumeInputUntil)
+            {
+                int rid = PressIdNow();
+                if (rid == int.MinValue) rid = PlayPointer.MouseId;
+                if (_app != null && _app.ResumeHolds(rid)) return false;
+            }
             if (StartupInputHeld) return false;
-            if (LessonGuardUp()) return false;
+            if (_app != null && _app.LessonGuardUp()) return false;
             // The finger wins over a synthesized mouse. On Android the mouse click
             // can sit at a stale point while the touch is the poker button.
             if (FreshTouchPress(out screen)) return true;
@@ -6374,7 +8452,8 @@ namespace FlockFive
             if (PressRainbow.StageHeld()) return false;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
-                screen = PhoneArea.In(Mouse.current.position.ReadValue());
+                PlayPointer.CaptureScreenBottom(Mouse.current.position.ReadValue(), true, false, PlayPointer.MouseId);
+                screen = PlayPointer.PlayBottom;
                 return true;
             }
             return false;
@@ -6394,12 +8473,14 @@ namespace FlockFive
                 if (phase == UnityEngine.InputSystem.TouchPhase.Canceled
                     || phase == UnityEngine.InputSystem.TouchPhase.None)
                     continue;
-                screen = PhoneArea.In(t.position.ReadValue());
+                PlayPointer.CaptureScreenBottom(t.position.ReadValue(), true, false, t.touchId.ReadValue());
+                screen = PlayPointer.PlayBottom;
                 return true;
             }
             if (touch.primaryTouch != null && touch.primaryTouch.press.wasPressedThisFrame)
             {
-                screen = PhoneArea.In(touch.primaryTouch.position.ReadValue());
+                PlayPointer.CaptureScreenBottom(touch.primaryTouch.position.ReadValue(), true, false, touch.primaryTouch.touchId.ReadValue());
+                screen = PlayPointer.PlayBottom;
                 return true;
             }
             return false;
@@ -6410,12 +8491,20 @@ namespace FlockFive
         static float TopHud(float extra = 0f) => TopHudBox(PhoneArea.H, PhoneArea.Safe, extra);
 
         // Screen-explicit so the album grid test uses the same top inset as play.
+        // GUI y of the top unsafe band. safeArea is bottom-up, so the inset is
+        // the distance from the screen top down to safe.yMax. iPad with no inset stays 0.
+        public static float GuiTopInset(float screenH, Rect safe) => PhoneArea.GuiTopInset(screenH, safe);
+
+        public static float TopControlY(float screenH, Rect safe, float y)
+        {
+            float inset = GuiTopInset(screenH, safe);
+            return y < inset ? inset : y;
+        }
+
         public static float TopHudBox(float screenH, Rect safe, float extra)
         {
             float s = DeviceFit.UiH(screenH);
-            float inset = (safe.width < 2f || safe.height < 2f)
-                ? 0f
-                : Mathf.Max(0f, screenH - safe.yMax);
+            float inset = GuiTopInset(screenH, safe);
             return Mathf.Max(12f, inset + 10f * s + extra);
         }
 
@@ -6448,8 +8537,8 @@ namespace FlockFive
             if (_splash || _garden.Hive == null) return;
             var cam = _garden.Cam != null ? _garden.Cam : Camera.main;
             if (cam == null) return;
-            HudShaken(out _, out var hive);
-            _garden.Hive.TrackHud(cam, hive);
+            HudShaken(out var restart, out var hive);
+            _garden.Hive.TrackHud(cam, CornerAnchor.HiveAlignedDraw(hive, restart));
         }
 
         // The wood skep is the OnGUI button. This glow sits under it, so it follows the same gate.
@@ -6470,6 +8559,9 @@ namespace FlockFive
 
         void LateUpdate()
         {
+            // Outside the camera callback, so the slab render is not nested.
+            CardStage.Flush();
+            AudioGuard.SettleDevConsole();
             // Sensors and the card stage only live while an inspect is open (battery + memory).
             if (CardTilt.Open && _hiveInspect < 0) { CardTilt.End(); CardStage.Release(); _stageSlot = -1; }
             if (GamePause.Paused)
@@ -6553,43 +8645,198 @@ namespace FlockFive
         // The glove is on Restart or Hive: let the real control run.
         bool HudGloveTap(Vector2 screen, Rect restart, Rect hive, Vector2 gui)
         {
-            if (restart.Contains(gui)) { Restart(); return true; }
+            if (restart.Contains(gui)) return ActRestart();
             OpenLevelHive();
+            return true;
+        }
+
+        // Fresh Restart stays down through the resume window. The Restart commit
+        // makes this return false, which is the whole of that drop.
+        bool ResumeSwallowsRestart()
+        {
+            return GateNow < _resumeInputUntil;
+        }
+
+        // The finger that went down on the glove owns the press. Home and Restart wait.
+        bool GloveOwnsHudPress()
+        {
+            return _glovePressLatched || _gloveTookFrame == Time.frameCount;
+        }
+
+        // Same covers as HitHud, in the same order. LessonTapBlocked is only a
+        // gate: it does not dismiss a caption. Hive inspect stays open. A level
+        // hive closes when the tap misses its rect. The gift card's own veil
+        // does not count, so Restart stays live under that card.
+        bool RestartCovered(Vector2 bottom, Vector2 gui)
+        {
+            if (LessonTapBlocked())
+            {
+#if UNITY_EDITOR
+                EditorRestartCover = "lesson guard " + LessonGuardUp() + " ate " + CoachAteThisFrame();
+#endif
+                return true;
+            }
+            if (_hiveInspect >= 0)
+            {
+#if UNITY_EDITOR
+                EditorRestartCover = "hive-inspect " + _hiveInspect;
+#endif
+                return true;
+            }
+            if (_levelHive)
+            {
+                bool hit = _levelHiveRect.width > 1f && _levelHiveRect.Contains(gui);
+#if UNITY_EDITOR
+                EditorRestartCover = hit ? "level-hive-hit" : "level-hive-miss";
+#endif
+                if (hit) return true;
+                CloseLevelHive();
+                return true;
+            }
+            var veil = ActiveVeil();
+            bool veilHit = veil.Open && veil.Owner != ModalBlock.Id.Gift && VeilDrops(bottom);
+#if UNITY_EDITOR
+            EditorRestartCover = veilHit
+                ? "veil " + veil.Owner
+                : "none veil " + veil.Owner + " open " + veil.Open;
+#endif
+            if (veilHit) return true;
+            return false;
+        }
+
+        bool ActRestart()
+        {
+            // Time window, a glove-owned press, or a press that started in the window.
+            // Retry uses this same entry, so it keeps the same rule.
+            // A touch that went down on the glove, Home, or the gear is still
+            // that press. It must not restart.
+            // No record (-2) is allowed here. GardenHudAct, a rule-tip tap, and
+            // the Restart button call this without a glove Down. The echo path
+            // refuses a bare release before it gets here.
+#if UNITY_EDITOR
+            EditorActRestartEntered++;
+#endif
+            int down = DownControlOf(_gloveEdgeId);
+            if (down == -1 || (down > 0 && down != 2))
+            {
+#if UNITY_EDITOR
+                EditorActRestartBlock = "down " + down;
+#endif
+                return true;
+            }
+            if (ResumeSwallowsRestart() || GloveOwnsHudPress() || _resumeOriginRelease || ResumeOriginBlocks(_gloveEdgeId))
+            {
+#if UNITY_EDITOR
+                EditorActRestartBlock = "swallow window " + ResumeSwallowsRestart()
+                    + " glove " + GloveOwnsHudPress()
+                    + " origin " + _resumeOriginRelease
+                    + " blocks " + ResumeOriginBlocks(_gloveEdgeId);
+#endif
+                _resumeOriginRelease = false;
+                return true;
+            }
+#if UNITY_EDITOR
+            EditorActRestartCommitted++;
+            EditorActRestartBlock = "commit";
+#endif
+            _tapWho = "restart";
+            Restart();
             return true;
         }
 
         bool HitHud(Vector2 screen)
         {
-            if (LessonTapBlocked()) return false;
-            HudShaken(out var restart, out var hive);
+            var canvas = new Vector2(screen.x, PhoneArea.H - screen.y);
+            if (OverlayOwnsPress(canvas, false))
+            {
+#if UNITY_EDITOR
+                EditorTapStop = "hithud-overlay " + (_tapWho ?? "none");
+#endif
+                return true;
+            }
+            if (LessonTapBlocked())
+            {
+#if UNITY_EDITOR
+                EditorTapStop = "hithud-lesson";
+#endif
+                return false;
+            }
+            HudShaken(out var restart, out var hivePlate);
+            var hive = CornerAnchor.HiveStrawHit(CornerAnchor.HiveAlignedDraw(hivePlate, restart));
             HudLayout(out _, out float top, out _, out _, out _);
             float gy = PhoneArea.H - screen.y;
             var gui = new Vector2(screen.x, gy);
             if (_hiveInspect >= 0)
+            {
+#if UNITY_EDITOR
+                EditorTapStop = "hithud-hive";
+#endif
                 return true;
+            }
             if (_levelHive)
             {
+#if UNITY_EDITOR
+                EditorTapStop = "hithud-level-hive";
+#endif
                 if (_levelHiveRect.width > 1f && _levelHiveRect.Contains(gui))
                     return true;
                 CloseLevelHive();
                 return true;
             }
             // b131: Restart lives in the top bar (above top), so it is checked before the top-bar swallow.
-            // b103: while a garden lesson glove is up, Restart and Hive only count under the glove.
-            if (CueGloveOwnsHud() && (restart.Contains(gui) || (HiveReachable() && hive.Contains(gui))))
+            // A lesson caption must not swallow Home or Restart. The tap acts.
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            bool homeHit, restartHit;
+            if (GardenHudPoint(screen, PhoneArea.H, home, restart, out homeHit, out restartHit))
+            {
+                if (homeHit)
+                {
+                    // Same ownership as the gear. A fresh tap opens Home.
+                    // A drag from the glove, another control, or a press that
+                    // was already down when the resume window began does not.
+                    if (GloveOwnsHudPress() || EchoReleaseBlocks(1))
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "hithud-home-blocked";
+#endif
+                        return true;
+                    }
+                    _tapWho = "home";
+                    OpenHomeFromPress();
+                }
+                else ActRestart();
+#if UNITY_EDITOR
+                if (homeHit) EditorTapStop = "hithud-home";
+                else EditorTapStop = "hithud-restart";
+#endif
+                return true;
+            }
+            // b103: while a garden lesson glove is up, Hive only counts under the glove.
+            if (CueGloveOwnsHud() && HiveReachable() && hive.Contains(gui))
                 return !GloveTapHits(screen) ? true : HudGloveTap(screen, restart, hive, gui);
             var claim = HudClaim(gui, restart, hive, HiveReachable(), top);
             // b131: the top of a feeder bulb reaches into the top-bar band. Outside Restart, a feeder tap wins.
             if (claim == HudTap.TopBar && FeederUnder(screen)) return false;
             switch (claim)
             {
-                case HudTap.Restart: Restart(); return true;
-                case HudTap.TopBar: return true;
+                case HudTap.Restart: ActRestart();
+#if UNITY_EDITOR
+                    EditorTapStop = "hithud-claim-restart";
+#endif
+                    return true;
+                case HudTap.TopBar:
+#if UNITY_EDITOR
+                    EditorTapStop = "hithud-topbar";
+#endif
+                    return true;
                 case HudTap.Hive: OpenLevelHive(); return true;
             }
             // b131: no bottom-band swallow any more. It used to eat every tap below the corner-button
             // line (the old bottom-left Restart seat), which on b105 layouts covered the lower-left branch
             // above the ad row, so a send to it fell through as an empty tap and deselected.
+#if UNITY_EDITOR
+            EditorTapStop = "hithud-miss";
+#endif
             return false;
         }
 
@@ -6613,16 +8860,38 @@ namespace FlockFive
 
         // Item 8 profiling: OnGUI by event, and the render tail to end of frame.
         public static bool ShotNoGui; // editor clips: background only
+        // OnGUIBody is also invoked from editor tests. Paint only while this
+        // real OnGUI call is on the stack, so a batch Repaint event cannot blit.
+        int _onGuiDepth;
+#if UNITY_EDITOR
+        // Counts OnGUI entries that passed the owner check. The depth field
+        // returns to 0 when OnGUI returns, so tests read this instead.
+        internal int EditorGuiPasses;
+#endif
+
         void OnGUI()
         {
+            if (_app != this) return;
+#if UNITY_EDITOR
+            EditorGuiPasses++;
+#endif
+            _onGuiDepth++;
+            try { OnGUICore(); }
+            finally { _onGuiDepth--; }
+        }
+
+        void OnGUICore()
+        {
+            PlayPointer.CaptureEvent(Event.current);
             // iPad pillarbox: garden bars + play image, then the GUI runs in the phone area.
-            PhoneArea.BeginGui();
-            if (PhoneArea.Pillar) GUI.depth = 1; // under the Ads consent prompt, as before
+            if (_onGuiDepth > 0) PhoneArea.BeginGui();
+            // Depth 0 is a test call, not a real OnGUI. GUI.depth throws there.
+            if (_onGuiDepth > 0 && PhoneArea.Pillar) GUI.depth = 1;
             if (ShotNoGui) return;
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
                 Event.current.Use();
-            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); return; }
+            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); FinishTapLog(); return; }
             var ev = Event.current != null ? Event.current.type : EventType.Ignore;
             var sp = StartupTrace.Begin(ev == EventType.Repaint ? "GUI.Repaint" : ev == EventType.Layout ? "GUI.Layout" : "GUI.Input");
             try { OnGUIBody(); }
@@ -6630,7 +8899,15 @@ namespace FlockFive
             DrawRewardChoiceTop();
             DrawWarmCover();
             PaintPressRainbow();
+            FinishTapLog();
             if (ev == EventType.Repaint) _guiEndTick = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
+
+        void FinishTapLog()
+        {
+#if DEVELOPMENT_BUILD
+            if (_tapEdge) EmitTap(_tapDown, _tapAt, _tapWho);
+#endif
         }
 
         // Release rainbow: one top-level paint, the very last thing every OnGUI does,
@@ -6640,7 +8917,7 @@ namespace FlockFive
         static bool _rainbowMaskLogged;
         static void PaintPressRainbow()
         {
-            if (!GuiPaint()) return;
+            if (!OnGuiOpen || !GuiPaint()) return;
             var m = GUI.matrix;
             GUI.matrix = PhoneArea.GuiBase;
             int glints = PressRainbow.Draw(out float t, out float washA);
@@ -6690,6 +8967,350 @@ namespace FlockFive
 
         void OnGUIBody()
         {
+            TakeGuiPointer();
+            // Hit and gate logic above is safe outside OnGUI. Every draw under
+            // PaintAfterPointer stays on a real OnGUI pass.
+            if (_onGuiDepth > 0)
+                PaintAfterPointer();
+            // The resume-origin Up has had its pass, including Retry's ActRestart.
+            _resumeOriginRelease = false;
+        }
+
+        // Garden presses always reach the glove. On the home face, Home and the
+        // gear still do, including a finger that was held across resume.
+        bool ResumeGloveEdge(Vector2 windowGui)
+        {
+            if (!_splash) return true;
+            int which = HudControl(windowGui);
+            return which == 1 || which == 3;
+        }
+
+        // Pointer edges only. No GUI draw, so an editor test can call this
+        // outside a real OnGUI. OnGUIBody paints after it.
+        void TakeGuiPointer()
+        {
+            ClearSwallowedOnCancel();
+            var tapEv = Event.current;
+            _tapEdge = tapEv != null && tapEv.button == 0
+                && (tapEv.type == EventType.MouseDown || tapEv.type == EventType.MouseUp);
+            _tapDown = tapEv != null && tapEv.type == EventType.MouseDown;
+            bool tapEdge = _tapEdge;
+            bool release = false;
+            bool have = false;
+            if (tapEdge)
+            {
+                PlayPointer.CaptureEvent(tapEv);
+                have = true;
+                release = tapEv.type == EventType.MouseUp;
+            }
+#if UNITY_EDITOR
+            else if (EditorPointerInject.On && (EditorPointerInject.Down || EditorPointerInject.Up))
+            {
+                PlayPointer.CaptureInject();
+                have = true;
+                release = EditorPointerInject.Up && !EditorPointerInject.Down;
+            }
+#endif
+            _tapAt = have ? PlayPointer.At : default;
+            _tapWho = null;
+            _pointerClaimed = false;
+            if (!have) return;
+            // Side bars are the painting. They are not Home, Restart, or a card.
+            if (!PlayPointer.Inside(PlayPointer.At))
+            {
+                if (tapEdge && tapEv != null) tapEv.Use();
+#if UNITY_EDITOR
+                EditorPointerInject = default;
+#endif
+                return;
+            }
+            var play = PlayPointer.At;
+            NotePointerEdges(release, play);
+            if (_avatarRename) RegisterAvatarPlate(DeviceFit.Ui());
+            if (_avatarRename && PlateControlAt(play))
+            {
+                if (release) ApplyAvatarPlate(play);
+                FinishPointerClaim("naming-control", tapEdge ? tapEv : null);
+                return;
+            }
+            if (OverlayOwnsPress(play, release))
+            {
+                FinishPointerClaim(_tapWho ?? "overlay", tapEdge ? tapEv : null);
+                return;
+            }
+            // A live IMGUI Restart belongs to its own button. An editor inject has
+            // no button, so Restart still goes through the glove yield.
+            bool liveRestart = tapEdge && HudControl(play) == 2;
+            if (ResumeGloveEdge(play) && !liveRestart)
+            {
+                int gloveId = PlayPointer.MouseId;
+                if (tapEdge)
+                    gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
+#if UNITY_EDITOR
+                else gloveId = EditorPointerInject.Id;
+#endif
+                if (TryDrawnGlove(play, release, gloveId))
+                {
+                    FinishPointerClaim("glove", tapEdge ? tapEv : null);
+                    return;
+                }
+                if (_pointerClaimed)
+                {
+                    FinishPointerClaim(_tapWho ?? "watch", tapEdge ? tapEv : null);
+                    return;
+                }
+            }
+            if (_splash && _home == HomeFace.Splash && !(_avatarRename && PlateControlAt(play)))
+            {
+                int id = PlayPointer.MouseId;
+                if (tapEdge)
+                    id = HomeEventId(tapEv, !release, release);
+#if UNITY_EDITOR
+                else id = EditorPointerInject.Id;
+#endif
+                bool down = !release;
+                if (release && TakeAdoptLookTap(play))
+                {
+                    FinishPointerClaim("adopt-look", tapEdge ? tapEv : null);
+                    return;
+                }
+                if (!AdoptLookOwnsTap(play)
+                    && !HomeGateAllows(ref _homeGate, down, release, id))
+                {
+                    GUIUtility.hotControl = 0;
+                    FinishPointerClaim(_tapWho ?? "home-gate", tapEdge ? tapEv : null);
+                }
+            }
+        }
+
+        // Editor batch reports the release on the inject, not on Pressed().
+        // Named apart from the PointerEdge enum, which already owns that word.
+        bool TryPointerSample(out Vector2 screen, out bool release)
+        {
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Up && !EditorPointerInject.Down)
+            {
+                PlayPointer.CaptureInject();
+                screen = PlayPointer.PlayBottom;
+                release = true;
+                return true;
+            }
+#endif
+            release = false;
+            return Pressed(out screen);
+        }
+
+        // One owner for every overlay control. Update presses and TakeGuiPointer
+        // both ask this, so the HUD and the board cannot take the point on
+        // either edge. Release performs the overlay's action. Press only claims.
+        int _overlayDepth;
+
+        bool OverlayOwnsPress(Vector2 play, bool release)
+        {
+            // GardenHudAct and TakeRuleTipPress call back in. A second entry
+            // would loop. The outer call owns the decision.
+            if (_overlayDepth > 0) return false;
+            _overlayDepth++;
+            try { return OverlayOwnsPressBody(play, release); }
+            finally { _overlayDepth--; }
+        }
+
+        bool OverlayOwnsPressBody(Vector2 play, bool release)
+        {
+            if (!PlayPointer.Inside(play)) return false;
+            if (GiftOverlayOwns(play, release)) return true;
+            if (_fivesOpen)
+            {
+                // The glass covers Restart and Home. The X and a tap on the glass both close.
+                if (release)
+                {
+                    _fivesOpen = false;
+                    _fivesAnim = 0f;
+                    _fivesChipHeld = false;
+                }
+                float s = DeviceFit.Ui();
+                var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
+                _tapWho = FivesCloseRect(g.Panel, s).Contains(play) ? "fives-close" : "fives-glass";
+                return true;
+            }
+            if (_dailyAskOpen && _dailyAskNoHitOn && _dailyAskNoHit.Contains(play))
+            {
+                if (release) TakeDailyAskNotNow(_dailyAskNoHit, play);
+                _tapWho = "not-now";
+                return true;
+            }
+            if (_avatarRename && _avatarRenameR.width > 2f)
+            {
+                RegisterAvatarPlate(DeviceFit.Ui());
+                if (_avatarRenameR.Contains(play) && !PlateControlAt(play))
+                {
+                    _tapWho = "naming";
+                    return true;
+                }
+            }
+            if (RewardChoiceButtonsDue())
+            {
+                bool hasAd = _rewardHasAd == 1;
+                var lay = LayoutRewardChoice(_rewardFace, PhoneArea.W, PhoneArea.H, hasAd);
+                if (!(lay.Primary.Contains(play) || (hasAd && lay.Secondary.Contains(play))))
+                {
+                    _tapWho = "reward";
+                    return true;
+                }
+            }
+            if (_ruleTip != RuleTip.None)
+            {
+                // Home and Restart stay live under a caption. Claiming them
+                // here returned before GardenHudAct could open Home.
+                int which = HudControl(play);
+                if (which == 1 || which == 2) return false;
+                if (!release) TakeRuleTipPress(PlayPointer.PlayBottom);
+                _tapWho = "rule";
+                return true;
+            }
+            // Home and Restart stay live. Any other lesson tap belongs to the caption.
+            if (HudControl(play) == 0 && EatGardenLessonTap(PlayPointer.PlayBottom))
+            {
+                _tapWho = "coach";
+                return true;
+            }
+            return false;
+        }
+
+        // Gift card, the ad movie, the wait, the thanks, and the freeze offer.
+        // X and Watch run here. Freeze Retry, Continue, and Wait Cancel are
+        // their own pads, so this leaves those points alone.
+        bool GiftOverlayOwns(Vector2 play, bool release)
+        {
+            if (_gift == GiftFace.None && !_freezeOffer) return false;
+            if (_freezeOffer)
+            {
+                if (FreezeControlAt(play)) return false;
+                _tapWho = "freeze";
+                return true;
+            }
+            if (_gift == GiftFace.Card)
+            {
+                int which = HudControl(play);
+                bool onX = GiftCloseExempt(play);
+                if (onX && which != 0 && !CloserToGiftX(play, which))
+                    onX = false;
+                if (onX)
+                {
+                    if (release) CloseGift();
+                    _tapWho = "gift-x";
+                    return true;
+                }
+                // Home and Restart stay live under the card. The X already won
+                // when the point was closer to it than to the button.
+                if (which == 1 || which == 2 || which == 3) return false;
+                float s = DeviceFit.Ui();
+                GiftCardPlaced(s, out var card, out var cta);
+                if (_adHand && FlowerHit(cta, s).Contains(play))
+                {
+                    if (release) StartWatchGift();
+                    _tapWho = "watch";
+                    return true;
+                }
+                if (card.Contains(play))
+                {
+                    _tapWho = "gift";
+                    return true;
+                }
+                return false;
+            }
+            if (_gift == GiftFace.Wait)
+            {
+                if (WaitCancelAt(play)) return false;
+                _tapWho = "gift-wait";
+                return true;
+            }
+            // Movie and Thanks cover the play canvas. They have no HUD button.
+            _tapWho = _gift == GiftFace.Movie ? "gift-movie" : "gift-thanks";
+            return true;
+        }
+
+        bool FreezeControlAt(Vector2 play)
+        {
+            float s = DeviceFit.Ui();
+            PlaceFreeze(s, out _, out var retry, out var cont);
+            float pad = 8f * s;
+            var retryHit = new Rect(retry.x - pad, retry.y - pad * 0.35f, retry.width + pad * 2f, retry.height + pad * 0.7f);
+            return retryHit.Contains(play) || cont.Contains(play);
+        }
+
+        bool WaitCancelAt(Vector2 play)
+        {
+            if (!Ads.CanCancelWait) return false;
+            float s = DeviceFit.Ui();
+            float w = Mathf.Max(120f, 150f * s), h = Mathf.Max(40f, 44f * s);
+            var r = new Rect((PhoneArea.W - w) * 0.5f, PhoneArea.H * 0.56f, w, h);
+            return r.Contains(play);
+        }
+
+        // The fives X owns this event. Later poker hits must not see it.
+        bool ClaimFivesClose(Event tapEv)
+        {
+            if (tapEv.type != EventType.MouseUp || !TakeFivesClose(PlayPointer.Gui(tapEv))) return false;
+            FinishPointerClaim("fives-close", tapEv);
+            return true;
+        }
+
+        // Not now owns this event once the ask is up. The rect was stored on the
+        // last draw, so this does not call GUI.
+        bool ClaimDailyAskNotNow(Event tapEv)
+        {
+            // Same as the fives X: the press does not close the ask. The release does.
+            if (tapEv.type != EventType.MouseUp) return false;
+            if (!_dailyAskNoHitOn || !TakeDailyAskNotNow(_dailyAskNoHit, PlayPointer.Gui(tapEv))) return false;
+            FinishPointerClaim("not-now", tapEv);
+            return true;
+        }
+
+        // Gift X and Watch, before the glove gate. Release only, so a press on
+        // the X cannot become a Restart. Home and the gear are not touched.
+        bool ClaimGiftRelease(Vector2 gui, out string who)
+        {
+            who = null;
+            if (_gift != GiftFace.Card || _freezeOffer) return false;
+            int which = HudControl(gui);
+            bool onX = GiftCloseExempt(gui);
+            if (onX && which != 0 && !CloserToGiftX(gui, which))
+                onX = false;
+            if (onX)
+            {
+                CloseGift();
+                who = "gift-x";
+                return true;
+            }
+            if (!_adHand) return false;
+            float s = DeviceFit.Ui();
+            GiftCardPlaced(s, out _, out var cta);
+            if (!FlowerHit(cta, s).Contains(gui)) return false;
+            StartWatchGift();
+            who = "watch";
+            return true;
+        }
+
+        // Use a real IMGUI edge when one is on the stack, and drop the editor
+        // inject so a later HitPad in this same frame cannot take the tap again.
+        void FinishPointerClaim(string who, Event tapEv)
+        {
+            _tapWho = who;
+            if (tapEv != null && tapEv.button == 0
+                && (tapEv.type == EventType.MouseDown || tapEv.type == EventType.MouseUp))
+                tapEv.Use();
+#if UNITY_EDITOR
+            EditorPointerInject = default;
+#endif
+        }
+
+        void PaintAfterPointer()
+        {
+            // Before the swallows. A finished ostrich (or any clear) must not leave a
+            // rule-eat, pest hold, fight lock or dismiss guard over the reward buttons.
+            ArmSceneInputSettle();
+            ReleaseRewardChoiceGates();
             SwallowLessonGuard();
             SwallowRuleTipPointer();
             SwallowResumePointer();
@@ -6774,8 +9395,34 @@ namespace FlockFive
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
             else
                 GUI.Box(restart, "↩");
+            var restartLab = GuiPool.Label(GuiSlot.SettingsLink);
+            restartLab.fontStyle = FontStyle.Bold;
+            restartLab.alignment = TextAnchor.LowerCenter;
+            restartLab.wordWrap = false;
+            restartLab.clipping = TextClipping.Overflow;
+            restartLab.fontSize = Mathf.Max(8, Mathf.RoundToInt(9f * Mathf.Min(s, 1.15f)));
+            GUI.Label(restart, "Restart", restartLab);
+            var hudEv = Event.current;
+            bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
+            bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
+            var hudAt = hudEv != null ? PlayPointer.Gui(hudEv) : restart.center;
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            bool homeHeld = false;
+            if (home.width > 2f)
+                FeedResumeHudButton(1, home, hudAt, hudDown, hudUp, out homeHeld);
+            GUI.color = new Color(0.10f, 0.08f, 0.05f, homeHeld ? 0.92f : 0.78f);
+            GUI.DrawTexture(home, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            var homeLab = GuiPool.Label(GuiSlot.InspectX);
+            homeLab.fontStyle = FontStyle.Bold;
+            homeLab.alignment = TextAnchor.MiddleCenter;
+            homeLab.wordWrap = false;
+            homeLab.clipping = TextClipping.Overflow;
+            homeLab.fontSize = Mathf.Max(9, Mathf.RoundToInt(11f * Mathf.Min(s, 1.15f)));
+            homeLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
+            GUI.Label(home, "Home", homeLab);
             if (HiveReachable())
-                DrawHiveButton(hive, s, orbit: true, pop: true);
+                DrawHiveButton(CornerAnchor.HiveAlignedDraw(hive, restart), s, orbit: true, pop: true);
             else
             {
                 if (_levelHive) CloseLevelHive();
@@ -7022,7 +9669,7 @@ namespace FlockFive
         }
 
         // "No Ads" nameplate just under the disc. Narrower than the medallion.
-        static Rect SplashNoAdsRibbon(Rect medal)
+        public static Rect SplashNoAdsRibbon(Rect medal)
         {
             float d = medal.width;
             float w = d * 0.92f;
@@ -7074,6 +9721,15 @@ namespace FlockFive
 
         Rect SplashDailyTapRect() => RailTapRect(RailDaily);
 
+        // Drawn daily plate, plus the streak flame when that is the picture.
+        // Not the finger pad. Flower taps in the pad stay on LEVEL.
+        Rect DailyPressArt(Rect plate)
+        {
+            DailyBonus.Boot();
+            if (DailyBonus.IconState != DailyBonusIconState.Flame) return plate;
+            return UnionRect(plate, DailyFlameRect(plate));
+        }
+
         Rect PiggyRect(float s)
         {
             EnsureSplashRails();
@@ -7103,6 +9759,14 @@ namespace FlockFive
             hive = HivePopRect(hive, pop);
             if (held)
                 hive.y += hive.height * 0.04f;
+            // Clip to the straw texels. Glow, shadow, and sparkles cannot paint
+            // into the clear pad, which is what the straw/orange mask was counting.
+            var clip = CornerAnchor.HiveStrawHit(hive);
+            GUI.BeginGroup(clip);
+            hive.x -= clip.x;
+            hive.y -= clip.y;
+            try
+            {
             float pulse = quiet || (pop && _hivePopping) ? 0f : HiveView.GuiPulse;
             bool freshCue = _home == HomeFace.Splash && _hiveFreshSlots.Count > 0 && !quiet && !(pop && _hivePopping);
             if (freshCue)
@@ -7121,7 +9785,8 @@ namespace FlockFive
             if (spr != null && spr.texture != null)
             {
                 GUI.color = new Color(0.08f, 0.05f, 0.02f, 0.32f);
-                GUI.DrawTexture(new Rect(draw.x + 3f, draw.y + 6f, draw.width, draw.height), spr.texture, ScaleMode.ScaleToFit, true);
+                // No +x shadow: that straw column sat past the skep and widened the mask and the hit.
+                GUI.DrawTexture(new Rect(draw.x, draw.y + 6f, draw.width, draw.height), spr.texture, ScaleMode.ScaleToFit, true);
                 GUI.color = Color.white;
                 GUI.DrawTexture(draw, spr.texture, ScaleMode.ScaleToFit, true);
             }
@@ -7130,6 +9795,11 @@ namespace FlockFive
             DrawHiveSparkles(draw);
             if (!HiveOpenedSeen()) DrawHiveNewDot(draw);
             if (orbit) DrawHiveHalo(draw, s, false);
+            }
+            finally
+            {
+                GUI.EndGroup();
+            }
         }
 
         static readonly float[] HiveGlintX = { -0.22f, 0.26f, 0.04f, -0.28f, 0.18f };
@@ -7140,7 +9810,7 @@ namespace FlockFive
         {
             var glow = GlowTex();
             if (glow == null || alpha < 0.02f) return;
-            float g = hive.width * 0.18f;
+            float g = CornerAnchor.HiveGlowOutset(hive.width);
             GUI.color = new Color(1f, 0.78f, 0.28f, alpha);
             GUI.DrawTexture(
                 new Rect(hive.center.x - hive.width * 0.5f - g, hive.center.y - hive.height * 0.5f - g, hive.width + g * 2f, hive.height + g * 2f),
@@ -8429,6 +11099,15 @@ namespace FlockFive
         // Shared disc for every screen that leaves. About 15% over the old 88pt, never under 44.
         static Rect BackMedalRect(float s, float top) => BackMedalBox(s, top, PhoneArea.Safe);
 
+        // Glow painted around the medal face. The hit rect does not include it.
+        public static float BackMedalGlowPad(float size) => Mathf.Max(0f, size) * 0.12f;
+
+        public static Rect BackMedalDrawnRect(Rect hit)
+        {
+            float pad = BackMedalGlowPad(Mathf.Min(hit.width, hit.height));
+            return new Rect(hit.x - pad, hit.y - pad, hit.width + pad * 2f, hit.height + pad * 2f);
+        }
+
         public const float InspectInsetRef = 12f;
 
         public static void InspectCorners(float s, Rect safe, out Rect back, out Rect x)
@@ -8454,7 +11133,25 @@ namespace FlockFive
             size = Mathf.Min(size, BackMedalMaxPt * ptPx);
             size = Mathf.Max(size, 44f * ptPx, 44f);
             float x = Mathf.Max(16f, safe.xMin + 10f);
+            // The Back glove hangs under the fingertip. On a small medal in the
+            // corner that quad crosses the left edge, and the hop then walks
+            // downward trying to cure it. Seat the medal far enough right that
+            // the upright hand stays on the glass.
+            float clear = BackGloveMedalLeft(s, size);
+            if (x < clear) x = clear;
             return new Rect(x, top, size, size);
+        }
+
+        // Left edge that keeps the upright Back glove inside the screen when the
+        // phone pivot sits one nudge left of the medal center.
+        static float BackGloveMedalLeft(float s, float size)
+        {
+            float dh = Mathf.Max(8f, GloveDh(s));
+            float dw = GloveAuditDw(dh);
+            float leftOfTip = Mathf.Max(0f, GloveAuditTip().x) * dw;
+            float nudge = Mathf.Abs(PokerBackPhoneTipNudgeX);
+            float need = GloveScreenMargin + leftOfTip + nudge + 1.5f - size * 0.5f;
+            return need > 0f ? need : 0f;
         }
 
         // Hit pad stays full size. The face scales down while the finger is down.
@@ -8492,6 +11189,7 @@ namespace FlockFive
             bool finished = _streakSlide >= 1f;
             _streakSlide = -1f;
             if (!live) return;
+            _rewardCards = 0;
             // Leaving early still pays once. The pay step already cleared Owed if it ran.
             PayStreakStep();
             Purse.Pending = 0;
@@ -8667,6 +11365,22 @@ namespace FlockFive
 
             // Bigger persistent balance: "$12" + coin sprite on the right.
             DrawCoinBalance(s, pig.x - 12f, pig.center.y);
+            if (AdPause.Unscaled < _coinTipUntil)
+            {
+                var tip = GuiPool.Label(GuiSlot.SettingsLink);
+                tip.fontStyle = FontStyle.Bold;
+                tip.alignment = TextAnchor.MiddleCenter;
+                tip.fontSize = Mathf.Max(12, Mathf.RoundToInt(15f * s));
+                float tipW = 236f * s;
+                float tipX = Mathf.Max(16f, pig.x - 12f * s - tipW);
+                var tr = new Rect(tipX, pig.y - 36f * s, tipW, 28f * s);
+                var tipInk = GUI.color;
+                GUI.color = new Color(0.08f, 0.06f, 0.04f, 0.94f);
+                GUI.DrawTexture(tr, Texture2D.whiteTexture);
+                GUI.color = tipInk;
+                tip.normal.textColor = new Color(1f, 0.97f, 0.86f);
+                GUI.Label(tr, "Coins you win go in the piggy.", tip);
+            }
             if (!raiseSign) DrawStreakSignLayer(s);
         }
 
@@ -8706,9 +11420,18 @@ namespace FlockFive
 
         static float CoinBalanceIcon(float s) => CoinBalanceIcon(PhoneArea.W, s);
 
+        float _coinTipUntil = -1f;
+        Rect _homeCoinR;
+
+        void ShowCoinTip()
+        {
+            _coinTipUntil = AdPause.Unscaled + 1.6f;
+        }
+
         void DrawCoinBalance(float s, float rightX, float centerY)
         {
             float icon = CoinBalanceIcon(s);
+            _homeCoinR = new Rect(rightX - icon, centerY - icon * 0.5f, icon, icon);
             var ir = new Rect(rightX - icon, centerY - icon * 0.5f, icon, icon);
             DrawCoinCluster(ir, s, CoinBalanceType);
         }
@@ -8733,7 +11456,7 @@ namespace FlockFive
             var st = _coinClusterStyle;
             var content = _coinClusterContent;
             content.text = coins;
-            float leftLimit = Mathf.Max(8f, PhoneArea.Safe.xMin + 8f);
+            float leftLimit = Mathf.Max(16f, PhoneArea.Safe.xMin + 16f);
             float maxW = Mathf.Max(36f, iconR.x - 8f * s - leftLimit);
             int key = coins.GetHashCode() ^ (coins.Length * 104729) ^ (Mathf.RoundToInt(maxW) * 17) ^ (Mathf.RoundToInt(iconR.height * typeScale) * 131);
             if (key != _coinKey || _coinPx < 14)
@@ -9004,6 +11727,40 @@ namespace FlockFive
         public const float RewardButtonsReserve = 190f;
         public static readonly Color RewardCream = new Color(1f, 0.93f, 0.74f, 1f);
         public static readonly Color RewardGold = new Color(1f, 0.84f, 0.40f, 1f);
+
+        // Generic count for the stage-clear board. Names stay off this popup.
+        // Null when this clear earned no cards, so the coin line keeps the hero band.
+        public static string CardsCollectedLine(int count)
+        {
+            if (count < 1) return null;
+            if (count == 1) return "1 card collected";
+            return count + " cards collected";
+        }
+
+        public struct RewardCardsSeat
+        {
+            public Rect Amount;
+            public Rect Cards;
+            public bool Shown;
+        }
+
+        // Amount keeps the top of the hero. The count sits under it, inside the same band.
+        public static RewardCardsSeat LayoutRewardCards(Rect hero, int count, float s)
+        {
+            var seat = new RewardCardsSeat { Amount = hero };
+            if (string.IsNullOrEmpty(CardsCollectedLine(count))) return seat;
+            if (hero.width < 40f || hero.height < 36f) return seat;
+            if (s < 0.5f) s = 0.5f;
+            float h = hero.height * 0.30f;
+            float floor = 16f * Mathf.Min(s, 1.35f);
+            if (h < floor) h = floor;
+            if (h > hero.height * 0.38f) h = hero.height * 0.38f;
+            if (hero.height - h < 20f) return seat;
+            seat.Shown = true;
+            seat.Cards = new Rect(hero.x, hero.yMax - h, hero.width, h);
+            seat.Amount = new Rect(hero.x, hero.y, hero.width, hero.height - h);
+            return seat;
+        }
         void DrawRewardRow(Rect rest, float appear, float alpha, GUIStyle labelSt, int labelHi, float openK, Vector2 pivot)
         {
             appear = Mathf.Clamp01(appear);
@@ -9677,7 +12434,9 @@ namespace FlockFive
             float heroA = alpha * amtAppear;
             if (heroA > 0.02f)
             {
-                var hero = new Rect(inner.x, linesTop + metaH, inner.width, heroH);
+                var heroFull = new Rect(inner.x, linesTop + metaH, inner.width, heroH);
+                var cardsSeat = LayoutRewardCards(heroFull, _rewardCards, s);
+                var hero = cardsSeat.Amount;
                 string amt = Money.Format(shown);
                 float punch = 1f + 0.08f * Mathf.Sin(Mathf.Clamp01((roll - 0.85f) / 0.15f) * Mathf.PI);
                 var prevM = GUI.matrix;
@@ -9688,6 +12447,11 @@ namespace FlockFive
                 GUI.color = Color.white;
                 StampFit(hero, amt, heroSt, heroInk, heroHi, 0.66f, heroA);
                 GUI.matrix = prevM;
+                if (cardsSeat.Shown)
+                {
+                    int cardsHi = Mathf.Max(14, Mathf.RoundToInt(22f * restScale * s));
+                    StampFit(cardsSeat.Cards, CardsCollectedLine(_rewardCards), heroSt, RewardCream, cardsHi, 0.92f, heroA);
+                }
             }
             if (stampLive)
                 DrawRewardStamp(RewardStampRect(board, streak), streak, alpha, stampAge);
@@ -10084,7 +12848,7 @@ namespace FlockFive
         {
             var safe = PhoneArea.Safe;
             // Brandon: drop the whole rail so the $ row clears the logo.
-            float y = PhoneArea.H * 0.335f;
+            float y = Mathf.Max(PhoneArea.H * 0.335f, PhoneArea.GuiTopInset(PhoneArea.H, safe));
             if (right)
             {
                 float x = Mathf.Min(PhoneArea.W, safe.xMax) - 20f - size;
@@ -10092,6 +12856,21 @@ namespace FlockFive
             }
             float lx = Mathf.Max(20f, safe.xMin + 12f);
             return new Rect(lx, y, size, size);
+        }
+
+        // Settled rail icon, presence 1. slot 0 is the top of that column
+        // (right: pig, hive, poker; left: daily, VIP). The pack starts one
+        // icon above HomeRailRect's anchor, matching ApplySplashRails.
+        public static Rect SettledRailIcon(float w, float h, Rect safe, bool right, int slot)
+        {
+            float size = SplashRailSize(w);
+            float gap = Mathf.Max(24f, size * 0.30f);
+            float top = h * 0.335f - size - gap;
+            float xMax = safe.width > 1f ? safe.xMax : w;
+            float xMin = safe.width > 1f ? safe.xMin : 0f;
+            float x = right ? Mathf.Min(w, xMax) - 20f - size : Mathf.Max(20f, xMin + 12f);
+            float y = top + slot * (size + gap);
+            return new Rect(x, y, size, size);
         }
 
         void TryPigPoke()
@@ -10108,14 +12887,31 @@ namespace FlockFive
             }
         }
 
+        static bool OnGuiOpen => _app != null && _app._onGuiDepth > 0;
+
         static bool GuiPaint()
         {
+            if (!OnGuiOpen) return false;
             var e = Event.current;
             return e == null || e.type == EventType.Repaint;
         }
 
+        // A repaint that is actually inside OnGUI. A null event is the editor batch
+        // (no OnGUI), and a MouseDown parked on Event.current is not a license to
+        // touch GUI.skin or DrawTexture. Those throw outside a real OnGUI pass.
+        static bool GuiRepaint()
+        {
+            var e = Event.current;
+            return OnGuiOpen && e != null && e.type == EventType.Repaint;
+        }
+
         // This OnGUI pass: a tiny home target (bird or name plate) owns the pointer.
         static bool _homeTapTaken;
+
+        // Drawn art that may keep a LEVEL tap this frame. False when the icon
+        // is visible but blocked, so the flower can still start.
+        bool _yieldHive, _yieldPoker, _yieldDaily, _yieldVip, _yieldPig;
+        Rect _yieldPigR;
 
         // Finger slop around the fixed 1.48× body. Does not change the drawn bird.
         const float HomeBirdHitPad = 8f;
@@ -10124,14 +12920,37 @@ namespace FlockFive
 
         static bool HitPad(Rect r, out bool held)
         {
-            if (_hitLock != 0)
+            // The lock is for the rest of one splash pass after the gear opens.
+            // DrawSplash clears it next frame. An editor batch never draws that
+            // pass, and every suite call shares the frame, so a stale lock must
+            // not keep the deal pad from seeing its Down and Up.
+            if (_hitLock != 0 && Application.isPlaying)
             {
                 held = false;
                 return false;
             }
-            int id = GUIUtility.GetControlID(FocusType.Passive);
             var e = Event.current;
-            bool inside = r.Contains(e.mousePosition);
+#if UNITY_EDITOR
+            // Batch tests have no IMGUI event. The HUD buttons already take
+            // EditorPointerInject. The pad uses that same Down then Up.
+            // A null event with no injected press is not a deal.
+            if (!Application.isPlaying && !PadEventLive(e) && EditorPointerInject.On)
+                return HitPadPointer(r, out held);
+#endif
+            if (e == null)
+            {
+                held = false;
+                return false;
+            }
+            // An editor batch has no OnGUI id sequence. GetControlID counts up
+            // across the Down call and the Up call, so the pad never fires.
+            // The rect hash is the same on both.
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                return HitPadStable(r, e, out held);
+#endif
+            int id = GuiPadId(r);
+            bool inside = r.Contains(PlayPointer.Gui(e));
             bool fired = false;
             switch (e.GetTypeForControl(id))
             {
@@ -10158,6 +12977,75 @@ namespace FlockFive
             return fired;
         }
 
+        // Editor batch: one id per rect, shared by the Down call and the Up call.
+        static int _editPadDown;
+
+        static int StableRectId(Rect r)
+        {
+            int h = (int)(r.x * 3f + r.y * 5f + r.width * 7f + r.height * 11f);
+            if (h == 0 || h == int.MinValue) h = 1;
+            return h;
+        }
+
+        static bool HitPadStable(Rect r, Event e, out bool held)
+        {
+            int id = StableRectId(r);
+            bool inside = r.Contains(PlayPointer.Gui(e));
+            bool fired = false;
+            if (e.type == EventType.MouseDown && inside && e.button == 0)
+            {
+                _editPadDown = id;
+                e.Use();
+            }
+            else if (e.type == EventType.MouseUp && e.button == 0 && _editPadDown == id)
+            {
+                _editPadDown = 0;
+                e.Use();
+                if (inside) fired = true;
+            }
+            held = _editPadDown == id;
+            return fired;
+        }
+
+#if UNITY_EDITOR
+        static bool PadEventLive(Event e)
+        {
+            if (e == null) return false;
+            return e.type == EventType.MouseDown || e.type == EventType.MouseUp || e.type == EventType.MouseDrag;
+        }
+
+        // Editor batch pointer. Play is the pad point, in GUI space or in
+        // bottom-up screen space, the same two spaces the HUD presses use.
+        static bool HitPadPointer(Rect r, out bool held)
+        {
+            PlayPointer.CaptureInject();
+            bool inside = r.Contains(PlayPointer.At);
+            int id = StableRectId(r);
+            bool fired = false;
+            if (PlayPointer.Down && inside)
+                _editPadDown = id;
+            else if (PlayPointer.Up && _editPadDown == id)
+            {
+                _editPadDown = 0;
+                if (inside) fired = true;
+            }
+            held = _editPadDown == id;
+            return fired;
+        }
+#endif
+
+        // OnGUI uses the IMGUI id. An editor batch has no window, so the same
+        // rect keeps one id and no texture is drawn.
+        static int GuiPadId(Rect r)
+        {
+            int id = 0;
+            try { id = GUIUtility.GetControlID(FocusType.Passive); }
+            catch (System.Exception) { id = 0; }
+            if (id != 0) return id;
+            int h = (int)(r.x * 3f + r.y * 5f + r.width * 7f + r.height * 11f);
+            return h == 0 ? 1 : h;
+        }
+
         // One gesture for any paged screen. The caller keeps the state.
         // Dir is +1 when the finger moved left (next page) and -1 when it moved right.
         // A tiny drag, or one that travels farther vertically than sideways, stays Dir 0
@@ -10180,8 +13068,8 @@ namespace FlockFive
             var kind = e.type;
             if (kind == EventType.MouseDown && e.button == 0)
             {
-                swipe.Tracking = area.width > 2f && area.height > 2f && area.Contains(e.mousePosition);
-                swipe.Origin = e.mousePosition;
+                swipe.Tracking = area.width > 2f && area.height > 2f && area.Contains(PlayPointer.Gui(e));
+                swipe.Origin = PlayPointer.Gui(e);
                 swipe.Claimed = false;
                 PageSwipeAte = false;
                 return;
@@ -10190,7 +13078,7 @@ namespace FlockFive
             swipe.Tracking = false;
             if (e.button != 0) return;
             int dir;
-            bool took = PageSwipeDir(e.mousePosition - swipe.Origin, minPx, out dir);
+            bool took = PageSwipeDir(PlayPointer.Gui(e) - swipe.Origin, minPx, out dir);
             swipe.Claimed = took;
             PageSwipeAte = took;
             if (took) swipe.Dir = dir;
@@ -10237,6 +13125,7 @@ namespace FlockFive
             try
             {
             _homeTapTaken = false;
+            _yieldHive = _yieldPoker = _yieldDaily = _yieldVip = _yieldPig = false;
             float s = DeviceFit.Ui();
 #if UNITY_EDITOR
             if (ShotDailyWheel != 0) PoseDailyWheelShot();
@@ -10303,14 +13192,22 @@ namespace FlockFive
             vipGates.PopupGate = PopupBlocked(PopupKind.Vip);
             vipGates.StepGate = StepGateBlocks(SplashPress.PressHit(SplashPress.Id.Vip).Rect);
             var vipView = StepHomePress(SplashPress.Id.Vip, !SplashPress.Blocks(vipGates), vipGates.LessonOwn);
+            _yieldVip = !SplashPress.Blocks(vipGates);
             bool noAdsHeld = vipView.Pressed;
             bool vipTap = vipView.Launch;
 
             // Pig above hive: hit-test before the album so taps don't open it.
             // The offer card swallows the rail so a dismiss tap cannot oink.
             var pigR = PiggyRect(s);
-            if (!modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR) && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, Event.current.mousePosition)))
+            _yieldPig = !modal && HomeTapAllowed(RailPig) && !VeilBlocks(pigR);
+            _yieldPigR = pigR;
+            if (_yieldPig && HitPad(pigR, out _) && !(vipDraw && offerVip && !vipHold && VipContains(noAdsR, PlayPointer.Gui(Event.current))))
+            {
                 TryPigPoke();
+                ShowCoinTip();
+            }
+            if (_homeCoinR.width > 2f && HitPad(_homeCoinR, out _))
+                ShowCoinTip();
 
             // Hive lesson hides that slot. The packer closes it; poker slides up under the pig.
             bool hiveDraw = RailLive(RailHive);
@@ -10318,13 +13215,20 @@ namespace FlockFive
             bool hiveOpening = hiveDraw && !RailSettled(RailHive);
             bool hivePop = _hivePopping && !hiveOpening;
             var hiveHit = HivePopRect(hiveR, hivePop);
-            SplashPress.Layout(SplashPress.Id.Hive, hiveHit);
+            var pokerArtEarly = SplashPokerRect();
+            var pokerPadEarly = RailTapRect(RailPoker);
+            var hivePad = hiveHit;
+            var flowerEarly = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            bool phoneRail = PhoneArea.W / Mathf.Max(1f, PhoneArea.H) <= DeviceFit.PhoneAspect + 0.04f;
+            CloseHomeRailGaps(hiveR, pokerArtEarly, ref hivePad, ref pokerPadEarly, flowerEarly, phoneRail);
+            SplashPress.Layout(SplashPress.Id.Hive, hivePad);
             var hiveGates = HomePressGates(RailHive);
             hiveGates.Consent = VeilBlocks(hiveHit);
             hiveGates.Hidden = !hiveDraw;
             hiveGates.Inactive = !SplashHiveShown();
             hiveGates.StepGate = StepGateBlocks(hiveHit);
             var hiveView = StepHomePress(SplashPress.Id.Hive, !SplashPress.Blocks(hiveGates), hiveGates.LessonOwn);
+            _yieldHive = !SplashPress.Blocks(hiveGates);
             StartupTrace.Lap("L.Hive");
             if (hiveView.Launch)
             {
@@ -10348,17 +13252,24 @@ namespace FlockFive
             }
 
             // Poker is the next packed sibling. Absent until level 1 is cleared,
-            // so the rail closes under the hive. Its hit is the sliding rect.
+            // so the rail closes under the hive. The press is the padded
+            // RailTapRect the glove aims at. Padding that sits on the LEVEL
+            // flower is carved out, so a tap there starts the level. A finger
+            // just past the icon, off the flower, still opens poker.
             bool pokerDraw = RailLive(RailPoker);
             var pokerR = SplashPokerRect();
-            // Same padded rect the glove arms. The drawn icon stays the rail square.
-            var pokerTap = RailTapRect(RailPoker);
-            SplashPress.Layout(SplashPress.Id.Poker, pokerTap);
+            var pokerTap = pokerPadEarly;
+            var flower = flowerEarly;
+            // LEVEL keeps flower padding only when it can start. A blocked flower
+            // gives that padding back to the rail, which can still open.
+            bool carveFlower = LevelCanTakeTap(flower);
+            SplashPress.LayoutRail(SplashPress.Id.Poker, pokerTap, pokerR, flower, carveFlower);
             var pokerGates = HomePressGates(RailPoker);
             pokerGates.Consent = VeilBlocks(pokerTap);
             pokerGates.Hidden = !pokerDraw;
             pokerGates.StepGate = StepGateBlocks(pokerTap);
             var pokerView = StepHomePress(SplashPress.Id.Poker, !SplashPress.Blocks(pokerGates), pokerGates.LessonOwn);
+            _yieldPoker = !SplashPress.Blocks(pokerGates);
             StartupTrace.Lap("L.Poker");
             if (pokerView.Launch)
             {
@@ -10392,13 +13303,13 @@ namespace FlockFive
             // unlock stays out of the pack until its lesson, then grows into the gap.
             bool dailyDraw = RailLive(RailDaily);
             var dailyR = SplashDailyRect();
-            // Hit = RailTapRect (drawn plate + flame, padded). The sink and the open
-            // both use that rect. While the Daily lesson points at this button, a coin
-            // payout still ticking (soft modal) must not eat the tap: the glove already
-            // faded on it, so the card has to open on that first tap. The streak sign
-            // itself still blocks the rail: it sits on top.
+            // Same padded rect the glove aims at (plate, pad, and the streak flame).
+            // Padding on the LEVEL flower is carved out. While the Daily lesson
+            // points at this button, a coin payout still ticking (soft modal)
+            // must not eat the tap.
             var dailyTap = SplashDailyTapRect();
-            SplashPress.Layout(SplashPress.Id.Daily, dailyTap);
+            var dailyArt = DailyPressArt(dailyR);
+            SplashPress.LayoutRail(SplashPress.Id.Daily, dailyTap, dailyArt, flower, carveFlower);
             bool dailyLesson = HomeStepRail() == RailDaily;
             var dailyGates = HomePressGates(RailDaily);
             dailyGates.Consent = VeilBlocks(dailyTap);
@@ -10421,6 +13332,7 @@ namespace FlockFive
                 dailyGates.ResumeSwallow = StartupInputHeld;
             }
             var dailyView = StepHomePress(SplashPress.Id.Daily, !SplashPress.Blocks(dailyGates), dailyGates.LessonOwn);
+            _yieldDaily = !SplashPress.Blocks(dailyGates);
 #if UNITY_EDITOR
             if (ShotKeepAwake && _homeSamples.Count > 0 && DbgDaily.Length < 4000)
                 DbgDaily += (Event.current != null ? Event.current.type.ToString() : "-") + "/f" + Time.frameCount + ":" + _homeSamples[0].Phase
@@ -10448,9 +13360,8 @@ namespace FlockFive
             HitHomeAvatar(s, tutorUp);
             HitAdoptTutor(s);
             StartupTrace.Lap("L.Hits");
-            // The greet's taps never get here: StepTapGate's any-tap step (GateAdoptGreet)
-            // eats them at the top of OnGUI and advances to the look step.
-            // Owed bird lesson keeps LEVEL from starting under the breath or the greet.
+            // A greet tap off Play is eaten above and advances to the look step.
+            // Play and the gear stay live through the greet, the name, and Tap Daily.
             if (DrawFlowerPlay(s, ease, number))
                 PressLevelButton();
             DrawHomeAvatar(s);
@@ -10485,6 +13396,66 @@ namespace FlockFive
             }
         }
 
+        // The LEVEL square must not take a tap a home icon would open.
+        // The rail keeps its padded tap. Only the padding that sits on the
+        // flower is given back, and only when that icon can actually open.
+        // A blocked, locked, or veiled icon claims nothing.
+        void KeepLevelOffHomeIcons()
+        {
+            ReadHomePointers(_homeSamples, out _);
+            int frame = Time.frameCount;
+            if (_yieldHive) SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Hive), frame);
+            if (_yieldPoker) SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Poker), frame);
+            if (_yieldDaily) SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Daily), frame);
+            if (_yieldVip) SplashPress.Reserve(_homeSamples, SplashPress.PressHit(SplashPress.Id.Vip), frame);
+            if (_yieldPig) SplashPress.Reserve(_homeSamples, _yieldPigR, frame);
+            var gearArt = SettingsGearDrawnRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            var gearHit = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            if (!_settingsOpen && HomeGear.AcceptsTap(HomeGearNow()) && !VeilBlocks(gearHit))
+                SplashPress.Reserve(_homeSamples, gearArt, frame);
+        }
+
+        // True when this point would open the rail, so LEVEL must not start.
+        // The padded tap counts. Padding on the flower is LEVEL's only when
+        // LEVEL can start. A blocked icon keeps nothing.
+        // Hive and cards taps meet halfway between the two icons. On a phone the
+        // cards pad continues down until it touches the LEVEL square, and stops
+        // there so it does not take a flower tap LEVEL can start.
+        public static void CloseHomeRailGaps(Rect hiveArt, Rect pokerArt, ref Rect hiveTap, ref Rect pokerTap, Rect level, bool phone)
+        {
+            if (hiveArt.height > 2f && pokerArt.height > 2f && pokerArt.yMin > hiveArt.yMax + 1f)
+            {
+                float mid = (hiveArt.yMax + pokerArt.yMin) * 0.5f;
+                if (hiveTap.height > 2f && hiveTap.yMax < mid)
+                    hiveTap = Rect.MinMaxRect(hiveTap.xMin, hiveTap.yMin, hiveTap.xMax, mid);
+                if (pokerTap.height > 2f && pokerTap.yMin > mid)
+                    pokerTap = Rect.MinMaxRect(pokerTap.xMin, mid, pokerTap.xMax, pokerTap.yMax);
+            }
+            if (phone && level.height > 2f && pokerTap.height > 2f && pokerArt.yMax <= level.yMin + 0.5f && pokerTap.yMax < level.yMin)
+                pokerTap = Rect.MinMaxRect(pokerTap.xMin, pokerTap.yMin, pokerTap.xMax, level.yMin);
+        }
+
+        public static bool RailKeepsLevelTap(Rect art, Rect padded, Rect level, bool canAct, Vector2 point)
+        {
+            return RailKeepsLevelTap(art, padded, level, canAct, point, true);
+        }
+
+        public static bool RailKeepsLevelTap(Rect art, Rect padded, Rect level, bool canAct, Vector2 point, bool levelCanAct)
+        {
+            return canAct && SplashPress.RailTapContains(padded, art, level, point, levelCanAct);
+        }
+
+        // Same gates DrawFlowerPlay uses for the LEVEL press, before the badger grow.
+        bool LevelCanTakeTap(Rect flower)
+        {
+            var gates = HomePressGates(-1);
+            gates.Consent = VeilBlocks(flower);
+            gates.HomeTaken = _homeTapTaken;
+            gates.StepGate = StepGateBlocks(flower);
+            ReleasePlayForChain(ref gates);
+            return !SplashPress.Blocks(gates);
+        }
+
         bool DrawFlowerPlay(float s, string ease, int number)
         {
             // Layout writes the one LEVEL hit. The sink and the launch both read it.
@@ -10501,10 +13472,18 @@ namespace FlockFive
                 hit.Rect = Rect.MinMaxRect(Mathf.Min(rest.xMin, body.xMin), top, Mathf.Max(rest.xMax, body.xMax), rest.yMax);
             }
             var gates = HomePressGates(-1);
+            // The reward buttons sit on this flower. While they are up it stays blocked
+            // so a tap on Collect or Watch Ad is not rejected as a LEVEL press.
+            if (RewardChoiceButtonsDue()) gates.SoftModal = true;
             gates.Consent = VeilBlocks(rest);
-            gates.AdoptQueue = AdoptHoldsQueue();
+            // Play stays up through "a bird followed you", naming, and Tap Daily.
             gates.HomeTaken = _homeTapTaken;
             gates.StepGate = StepGateBlocks(rest);
+            ReleasePlayForChain(ref gates);
+            // Shipping path. On a wide portrait the LEVEL square reaches the cards
+            // icon. A second pointer on that icon was starting the garden. The
+            // padded tap stays, except where that padding lies on the flower.
+            KeepLevelOffHomeIcons();
             var view = StepHomePress(SplashPress.Id.Level, !SplashPress.Blocks(gates));
             StartupTrace.Lap("L.LevelGate");
             bool held = view.Pressed || _pressShotHeld;
@@ -12575,6 +15554,7 @@ namespace FlockFive
             spot = p;
             if (AvatarHits(p, icon, blocks, pad)) return false;
             if (rails && AvatarHitsRails(p, icon, s)) return false;
+            if (AvatarHitsVip(p, icon)) return false;
             return true;
         }
 
@@ -12625,7 +15605,30 @@ namespace FlockFive
             return false;
         }
 
+        bool AvatarHitsVip(Vector2 p, float icon)
+        {
+            var vip = SplashNoAdsRect();
+            return !BirdPerchClearsVip(p, icon, 4f, _avatarTail, vip);
+        }
+
         bool AvatarHitsRails(Vector2 p, float icon, float s) => AvatarRectHitsRails(AvatarBody(p, icon, 4f * s), s);
+
+        // Goldie's plate, name tail included. The VIP medal and its ribbon are never a perch.
+        public static bool BirdPerchClearsVip(Vector2 perch, float icon, float pad, float tail, Rect medal)
+        {
+            if (medal.width < 2f || medal.height < 2f) return true;
+            var body = HomeBirdPlate(perch, icon, pad, tail);
+            if (body.Overlaps(medal)) return false;
+            var ribbon = SplashNoAdsRibbon(medal);
+            return ribbon.width < 2f || !body.Overlaps(ribbon);
+        }
+
+        public static Rect HomeBirdPlate(Vector2 c, float icon, float pad, float tail)
+        {
+            float w = icon + pad * 2f;
+            float h = icon + pad * 2f + Mathf.Max(0f, tail);
+            return new Rect(c.x - w * 0.5f, c.y - icon * 0.5f - pad, w, h);
+        }
 
         bool AvatarRectHitsRails(Rect body, float s)
         {
@@ -13133,13 +16136,16 @@ namespace FlockFive
             float s = DeviceFit.Ui();
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBetLine);
-            CoachGloveAt(_pokerTutorAim, dt, s, float.NaN, false, float.NaN, _pokerTutorTap);
+            // Live DEAL rect every frame. A cached aim was landing on card 4
+            // after the first poke cycle.
+            var deal = PokerDealButtonRect();
+            _pokerTutorAim = CoachTapSeat(deal, CoachTapLabel(deal), PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            _pokerTutorTap = deal;
+            _pokerTutorAimOk = true;
+            CoachTapAt(deal, CoachTapLabel(deal), dt, null);
             bool parked = Vector2.Distance(_gloveTip, _gloveRest) > 32f * s;
             if (parked) _pokerPageAge = 0f;
             else _pokerPageAge += dt;
-            // Both early steps aim at DEAL. Crossing 1 → 2 does not restart the poke.
-            if (_pokerPageStep <= 1 && _pokerPageAge >= TapCycle)
-                AdvancePokerTutor(2);
             return true;
         }
 
@@ -13255,6 +16261,18 @@ namespace FlockFive
                     float plateTop = PokerBottomPlateTop(plateH, PhoneArea.H, PhoneArea.Safe, s);
                     boxH = h;
                     y = plateTop + plateH * 0.5f - h * 0.5f;
+                    // 412: three lines, no clip. Wider than the standard box, and
+                    // never above the safe top or into the coin pill.
+                    if (line == PokerBackLine)
+                    {
+                        float side = 12f;
+                        w = Mathf.Max(48f, PhoneArea.W - side * 2f);
+                        x = side;
+                        float capH = 22f * s * 3f;
+                        if (boxH > capH) boxH = capH;
+                        float inset = GuiTopInset(PhoneArea.H, PhoneArea.Safe);
+                        if (y < inset + 8f) y = inset + 8f;
+                    }
                     break;
                 }
                 case PokerCapAnchor.BelowCards:
@@ -13300,8 +16318,17 @@ namespace FlockFive
         }
 
         // Top of the hold band: under the PAY TABLE tab and the logo halo, PokerCapClearGap clear.
-        static float PokerHoldCeiling(PokerCapGeo g) =>
-            Mathf.Max(g.LogoClear, g.Tab.width > 2f ? g.Tab.yMax : 0f) + PokerCapClearGap * DeviceFit.Ui();
+        static float PokerHoldCeiling(PokerCapGeo g)
+        {
+            float tab = g.Tab.width > 2f ? g.Tab.yMax : 0f;
+            float trophy = 0f;
+            if (g.Tab.width > 2f)
+            {
+                var chip = PokerFivesIconBox(g.Tab, DeviceFit.Ui());
+                if (chip.height > 2f) trophy = chip.yMax;
+            }
+            return Mathf.Max(g.LogoClear, tab, trophy) + PokerCapClearGap * DeviceFit.Ui();
+        }
 
         // Top of a bottom-seated poker plate: the garden lesson seat (lifted share of screen height above the bottom safe edge).
         public static float PokerBottomPlateTop(float plateH, float screenH, Rect safe, float s)
@@ -13371,7 +16398,10 @@ namespace FlockFive
             float handS = DeviceFit.Ui();
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBetLine);
-            CoachGloveAt(_pokerDealAim, dt, handS, float.NaN, false, float.NaN, _pokerDealTap);
+            var dealNow = PokerDealButtonRect();
+            _pokerDealAim = CoachTapSeat(dealNow, CoachTapLabel(dealNow), PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            _pokerDealTap = dealNow;
+            CoachTapAt(dealNow, CoachTapLabel(dealNow), dt, null);
             return true;
         }
 
@@ -13412,6 +16442,34 @@ namespace FlockFive
         // Back opens only at the final step (PokerBackGateLive). A player who cannot afford the minimum bet is never trapped.
         public static bool PokerLessonHolds(bool splash, bool onPoker, bool backDone, bool backGateLive, bool broke, bool lessonActive = true)
             => splash && onPoker && !backDone && !backGateLive && !broke && lessonActive;
+
+        // 'Pick your bet, then tap Deal.' The hand has not started, so Back may leave.
+        public static bool PokerBetCoachOpen(bool coachUp, bool idle, bool motionClear)
+            => coachUp && idle && motionClear;
+
+        // Back answers unless a dealt hand is unresolved, or the lesson is holding
+        // it and this is not the bet coach.
+        public static bool PokerBackAccepts(bool betCoach, bool handDealt, bool lessonHolds)
+        {
+            if (handDealt) return false;
+            if (betCoach) return true;
+            return !lessonHolds;
+        }
+
+        // True when this GUI point is on the Back medal and Back is allowed to leave.
+        // SwallowOffTargetTap returns early on this, so the medal's own press still runs.
+        public static bool CoachVeilLetsBackThrough(Vector2 gui, bool betCoach, bool handDealt, Rect backMedal)
+            => backMedal.width > 2f && backMedal.height > 2f && backMedal.Contains(gui)
+               && PokerBackAccepts(betCoach, handDealt, true);
+
+        // The lesson veil's eat decision. False means the control under the point may run.
+        public static bool CoachVeilEats(Vector2 gui, bool gateUp, Rect onlyTarget, bool anyTap, bool betCoach, bool handDealt, Rect backMedal)
+        {
+            if (CoachVeilLetsBackThrough(gui, betCoach, handDealt, backMedal)) return false;
+            if (!gateUp) return false;
+            if (anyTap) return true;
+            return onlyTarget.width < 2f || onlyTarget.height < 2f || !onlyTarget.Contains(gui);
+        }
 
         // b119 (Brandon): the first-hand tutorial flag is the ONLY thing that hides the bet controls and holds Back.
         // Active from the armed lesson until Back, only in the visit that dealt the first-ever hand. A later visit
@@ -13475,13 +16533,10 @@ namespace FlockFive
             float handS = DeviceFit.Ui();
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
             LessonLine(PokerBackLine);
-            // Standard shared arc: the hand rides over the top and the fingertip comes straight
-            // down onto the back button. Only a tap inside the back rect is a valid tap.
-            // b124: the hand rides in from the middle right, fully on screen, pointing left at Back.
-            _gloveEntryOverride = GloveMiddleRightEntry(CoachSafeGui(8f * handS));
-            _gloveEntryOverrideOn = true;
-            CoachGloveAt(_pokerBackAim, dt, handS, float.NaN, false, -90f, _pokerBackTap);
-            _gloveEntryOverrideOn = false;
+            // Short rise from just under the medal. The hop ends on the medal and stays
+            // there, so the settled fingertip is inside the Back hit. Only that rect counts.
+            var medal = _pokerBackTap.width > 2f ? _pokerBackTap : new Rect(_pokerBackAim.x - 22f, _pokerBackAim.y - 22f, 44f, 44f);
+            CoachTapAt(medal, CoachTapLabel(medal), dt, null);
             return true;
         }
 
@@ -13520,13 +16575,15 @@ namespace FlockFive
                 _pokerBackAimOk = false;
                 return;
             }
-            _pokerBackAim = back.center;
+            float winW = Screen.width > 2 ? Screen.width : PhoneArea.W;
+            float winH = Screen.height > 2 ? Screen.height : PhoneArea.H;
+            _pokerBackAim = PokerBackSettleAim(back.center, back, winW, winH);
             _pokerBackTap = back;
             _pokerBackAimOk = back.width > 2f;
-            // Standard caption under the dealt row (PokerStepAnchor: BelowCards), clear of the
-            // PAY TABLE tab, the logo and BET/DEAL; the glove still points up at Back.
-            DrawPokerStandardLine(PokerBackLine, s);
+            // Glove first, tip plate last, so the words stay the highest layer.
+            // The plate itself sits up and to the right, above the hand's lane.
             DrawTutorOverlay(s);
+            DrawPokerStandardLine(PokerBackLine, s);
         }
 
         // Back medal, coin icon, wordmark, halo, and PAY TABLE tab.
@@ -13582,8 +16639,11 @@ namespace FlockFive
         {
             if (safe.width < 2f || safe.height < 2f)
                 safe = new Rect(0f, 0f, w, h);
-            float top = TopHudBox(h, safe, 0f);
+            float top = TopControlY(h, safe, TopHudBox(h, safe, 0f));
             var back = BackMedalBox(s, top, safe);
+            float glow = BackMedalGlowPad(back.height);
+            float inset = GuiTopInset(h, safe);
+            if (back.y - glow < inset) back.y += inset - (back.y - glow);
             float right = w - Mathf.Max(12f, w - safe.xMax + 10f);
             float icon = CoinBalanceIcon(w, s);
             float cy = Mathf.Max(back.center.y, top + icon * 0.5f);
@@ -13608,6 +16668,35 @@ namespace FlockFive
             };
         }
 
+        // The back medal's own action. The lesson ends here, after the table is left.
+        void LeavePokerFromBack()
+        {
+            if (_home != HomeFace.Poker) return;
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn || _pokerShowPay)
+                MarkPokerBackDone();
+            BirdPoker.ResetRound();
+            ClearPokerHeldPay();
+            _pokerMotion = PokerMotion.None;
+            _pokerFan = false;
+            _pokerChained = false;
+            _pokerShowPay = false;
+            _pokerWinT = -1f;
+            _pokerDash = 0f;
+            _pokerStamp = false;
+            _pokerPayOpen = false;
+            _fivesOpen = false; _fivesAnim = 0f;
+            _pokerPayAnim = 0f;
+            _pokerKeepHint = false;
+            _pokerDealHint = false;
+            _pokerDealAimOk = false;
+            _gloveVis = false;
+            _gloveReady = false;
+            _pokerPageOn = false;
+            if (_pokerPageStep > 0) _pokerPageStep = 0;
+            _pokerHover = -1;
+            _home = HomeFace.Splash;
+        }
+
         void DrawPokerPage()
         {
             float s = DeviceFit.Ui();
@@ -13620,29 +16709,12 @@ namespace FlockFive
             var back = chrome.Back;
             bool backFire = DrawBackMedal(back);
             // b103 (Brandon): the poker lesson forces the one hand. Back is dead until the result step (glove on it).
-            if (backFire && (PokerLessonHoldsBack() || PokerHandHoldsBack(BirdPoker.PhaseNow))) backFire = false;
-            if (backFire)
-            {
-                if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn || _pokerShowPay)
-                    MarkPokerBackDone();
-                BirdPoker.ResetRound();
-                ClearPokerHeldPay();
-                _pokerMotion = PokerMotion.None;
-                _pokerFan = false;
-                _pokerChained = false;
-                _pokerShowPay = false;
-                _pokerWinT = -1f;
-                _pokerDash = 0f;
-                _pokerStamp = false;
-                _pokerPayOpen = false;
-            _fivesOpen = false; _fivesAnim = 0f;
-                _pokerPayAnim = 0f;
-                _pokerKeepHint = false;
-                _pokerDealHint = false;
-                _pokerDealAimOk = false;
-                _pokerHover = -1;
-                _home = HomeFace.Splash;
-            }
+            // The bet coach used to swallow Back, so a new player could not leave.
+            // Back goes home during that coach. A dealt hand still holds it.
+            bool betCoach = PokerBetCoachOpen(_pokerPageOn || _pokerDealHint, BirdPoker.PhaseNow == BirdPoker.Phase.Idle, !PokerMotionBusy());
+            if (backFire && !PokerBackAccepts(betCoach, PokerHandHoldsBack(BirdPoker.PhaseNow), PokerLessonHoldsBack()))
+                backFire = false;
+            if (backFire) LeavePokerFromBack();
             DrawPokerPurse(chrome, s);
 
             float logoTop = chrome.Title.y;
@@ -13732,27 +16804,7 @@ namespace FlockFive
             float clusterL = Mathf.Max(12f, safe.xMin + 10f);
             var betR = new Rect(clusterL, btnY, Mathf.Max(80f, actR.x - 10f * s - clusterL), btnSize);
 
-            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f || _fivesOpen || _fivesAnim > 0.35f;
-            if (GuiPaint()) TickPokerWin();
-            bool winFlying = PokerWinFlying();
-            bool busy = PokerMotionBusy() || _pokerStamp || payBlocked || winFlying;
-            // A settled Drawn hand is not a deal yet (CanDeal is false). Settle it
-            // back to Idle once nothing is playing and the back lesson is not holding
-            // the result, so DEAL appears only when a deal can actually start.
-            // The result cards stay face-up until the next deal's own motion.
-            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && !busy && !PokerBackGateLive())
-                BirdPoker.Settle();
-            if (GuiPaint()) TickPokerDash(s);
-            TickPokerStamp();
-            if (winFlying && !_pokerStamp && !payBlocked) SkipPokerWinOnTap();
-            string act = PokerActLabel();
-            // Between hands (idle or showing a result) the bet steers the next DEAL.
-            bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
-            if (steppers) BirdPoker.SyncBet();
-            // Always paint the bet bar and the win banner. The floral control
-            // itself stays out until ActLabel has a word (DEAL or DRAW).
-            if (DrawPokerDash(betR, actR, s, busy, steppers, act))
-                OnPokerDealPressed();
+            TakePokerDealPress(betR, actR, s);
             DrawPokerBrokeHint(betR, actR, s);
             NotePokerTutorAims(actR, rowBox, cardW, gap);
             float holdCeil = payTab.yMax;
@@ -14671,7 +17723,10 @@ namespace FlockFive
 
         void TryPokerDeal()
         {
-            FinishPokerWarm();
+            // Catalog warm only. The offscreen texture blit stays on the OnGUI
+            // repaint (TouchPokerSprite). A press must not draw.
+            Sfx.PokerWarmFinish();
+            SpriteCatalog.PokerArtWarmFinish();
             if (BirdPoker.PhaseNow != BirdPoker.Phase.Dealt)
                 BirdPoker.SyncBet();
             if (!BirdPoker.CanDeal() || !BirdPoker.Deal())
@@ -15513,6 +18568,8 @@ namespace FlockFive
 
         static void TouchPokerSprite(Sprite spr)
         {
+            // A null event is the editor batch, not a repaint. Drawing here throws.
+            if (!GuiRepaint()) return;
             if (spr == null || spr.texture == null) return;
             var prev = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, 0.004f);
@@ -15543,15 +18600,82 @@ namespace FlockFive
         bool PokerFirstHandResultHoldsBetBar()
             => _home == HomeFace.Poker && !PokerBackDone() && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn;
 
+        // Same DEAL control the poker page hits. Event.current is the press.
+        public Rect PokerDealButtonRect()
+        {
+            float s = DeviceFit.Ui();
+            var safe = PhoneArea.Safe;
+            if (safe.width < 2f || safe.height < 2f)
+                safe = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
+            float btnSize = PokerActSize(PhoneArea.W, s);
+            float botPad = Mathf.Max(12f, safe.yMin + 6f);
+            float btnY = PhoneArea.H - botPad - btnSize;
+            float actX = PhoneArea.W - Mathf.Max(10f, PhoneArea.W - safe.xMax + 8f) - btnSize;
+            return new Rect(actX, btnY, btnSize, btnSize);
+        }
+
+        // The page's DEAL hit. A Down only arms it. The Up deals.
+        // Hit logic only: no GUI, no DrawTexture. Drawing stays in OnGUI.
+        public void PokerPageDealHit()
+        {
+            if (!PokerDealPadFired()) return;
+            OnPokerDealPressed();
+        }
+
+        // The deal button's press. Same gates as the dash, without painting it.
+        // A null event and no injected pointer does not deal.
+        bool PokerDealPadFired()
+        {
+            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f || _fivesOpen || _fivesAnim > 0.35f;
+            bool winFlying = PokerWinFlying();
+            bool busy = PokerMotionBusy() || _pokerStamp || payBlocked || winFlying;
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && !busy && !PokerBackGateLive())
+                BirdPoker.Settle();
+            if (BirdPoker.BetOpen && !PokerMotionBusy())
+                BirdPoker.SyncBet();
+            string act = PokerActLabel();
+            if (string.IsNullOrEmpty(act) || PokerFirstHandResultHoldsBetBar())
+                return false;
+            return HitPad(PokerDealButtonRect(), out _);
+        }
+
+        bool TakePokerDealPress(Rect betR, Rect actR, float s)
+        {
+            bool payBlocked = _pokerPayOpen || _pokerPayAnim > 0.35f || _fivesOpen || _fivesAnim > 0.35f;
+            if (GuiPaint()) TickPokerWin();
+            bool winFlying = PokerWinFlying();
+            bool busy = PokerMotionBusy() || _pokerStamp || payBlocked || winFlying;
+            // A settled Drawn hand is not a deal yet (CanDeal is false). Settle it
+            // back to Idle once nothing is playing and the back lesson is not holding
+            // the result, so DEAL appears only when a deal can actually start.
+            // The result cards stay face-up until the next deal's own motion.
+            if (BirdPoker.PhaseNow == BirdPoker.Phase.Drawn && !busy && !PokerBackGateLive())
+                BirdPoker.Settle();
+            if (GuiPaint()) TickPokerDash(s);
+            TickPokerStamp();
+            if (winFlying && !_pokerStamp && !payBlocked) SkipPokerWinOnTap();
+            string act = PokerActLabel();
+            // Between hands (idle or showing a result) the bet steers the next DEAL.
+            bool steppers = BirdPoker.BetOpen && !PokerMotionBusy();
+            if (steppers) BirdPoker.SyncBet();
+            // Always paint the bet bar and the win banner. The floral control
+            // itself stays out until ActLabel has a word (DEAL or DRAW).
+            if (!DrawPokerDash(betR, actR, s, busy, steppers, act)) return false;
+            OnPokerDealPressed();
+            return true;
+        }
+
         bool DrawPokerDash(Rect betR, Rect actR, float s, bool busy, bool steppers, string act)
         {
             float lift = _pokerDash * (betR.height + 48f * s);
             var bet = new Rect(betR.x, betR.y + lift, betR.width, betR.height);
             var actBox = actR;
+            // The DEAL pad is hit before the bet steppers. They share the bar's
+            // row, and the first pad that contains the point owns the gesture.
+            bool deal = !string.IsNullOrEmpty(act) && !PokerFirstHandResultHoldsBetBar();
+            bool fire = deal && DrawFloralBtn(actBox, act, s, true);
             DrawPokerBetBar(bet, s, busy, steppers);
-            DrawPokerWinBanner(betR, actR, s);
-            if (string.IsNullOrEmpty(act) || PokerFirstHandResultHoldsBetBar()) return false; // the dealer button does not return
-            bool fire = DrawFloralBtn(actBox, act, s, true);
+            if (GuiRepaint()) DrawPokerWinBanner(betR, actR, s);
             return fire;
         }
 
@@ -16479,7 +19603,11 @@ namespace FlockFive
         void HitPokerCards(bool canHold, Rect rowBox, float rowX, float rowY, float cardW, float cardH, float gap)
         {
             var e = Event.current;
-            var mouse = e.mousePosition;
+            // A used or missing event is not a card tap. This also keeps a batch
+            // probe off GUIUtility, which throws outside a real OnGUI.
+            if (e == null || (e.type != EventType.MouseDown && e.type != EventType.MouseUp && e.type != EventType.MouseDrag))
+                return;
+            var mouse = PlayPointer.Gui(e);
             _pokerHover = -1;
             if (canHold)
             {
@@ -16515,7 +19643,7 @@ namespace FlockFive
                         if (canHold && i == top && e.button == 0)
                         {
                             GUIUtility.hotControl = id;
-                            _pokerDownAt = e.mousePosition;
+                            _pokerDownAt = PlayPointer.Gui(e);
                             e.Use();
                         }
                         break;
@@ -16525,7 +19653,7 @@ namespace FlockFive
                             GUIUtility.hotControl = 0;
                             e.Use();
                             if (canHold && i == top
-                                && PokerCardReleaseToggles(BirdPoker.Hold[i], e.mousePosition - _pokerDownAt, PokerSwipeMin(DeviceFit.Ui())))
+                                && PokerCardReleaseToggles(BirdPoker.Hold[i], PlayPointer.Gui(e) - _pokerDownAt, PokerSwipeMin(DeviceFit.Ui())))
                                 ApplyPokerHold(i);
                         }
                         break;
@@ -16748,10 +19876,6 @@ namespace FlockFive
             _pokerMinusR = minus;
             _pokerPlusR = plus;
 
-            var led = PokerBold(ref _pokerLed, TextAnchor.MiddleCenter);
-            led.fontSize = FitFont(led, PokerBetText(), amount.width, amount.height, 8, type);
-            StampLight(amount, PokerBetText(), led, PokerLabelGold);
-
             bool live = steppers && !busy;
             if (DrawBetStepper(minus, "−", live && BirdPoker.CanNudge(-1)) && live)
             {
@@ -16763,11 +19887,16 @@ namespace FlockFive
                 if (BirdPoker.NudgeBet(1)) Sfx.BetUp();
                 else Sfx.Deny();
             }
+            if (!GuiRepaint()) return;
+            var led = PokerBold(ref _pokerLed, TextAnchor.MiddleCenter);
+            led.fontSize = FitFont(led, PokerBetText(), amount.width, amount.height, 8, type);
+            StampLight(amount, PokerBetText(), led, PokerLabelGold);
         }
 
         bool DrawBetStepper(Rect r, string glyph, bool on)
         {
             bool fire = HitPad(r, out bool held);
+            if (!GuiRepaint()) return fire;
             float sink = held && on ? 2f : 0f;
             // Keep the drop shadow inside the hit rect so the chip does not clip the DEAL disc or screen edge.
             float shadow = 2f;
@@ -16786,7 +19915,16 @@ namespace FlockFive
             }
             var st = PokerBold(ref _pokerStep, TextAnchor.MiddleCenter);
             st.fontSize = Mathf.RoundToInt(chip.height * 0.56f);
-            StampLight(chip, glyph, st, new Color(0.36f, 0.18f, 0.07f, a));
+            StampLight(chip, glyph == "−" || glyph == "-" ? "" : glyph, st, new Color(0.36f, 0.18f, 0.07f, a));
+            if (glyph == "−" || glyph == "-")
+            {
+                float barW = chip.width * 0.42f;
+                float barH = Mathf.Max(3f, chip.height * 0.10f);
+                var bar = new Rect(chip.center.x - barW * 0.5f, chip.center.y - barH * 0.5f, barW, barH);
+                GUI.color = new Color(0.36f, 0.18f, 0.07f, a);
+                GUI.DrawTexture(bar, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
             return fire;
         }
 
@@ -16811,7 +19949,8 @@ namespace FlockFive
             var pressDisc = FlowerDisc(r, 0f);
             held = PushButton.Finger(held, GlovePresses(pressDisc));
             float sink = held ? r.height * 0.04f : 0f;
-            if (GuiPaint())
+            // Hit testing is done. Style, measuring, and DrawTexture stay on a real repaint.
+            if (!GuiRepaint()) return fire;
             {
                 var flower = SpriteCatalog.PlayFlower;
                 var tex = flower != null ? flower.texture : null;
@@ -16862,10 +20001,36 @@ namespace FlockFive
         // so the card grid gets the freed height. Returns the bottom of the text plate.
         // b103 (Brandon): the header plate (hive icon + title) starts a clear gap right of the Back medal. The
         // gap is measured to the PLATE edge, which hangs BoxPad.x past its content, so the two never touch.
+        public const float AlbumHeaderInsetGap = 4f;
         public const float AlbumHeaderGapRef = 12f;
         public static float AlbumHeaderGap(Rect back, float s) => Mathf.Max(AlbumHeaderGapRef * s, back.width * 0.12f);
         public static float AlbumHeaderX(Rect back, float s, float screenH)
             => back.xMax + AlbumHeaderGap(back, s) + CaptionLayout.BoxPad(screenH).x;
+
+        // Dark plate around the Collection title row, including the caption pad.
+        // This is the edge that must sit at or below the safe inset, not the label.
+        public static Rect AlbumTitleOuter(Rect back, float screenW, float screenH, Rect safe, float s)
+        {
+            float hiveSize = Mathf.Clamp(back.height * 0.80f, 44f, 92f);
+            float hiveY = back.center.y - hiveSize * 0.5f;
+            float titleRight = screenW - CornerAnchor.EdgeInsetRight(screenW, safe) - CaptionLayout.BoxPad(screenH).x;
+            float x = AlbumHeaderX(back, s, screenH);
+            var content = new Rect(x, hiveY, Mathf.Max(48f, titleRight - x), hiveSize);
+            var hang = CaptionLayout.BoxPad(screenH);
+            return new Rect(content.x - hang.x, content.y - hang.y, content.width + hang.x * 2f, content.height + hang.y * 2f);
+        }
+
+        public static float AlbumHeaderShift(Rect back, float screenW, float screenH, Rect safe, float s)
+        {
+            float inset = GuiTopInset(screenH, safe);
+            float top = AlbumTitleOuter(back, screenW, screenH, safe, s).y;
+            // Four pixels of glass under the safe inset, at every size. The rect
+            // is what the inset test measures.
+            float want = inset + AlbumHeaderInsetGap;
+            float slack = top - want;
+            if (slack >= 0f) return 0f;
+            return -slack;
+        }
 
         float DrawAlbumHeader(float s, Rect back)
         {
@@ -16873,7 +20038,10 @@ namespace FlockFive
             AlbumTextSpan(PhoneArea.W, PhoneArea.Safe, s, out float left, out float textRight);
             float titleRight = PhoneArea.W - CornerAnchor.EdgeInsetRight(PhoneArea.W, PhoneArea.Safe) - CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f).x;
             float hiveSize = Mathf.Clamp(back.height * 0.80f, 44f, 92f);
-            var hiveHead = new Rect(AlbumHeaderX(back, s, PhoneArea.H > 2f ? PhoneArea.H : 720f), back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
+            float screenH = PhoneArea.H > 2f ? PhoneArea.H : 720f;
+            var hiveHead = new Rect(AlbumHeaderX(back, s, screenH), back.center.y - hiveSize * 0.5f, hiveSize, hiveSize);
+            float headerDrop = AlbumHeaderShift(back, PhoneArea.W, screenH, PhoneArea.Safe, s);
+            if (headerDrop > 0f) hiveHead.y += headerDrop;
             float textX = hiveHead.xMax + 12f * s;
             float textW = Mathf.Max(48f, titleRight - textX);
             var titleSt = GuiPool.Label(GuiSlot.AlbumTitle);
@@ -17068,14 +20236,14 @@ namespace FlockFive
             return Hive.Found <= 0 ? AlbumEmptyLine : AlbumTapLine;
         }
 
-        // Combs on the open card. Same count DrawBack paints. Five is the wide row.
+        // Combs on the open card. Same count DrawBack paints, upgrades included.
         int AlbumHoneyCount()
         {
             if (_albumTutorStep != 3) return 0;
             int slot = _hiveInspect >= 0 ? _hiveInspect : 0;
             int honey = Hive.HoneyOfSlot(slot);
-            if (honey < 1) honey = 5;
-            if (honey > 5) honey = 5;
+            if (honey < 1) honey = Hive.HoneyOfFinish(BeeFinish.InverseRainbow);
+            if (honey > HoneyPoke.Cap) honey = HoneyPoke.Cap;
             return honey;
         }
 
@@ -17169,6 +20337,16 @@ namespace FlockFive
             CueLine(AlbumUpgradeLine);
         }
 
+        // The upgrade button. The lesson ends only after the upgrade lands.
+        bool ApplyBeeUpgrade(int slot)
+        {
+            if (!Hive.TryUpgrade(slot)) return false;
+            Sfx.CardBump();
+            Haptics.Play(Haptics.Tier.Light);
+            if (_upgradeTutorOn) FinishUpgradeTutor();
+            return true;
+        }
+
         void FinishUpgradeTutor()
         {
             bool was = _upgradeTutorOn;
@@ -17179,6 +20357,7 @@ namespace FlockFive
             _gloveVis = false;
             _gloveReady = false;
             if (was) GloveVeilReset();
+            _upgradeLabelR = default;
             if (_cueLine == AlbumUpgradeLine) _cueLine = null;
             _cueSpoken = null;
             if (was) NoteLessonDismiss(CoachStep.AlbumUpgrade);
@@ -17207,9 +20386,12 @@ namespace FlockFive
             // Needs an open owned inspect so the Upgrade control is on screen.
             if (_hiveInspect < 0 || !AlbumInspectReady()) return;
             if (Hive.CountOfSlot(_hiveInspect) <= 0) return;
-            if (!Hive.UpgradeRoom(_hiveInspect)) return;
-            // The lesson promises a free first upgrade; a player who already has one skips it.
-            if (!Hive.FreeUpgradeAvailable) return;
+            bool room = Hive.UpgradeRoom(_hiveInspect);
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            if (DevLevelSkip.ForceMaxxedFromUrl(Application.absoluteURL)) room = false;
+#endif
+            // MAXXED has no room, so "Tap Upgrade" stays off. A free upgrade still teaches.
+            if (!UpgradeCoachForCard(room, Hive.FreeUpgradeAvailable)) return;
             BeginUpgradeTutor();
         }
 
@@ -17253,12 +20435,14 @@ namespace FlockFive
             if (_home != HomeFace.Hive)
             {
                 _gloveVis = false;
+                DropGlovePress();
                 _albumTutorAimOk = false;
                 return false;
             }
             if (!AlbumPageSettled() || !TutorialGateClear())
             {
                 _gloveVis = false;
+                DropGlovePress();
                 if (OtherTutorialLive()) return false;
                 return true;
             }
@@ -17266,6 +20450,7 @@ namespace FlockFive
             {
                 AdvanceAlbumTutor(2);
                 _gloveVis = false;
+                DropGlovePress();
                 return true;
             }
             // Flip done → honeycombs-by-rarity step (stay on the open back).
@@ -17273,17 +20458,20 @@ namespace FlockFive
             {
                 AdvanceAlbumTutor(3);
                 _gloveVis = false;
+                DropGlovePress();
                 return true;
             }
             if (_albumTutorStep == 2 && _hiveInspect < 0)
             {
                 AdvanceAlbumTutor(1);
                 _gloveVis = false;
+                DropGlovePress();
                 return true;
             }
             if (_albumTutorStep == 2 && !AlbumInspectReady())
             {
                 _gloveVis = false;
+                DropGlovePress();
                 return true;
             }
             // Honey step: any put-away advances to the page lesson.
@@ -17293,17 +20481,20 @@ namespace FlockFive
                 {
                     AdvanceAlbumTutor(AlbumStepPage);
                     _gloveVis = false;
+                    DropGlovePress();
                     return true;
                 }
                 if (!AlbumInspectReady())
                 {
                     _gloveVis = false;
+                    DropGlovePress();
                     return true;
                 }
             }
             if (_albumTutorStep >= AlbumStepPage && _hiveInspect >= 0)
             {
                 _gloveVis = false;
+                DropGlovePress();
                 return true;
             }
             Vector2 aim = _albumTutorAim;
@@ -17366,35 +20557,42 @@ namespace FlockFive
             if (_home != HomeFace.Hive || !Hive.UpgradesUnlocked)
             {
                 _gloveVis = false;
+                DropGlovePress();
                 _upgradeTutorAimOk = false;
                 return false;
             }
             if (!AlbumPageSettled() || !TutorialGateClear())
             {
                 _gloveVis = false;
+                DropGlovePress();
                 if (OtherTutorialLive()) return false;
                 return true;
             }
             if (_hiveInspect < 0 || !AlbumInspectReady() || Hive.CountOfSlot(_hiveInspect) <= 0)
             {
                 _gloveVis = false;
+                DropGlovePress();
                 _upgradeTutorAimOk = false;
                 return true;
             }
             if (_upgradeBtnR.width < 8f)
             {
                 _gloveVis = false;
+                DropGlovePress();
                 _upgradeTutorAimOk = false;
                 return true;
             }
             if (dt < 0f) dt = 0f;
             CueLine(AlbumUpgradeLine);
             _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-            var aim = GloveTarget(_upgradeBtnR);
+            // From the left, so the palm stays off the word. The tip lands in the
+            // padding beside "Upgrade", and the shared arc loops in from off the button.
+            _gloveKeepOff = _tutorPlateOn && _tutorPlate.width > 2f ? _tutorPlate : default;
+            var aim = UpgradeGloveSettle(_upgradeBtnR);
             _upgradeTutorAim = aim;
             _upgradeTutorAimOk = true;
             float handS = DeviceFit.Ui();
-            CoachGloveAt(aim, dt, handS, float.NaN, false, float.NaN, _upgradeBtnR);
+            CoachGloveAt(aim, dt, handS, float.NaN, true, float.NaN, _upgradeBtnR);
             return true;
         }
 
@@ -17440,7 +20638,15 @@ namespace FlockFive
                 if (focus.width > 8f && focus.height > 8f)
                 {
                     var pose = PoseLesson(step, focus, PhoneArea.W, PhoneArea.H, line, AlbumHoneyCount(), _albumPagerOk ? _albumPagerR : default);
-                    CapSpot("album.coach"); PaintCoachCaption(line, pose.Seat, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
+                    var posed = pose.Seat;
+                    if (posed.Overlaps(focus))
+                    {
+                        float gap = 8f * s;
+                        float below = focus.yMax + gap;
+                        float limit = PhoneArea.H - Mathf.Max(34f, PhoneArea.Safe.yMin) - 8f;
+                        posed.y = below + posed.height <= limit ? below : Mathf.Max(8f, focus.yMin - gap - posed.height);
+                    }
+                    CapSpot("album.coach"); PaintCoachCaption(line, posed, s, 12, Mathf.RoundToInt(32f * s), default, false, StandardCaptionSlack);
                     return;
                 }
             }
@@ -17466,6 +20672,14 @@ namespace FlockFive
             float maxY = PhoneArea.H - h - 8f;
             if (y > maxY) y = maxY;
             var seat = new Rect((PhoneArea.W - w) * 0.5f, y, w, h);
+            Rect card = _albumInspectOk ? _albumInspectR : (_albumCardOk ? _albumCardR : default);
+            if (card.width > 2f && seat.Overlaps(card))
+            {
+                float gap = 8f * s;
+                float below = card.yMax + gap;
+                float limit = PhoneArea.H - Mathf.Max(34f, PhoneArea.Safe.yMin) - 8f;
+                seat.y = below + h <= limit ? below : Mathf.Max(8f, card.yMin - gap - h);
+            }
             CapSpot("album.coach"); PaintCoachCaption(line, seat, s, 12, Mathf.RoundToInt(28f * s), default, false, StandardCaptionSlack);
         }
 
@@ -17474,8 +20688,13 @@ namespace FlockFive
             float s = DeviceFit.Ui();
             DrawHomeWash(0.28f);
 
-            float top = TopHud();
+            float top = TopControlY(PhoneArea.H, PhoneArea.Safe, TopHud());
             var back = BackMedalRect(s, top);
+            float inset = GuiTopInset(PhoneArea.H, PhoneArea.Safe);
+            float glow = BackMedalGlowPad(back.height);
+            if (back.y - glow < inset) back.y += inset - (back.y - glow);
+            float headerShift = AlbumHeaderShift(back, PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
+            if (headerShift > 0f) back.y += headerShift;
             PageSwipeAte = false;
             NoteAlbumOpen();
             if (_hiveInspect < 0 && DrawBackMedal(back))
@@ -17710,7 +20929,7 @@ namespace FlockFive
             if (!_albumCardOk || _hiveInspect >= 0 || PageSwipeAte) return;
             var e = Event.current;
             if (e == null || e.rawType != EventType.MouseUp || e.button != 0) return;
-            if (!_albumCardR.Contains(e.mousePosition)) return;
+            if (!_albumCardR.Contains(PlayPointer.Gui(e))) return;
             AdvanceAlbumTutor(3);
         }
 
@@ -17728,7 +20947,9 @@ namespace FlockFive
 
             // Large portrait card ~1:1.4, the same rect the card-fit suite measures.
             // The honey caption sits in the strip under the card. Do not shrink it.
-            var to = AlbumInspectRect(PhoneArea.W, PhoneArea.H);
+            float seatS = DeviceFit.Ui();
+            float bottomInset = Mathf.Max(34f, PhoneArea.Safe.yMin);
+            var to = SeatedInspectCard(PhoneArea.W, PhoneArea.H, bottomInset, seatS);
             var from = _hiveInspectFrom;
             var big = new Rect(
                 Mathf.Lerp(from.x, to.x, t),
@@ -17757,15 +20978,23 @@ namespace FlockFive
             DrawBeeAlbumCard(big, ix, s, true);
             if (t > 0.4f)
                 DrawFlipArrows(big, s, Mathf.Clamp01(t));
-            float hintTop = big.yMax + 12f * s;
-            if (t > 0.4f && !_albumTutorOn)
+            float hintTop = PutBackHintTop(big.yMax, s);
+            bool upgradeOn = UpgradeButtonShows(t, UpgradeContext && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3));
+            if (FlipHintsVisible(t, !_albumTutorOn, !_upgradeTutorOn, upgradeOn))
                 DrawFlipHint(hintTop, s, Mathf.Clamp01(t));
             bool upgradeHit = false;
             // Upgrade lives in the hive (album) only: never on the round popup or any other inspect.
-            if (UpgradeContext && t > 0.55f && !_hiveInspectClosing && !_hiveTutorOn && !(_albumTutorOn && _albumTutorStep == 3))
+            // It waits until the flip hints are hidden, so FREE never sits under them.
+            // A MAXXED plate still keeps "Tap outside to put back", painted after the plate.
+            if (upgradeOn)
                 upgradeHit = DrawHiveUpgrade(ix, hintTop, s, Mathf.Clamp01(t));
             else
+            {
                 _upgradeBtnR = default;
+                _maxxedHint = default;
+            }
+            if (_maxxedHint.width > 8f && MaxxedPutBackShows(true, t, !_albumTutorOn, !_upgradeTutorOn))
+                DrawFlipHintBox(_maxxedHint, s, Mathf.Clamp01(t));
             if (_hiveTutorOn)
                 DrawHiveTutorGlove(big, s);
 
@@ -17788,18 +21017,31 @@ namespace FlockFive
             GUI.Label(xBtn, "X", xLab);
 
             bool fullyOpen = !_hiveInspectClosing && u >= 1f;
+            var hintGui = Event.current != null ? PlayPointer.Gui(Event.current) : default;
+            bool hintUp = Event.current != null && Event.current.button == 0 && Event.current.type == EventType.MouseUp
+                && PutBackHintHit(hintGui, _maxxedHint);
+            bool hintPut = hintUp || (PutBackHintHit(hintGui, _maxxedHint) && HitPad(PutBackHintPad(_maxxedHint), out _));
             // A honeycomb is not the card. It squishes (no marks left), and the flip waits.
-            var cardTap = InspectCardTap(big, ix, fullyOpen && !upgradeHit);
+            var cardTap = hintPut ? CardTap.None : InspectCardTap(big, ix, fullyOpen && !upgradeHit);
             bool honeyAte = cardTap == CardTap.Honey;
             if (cardTap == CardTap.Card && !PageSwipeAte && !CardTilt.DragAte)
                 BeginHiveFlip(ix);
             if (Event.current != null && Event.current.rawType == EventType.MouseUp) CardTilt.ClearDragAte();
 
-            // Tap dim outside card closes (after card/X/Back/upgrade so they win hit tests)
+            // Tap anywhere outside the card puts it back, including the jungle
+            // bars beside the play column at 820. Card, X, Back, and upgrade
+            // already consumed their own taps.
             var full = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
-            bool outside = !upgradeHit && !_hiveInspectClosing && u > 0.85f && HitPad(full, out _);
-            if ((outside || xHit || backHit) && !_hiveInspectClosing)
+            bool margin = PillarMarginPutBack(big);
+            bool outside = !upgradeHit && !_hiveInspectClosing && u > 0.85f && (HitPad(full, out _) || margin);
+            bool onHint = _maxxedHint.width > 8f && Event.current != null
+                && Event.current.button == 0 && Event.current.type == EventType.MouseUp
+                && _maxxedHint.Contains(PlayPointer.Gui(Event.current));
+            if ((outside || xHit || backHit || onHint || hintPut) && !_hiveInspectClosing)
+            {
+                if (hintPut || onHint) _tapWho = "hint";
                 BeginPutAwayInspect();
+            }
 
             if (_hiveInspectClosing && u >= 1f)
                 FinishPutAwayInspect();
@@ -17915,7 +21157,7 @@ namespace FlockFive
                 dip = Mathf.Sin(Mathf.Clamp01((_hiveTutorT - 0.40f) / 0.22f) * Mathf.PI);
             if (travel < 0.84f)
                 SeatGlove(ref pivot, ref ang, aim, s, ref mirror, dip);
-            DrawGloveAt(pivot, ang, GloveDh(s), fade, dip, mirror);
+            DrawGloveAt(pivot, ang, GloveSize(s), fade, dip, mirror);
         }
 
         Rect FlipHintRect(float y, float s)
@@ -17940,6 +21182,8 @@ namespace FlockFive
         bool DrawHiveUpgrade(int slot, float hintTop, float s, float alpha)
         {
             _upgradeBtnR = default;
+            _upgradeLabelR = default;
+            _maxxedHint = default;
             if (alpha < 0.04f || (uint)slot >= (uint)Hive.AlbumSlots) return false;
             if (!Hive.UpgradesUnlocked || Hive.CountOfSlot(slot) <= 0) return false;
             var pill = FlipHintRect(hintTop, s);
@@ -17952,6 +21196,12 @@ namespace FlockFive
             float rimW = Mathf.Round(5f * Mathf.Max(1f, s * 0.6f));
             float keyW = Mathf.Max(2f, Mathf.Round(rimW * 0.3f));
             bool room = Hive.UpgradeRoom(slot);
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            // DEV-ONLY inspect hook. Not a shipping path. ?forceMaxxed=1 draws
+            // this open card as MAXXED so "Tap outside to put back" can be
+            // inspected. It does not write the album or grant an upgrade.
+            if (DevLevelSkip.ForceMaxxedFromUrl(Application.absoluteURL)) room = false;
+#endif
             bool maxxed = !room;
             bool can = room && Hive.CanUpgrade(slot);
             bool freeUp = Hive.FreeUpgradeAvailable; // #193: the first upgrade is free
@@ -17966,9 +21216,9 @@ namespace FlockFive
             btnW = Mathf.Min(btnW, PhoneArea.W * 0.86f - (rimW + keyW) * 2f);
             // Margin: a clear gap under the hint pill and above the screen edge, rim included.
             float gapTop = Mathf.Max(18f, 20f * s) + rimW + keyW;
-            float y = pill.yMax + gapTop;
-            float edgeB = Mathf.Max(24f, 28f * s) + rimW + keyW;
-            if (y + btnH > PhoneArea.H - edgeB) y = PhoneArea.H - edgeB - btnH;
+            SeatHintAndBadge(PhoneArea.W, PhoneArea.H, pill.y, pill.width, pill.height, btnW, btnH, gapTop, out pill, out var seatedBtn);
+            if (maxxed) _maxxedHint = pill;
+            float y = seatedBtn.y;
             float denyAge = _upDenyAt < 0f ? 99f : AdPause.Unscaled - _upDenyAt;
             float shake = denyAge < UpDenyShake
                 ? Mathf.Sin(denyAge * 46f) * (1f - denyAge / UpDenyShake) * btnH * 0.07f
@@ -18023,6 +21273,7 @@ namespace FlockFive
             st.alignment = TextAnchor.MiddleCenter;
             st.fontStyle = FontStyle.Bold;
             var lab = new Rect(face.x + face.width * 0.06f, face.y + face.height * 0.10f, face.width * 0.88f, face.height * 0.80f);
+            _upgradeLabelR = lab;
             if (maxxed)
             {
                 // MAXXED stays centered; the gem sits out in the left margin, centered between
@@ -18054,13 +21305,7 @@ namespace FlockFive
             // and nothing plays.
             if (hit && !maxxed)
             {
-                if (Hive.TryUpgrade(slot))
-                {
-                    Sfx.CardBump();
-                    Haptics.Play(Haptics.Tier.Light);
-                    if (_upgradeTutorOn) FinishUpgradeTutor();
-                }
-                else
+                if (!ApplyBeeUpgrade(slot))
                 {
                     Sfx.Deny();
                     // Retap restarts the shake + message; never stacks.
@@ -18223,9 +21468,111 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // The upgrade coach bubble sits on this card. The flip lines would show
+        // as clipped scraps around it, so they stay hidden while that coach is up.
+        public static bool ShowFlipHints(bool albumCoachClear, bool upgradeCoachClear)
+            => albumCoachClear && upgradeCoachClear;
+
+        // Upgrade appears only after the card is mostly open, and the flip hints
+        // leave in that same moment so the two never share a frame.
+        public static bool UpgradeButtonShows(float openT, bool upgradeContext)
+            => upgradeContext && openT >= 0.55f;
+
+        public static bool FlipHintsVisible(float openT, bool albumCoachClear, bool upgradeCoachClear, bool upgradeButtonUp)
+            => openT > 0.4f && ShowFlipHints(albumCoachClear, upgradeCoachClear) && !upgradeButtonUp;
+
+        // MAXXED keeps the put-back line. FREE still waits until the flip hints leave.
+        public static bool MaxxedPutBackShows(bool maxxed, float openT, bool albumCoachClear, bool upgradeCoachClear)
+            => maxxed && openT > 0.4f && ShowFlipHints(albumCoachClear, upgradeCoachClear);
+
+        // A point outside the card, including a pillar-bar tap (gui x < 0).
+        public static bool InspectDismissTap(Vector2 gui, Rect card)
+        {
+            if (card.width > 2f && card.height > 2f && card.Contains(gui)) return false;
+            return true;
+        }
+
+        // Clearance under the card's bottom frame. GUI y grows downward, so this
+        // seats the put-back hint below that frame.
+        public const float PutBackHintClear = 8f;
+        public static float PutBackHintTop(float cardBottom, float s)
+            => cardBottom + 12f * Mathf.Max(0.5f, s) + PutBackHintClear;
+
+        public static Rect PutBackHintPad(Rect hint)
+        {
+            if (hint.width < 2f) return hint;
+            return new Rect(hint.x - 12f, hint.y - 12f, hint.width + 24f, hint.height + 24f);
+        }
+
+        public static bool PutBackHintHit(Vector2 gui, Rect hint)
+        {
+            return hint.width > 2f && PutBackHintPad(hint).Contains(gui);
+        }
+
+        // MAXXED cards skip "Tap Upgrade". A card with room and a free upgrade still gets it.
+        public static bool UpgradeCoachForCard(bool room, bool freeUpgrade)
+            => room && freeUpgrade;
+
+        static bool PillarMarginPutBack(Rect card)
+        {
+            var e = Event.current;
+            if (e == null || e.button != 0 || e.type != EventType.MouseUp) return false;
+            if (!InspectDismissTap(PlayPointer.Gui(e), card)) return false;
+            var p = PlayPointer.Gui(e);
+            float w = PhoneArea.W;
+            float h = PhoneArea.H;
+            if (p.x >= 0f && p.y >= 0f && p.x <= w && p.y <= h) return false;
+            e.Use();
+            return true;
+        }
+
+        // Hint pill and the upgrade/MAXXED plate. If the plate would run off the
+        // bottom, the hint moves up. The two rects do not overlap.
+        public static void SeatHintAndBadge(float screenW, float screenH, float hintY, float hintW, float hintH, float btnW, float btnH, float gap, out Rect hint, out Rect badge)
+        {
+            if (hintW < 8f) hintW = 8f;
+            if (hintH < 8f) hintH = 8f;
+            if (btnW < 8f) btnW = 8f;
+            if (btnH < 8f) btnH = 8f;
+            if (gap < 0f) gap = 0f;
+            hint = new Rect((screenW - hintW) * 0.5f, hintY, hintW, hintH);
+            float edge = 28f;
+            float y = hint.yMax + gap;
+            if (y + btnH > screenH - edge)
+            {
+                float overflow = y + btnH - (screenH - edge);
+                float slack = Mathf.Max(0f, gap - 4f);
+                float take = Mathf.Min(overflow, slack);
+                gap -= take;
+                y = hint.yMax + gap;
+            }
+            if (y < hint.yMax) y = hint.yMax + gap;
+            badge = new Rect((screenW - btnW) * 0.5f, y, btnW, btnH);
+        }
+
+        // Full card rect drawn behind a squashed flip so the album cannot show
+        // through the edge-on gap. The face stays inside it.
+        public static Rect FlipOccluder(Rect card) => card;
+
+        public static bool FlipFaceInsideOccluder(Rect card, float angle)
+        {
+            float squash = Mathf.Abs(Mathf.Cos(angle));
+            float w = card.width * Mathf.Max(0.08f, squash);
+            var face = new Rect(card.center.x - w * 0.5f, card.y, w, card.height);
+            var occ = FlipOccluder(card);
+            return occ.xMin <= face.xMin + 0.5f && occ.xMax >= face.xMax - 0.5f
+                && occ.yMin <= face.yMin + 0.5f && occ.yMax >= face.yMax - 0.5f;
+        }
+
         void DrawFlipHint(float y, float s, float alpha)
         {
             if (alpha < 0.04f) return;
+            DrawFlipHintBox(FlipHintRect(y, s), s, alpha);
+        }
+
+        void DrawFlipHintBox(Rect pill, float s, float alpha)
+        {
+            if (alpha < 0.04f || pill.width < 8f) return;
             const string a = "Tap to flip!";
             const string b = "Tap outside to put back";
             int hi = Mathf.Clamp(Mathf.RoundToInt(32f * s), 28, 56);
@@ -18234,7 +21581,6 @@ namespace FlockFive
             st.alignment = TextAnchor.MiddleCenter;
             st.wordWrap = false;
             st.fontSize = hi;
-            var pill = FlipHintRect(y, s);
             var inner = new Rect(pill.x + 18f, pill.y + 12f, Mathf.Max(8f, pill.width - 36f), Mathf.Max(8f, pill.height - 24f));
             NoteTutorPlate(CoachPanelRect(inner));
             DrawCoachPanel(inner, alpha);
@@ -18274,7 +21620,7 @@ namespace FlockFive
             for (int i = 0; i < n; i++)
             {
                 bool fire = HitPad(_honeyHits[i], out bool held);
-                bool drag = e != null && e.type == EventType.MouseDrag && _honeyHits[i].Contains(e.mousePosition);
+                bool drag = e != null && e.type == EventType.MouseDrag && _honeyHits[i].Contains(PlayPointer.Gui(e));
                 if (drag && HoneyPoke.DragInto(i))
                 {
                     ate = true;
@@ -18451,6 +21797,14 @@ namespace FlockFive
             bool capturing = _cardCapture && inspectView;
             bool flipping = _hiveFlip == i && !capturing;
             float flipU = flipping ? Mathf.Clamp01(_hiveFlipT / CardSlab.FlipSeconds) : 0f;
+            if (flipping && GuiPaint())
+            {
+                // Edge-on the face is a sliver. This plate fills the card so the album
+                // does not show through the gap. The face draws on top of it.
+                GUI.color = new Color(0.36f, 0.22f, 0.10f, 1f);
+                GUI.DrawTexture(FlipOccluder(card), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
             bool slab = flipping && inspectView && CardQuality.Tier != CardTier.Static;
             float flipA = slab ? CardSlab.Angle(flipU) : flipU * Mathf.PI;
             float squash = flipping ? Mathf.Abs(Mathf.Cos(flipA)) : 1f;
@@ -18642,7 +21996,7 @@ namespace FlockFive
         // stays above 4.5:1; every themed card gets a glow behind the comb row.
         void DrawThemedBackdrop(Rect face, in FaceStyle st, bool showBack, int honey, bool inspectView)
         {
-            CardText.FaceBands(face, inspectView, showBack, showBack && honey > 0, out var titleR, out var flavorR);
+            CardText.FaceBands(face, inspectView, showBack, showBack && honey > 0, out var titleR, out var flavorR, honey);
             if (st.Night)
             {
                 float padX = face.width * 0.04f;
@@ -18695,6 +22049,7 @@ namespace FlockFive
                 Full = true,
                 Back = showBack,
                 Honey = showBack && honey > 0,
+                HoneyCount = showBack ? honey : 0,
                 Ink = themed ? fstyle.Ink : new Color(0.16f, 0.07f, 0.02f, 1f),
                 FinishInk = FinishInk.Tag(finish),
                 Themed = themed,
@@ -18760,7 +22115,7 @@ namespace FlockFive
             if (honey <= 0) return false;
             int n = CardText.HoneyBand(CardText.FaceOf(card), honey, true, _honeyHits);
             for (int i = 0; i < n; i++)
-                if (_honeyHits[i].Contains(e.mousePosition)) return true;
+                if (_honeyHits[i].Contains(PlayPointer.Gui(e))) return true;
             return false;
         }
 
@@ -19073,14 +22428,14 @@ namespace FlockFive
             _levelHiveDragId = id;
             var e = Event.current;
             if (e == null) return;
-            bool inside = r.Contains(e.mousePosition);
+            bool inside = r.Contains(PlayPointer.Gui(e));
             switch (e.GetTypeForControl(id))
             {
                 case EventType.MouseDown:
                     if (inside && e.button == 0)
                     {
                         GUIUtility.hotControl = id;
-                        _levelHiveDrag0 = e.mousePosition;
+                        _levelHiveDrag0 = PlayPointer.Gui(e);
                         _levelHiveDragX = 0f;
                         _levelHiveDrag = true;
                         e.Use();
@@ -19089,7 +22444,7 @@ namespace FlockFive
                 case EventType.MouseDrag:
                     if (GUIUtility.hotControl == id)
                     {
-                        _levelHiveDragX = e.mousePosition.x - _levelHiveDrag0.x;
+                        _levelHiveDragX = PlayPointer.Gui(e).x - _levelHiveDrag0.x;
                         e.Use();
                     }
                     break;
@@ -19097,7 +22452,7 @@ namespace FlockFive
                     if (GUIUtility.hotControl == id)
                     {
                         GUIUtility.hotControl = 0;
-                        float dx = e.mousePosition.x - _levelHiveDrag0.x;
+                        float dx = PlayPointer.Gui(e).x - _levelHiveDrag0.x;
                         _levelHiveDrag = false;
                         _levelHiveDragX = 0f;
                         e.Use();
@@ -19271,6 +22626,30 @@ namespace FlockFive
             OpenGiftCard();
         }
 
+        int _giftSignQueued = -1;
+
+        // A tap on a gift sign during flight, or in the beat after a grant,
+        // is kept and opened once the board is still again.
+        void QueueGiftSign(int branch)
+        {
+            if (branch < 0) return;
+            if (_busy || _collecting || GateNow < _suppressGiftUntil)
+            {
+                _giftSignQueued = branch;
+                return;
+            }
+            OpenBonus(branch);
+        }
+
+        void FlushGiftSignQueue()
+        {
+            if (_giftSignQueued < 0) return;
+            if (_busy || _collecting || GateNow < _suppressGiftUntil) return;
+            int branch = _giftSignQueued;
+            _giftSignQueued = -1;
+            if (CanOfferBonus(branch)) OpenBonus(branch);
+        }
+
         void OpenBonus(int branch)
         {
             if (LessonTapBlocked()) return;
@@ -19390,11 +22769,21 @@ namespace FlockFive
             Sfx.Chirp(BirdColor.Gold);
         }
 
+        bool _tutorialOfferSeen;
+        bool _tutorialWatchReopen;
+
         void RaiseGiftCard()
         {
             if (_gift == GiftFace.Card) return;
             if (!GatePopup(PopupKind.Gift, false)) return;
+            // The first tutorial card waits on the ad. A later open of that
+            // same hand is the reopen that must not sit on an empty fill.
+            if (_adHand && _tutorialOfferSeen)
+                _tutorialWatchReopen = true;
+            if (_adHand)
+                _tutorialOfferSeen = true;
             _gift = GiftFace.Card;
+            HideCoachTap();
             if (_freezeOffer) _freezeShownAt = AdPause.Unscaled;
             AdLog.Add("branch offer shown (" + OfferReason() + ")");
         }
@@ -19419,12 +22808,125 @@ namespace FlockFive
             return tutorial ? AdFailAction.GrantBranch : AdFailAction.Close;
         }
 
+        // Coach gloves that sit on a real control, not a garden branch.
+        // Audited: gift Watch and X, Home, Restart, Daily rail, Daily Claim,
+        // hive rail, poker rail, poker Deal, poker Back, album Upgrade, adopt bird.
+        bool ButtonCoachGlove()
+        {
+            if (_adHand && _gift == GiftFace.Card) return true;
+            if (!_gloveTapRectOn && !_gloveVis) return false;
+            return _splash || _dailyOpen || _dailyIntroLive || _hiveIntroLive || _hiveLevelLive
+                || _pokerIntroLive || _pokerDealHint || _pokerPageOn || _upgradeTutorOn
+                || _albumTutorOn || _adoptLive || PokerBackGateLive();
+        }
+
+        // True when this pointer must reach the control under the glove.
+        // A release outside the drawn hand is not swallowed. X closes here.
+        // A garden hop glove is not one of these controls: Home and Restart stay
+        // with the glove rules (same-frame, owned hop, other finger). A fresh
+        // press that did not start on the glove falls through so HitHud can open Home.
+        bool CoachControlYields(Vector2 windowGui, bool releaseEdge)
+        {
+            // The gift X sits inside a larger Restart or gear hit. The nearer
+            // center wins, so the X center closes the card and the Restart
+            // center still restarts.
+            int which = HudControl(windowGui);
+            bool onX = GiftCloseExempt(windowGui);
+            if (onX && which != 0 && !CloserToGiftX(windowGui, which))
+                onX = false;
+            if (onX)
+            {
+                if (releaseEdge) CloseGift();
+                _pointerClaimed = true;
+                _tapWho = "gift-x";
+                return true;
+            }
+            bool gift = _adHand && _gift == GiftFace.Card;
+            bool button = ButtonCoachGlove();
+            if (!gift && !button) return false;
+            if (which == 1)
+            {
+                if (releaseEdge && !EchoReleaseBlocks(1)) OpenHomeFromPress();
+                return true;
+            }
+            if (which == 3)
+            {
+                if (releaseEdge && !EchoReleaseBlocks(3)) ApplySettingsHit(SettingsMotion.Hit.Gear);
+                return true;
+            }
+            if (which == 2)
+            {
+                if (releaseEdge && !EchoReleaseBlocks(2)) ActRestart();
+                return true;
+            }
+            if (gift)
+            {
+                float s = DeviceFit.Ui();
+                GiftCardPlaced(s, out _, out var cta);
+                if (FlowerHit(cta, s).Contains(windowGui))
+                {
+                    if (releaseEdge) StartWatchGift();
+                    _pointerClaimed = true;
+                    _tapWho = "watch";
+                    return true;
+                }
+            }
+            // The glove only steps aside. Claim, Deal, Upgrade, adopt, and the rails
+            // run their own handlers, and those handlers finish the lesson.
+            if (_gloveTapRectOn && _gloveTapRect.Contains(windowGui))
+                return true;
+            if (!releaseEdge) return false;
+            var drawn = OnScreenGlove();
+            bool onHand = _gloveVis && drawn.width > 2f && drawn.Contains(windowGui);
+            return !onHand;
+        }
+
+        // True when this point is nearer the gift X than the HUD button it also hits.
+        bool CloserToGiftX(Vector2 windowGui, int which)
+        {
+            var x = GiftCloseHit();
+            HudShaken(out var restart, out _);
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            var hud = which == 1 ? home : which == 3 ? gear : restart;
+            if (x.width < 2f || hud.width < 2f) return true;
+            float dx = windowGui.x - x.center.x;
+            float dy = windowGui.y - x.center.y;
+            float hx = windowGui.x - hud.center.x;
+            float hy = windowGui.y - hud.center.y;
+            return dx * dx + dy * dy <= hx * hx + hy * hy;
+        }
+
         // The gift card's X is always accepted, even while the ad-hand glove owns the screen.
-        bool GiftCloseExempt(Vector2 gui)
+        // play is portrait-canvas pixels, the same space as the X rect.
+        bool GiftCloseExempt(Vector2 play)
         {
             if (_gift != GiftFace.Card || _freezeOffer) return false;
-            var x = CloseTapRect(CornerCloseRect(DeviceFit.Ui(), TopHud()));
-            return x.width > 2f && x.Contains(gui);
+            var x = GiftCloseHit();
+            return x.width > 2f && x.Contains(play);
+        }
+
+        // The corner X is padded to a finger target, and that pad used to cover
+        // Restart on a phone. The hit sits on the corner until it would cover
+        // Restart, then moves to a square just below the button.
+        static Rect GiftCloseHit()
+        {
+            var drawn = CornerCloseRect(DeviceFit.Ui(), TopHud());
+            var hit = CloseTapRect(drawn);
+            HudShaken(out var restart, out _);
+            if (restart.width < 2f || !hit.Overlaps(restart)) return hit;
+            float sz = Mathf.Max(36f, drawn.width);
+            float x = drawn.xMax - sz;
+            if (x < 0f) x = 0f;
+            if (x + sz > PhoneArea.W) x = Mathf.Max(0f, PhoneArea.W - sz);
+            float y = restart.yMax + 2f;
+            var seat = new Rect(x, y, sz, sz);
+            if (seat.Overlaps(restart))
+                seat.y = restart.yMax + 4f;
+            if (!seat.Overlaps(restart) && seat.yMax <= PhoneArea.H) return seat;
+            seat = new Rect(Mathf.Max(0f, restart.xMin - 2f - sz), restart.y, sz, sz);
+            if (!seat.Overlaps(restart)) return seat;
+            return hit;
         }
 
         void CloseGift()
@@ -19443,6 +22945,15 @@ namespace FlockFive
         void StartWatchGift()
         {
             if (_watchGiftLive) return;
+            _watchGiftLive = true;
+            _watchStarts++;
+#if UNITY_EDITOR
+            // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+            // EditMode never runs the rewarded coroutine, so a test reads this
+            // count to see that the request fired once, on the release.
+            EditorWatchRequests++;
+            if (!Application.isPlaying) return;
+#endif
             StartCoroutine(WatchGift());
         }
 
@@ -19470,6 +22981,10 @@ namespace FlockFive
             }
         }
 
+        // Tutorial, ads on, nothing loaded: do not wait out the fill.
+        public static bool WatchReopenSkipsLoadWait(bool tutorial, bool adsOn, bool ready)
+            => tutorial && adsOn && !ready;
+
         IEnumerator WatchGiftBody()
         {
             bool keep = _keepStreak;
@@ -19486,7 +23001,14 @@ namespace FlockFive
             int payload = keep ? _restartSavedMul : _giftBranch;
             string placement = keep ? Ads.PlacementKeep : Ads.PlacementBonus;
             bool tutorial = _adHand && !keep;
-            yield return Ads.Rewarded(placement, payload, tutorial);
+            // Only a reopened tutorial card with nothing loaded. The first
+            // offer still goes to Wait and asks for the ad.
+            bool skipWait = WatchReopenSkipsLoadWait(tutorial && _tutorialWatchReopen, Ads.Enabled, Ads.RewardedReady);
+            // No fill grants the branch (tutorial) or closes with a line.
+            if (skipWait)
+                AdLog.Add("gift ad unavailable (reopened offer, not ready)");
+            else
+                yield return Ads.Rewarded(placement, payload, tutorial);
             // Freeze continue pays for a finished view (or ads switched off).
             // A skip or a failed show leaves the card up. A late reward still
             // grants after this coroutine has gone.
@@ -19514,6 +23036,7 @@ namespace FlockFive
                 if (AdFailDecision(keep, freeze, tutorial, AdRetry.Skipped) == AdFailAction.Close)
                 {
                     AdLog.Add("gift ad unavailable: closing the offer (" + AdRetry.Reason + ")");
+                    _cueLine = "Ad unavailable.";
                     _gift = GiftFace.None;
                     AdRetry.Clear();
                     DismissAdHand();
@@ -19691,11 +23214,9 @@ namespace FlockFive
                 return;
             }
 
-            var safe = PhoneArea.Safe;
-            float top = TopHud();
-            var xBtn = CornerCloseRect(s, top);
+            var xBtn = GiftCloseHit();
             bool xHeld = false;
-            if (!_freezeOffer && HitPad(CloseTapRect(xBtn), out xHeld))
+            if (!_freezeOffer && HitPad(xBtn, out xHeld))
             {
                 DismissAdHand();
                 if (_keepStreak)
@@ -19845,7 +23366,7 @@ namespace FlockFive
                 if (retry)
                 {
                     DismissAdHand();
-                    Restart();
+                    ActRestart();
                     return;
                 }
                 if (contGo)

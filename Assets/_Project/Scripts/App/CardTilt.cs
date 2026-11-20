@@ -157,13 +157,13 @@ namespace FlockFive
             switch (e.rawType)
             {
                 case EventType.MouseDown:
-                    if (card.Contains(e.mousePosition)) { _pressed = true; _travel = 0f; DragAte = false; _lastPos = e.mousePosition; _dragVel = Vector2.zero; }
+                    if (card.Contains(PlayPointer.Gui(e))) { _pressed = true; _travel = 0f; DragAte = false; _lastPos = PlayPointer.Gui(e); _dragVel = Vector2.zero; }
                     break;
                 case EventType.MouseDrag:
                     if (_pressed)
                     {
-                        var d = e.mousePosition - _lastPos;
-                        _lastPos = e.mousePosition;
+                        var d = PlayPointer.Gui(e) - _lastPos;
+                        _lastPos = PlayPointer.Gui(e);
                         _travel += d.magnitude;
                         if (_travel > TapSlop) DragAte = true;
                         float s = 1f / Mathf.Max(40f, card.width * DragFullCards);

@@ -326,7 +326,8 @@ namespace FlockFive.Editor
                 && !DevLevelSkip.OnboardingFromUrl("http://h/?skipOnboarding=2"), "junk");
             var garden2 = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1", 50);
             Check("plan-onboard-garden-2", garden2.Index == 1 && garden2.SkipOnboarding && !garden2.KeepBee && !garden2.KeepFire
-                && !garden2.KeepTips && !garden2.ForceFeeder && !garden2.ForceNap && !garden2.OpenPoker,
+                && !garden2.KeepTips && !garden2.ForceFeeder && !garden2.ForceNap && !garden2.OpenPoker
+                && !garden2.ForceClear && !garden2.ForceRewards,
                 "index " + garden2.Index);
             Check("force-feeder-1", DevLevelSkip.ForceFeederFromUrl(
                 "http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1&forceFeeder=1"), "1");
@@ -339,22 +340,75 @@ namespace FlockFive.Editor
                 && !DevLevelSkip.ForceNapFromUrl("http://h/?forceNap=")
                 && !DevLevelSkip.ForceNapFromUrl("http://h/?forceNap=2")
                 && !DevLevelSkip.OpenPokerFromUrl("http://h/?openPoker=0")
-                && !DevLevelSkip.OpenPokerFromUrl(null), "junk");
+                && !DevLevelSkip.OpenPokerFromUrl(null)
+                && !DevLevelSkip.ForceClearFromUrl("http://h/?forceClear=0")
+                && !DevLevelSkip.ForceClearFromUrl("http://h/?forceClear=")
+                && !DevLevelSkip.ForceClearFromUrl("http://h/?forceClear=true")
+                && !DevLevelSkip.ForceClearFromUrl("http://h/?forceClear=2")
+                && !DevLevelSkip.ForceClearFromUrl(null)
+                && !DevLevelSkip.ForceRewardsFromUrl("http://h/?forceRewards=0")
+                && !DevLevelSkip.ForceRewardsFromUrl("http://h/?forceRewards=")
+                && !DevLevelSkip.ForceRewardsFromUrl("http://h/?forceRewards=true")
+                && !DevLevelSkip.ForceRewardsFromUrl("http://h/?forceRewards=2")
+                && !DevLevelSkip.ForceRewardsFromUrl(null), "junk");
             var feed = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1&forceFeeder=1", 50);
             Check("plan-force-feeder", feed.Index == 1 && feed.SkipOnboarding && feed.KeepTips && feed.ForceFeeder
-                && !feed.ForceNap && !feed.OpenPoker, "index " + feed.Index);
+                && !feed.ForceNap && !feed.OpenPoker && !feed.ForceClear, "index " + feed.Index);
             var nap = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forceNap=1", 50);
             Check("plan-force-nap", nap.Index == 1 && nap.SkipOnboarding && nap.ForceNap && !nap.KeepTips
-                && !nap.ForceFeeder && !nap.OpenPoker, "index " + nap.Index);
+                && !nap.ForceFeeder && !nap.OpenPoker && !nap.ForceClear, "index " + nap.Index);
+            Check("nap-plate-not-before-zzz", !DevLevelSkip.NapPlateReady(false, false, 1f), "asleep only");
+            Check("nap-plate-not-under-curtain", !DevLevelSkip.NapPlateReady(true, true, 1f), "held");
+            Check("nap-plate-needs-a-frame", !DevLevelSkip.NapPlateReady(true, false, 0f), "same frame");
+            Check("nap-plate-beat-short", !DevLevelSkip.NapPlateReady(true, false, DevLevelSkip.NapPlateOpenSeconds - 0.05f), "short");
+            Check("nap-plate-after-visible-zzz", DevLevelSkip.NapPlateReady(true, false, DevLevelSkip.NapPlateOpenSeconds), "open");
+            Check("nap-wipe-still-painting", DevLevelSkip.NapWipeCovers(true, false)
+                && !DevLevelSkip.NapPlateReady(true, DevLevelSkip.NapWipeCovers(true, false), 1f), "live");
+            Check("nap-wipe-open", !DevLevelSkip.NapWipeCovers(false, false), "open");
             var poker = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&openPoker=1", 50);
             Check("plan-open-poker", poker.Index == 1 && poker.SkipOnboarding && poker.OpenPoker
-                && !poker.ForceFeeder && !poker.ForceNap && !poker.KeepTips, "index " + poker.Index);
+                && !poker.ForceFeeder && !poker.ForceNap && !poker.KeepTips && !poker.ForceClear, "index " + poker.Index);
             var pokerBad = DevLevelSkip.Plan("http://h/?fflevel=99&skipOnboarding=1&openPoker=1", 50);
             Check("plan-open-poker-bad-level", pokerBad.Index < 0 && pokerBad.SkipOnboarding && pokerBad.OpenPoker,
                 "index " + pokerBad.Index);
-            var forceAlone = DevLevelSkip.Plan("http://h/?fflevel=4&forceFeeder=1&forceNap=1&openPoker=1", 50);
+            var forceAlone = DevLevelSkip.Plan("http://h/?fflevel=4&forceFeeder=1&forceNap=1&openPoker=1&forceClear=1", 50);
             Check("plan-force-needs-skip", forceAlone.Index == 3 && !forceAlone.SkipOnboarding
-                && !forceAlone.ForceFeeder && !forceAlone.ForceNap && !forceAlone.OpenPoker, "index " + forceAlone.Index);
+                && !forceAlone.ForceFeeder && !forceAlone.ForceNap && !forceAlone.OpenPoker
+                && !forceAlone.ForceClear, "index " + forceAlone.Index);
+            Check("force-clear-1", DevLevelSkip.ForceClearFromUrl(
+                "http://h/portrait?w=820&h=1180&skipOnboarding=1&fflevel=27&forceClear=1"), "1");
+            var clear27 = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&fflevel=27&forceClear=1", 50);
+            Check("plan-force-clear-27", clear27.Index == 26 && clear27.SkipOnboarding && clear27.ForceClear
+                && !clear27.ForceFeeder && !clear27.ForceNap && !clear27.OpenPoker && !clear27.KeepBee && !clear27.KeepFire
+                && !clear27.ForceRewards,
+                "index " + clear27.Index);
+            var clear32 = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=32&forceClear=1", 50);
+            var clear38 = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=38&forceClear=1", 50);
+            var clear43 = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=43&forceClear=1", 50);
+            Check("plan-force-clear-gardens", clear32.Index == 31 && clear32.ForceClear
+                && clear38.Index == 37 && clear38.ForceClear
+                && clear43.Index == 42 && clear43.ForceClear, "32/38/43");
+            Check("force-clear-gate",
+                !DevLevelSkip.ForceClearReady(false, false, false, true, false, 0f)
+                && DevLevelSkip.ForceClearReady(true, false, false, true, false, 0f)
+                && !DevLevelSkip.ForceClearReady(true, true, true, false, true, 1f)
+                && !DevLevelSkip.ForceClearReady(true, true, false, true, false, 1f)
+                && DevLevelSkip.ForceClearReady(true, true, false, true, true, 0.2f)
+                && DevLevelSkip.ForceClearReady(true, true, false, true, false, DevLevelSkip.ForceClearIdleCap)
+                && !DevLevelSkip.ForceClearReady(false, true, false, true, true, 5f)
+                && DevLevelSkip.ForceClearReady(true, true, true, false, true, DevLevelSkip.ForceClearMoveCap),
+                "wipe then idle");
+            Check("force-rewards-1", DevLevelSkip.ForceRewardsFromUrl(
+                "http://localhost:8184/portrait?w=820&h=1180&skipOnboarding=1&fflevel=27&forceClear=1&forceRewards=1"), "1");
+            var rewards = DevLevelSkip.Plan(
+                "http://localhost:8184/portrait?w=820&h=1180&skipOnboarding=1&fflevel=27&forceClear=1&forceRewards=1", 50);
+            Check("plan-force-rewards", rewards.Index == 26 && rewards.SkipOnboarding && rewards.ForceClear && rewards.ForceRewards
+                && !rewards.OpenPoker && !rewards.ForceFeeder, "index " + rewards.Index);
+            var rewardsAlone = DevLevelSkip.Plan("http://h/?fflevel=27&forceRewards=1", 50);
+            var rewardsNoClear = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=32&forceRewards=1", 50);
+            Check("plan-force-rewards-needs-skip", rewardsAlone.Index == 26 && !rewardsAlone.ForceRewards && !rewardsAlone.ForceClear
+                && rewardsNoClear.Index == 31 && rewardsNoClear.SkipOnboarding && rewardsNoClear.ForceRewards && !rewardsNoClear.ForceClear,
+                "index " + rewardsAlone.Index);
             Check("keeptips-absent", !DevLevelSkip.KeepTipsFromUrl("http://h/index.html")
                 && !DevLevelSkip.KeepTipsFromUrl(null) && !DevLevelSkip.KeepTipsFromUrl(""), "none");
             Check("keeptips-1", DevLevelSkip.KeepTipsFromUrl(
@@ -468,6 +522,10 @@ namespace FlockFive.Editor
                 && showFeeder > loadCall
                 && raiseSleep > loadCall
                 && gated.IndexOf("ShowRuleTip(RuleTip.Sleep)") < 0
+                && gated.IndexOf("_devNapHold = true") >= 0
+                && gated.IndexOf("PressRainbow.Live()") > gated.IndexOf("_devNapHold = true")
+                && gated.IndexOf("NapPlateReady") > gated.IndexOf("_devNapHold = true")
+                && gated.IndexOf("RaiseRuleSleepTip()") > gated.IndexOf("NapPlateReady")
                 && gated.IndexOf("DeleteKey(CoachPokerBackKey)") > pokerIf
                 && gated.IndexOf("SetInt(CoachPokerBackKey") < 0
                 && gated.IndexOf("HomeFace.Poker") > pokerIf
@@ -478,8 +536,81 @@ namespace FlockFive.Editor
                 && settings.IndexOf("FF_DEV_FORCE", end) < 0
                 && settings.IndexOf("DevOpenPokerTable", end) < 0
                 && settings.IndexOf("DevForceSleepingFlock", end) < 0
-                && settings.IndexOf("ShowRuleTip(RuleTip.Feeder)", end) < 0,
+                && settings.IndexOf("ShowRuleTip(RuleTip.Feeder)", end) < 0
+                && settings.IndexOf("DevForceStageClear", end) < 0
+                && settings.IndexOf("FF_DEV_FORCE clear=1", end) < 0,
                 "force");
+            int clearFn = gated.IndexOf("IEnumerator DevForceStageClear()");
+            Check("force-clear-waits",
+                clearFn > loadCall
+                && gated.IndexOf("StartCoroutine(DevForceStageClear())") > loadCall
+                && gated.IndexOf("StartCoroutine(DevForceStageClear())") < clearFn
+                && gated.IndexOf("!LevelCurtain.Armed", clearFn) > clearFn
+                && gated.IndexOf("!GardenFit.Busy", clearFn) > clearFn
+                && gated.IndexOf("OstrichAct.Idle", clearFn) > clearFn
+                && gated.IndexOf("ForceClearReady", clearFn) > clearFn
+                && gated.IndexOf("TryScoreGarden()", clearFn) > clearFn
+                && gated.IndexOf("FF_DEV_FORCE clear=1", clearFn) > clearFn
+                && gated.IndexOf("StageClearingCollect") > 0
+                && gated.IndexOf("StageClearingCollect") < clearFn
+                && gated.IndexOf("forceClear=\" +") > 0,
+                "wait");
+            int rewardsFn = gated.IndexOf("void ArmDevInspectRewards()");
+            int readyCall = gated.IndexOf("ForceClearReady", clearFn);
+            string ads = Read("Assets/_Project/Scripts/App/Ads.cs");
+            int adsGate = ads.IndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD");
+            int adsArm = ads.IndexOf("void ArmInspectRewardOffer()");
+            int adsEnd = adsArm >= 0 ? ads.IndexOf("#endif", adsArm) : -1;
+            string adsBody = adsGate >= 0 && adsEnd > adsArm && adsArm > adsGate
+                ? ads.Substring(adsArm, adsEnd - adsArm) : "";
+            string rewardBody = rewardsFn >= 0 ? gated.Substring(rewardsFn) : "";
+            Check("force-rewards-inspect-only",
+                rewardsFn > readyCall
+                && gated.IndexOf("if (_devForceRewards) ArmDevInspectRewards();") > readyCall
+                && gated.IndexOf("if (_devForceRewards) ArmDevInspectRewards();") < rewardsFn
+                && rewardBody.IndexOf("Ads.ArmInspectRewardOffer()") >= 0
+                && rewardBody.IndexOf("Hive.TakeVisitor()") >= 0
+                && rewardBody.IndexOf("BadgerCopy.MarkCoach()") >= 0
+                && rewardBody.IndexOf("DeleteKey(CoachHiveUpgradeKey)") >= 0
+                && rewardBody.IndexOf("FF_DEV_FORCE rewards=1") >= 0
+                && rewardBody.IndexOf("NoAds.Grant") < 0
+                && rewardBody.IndexOf("flockfive.noads") < 0
+                && adsBody.IndexOf("SetReadyOverride(1)") >= 0
+                && adsBody.IndexOf("InterstitialGraceClears") >= 0
+                && adsBody.IndexOf("NoAds.Grant") < 0
+                && adsBody.IndexOf("flockfive.noads") < 0
+                && settings.IndexOf("ArmDevInspectRewards", end) < 0
+                && settings.IndexOf("FF_DEV_FORCE rewards=1", end) < 0
+                && gated.IndexOf("WebGL Development inspect hook only") >= 0,
+                "rewards");
+            int begin = ads.IndexOf("RewardedGrant.Begin(PlaceFor(ActivePlacement)");
+            int stubIf = ads.IndexOf("InspectRewardStubArmed && ActivePlacement == PlacementRewardRepeat");
+            int stubEnd = stubIf >= 0 ? ads.IndexOf("#endif", stubIf) : -1;
+            int stubGate = stubIf >= 0 ? ads.LastIndexOf("#if UNITY_WEBGL && DEVELOPMENT_BUILD", stubIf) : -1;
+            string stub = stubGate >= 0 && stubEnd > stubIf ? ads.Substring(stubGate, stubEnd - stubGate) : "";
+            int shown = stub.IndexOf("DeliverDisplayedCallback()");
+            int earned = stub.IndexOf("DeliverRewardedCallback()");
+            int closed = stub.IndexOf("DeliverClosedCallback()");
+            int flush = stub.IndexOf("RewardedGrant.Flush()");
+            int run = ads.IndexOf("_host.RunRewarded()", stubEnd >= 0 ? stubEnd : 0);
+            Check("force-rewards-stub-grant",
+                begin >= 0 && stubIf > begin && stubEnd > stubIf && stubGate > adsEnd
+                && shown >= 0 && earned > shown && closed > earned && flush > closed
+                && stub.IndexOf("FF_DEV_FORCE rewardStub=1") > flush
+                && stub.IndexOf("yield break;") > flush
+                && run > stubEnd
+                && ads.IndexOf("sdk init timed out (5s)") > stubEnd
+                && stub.IndexOf("NoAds.Grant") < 0
+                && stub.IndexOf("flockfive.noads") < 0
+                && adsBody.IndexOf("InspectRewardStubArmed = true") >= 0
+                && stub.IndexOf("WebGL Development inspect hook only") >= 0,
+                "stub");
+            Check("inspect-repeat-total",
+                DevLevelSkip.InspectRepeatTotal(180, 180, true) == 360
+                && DevLevelSkip.InspectRepeatTotal(180, 180, false) == 180
+                && DevLevelSkip.InspectRepeatTotal(1000, 0, true) == 1000
+                && DevLevelSkip.InspectRepeatTotal(-5, 180, true) == 180,
+                "2x");
         }
     }
 }

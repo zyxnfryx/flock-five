@@ -60,7 +60,8 @@ namespace FlockFive
             // that drifted off the skep toward the middle of the garden.
             var comb = WorldBuilder.Sprite("Comb", SpriteCatalog.Glow, transform.position, 1f, 9, transform);
             comb.transform.localPosition = Vector3.zero;
-            comb.transform.localScale = new Vector3(1.15f, 1.15f, 1f);
+            // Kept inside the skep. A wider disc read as halo past the restart glyph.
+            comb.transform.localScale = new Vector3(0.55f, 0.55f, 1f);
             comb.GetComponent<SpriteRenderer>().color = new Color(0.92f, 0.62f, 0.18f, 0.22f);
 
             var core = WorldBuilder.Sprite("CombCore", SpriteCatalog.Glow, transform.position, 1f, 10, transform);
