@@ -84,12 +84,15 @@ namespace FlockFive.Editor
                     "pig " + pigAt + " lift " + liftAt);
                 Check("poker-box-keeps-the-rail", coach.IndexOf("18f * s, railW)", boxAt) > boxAt, "");
 
+                int noted = body.IndexOf("NoteTutorPlate(");
+                int railTap = body.IndexOf("CoachTapAt(box,");
                 Check("poker-spot-notes-then-points",
-                    body.IndexOf("NoteTutorPlate(") > 0
-                    && body.IndexOf("PokerGloveFromLeft") > body.IndexOf("NoteTutorPlate(")
+                    noted > 0
+                    && railTap > noted
+                    && body.Contains("SplashPokerRect()")
                     && body.IndexOf("GloveBelowDeg") < 0
                     && coach.IndexOf("LiftPokerCaption(") > 0,
-                    "spot " + spot);
+                    "spot " + spot + " noted " + noted + " rail " + railTap);
             }
             catch (System.Exception ex)
             {

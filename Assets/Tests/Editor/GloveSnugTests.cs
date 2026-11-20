@@ -54,7 +54,11 @@ namespace FlockFive.Editor
             int tick = app.IndexOf("bool TickPokerBackHint(");
             int tickEnd = tick >= 0 ? app.IndexOf("bool PokerBackHintLive(", tick) : -1;
             string tickBody = tick > 0 && tickEnd > tick ? app.Substring(tick, tickEnd - tick) : "";
-            Check("back-glove-uses-snug-hop", tickBody.Contains("PokerBackGloveStart(") && !tickBody.Contains("GloveMiddleRightEntry("), "");
+            int medalAt = tickBody.IndexOf("var medal =");
+            int seatAt = tickBody.IndexOf("CoachTapAt(medal,");
+            Check("back-glove-taps-the-medal",
+                medalAt > 0 && seatAt > medalAt && !tickBody.Contains("GloveMiddleRightEntry("),
+                "medal " + medalAt + " seat " + seatAt);
             Check("back-tip-band-clears-glove-lane",
                 coach.Contains("return PokerBackTipBand(width, h, safe, s, band.height, back, aim);")
                 && coach.Contains("band = PokerBackBand(band, screenH, safe, s);")
