@@ -3975,6 +3975,7 @@ namespace FlockFive
                     if (!PlayPointer.Inside(PlayPointer.At))
                     {
 #if UNITY_EDITOR
+                        EditorTapStop = "outside";
                         EditorPointerInject = default;
 #endif
                         return;
@@ -3987,26 +3988,57 @@ namespace FlockFive
                     if (OverlayOwnsPress(PlayPointer.At, offerRelease))
                     {
 #if UNITY_EDITOR
+                        EditorTapStop = "overlay " + (_tapWho ?? "none");
                         EditorPointerInject = default;
 #endif
                         return;
                     }
-                    if (offerRelease) return;
+                    if (offerRelease)
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "release-return";
+#endif
+                        return;
+                    }
                     if (_adHand && _gift == GiftFace.Card)
                     {
                         int offerHud = HudControl(PlayPointer.At);
+#if UNITY_EDITOR
+                        EditorTapStop = "hud " + offerHud;
+#endif
                         if (offerHud == 1 || offerHud == 2)
                         {
                             HitHud(tap);
                             return;
                         }
                     }
-                    if (EatGardenLessonTap(tap)) return;
-                    if (LessonTapBlocked()) return;
-                    if (VeilDrops(tap)) return;
+                    if (EatGardenLessonTap(tap))
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "lesson";
+#endif
+                        return;
+                    }
+                    if (LessonTapBlocked())
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "lesson-blocked";
+#endif
+                        return;
+                    }
+                    if (VeilDrops(tap))
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "veil";
+#endif
+                        return;
+                    }
                     if (HitHud(tap)) return;
                     if (_frozen && !_iceCoating && _gift == GiftFace.None) OpenGift();
                 }
+#if UNITY_EDITOR
+                else EditorTapStop = "sample-miss";
+#endif
                 return;
             }
             if (!_won && !_restarting)
@@ -4278,6 +4310,10 @@ namespace FlockFive
         internal int EditorActRestartEntered;
         internal int EditorActRestartCommitted;
         internal string EditorActRestartBlock;
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // Where the gift-card press stopped, and whether the edge was new.
+        internal string EditorTapStop;
+        internal string EditorNoteResult;
         // Extra touch ids that ended on this frame. The inject carries one pointer.
         public static readonly System.Collections.Generic.List<int> EditorEndedIds = new System.Collections.Generic.List<int>();
 #endif
@@ -4368,7 +4404,16 @@ namespace FlockFive
         void NotePointerEdge(int pointerId, bool releaseEdge, Vector2 play)
         {
             int finger = ResumeFinger(pointerId);
-            if (EdgeAlreadyNoted(finger, releaseEdge)) return;
+            if (EdgeAlreadyNoted(finger, releaseEdge))
+            {
+#if UNITY_EDITOR
+                EditorNoteResult = "drop-same-edge";
+#endif
+                return;
+            }
+#if UNITY_EDITOR
+            EditorNoteResult = "accept";
+#endif
             if (_noteFrame != Time.frameCount)
             {
                 _noteFrame = Time.frameCount;
@@ -8434,17 +8479,37 @@ namespace FlockFive
         bool HitHud(Vector2 screen)
         {
             var canvas = new Vector2(screen.x, PhoneArea.H - screen.y);
-            if (OverlayOwnsPress(canvas, false)) return true;
-            if (LessonTapBlocked()) return false;
+            if (OverlayOwnsPress(canvas, false))
+            {
+#if UNITY_EDITOR
+                EditorTapStop = "hithud-overlay " + (_tapWho ?? "none");
+#endif
+                return true;
+            }
+            if (LessonTapBlocked())
+            {
+#if UNITY_EDITOR
+                EditorTapStop = "hithud-lesson";
+#endif
+                return false;
+            }
             HudShaken(out var restart, out var hivePlate);
             var hive = CornerAnchor.HiveStrawHit(CornerAnchor.HiveAlignedDraw(hivePlate, restart));
             HudLayout(out _, out float top, out _, out _, out _);
             float gy = PhoneArea.H - screen.y;
             var gui = new Vector2(screen.x, gy);
             if (_hiveInspect >= 0)
+            {
+#if UNITY_EDITOR
+                EditorTapStop = "hithud-hive";
+#endif
                 return true;
+            }
             if (_levelHive)
             {
+#if UNITY_EDITOR
+                EditorTapStop = "hithud-level-hive";
+#endif
                 if (_levelHiveRect.width > 1f && _levelHiveRect.Contains(gui))
                     return true;
                 CloseLevelHive();
@@ -8461,11 +8526,21 @@ namespace FlockFive
                     // Same ownership as the gear. A fresh tap opens Home.
                     // A drag from the glove, another control, or a press that
                     // was already down when the resume window began does not.
-                    if (GloveOwnsHudPress() || EchoReleaseBlocks(1)) return true;
+                    if (GloveOwnsHudPress() || EchoReleaseBlocks(1))
+                    {
+#if UNITY_EDITOR
+                        EditorTapStop = "hithud-home-blocked";
+#endif
+                        return true;
+                    }
                     _tapWho = "home";
                     OpenHomeFromPress();
                 }
                 else ActRestart();
+#if UNITY_EDITOR
+                if (homeHit) EditorTapStop = "hithud-home";
+                else EditorTapStop = "hithud-restart";
+#endif
                 return true;
             }
             // b103: while a garden lesson glove is up, Hive only counts under the glove.
@@ -8476,13 +8551,24 @@ namespace FlockFive
             if (claim == HudTap.TopBar && FeederUnder(screen)) return false;
             switch (claim)
             {
-                case HudTap.Restart: ActRestart(); return true;
-                case HudTap.TopBar: return true;
+                case HudTap.Restart: ActRestart();
+#if UNITY_EDITOR
+                    EditorTapStop = "hithud-claim-restart";
+#endif
+                    return true;
+                case HudTap.TopBar:
+#if UNITY_EDITOR
+                    EditorTapStop = "hithud-topbar";
+#endif
+                    return true;
                 case HudTap.Hive: OpenLevelHive(); return true;
             }
             // b131: no bottom-band swallow any more. It used to eat every tap below the corner-button
             // line (the old bottom-left Restart seat), which on b105 layouts covered the lower-left branch
             // above the ad row, so a send to it fell through as an empty tap and deselected.
+#if UNITY_EDITOR
+            EditorTapStop = "hithud-miss";
+#endif
             return false;
         }
 

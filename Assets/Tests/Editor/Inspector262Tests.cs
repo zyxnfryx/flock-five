@@ -1391,7 +1391,7 @@ namespace FlockFive.Editor
                         else if (latch == 2) released = live;
                         else if (latch == 3) freshLive = live;
                         string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "none";
-                        int entered = (int)t.GetField("EditorActRestartEntered", flags).GetValue(app);
+                        int actEntered = (int)t.GetField("EditorActRestartEntered", flags).GetValue(app);
                         int committed = (int)t.GetField("EditorActRestartCommitted", flags).GetValue(app);
                         string block = (string)t.GetField("EditorActRestartBlock", flags).GetValue(app) ?? "none";
                         float until = (float)resume.GetValue(null);
@@ -1402,12 +1402,24 @@ namespace FlockFive.Editor
                             bool rel = FlockFiveApp.EditorPointerInject.Up && !FlockFiveApp.EditorPointerInject.Down;
                             edge = (int)edgeNow.Invoke(null, new object[] { rel });
                         }
+                        string stop = (string)t.GetField("EditorTapStop", flags).GetValue(app) ?? "";
+                        string note = (string)t.GetField("EditorNoteResult", flags).GetValue(app) ?? "";
+                        var raw = FlockFiveApp.EditorPointerInject.Window;
+                        var enterPt = PlayPointer.Enter(raw);
+                        int hudNow = (int)t.GetMethod("HudControl", flags, null, new[] { typeof(Vector2) }, null)
+                            .Invoke(app, new object[] { enterPt });
                         steps += step
+                            + " raw " + raw.x.ToString("0.00") + "," + raw.y.ToString("0.00")
+                            + " enter " + enterPt.x.ToString("0.00") + "," + enterPt.y.ToString("0.00")
+                            + " id " + FlockFiveApp.EditorPointerInject.Id
                             + " held " + held + " released " + released + " fresh " + freshLive
                             + " live " + live + " who " + who + " edge " + edge
                             + " resume " + (now < until ? "open" : "closed")
                             + " elapsed " + (now - until).ToString("0.00")
-                            + " act " + entered + " commit " + committed + " " + block
+                            + " act " + actEntered + " commit " + committed + " " + block
+                            + " note " + note
+                            + " stop " + stop
+                            + " hud " + hudNow
                             + " | ";
                     }
                     resume.SetValue(null, AdPause.Unscaled + 5f);
