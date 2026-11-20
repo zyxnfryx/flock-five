@@ -4010,7 +4010,7 @@ namespace FlockFive
                         HudShaken(out var restartNow, out _);
                         if (restartNow.width > 2f && restartNow.Contains(PlayPointer.At))
                         {
-                            if (RestartCovered(tap))
+                            if (RestartCovered(tap, PlayPointer.At))
                             {
 #if UNITY_EDITOR
                                 EditorTapStop = "restart-covered";
@@ -4492,7 +4492,7 @@ namespace FlockFive
             _downControl = control;
         }
 
-        // -2 when this pointer has no down of its own. A mouse -1 up is the
+        // -2 when this pointer has no down of its own. A mouse up is the
         // touch that went down. Another finger's down is not this one.
         int DownControlOf(int pointerId)
         {
@@ -4520,7 +4520,7 @@ namespace FlockFive
         {
             if (which == 1 || which == 3) return HomeGearReleaseBlocks(which);
             // Restart. DownControlOf is the one record of where this press went
-            // down, and a mouse -1 Up is that touch. GloveFingerMatches is only
+            // down, and a mouse up is that touch. GloveFingerMatches is only
             // id equality, so it cannot see this pair.
             if (_glovePressLatched && GloveOwnsRelease(_gloveEdgeId)) return true;
             int down = DownControlOf(_gloveEdgeId);
@@ -4592,13 +4592,13 @@ namespace FlockFive
             }
         }
 
-        // Mouse is -1. A missing id is int.MinValue. Those are not the same finger.
+        // The mouse is PlayPointer.MouseId. A missing id is int.MinValue. Those are not the same finger.
         public static bool GloveFingerMatches(int pressedId, int releaseId)
         {
             return pressedId == releaseId;
         }
 
-        // The player sends the press as a touch id and the release as mouse -1.
+        // The player sends the press as a touch id and the release as the mouse.
         // That pair is the same contact. Two different touch ids are not.
         bool GloveOwnsRelease(int releaseId)
         {
@@ -4729,7 +4729,7 @@ namespace FlockFive
             // is still on the glove and used to reach HandleTap with no latch.
             // A press that begins on Home or the gear still fires on release.
             // Restart does not: a Down inside this window never restarts.
-            // A WebGL up is mouse -1 for the touch that went down. Match that
+            // A WebGL up is the mouse for the touch that went down. Match that
             // press, not the synthesized id, or a fresh tap is eaten because
             // the mouse was the thing down at hide.
             int resumeId = pointerId;
@@ -4905,7 +4905,7 @@ namespace FlockFive
                     return true;
                 }
                 // A new press ends the previous one, even in the same frame, and
-                // even when this down is on Home. Otherwise the old mouse -1 echo
+                // even when this down is on Home. Otherwise the old mouse echo
                 // eats the next hop and the cue looks like it never re-armed.
                 _gloveEchoFrame = -1;
                 _gloveEchoId = int.MinValue;
@@ -4942,7 +4942,7 @@ namespace FlockFive
             }
             if (!owns)
             {
-                // A mouse -1 that is not this glove press is not a hop.
+                // A mouse up that is not this glove press is not a hop.
                 // On a button it stays that button. Anywhere else it is dropped.
                 bool button = onHud || hud != 0;
                 StampGlove(button ? "no-glove" : "no-press", windowGui, onGlove, button, false);
@@ -4950,12 +4950,12 @@ namespace FlockFive
             }
             else
             {
-                // A touch press is echoed so its mouse -1 cannot hop twice.
-                // A mouse press has no separate id to pair, so a later -1 is
+                // A touch press is echoed so its mouse up cannot hop twice.
+                // A mouse press has no separate id to pair, so a later mouse up is
                 // not that press and must not be eaten as one.
                 _gloveEchoId = _glovePressId >= 0 ? _glovePressId : int.MinValue;
                 _gloveEchoFrame = _glovePressId >= 0 ? Time.frameCount : -1;
-                // Started on the sprite. The up is often mouse -1 and often lands
+                // Started on the sprite. The up is often the mouse and often lands
                 // on the button the glove overlaps. That is still the one hop.
                 bool synthesized = pointerId == PlayPointer.MouseId && _glovePressId >= 0;
                 if (synthesized) _gloveEdgeId = _glovePressId;
@@ -7839,8 +7839,8 @@ namespace FlockFive
             return true;
         }
 
-        // The finger that ended, or mouse id -1 when no finger ended.
-        // Mouse -1 matches only a mouse release, not every release while it is held.
+        // The finger that ended, or PlayPointer.MouseId when no finger ended.
+        // The mouse matches only a mouse release, not every release while it is held.
         public static int ExitFingerId(int trackedId, int[] endedIds, bool mouseRelease)
         {
             if (endedIds != null)
@@ -8003,8 +8003,12 @@ namespace FlockFive
             bool pointer = t == EventType.MouseDown || t == EventType.MouseUp || t == EventType.MouseDrag;
             // Destroyed app: Unity's == is null. Do not eat Home, the gear, or the board.
             if (_app == null) return;
-            int heldId = pointer ? HomeEventId(e, t == EventType.MouseDown, t == EventType.MouseUp) : -1;
-            bool held = pointer && _app.ResumeHolds(heldId);
+            bool held = false;
+            if (pointer)
+            {
+                int heldId = HomeEventId(e, t == EventType.MouseDown, t == EventType.MouseUp);
+                held = _app.ResumeHolds(heldId);
+            }
             int hud = _app.HudControl(PlayPointer.Gui(e));
             // Fresh Home and gear. A finger already down at hide is swallowed.
             // Fresh Restart stays swallowed until its own commit.
@@ -8058,7 +8062,7 @@ namespace FlockFive
         public static EditorPointer EditorPointerInject;
         public int EditorHandleTaps;
 
-        // DEV-ONLY. The player press is a touch id and the release is mouse -1,
+        // DEV-ONLY. The player press is a touch id and the release is the mouse,
         // in that order. Editor tests inject one id, so they never saw the miss.
         public int DevReplayGloveTap(Vector2 downGui, int downId, Vector2 upGui, int upId)
         {
@@ -8465,12 +8469,21 @@ namespace FlockFive
             return _glovePressLatched || _gloveTookFrame == Time.frameCount;
         }
 
-        // Lesson, hive inspect, and a veil that is not this gift card.
-        // The card's own veil does not count: Restart stays live under it.
-        bool RestartCovered(Vector2 bottom)
+        // Same covers as HitHud, in the same order. LessonTapBlocked is only a
+        // gate: it does not dismiss a caption. Hive inspect stays open. A level
+        // hive closes when the tap misses its rect. The gift card's own veil
+        // does not count, so Restart stays live under that card.
+        bool RestartCovered(Vector2 bottom, Vector2 gui)
         {
-            if (EatGardenLessonTap(bottom) || LessonTapBlocked()) return true;
-            if (_hiveInspect >= 0 || _levelHive) return true;
+            if (LessonTapBlocked()) return true;
+            if (_hiveInspect >= 0) return true;
+            if (_levelHive)
+            {
+                if (_levelHiveRect.width > 1f && _levelHiveRect.Contains(gui))
+                    return true;
+                CloseLevelHive();
+                return true;
+            }
             var veil = ActiveVeil();
             if (veil.Open && veil.Owner != ModalBlock.Id.Gift && VeilDrops(bottom))
                 return true;

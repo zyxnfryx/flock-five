@@ -1539,30 +1539,46 @@ namespace FlockFive.Editor
         static void CheckGiftRestartCovers(System.Action<string, bool, string> Check)
         {
             var guard = typeof(FlockFiveApp).GetField("_lessonGuardUntil", BindingFlags.NonPublic | BindingFlags.Static);
+            int[] widths = { 820, 402, 412, 360 };
             EachPhoneWidth(Check, "gift-restart-swallows-lesson", (app, t, flags) =>
             {
                 float keep = (float)guard.GetValue(null);
                 try
                 {
                     guard.SetValue(null, AdPause.Unscaled + 30f);
-                    return PressGiftRestart(app, t, flags, false);
+                    t.GetField("_ruleTip", flags).SetValue(app, RuleTip.Feeder);
+                    string fault = PressGiftRestart(app, t, flags, false);
+                    string tip = t.GetField("_ruleTip", flags).GetValue(app).ToString();
+                    if (fault == null && tip == "Feeder") return null;
+                    return (fault ?? "restarted") + " tip " + tip;
                 }
                 finally { guard.SetValue(null, keep); }
-            }, new[] { 820, 402 });
+            }, widths);
             EachPhoneWidth(Check, "gift-restart-swallows-veil", (app, t, flags) =>
             {
                 t.GetField("_settingsOpen", flags).SetValue(app, true);
                 return PressGiftRestart(app, t, flags, false);
-            }, new[] { 820, 402 });
+            }, widths);
             EachPhoneWidth(Check, "gift-restart-swallows-hive-inspect", (app, t, flags) =>
             {
                 t.GetField("_hiveInspect", flags).SetValue(app, 0);
-                return PressGiftRestart(app, t, flags, false);
-            }, new[] { 820, 402 });
+                t.GetField("_levelHive", flags).SetValue(app, true);
+                t.GetField("_levelHiveRect", flags).SetValue(app, new Rect(0f, 0f, 4f, 4f));
+                string fault = PressGiftRestart(app, t, flags, false);
+                int inspect = (int)t.GetField("_hiveInspect", flags).GetValue(app);
+                bool levelStill = (bool)t.GetField("_levelHive", flags).GetValue(app);
+                if (fault != null || inspect != 0 || !levelStill)
+                    return (fault ?? "restarted") + " inspect " + inspect + " level " + levelStill;
+                t.GetField("_hiveInspect", flags).SetValue(app, -1);
+                string closed = PressGiftRestart(app, t, flags, false);
+                bool level = (bool)t.GetField("_levelHive", flags).GetValue(app);
+                if (closed == null && !level) return null;
+                return (closed ?? "open") + " level " + level;
+            }, widths);
             EachPhoneWidth(Check, "gift-restart-fires-once", (app, t, flags) =>
             {
                 return PressGiftRestart(app, t, flags, true);
-            }, new[] { 820, 402 });
+            }, widths);
         }
 
         static void CheckSameFrameLifts(System.Action<string, bool, string> Check)

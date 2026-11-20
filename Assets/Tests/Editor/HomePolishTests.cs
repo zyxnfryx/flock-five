@@ -2424,7 +2424,7 @@ namespace FlockFive.Editor
                     && mouseExit == "mouse-with-touch" && homeClosed
                     && up && EditorTaps(app) == 1 && sel == 0 && GloveHit() == 0;
                 try { Check("touch-down-ignores-synthesized-mouse-down", kept,
-                    "touch 7 on glove, mouse -1 off sprite press " + press + "->" + still
+                    "touch 7 on glove, mouse " + PlayPointer.MouseId + " off sprite press " + press + "->" + still
                     + " off " + offSprite + " exit " + mouseExit
                     + " latch " + latched + " home " + homeClosed
                     + " up " + up + " sel " + sel + " hit " + GloveHit()
@@ -5373,7 +5373,7 @@ namespace FlockFive.Editor
             }
         }
 
-        // A touch Down and the mouse -1 Up are one press. The down-control decides.
+        // A touch Down and the mouse Up are one press. The down-control decides.
         static void CheckTouchMouseUp(System.Action<string, bool, string> Check)
         {
             var go = new GameObject("touch-mouse-up");
