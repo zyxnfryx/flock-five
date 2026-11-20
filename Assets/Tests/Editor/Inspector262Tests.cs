@@ -1405,6 +1405,7 @@ namespace FlockFive.Editor
                         }
                         string stop = (string)t.GetField("EditorTapStop", flags).GetValue(app) ?? "";
                         string note = (string)t.GetField("EditorNoteResult", flags).GetValue(app) ?? "";
+                        string cover = (string)t.GetField("EditorRestartCover", flags).GetValue(app) ?? "";
                         var raw = FlockFiveApp.EditorPointerInject.Window;
                         var enterPt = PlayPointer.Enter(raw);
                         int hudNow = (int)t.GetMethod("HudControl", flags, null, new[] { typeof(Vector2) }, null)
@@ -1420,6 +1421,7 @@ namespace FlockFive.Editor
                             + " act " + actEntered + " commit " + committed + " " + block
                             + " note " + note
                             + " stop " + stop
+                            + " cover " + cover
                             + " hud " + hudNow
                             + " | ";
                     }
@@ -1526,14 +1528,16 @@ namespace FlockFive.Editor
                 int committed = (int)t.GetField("EditorActRestartCommitted", flags).GetValue(app);
                 bool live = RestartLive(t, flags, app);
                 if (held == 0 && committed == 1 && live) return null;
-                return "held " + held + " commit " + committed + " live " + live;
+                string cover = (string)t.GetField("EditorRestartCover", flags).GetValue(app) ?? "";
+                return "held " + held + " commit " + committed + " live " + live + " cover " + cover;
             }
             Down(46);
             t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
             int covered = (int)t.GetField("EditorActRestartCommitted", flags).GetValue(app);
             bool restarted = RestartLive(t, flags, app);
             if (covered == 0 && !restarted) return null;
-            return "commit " + covered + " live " + restarted;
+            string cover = (string)t.GetField("EditorRestartCover", flags).GetValue(app) ?? "";
+            return "commit " + covered + " live " + restarted + " cover " + cover;
         }
 
         static void CheckGiftRestartCovers(System.Action<string, bool, string> Check)
@@ -1568,12 +1572,14 @@ namespace FlockFive.Editor
                 int inspect = (int)t.GetField("_hiveInspect", flags).GetValue(app);
                 bool levelStill = (bool)t.GetField("_levelHive", flags).GetValue(app);
                 if (fault != null || inspect != 0 || !levelStill)
-                    return (fault ?? "restarted") + " inspect " + inspect + " level " + levelStill;
+                    return (fault ?? "restarted") + " inspect " + inspect + " level " + levelStill
+                        + " cover " + (t.GetField("EditorRestartCover", flags).GetValue(app) ?? "");
                 t.GetField("_hiveInspect", flags).SetValue(app, -1);
                 string closed = PressGiftRestart(app, t, flags, false);
                 bool level = (bool)t.GetField("_levelHive", flags).GetValue(app);
                 if (closed == null && !level) return null;
-                return (closed ?? "open") + " level " + level;
+                return (closed ?? "open") + " level " + level
+                    + " cover " + (t.GetField("EditorRestartCover", flags).GetValue(app) ?? "");
             }, widths);
             EachPhoneWidth(Check, "gift-restart-fires-once", (app, t, flags) =>
             {

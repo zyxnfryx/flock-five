@@ -4013,7 +4013,7 @@ namespace FlockFive
                             if (RestartCovered(tap, PlayPointer.At))
                             {
 #if UNITY_EDITOR
-                                EditorTapStop = "restart-covered";
+                                EditorTapStop = "restart-covered " + (EditorRestartCover ?? "");
 #endif
                                 return;
                             }
@@ -4338,6 +4338,8 @@ namespace FlockFive
         // Where the gift-card press stopped, and whether the edge was new.
         internal string EditorTapStop;
         internal string EditorNoteResult;
+        // Which RestartCovered branch returned, or "none" when Restart stays live.
+        internal string EditorRestartCover;
         // Extra touch ids that ended on this frame. The inject carries one pointer.
         public static readonly System.Collections.Generic.List<int> EditorEndedIds = new System.Collections.Generic.List<int>();
 #endif
@@ -8475,18 +8477,38 @@ namespace FlockFive
         // does not count, so Restart stays live under that card.
         bool RestartCovered(Vector2 bottom, Vector2 gui)
         {
-            if (LessonTapBlocked()) return true;
-            if (_hiveInspect >= 0) return true;
+            if (LessonTapBlocked())
+            {
+#if UNITY_EDITOR
+                EditorRestartCover = "lesson guard " + LessonGuardUp() + " ate " + CoachAteThisFrame();
+#endif
+                return true;
+            }
+            if (_hiveInspect >= 0)
+            {
+#if UNITY_EDITOR
+                EditorRestartCover = "hive-inspect " + _hiveInspect;
+#endif
+                return true;
+            }
             if (_levelHive)
             {
-                if (_levelHiveRect.width > 1f && _levelHiveRect.Contains(gui))
-                    return true;
+                bool hit = _levelHiveRect.width > 1f && _levelHiveRect.Contains(gui);
+#if UNITY_EDITOR
+                EditorRestartCover = hit ? "level-hive-hit" : "level-hive-miss";
+#endif
+                if (hit) return true;
                 CloseLevelHive();
                 return true;
             }
             var veil = ActiveVeil();
-            if (veil.Open && veil.Owner != ModalBlock.Id.Gift && VeilDrops(bottom))
-                return true;
+            bool veilHit = veil.Open && veil.Owner != ModalBlock.Id.Gift && VeilDrops(bottom);
+#if UNITY_EDITOR
+            EditorRestartCover = veilHit
+                ? "veil " + veil.Owner
+                : "none veil " + veil.Owner + " open " + veil.Open;
+#endif
+            if (veilHit) return true;
             return false;
         }
 
