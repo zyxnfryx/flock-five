@@ -1528,8 +1528,8 @@ namespace FlockFive.Editor
                 int committed = (int)t.GetField("EditorActRestartCommitted", flags).GetValue(app);
                 bool live = RestartLive(t, flags, app);
                 if (held == 0 && committed == 1 && live) return null;
-                string cover = (string)t.GetField("EditorRestartCover", flags).GetValue(app) ?? "";
-                return "held " + held + " commit " + committed + " live " + live + " cover " + cover;
+                string restartCover = (string)t.GetField("EditorRestartCover", flags).GetValue(app) ?? "";
+                return "held " + held + " commit " + committed + " live " + live + " cover " + restartCover;
             }
             Down(46);
             t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
