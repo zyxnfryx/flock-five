@@ -1419,8 +1419,16 @@ namespace FlockFive
             int[] widths = { 820, 402, 412, 360 };
             int[] heights = { 1180, 874, 915, 800 };
             string[] sites = { "branch", "bird", "daily", "claim", "deal", "back", "poker", "watch", "play" };
+            bool keepWindow = PhoneArea.EditorWindowOn;
+            int keepW = PhoneArea.EditorWindowW;
+            int keepH = PhoneArea.EditorWindowH;
+            float keepTop = PhoneArea.EditorSafeTop;
+            float keepBot = PhoneArea.EditorSafeBottom;
+            var prevActive = RenderTexture.active;
             _splash = false;
             _coachFade = 1f;
+            try
+            {
             for (int i = 0; i < widths.Length; i++)
             {
                 int winW = widths[i];
@@ -1468,48 +1476,78 @@ namespace FlockFive
                     yield return null;
                 }
             }
-            PhoneArea.EditorWindowOn = false;
             Debug.Log("COACH_TAP_STILLS_DONE");
+            }
+            finally
+            {
+                PhoneArea.EditorWindowOn = keepWindow;
+                PhoneArea.EditorWindowW = keepW;
+                PhoneArea.EditorWindowH = keepH;
+                PhoneArea.EditorSafeTop = keepTop;
+                PhoneArea.EditorSafeBottom = keepBot;
+                RenderTexture.active = prevActive;
+                GL.Color(Color.white);
+            }
         }
 
         static void PaintCoachTapStill(string path, int winW, int winH, Rect target, Vector2 tip, float ang, bool mirror)
         {
-            var rt = new RenderTexture(winW, winH, 0, RenderTextureFormat.ARGB32);
-            rt.Create();
-            var prev = RenderTexture.active;
-            RenderTexture.active = rt;
-            GL.PushMatrix();
-            GL.LoadPixelMatrix(0, winW, winH, 0);
-            var shader = Shader.Find("Sprites/Default");
-            if (shader == null) shader = Shader.Find("UI/Default");
-            if (shader == null) shader = Shader.Find("Hidden/Internal-Colored");
-            var mat = shader != null ? new Material(shader) : null;
-            if (mat != null) mat.SetPass(0);
-            GL.Begin(GL.QUADS);
-            GL.Color(new Color(0.15f, 0.22f, 0.16f, 1f));
-            StillQuad(0f, 0f, winW, winH);
-            int ox = PhoneArea.OffX;
-            GL.Color(new Color(0.93f, 0.95f, 0.88f, 1f));
-            StillQuad(ox, 0f, PhoneArea.W, PhoneArea.H);
-            GL.Color(new Color(0.86f, 0.55f, 0.22f, 1f));
-            StillQuad(ox + target.x, target.y, target.width, target.height);
-            GL.End();
-            var glove = CoachGloveCurl(1f);
-            if (glove != null && mat != null)
+            RenderTexture rt = null;
+            Material mat = null;
+            Texture2D img = null;
+            var prevActive = RenderTexture.active;
+            bool pushed = false;
+            bool drawing = false;
+            try
             {
-                mat.mainTexture = glove;
-                mat.SetPass(0);
-                StillGlove(glove, tip + new Vector2(ox, 0f), ang, mirror, GloveSize(DeviceFit.Ui()));
+                rt = new RenderTexture(winW, winH, 0, RenderTextureFormat.ARGB32);
+                rt.Create();
+                RenderTexture.active = rt;
+                GL.PushMatrix();
+                pushed = true;
+                GL.LoadPixelMatrix(0, winW, winH, 0);
+                var shader = Shader.Find("Sprites/Default");
+                if (shader == null) shader = Shader.Find("UI/Default");
+                if (shader == null) shader = Shader.Find("Hidden/Internal-Colored");
+                mat = shader != null ? new Material(shader) : null;
+                if (mat != null) mat.SetPass(0);
+                GL.Begin(GL.QUADS);
+                drawing = true;
+                GL.Color(new Color(0.15f, 0.22f, 0.16f, 1f));
+                StillQuad(0f, 0f, winW, winH);
+                int ox = PhoneArea.OffX;
+                GL.Color(new Color(0.93f, 0.95f, 0.88f, 1f));
+                StillQuad(ox, 0f, PhoneArea.W, PhoneArea.H);
+                GL.Color(new Color(0.86f, 0.55f, 0.22f, 1f));
+                StillQuad(ox + target.x, target.y, target.width, target.height);
+                GL.End();
+                drawing = false;
+                var glove = CoachGloveCurl(1f);
+                if (glove != null && mat != null)
+                {
+                    mat.mainTexture = glove;
+                    mat.SetPass(0);
+                    StillGlove(glove, tip + new Vector2(ox, 0f), ang, mirror, GloveSize(DeviceFit.Ui()));
+                }
+                img = new Texture2D(winW, winH, TextureFormat.RGB24, false);
+                img.ReadPixels(new Rect(0f, 0f, winW, winH), 0, 0);
+                img.Apply();
+                System.IO.File.WriteAllBytes(path, img.EncodeToPNG());
             }
-            GL.PopMatrix();
-            var img = new Texture2D(winW, winH, TextureFormat.RGB24, false);
-            img.ReadPixels(new Rect(0f, 0f, winW, winH), 0, 0);
-            img.Apply();
-            System.IO.File.WriteAllBytes(path, img.EncodeToPNG());
-            RenderTexture.active = prev;
-            UnityEngine.Object.Destroy(rt);
-            UnityEngine.Object.Destroy(img);
-            if (mat != null) UnityEngine.Object.Destroy(mat);
+            finally
+            {
+                if (drawing) GL.End();
+                if (pushed) GL.PopMatrix();
+                GL.Color(Color.white);
+                RenderTexture.active = prevActive;
+                if (rt != null)
+                {
+                    rt.Release();
+                    UnityEngine.Object.DestroyImmediate(rt);
+                }
+                if (img != null) UnityEngine.Object.DestroyImmediate(img);
+                if (mat != null) UnityEngine.Object.DestroyImmediate(mat);
+            }
         }
 
         static void StillQuad(float x, float y, float w, float h)
@@ -1529,20 +1567,28 @@ namespace FlockFive
             float c = Mathf.Cos(rad);
             float sn = Mathf.Sin(rad);
             float sx = mirror ? -1f : 1f;
-            GL.Begin(GL.QUADS);
-            GL.Color(Color.white);
-            for (int i = 0; i < 4; i++)
+            bool drawing = false;
+            try
             {
-                float u = (i == 1 || i == 2) ? 1f : 0f;
-                float v = (i == 2 || i == 3) ? 1f : 0f;
-                float x = left + u * dw;
-                float y = top + (1f - v) * dh;
-                float dx = (x - pivot.x) * sx;
-                float dy = y - pivot.y;
-                GL.TexCoord2(u, v);
-                GL.Vertex3(pivot.x + dx * c - dy * sn, pivot.y + dx * sn + dy * c, 0f);
+                GL.Begin(GL.QUADS);
+                drawing = true;
+                GL.Color(Color.white);
+                for (int i = 0; i < 4; i++)
+                {
+                    float u = (i == 1 || i == 2) ? 1f : 0f;
+                    float v = (i == 2 || i == 3) ? 1f : 0f;
+                    float x = left + u * dw;
+                    float y = top + (1f - v) * dh;
+                    float dx = (x - pivot.x) * sx;
+                    float dy = y - pivot.y;
+                    GL.TexCoord2(u, v);
+                    GL.Vertex3(pivot.x + dx * c - dy * sn, pivot.y + dx * sn + dy * c, 0f);
+                }
             }
-            GL.End();
+            finally
+            {
+                if (drawing) GL.End();
+            }
         }
 #endif
 

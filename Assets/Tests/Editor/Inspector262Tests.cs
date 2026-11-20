@@ -758,7 +758,8 @@ namespace FlockFive.Editor
                 winH.SetValue(null, keepH);
                 safeTop.SetValue(null, keepTop);
                 safeBot.SetValue(null, keepBot);
-                UnityEngine.Object.DestroyImmediate(go);
+                RenderTexture.active = null;
+                if (go != null) UnityEngine.Object.DestroyImmediate(go);
             }
         }
 
