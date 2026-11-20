@@ -932,6 +932,14 @@ namespace FlockFive
                 try { System.IO.File.Delete("/tmp/flock-five-gift-x-still"); } catch { }
                 StartCoroutine(ShotGiftXBelowRestart());
             }
+            // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+            // Touch /tmp/flock-five-coach-tap-stills. Each still is a RenderTexture
+            // at the window size, taken at the settled end of the poke.
+            if (System.IO.File.Exists("/tmp/flock-five-coach-tap-stills"))
+            {
+                try { System.IO.File.Delete("/tmp/flock-five-coach-tap-stills"); } catch { }
+                StartCoroutine(ShotCoachTapStills());
+            }
 #endif
         }
 
@@ -1400,6 +1408,141 @@ namespace FlockFive
             }
             PhoneArea.EditorWindowOn = false;
             Debug.Log("GIFT_X_STILLS_DONE");
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // One settled poke per CoachTapAt site. The image is the window size.
+        IEnumerator ShotCoachTapStills()
+        {
+            const string dir = "/tmp/flock-five-coach-tap-stills";
+            System.IO.Directory.CreateDirectory(dir);
+            int[] widths = { 820, 402, 412, 360 };
+            int[] heights = { 1180, 874, 915, 800 };
+            string[] sites = { "branch", "bird", "daily", "claim", "deal", "back", "poker", "watch", "play" };
+            _splash = false;
+            _coachFade = 1f;
+            for (int i = 0; i < widths.Length; i++)
+            {
+                int winW = widths[i];
+                int winH = heights[i];
+                PhoneArea.EditorWindowOn = true;
+                PhoneArea.EditorWindowW = winW;
+                PhoneArea.EditorWindowH = winH;
+                PhoneArea.EditorSafeTop = 59f;
+                PhoneArea.EditorSafeBottom = 34f;
+                float playW = PhoneArea.W;
+                float playH = PhoneArea.H;
+                for (int s = 0; s < sites.Length; s++)
+                {
+                    var target = CoachTapSiteRect(sites[s], playW, playH);
+                    _coachTapOn = false;
+                    _glovePhase = 0f;
+                    _tapSent = false;
+                    Vector2 start = default;
+                    var path = new System.Text.StringBuilder();
+                    Vector2 settled = default;
+                    float bestDip = -1f;
+                    float settledAng = 0f;
+                    bool settledMirror = false;
+                    for (int frame = 0; frame < 24; frame++)
+                    {
+                        CoachTapAt(target, CoachTapLabel(target), 0.06f, null);
+                        var tip = _gloveShown;
+                        if (frame == 0) start = tip;
+                        path.Append(tip.x.ToString("0")).Append(',').Append(tip.y.ToString("0")).Append(' ');
+                        if (_gloveDip >= bestDip)
+                        {
+                            bestDip = _gloveDip;
+                            settled = tip;
+                            settledAng = _gloveShownAng;
+                            settledMirror = _gloveMirror;
+                        }
+                    }
+                    Debug.Log("[coach-tap-still] " + sites[s] + " " + winW
+                        + " start " + start.x.ToString("0.0") + "," + start.y.ToString("0.0")
+                        + " path " + path
+                        + " end " + settled.x.ToString("0.0") + "," + settled.y.ToString("0.0")
+                        + " dip " + bestDip.ToString("0.00")
+                        + " ang " + settledAng.ToString("0") + " mirror " + settledMirror);
+                    PaintCoachTapStill(dir + "/" + sites[s] + "-" + winW + ".png", winW, winH, target, settled, settledAng, settledMirror);
+                    yield return null;
+                }
+            }
+            PhoneArea.EditorWindowOn = false;
+            Debug.Log("COACH_TAP_STILLS_DONE");
+        }
+
+        static void PaintCoachTapStill(string path, int winW, int winH, Rect target, Vector2 tip, float ang, bool mirror)
+        {
+            var rt = new RenderTexture(winW, winH, 0, RenderTextureFormat.ARGB32);
+            rt.Create();
+            var prev = RenderTexture.active;
+            RenderTexture.active = rt;
+            GL.PushMatrix();
+            GL.LoadPixelMatrix(0, winW, winH, 0);
+            var shader = Shader.Find("Sprites/Default");
+            if (shader == null) shader = Shader.Find("UI/Default");
+            if (shader == null) shader = Shader.Find("Hidden/Internal-Colored");
+            var mat = shader != null ? new Material(shader) : null;
+            if (mat != null) mat.SetPass(0);
+            GL.Begin(GL.QUADS);
+            GL.Color(new Color(0.15f, 0.22f, 0.16f, 1f));
+            StillQuad(0f, 0f, winW, winH);
+            int ox = PhoneArea.OffX;
+            GL.Color(new Color(0.93f, 0.95f, 0.88f, 1f));
+            StillQuad(ox, 0f, PhoneArea.W, PhoneArea.H);
+            GL.Color(new Color(0.86f, 0.55f, 0.22f, 1f));
+            StillQuad(ox + target.x, target.y, target.width, target.height);
+            GL.End();
+            var glove = CoachGloveCurl(1f);
+            if (glove != null && mat != null)
+            {
+                mat.mainTexture = glove;
+                mat.SetPass(0);
+                StillGlove(glove, tip + new Vector2(ox, 0f), ang, mirror, GloveSize(DeviceFit.Ui()));
+            }
+            GL.PopMatrix();
+            var img = new Texture2D(winW, winH, TextureFormat.RGB24, false);
+            img.ReadPixels(new Rect(0f, 0f, winW, winH), 0, 0);
+            img.Apply();
+            System.IO.File.WriteAllBytes(path, img.EncodeToPNG());
+            RenderTexture.active = prev;
+            UnityEngine.Object.Destroy(rt);
+            UnityEngine.Object.Destroy(img);
+            if (mat != null) UnityEngine.Object.Destroy(mat);
+        }
+
+        static void StillQuad(float x, float y, float w, float h)
+        {
+            GL.Vertex3(x, y, 0f);
+            GL.Vertex3(x + w, y, 0f);
+            GL.Vertex3(x + w, y + h, 0f);
+            GL.Vertex3(x, y + h, 0f);
+        }
+
+        static void StillGlove(Texture tex, Vector2 pivot, float ang, bool mirror, float dh)
+        {
+            float dw = dh * (tex.width / (float)Mathf.Max(1, tex.height));
+            float left = pivot.x - _gloveTipU * dw;
+            float top = pivot.y - (1f - _gloveTipV) * dh;
+            float rad = ang * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad);
+            float sn = Mathf.Sin(rad);
+            float sx = mirror ? -1f : 1f;
+            GL.Begin(GL.QUADS);
+            GL.Color(Color.white);
+            for (int i = 0; i < 4; i++)
+            {
+                float u = (i == 1 || i == 2) ? 1f : 0f;
+                float v = (i == 2 || i == 3) ? 1f : 0f;
+                float x = left + u * dw;
+                float y = top + (1f - v) * dh;
+                float dx = (x - pivot.x) * sx;
+                float dy = y - pivot.y;
+                GL.TexCoord2(u, v);
+                GL.Vertex3(pivot.x + dx * c - dy * sn, pivot.y + dx * sn + dy * c, 0f);
+            }
+            GL.End();
         }
 #endif
 
@@ -20968,7 +21111,7 @@ namespace FlockFive
                 dip = Mathf.Sin(Mathf.Clamp01((_hiveTutorT - 0.40f) / 0.22f) * Mathf.PI);
             if (travel < 0.84f)
                 SeatGlove(ref pivot, ref ang, aim, s, ref mirror, dip);
-            DrawGloveAt(pivot, ang, GloveDh(s), fade, dip, mirror);
+            DrawGloveAt(pivot, ang, GloveSize(s), fade, dip, mirror);
         }
 
         Rect FlipHintRect(float y, float s)

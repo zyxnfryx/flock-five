@@ -59,6 +59,29 @@ namespace FlockFive.Editor
             Check("back-glove-taps-the-medal",
                 medalAt > 0 && seatAt > medalAt && !tickBody.Contains("GloveMiddleRightEntry("),
                 "medal " + medalAt + " seat " + seatAt);
+            int drawHits = 0;
+            int drawShared = 0;
+            void CountDraws(string src)
+            {
+                int at = 0;
+                while ((at = src.IndexOf("DrawGloveAt(", at)) >= 0)
+                {
+                    int lineEnd = src.IndexOf('\n', at);
+                    string line = lineEnd > at ? src.Substring(at, lineEnd - at) : src.Substring(at);
+                    if (!line.Contains("float dh"))
+                    {
+                        drawHits++;
+                        if (line.Contains("GloveSize(")) drawShared++;
+                    }
+                    at += 12;
+                }
+            }
+            CountDraws(app);
+            CountDraws(coach);
+            Check("glove-draw-uses-shared-size",
+                drawHits > 0 && drawHits == drawShared
+                && coach.Contains("float GloveDh(float s) => GloveSize(s)"),
+                "draws " + drawHits + " shared " + drawShared);
             Check("back-tip-band-clears-glove-lane",
                 coach.Contains("return PokerBackTipBand(width, h, safe, s, band.height, back, aim);")
                 && coach.Contains("band = PokerBackBand(band, screenH, safe, s);")

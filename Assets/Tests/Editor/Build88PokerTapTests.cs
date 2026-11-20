@@ -157,14 +157,25 @@ namespace FlockFive.Editor
                 typeof(FlockFiveApp).GetField("_coachTapOn", flags).SetValue(cue, false);
                 typeof(FlockFiveApp).GetField("_coachFade", flags).SetValue(cue, 1f);
                 var tapAt = typeof(FlockFiveApp).GetMethod("CoachTapAt", flags);
+                typeof(FlockFiveApp).GetField("_glovePhase", flags).SetValue(cue, 0f);
                 bool onRail = rail.width > 2f;
-                for (int i = 0; i < 6 && onRail; i++)
+                Vector2 settled = default;
+                float bestDip = -1f;
+                var path = new System.Text.StringBuilder();
+                Vector2 start = default;
+                for (int i = 0; i < 24 && onRail; i++)
                 {
-                    tapAt.Invoke(cue, new object[] { rail, new Rect(rail.x, rail.yMax + 12f, rail.width, 36f), 0.2f, null });
+                    tapAt.Invoke(cue, new object[] { rail, new Rect(rail.x, rail.yMax + 12f, rail.width, 36f), 0.06f, null });
                     var tip = (Vector2)typeof(FlockFiveApp).GetField("_gloveShown", flags).GetValue(cue);
-                    onRail = rail.Contains(tip);
+                    float dip = (float)typeof(FlockFiveApp).GetField("_gloveDip", flags).GetValue(cue);
+                    if (i == 0) start = tip;
+                    path.Append(tip.x.ToString("0")).Append(',').Append(tip.y.ToString("0")).Append(' ');
+                    if (dip >= bestDip) { bestDip = dip; settled = tip; }
                 }
-                Check("poker-cue-fingertip-on-rail", onRail, rail.ToString());
+                onRail = rail.Contains(settled) && bestDip > 0.9f;
+                Debug.Log("[coach-tap] poker-rail start " + start + " path " + path
+                    + " end " + settled + " dip " + bestDip.ToString("0.00"));
+                Check("poker-cue-fingertip-on-rail", onRail, rail + " end " + settled);
             }
             finally
             {

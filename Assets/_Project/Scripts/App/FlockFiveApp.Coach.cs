@@ -89,9 +89,11 @@ namespace FlockFive
         const float BeePlateSeconds = 8f;
         // Hawk waits out the sparrow line, then this long, so the two never share a frame.
         const float PestCueGap = 1.05f;
-        // About 20% under the old 118px lesson hand.
-        const float GlovePx = 94.4f;
-        public static float GloveDh(float s) => GlovePx * s;
+        // One pointing-finger size for every glove draw. 94.4 is about 20% under
+        // the old 118px hand. Horizontal and upright poses share it.
+        public const float GlovePx = 94.4f;
+        public static float GloveSize(float s) => GlovePx * s;
+        public static float GloveDh(float s) => GloveSize(s);
         static float GloveDrawW(float dh)
         {
             var tex = CoachGloveTex();
@@ -147,73 +149,150 @@ namespace FlockFive
             return new Rect(control.x + ix, control.y + iy, Mathf.Max(4f, control.width - ix * 2f), Mathf.Max(4f, control.height - iy * 2f));
         }
 
-        // Corner of the live control, inside the control, outside the label, inside
-        // the safe rect and the screen. safe is PhoneArea.Safe (bottom-origin).
+        // Sample targets for the CoachTapAt sites. Play-canvas pixels, y down.
+        public static Rect CoachTapSiteRect(string site, float w, float h)
+        {
+            if (site == "branch") return L1BranchRect(0, w, h);
+            if (site == "bird") return new Rect(w * 0.62f, 59f + 28f, 54f, 48f);
+            if (site == "daily") return new Rect(18f, 59f + 86f, 64f, 64f);
+            if (site == "claim") return new Rect(w * 0.5f - 80f, h * 0.62f, 160f, 110f);
+            if (site == "deal") return new Rect(w - 86f, h - 34f - 96f, 72f, 72f);
+            if (site == "back") return new Rect(16f, 59f + 8f, 48f, 48f);
+            if (site == "poker") return new Rect(w - 86f, 59f + 150f, 64f, 64f);
+            if (site == "watch") return new Rect(w * 0.28f, h * 0.58f, 140f, 52f);
+            return new Rect(w * 0.5f - 70f, h * 0.72f, 140f, 64f);
+        }
+
+        // Landed fingertip for a horizontal poke. On the target's near edge.
         public static Vector2 CoachTapSeat(Rect target, Rect avoid, float screenW, float screenH, Rect safe)
         {
+            return CoachTapSide(target, avoid, screenW, screenH, safe, default, default, default).End;
+        }
+
+        public struct CoachTapPose
+        {
+            public bool FromLeft;
+            public bool Flipped;
+            public bool Mirror;
+            public float Angle;
+            public Vector2 Rest;
+            public Vector2 End;
+            public Rect Glove;
+        }
+
+        // Glove on the left of a right-half target, pointing right. Otherwise on
+        // the right, pointing left. The other side is used when the first one
+        // leaves the play canvas, the safe band, a caption, or Home, Restart,
+        // or the gift X. safe is PhoneArea.Safe (bottom-origin).
+        public static CoachTapPose CoachTapSide(Rect target, Rect avoid, float playW, float playH, Rect safe,
+            Rect home, Rect restart, Rect giftX)
+        {
             float top = 0f;
-            float bot = screenH;
-            if (safe.height > 2f && screenH > 2f)
+            float bot = playH;
+            if (safe.height > 2f && playH > 2f)
             {
-                top = screenH - safe.yMax;
-                bot = screenH - safe.yMin;
-                if (bot < top) { float swap = top; top = bot; bot = swap; }
+                top = playH - safe.yMax;
+                bot = playH - safe.yMin;
+                if (bot < top)
+                {
+                    float swap = top;
+                    top = bot;
+                    bot = swap;
+                }
             }
-            float x0 = Mathf.Max(target.xMin, 0f);
-            float x1 = Mathf.Min(target.xMax, Mathf.Max(0f, screenW));
-            float y0 = Mathf.Max(target.yMin, top);
-            float y1 = Mathf.Min(target.yMax, bot);
-            if (x1 - x0 < 4f || y1 - y0 < 4f)
+            bool preferLeft = target.center.x >= playW * 0.5f;
+            float y0 = Mathf.Max(target.yMin + 1f, top + 1f);
+            float y1 = Mathf.Min(target.yMax - 1f, bot - 1f);
+            if (y1 < y0)
             {
-                x0 = target.xMin;
-                x1 = target.xMax;
-                y0 = target.yMin;
-                y1 = target.yMax;
+                y0 = Mathf.Clamp(target.center.y, top + 1f, Mathf.Max(top + 1f, bot - 1f));
+                y1 = y0;
             }
-            const float inset = 2f;
-            var corners = new[]
+            var ys = new[]
             {
-                new Vector2(x0 + inset, y0 + inset),
-                new Vector2(x1 - inset, y0 + inset),
-                new Vector2(x0 + inset, y1 - inset),
-                new Vector2(x1 - inset, y1 - inset),
+                Mathf.Clamp(target.center.y, y0, y1),
+                y0, y1, (y0 + y1) * 0.5f
             };
-            var away = avoid.width > 2f && avoid.height > 2f
-                ? avoid.center
-                : new Vector2((x0 + x1) * 0.5f, (y0 + y1) * 0.5f);
-            var best = corners[0];
-            float bestD = -1f;
+            CoachTapPose best = default;
+            float bestScore = float.MaxValue;
             bool any = false;
-            for (int i = 0; i < corners.Length; i++)
+            for (int side = 0; side < 2; side++)
             {
-                var c = corners[i];
-                if (avoid.width > 2f && avoid.height > 2f && avoid.Contains(c)) continue;
-                float d = (c - away).sqrMagnitude;
-                if (!any || d > bestD) { best = c; bestD = d; any = true; }
+                bool fromLeft = side == 0 ? preferLeft : !preferLeft;
+                for (int i = 0; i < ys.Length; i++)
+                {
+                    var pose = BuildCoachTap(target, fromLeft, ys[i], playW, playH);
+                    pose.Flipped = fromLeft != preferLeft;
+                    float score = CoachTapOverflow(pose.Glove, playW, top, bot, avoid, home, restart, giftX);
+                    if (!any || score < bestScore)
+                    {
+                        best = pose;
+                        bestScore = score;
+                        any = true;
+                    }
+                    if (score <= 0.5f) return pose;
+                }
             }
-            float xLo = target.xMin + 1f;
-            float xHi = Mathf.Max(xLo, target.xMax - 1.01f);
-            float yLo = target.yMin + 1f;
-            float yHi = Mathf.Max(yLo, target.yMax - 1.01f);
-            best.x = Mathf.Clamp(best.x, xLo, xHi);
-            best.y = Mathf.Clamp(best.y, yLo, yHi);
             return best;
         }
 
-        // The fingertip this frame. dip is 0 at rest and 1 at the bottom of the press.
+        static CoachTapPose BuildCoachTap(Rect target, bool fromLeft, float y, float playW, float playH)
+        {
+            float xIn = fromLeft ? target.xMin + 1f : Mathf.Max(target.xMin + 1.5f, target.xMax - 1.01f);
+            var end = new Vector2(xIn, y);
+            var rest = end + new Vector2(fromLeft ? -CoachTapPressPx : CoachTapPressPx, 0f);
+            float s = DeviceFit.Ui(playW, playH);
+            var landed = TapGloveBox(end, fromLeft, s);
+            var held = TapGloveBox(rest, fromLeft, s);
+            return new CoachTapPose
+            {
+                FromLeft = fromLeft,
+                Mirror = fromLeft,
+                Angle = ClampUpright(fromLeft),
+                Rest = rest,
+                End = end,
+                Glove = Rect.MinMaxRect(
+                    Mathf.Min(landed.xMin, held.xMin), Mathf.Min(landed.yMin, held.yMin),
+                    Mathf.Max(landed.xMax, held.xMax), Mathf.Max(landed.yMax, held.yMax))
+            };
+        }
+
+        static Rect TapGloveBox(Vector2 tip, bool fromLeft, float s)
+        {
+            float dh = GloveSize(s);
+            GloveSpan(tip, ClampUpright(fromLeft), dh, 0f, fromLeft, out float x0, out float y0, out float x1, out float y1);
+            return Rect.MinMaxRect(x0, y0, x1, y1);
+        }
+
+        static float CoachTapOverflow(Rect box, float playW, float top, float bot, Rect avoid, Rect home, Rect restart, Rect giftX)
+        {
+            float over = 0f;
+            if (box.xMin < 0f) over += -box.xMin;
+            if (box.yMin < top) over += top - box.yMin;
+            if (box.xMax > playW) over += box.xMax - playW;
+            if (box.yMax > bot) over += box.yMax - bot;
+            over += CoachTapOverlap(box, avoid);
+            over += CoachTapOverlap(box, home);
+            over += CoachTapOverlap(box, restart);
+            over += CoachTapOverlap(box, giftX);
+            return over;
+        }
+
+        static float CoachTapOverlap(Rect a, Rect b)
+        {
+            if (b.width < 2f || b.height < 2f || !a.Overlaps(b)) return 0f;
+            float x = Mathf.Min(a.xMax, b.xMax) - Mathf.Max(a.xMin, b.xMin);
+            float y = Mathf.Min(a.yMax, b.yMax) - Mathf.Max(a.yMin, b.yMin);
+            return Mathf.Max(0f, x) + Mathf.Max(0f, y);
+        }
+
+        // dip 0 is the rest, just outside the target. dip 1 is the near edge.
         public static Vector2 CoachTapPoint(Vector2 seat, Rect target, Rect avoid, float dip)
         {
-            var dir = target.center - seat;
-            if (dir.sqrMagnitude < 0.01f) dir = Vector2.down;
-            dir.Normalize();
-            var p = seat + dir * (CoachTapPressPx * Mathf.Clamp01(dip));
-            float xLo = target.xMin + 1f;
-            float xHi = Mathf.Max(xLo, target.xMax - 1.01f);
-            float yLo = target.yMin + 1f;
-            float yHi = Mathf.Max(yLo, target.yMax - 1.01f);
-            p.x = Mathf.Clamp(p.x, xLo, xHi);
-            p.y = Mathf.Clamp(p.y, yLo, yHi);
-            if (avoid.width > 2f && avoid.height > 2f && avoid.Contains(p))
+            bool fromLeft = seat.x <= target.center.x;
+            var rest = seat + new Vector2((fromLeft ? -1f : 1f) * CoachTapPressPx, 0f);
+            var p = Vector2.Lerp(rest, seat, Mathf.Clamp01(dip));
+            if (avoid.width > 2f && avoid.height > 2f && avoid.Contains(p) && dip < 0.95f)
                 p = seat;
             return p;
         }
@@ -2918,9 +2997,9 @@ namespace FlockFive
             _gloveHoldPose = false;
         }
 
-        // Stationary pointing finger. It is already on the control. Each frame
-        // presses a few pixels toward the control and lifts back. No perch,
-        // no wind-up, no GloveTravelScale. An empty rect hides it the same frame.
+        // Horizontal pointing finger. It sits beside the control and pokes
+        // straight in until the fingertip meets the near edge, then draws back.
+        // No perch, no wind-up, no GloveTravelScale. An empty rect hides it.
         bool CoachTapAt(Rect target, Rect avoid, float dt, System.Func<Vector2, bool> tapHit = null)
         {
             if (target.width < 2f || target.height < 2f)
@@ -2928,7 +3007,10 @@ namespace FlockFive
                 HideCoachTap();
                 return false;
             }
-            var seat = CoachTapSeat(target, avoid, PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            HudShaken(out var restartNow, out _);
+            var homeNow = CornerAnchor.TopBarHome(restartNow, PhoneArea.W, PhoneArea.Safe);
+            var giftNow = _gift == GiftFace.Card ? GiftCloseHit() : default;
+            var pose = CoachTapSide(target, avoid, PhoneArea.W, PhoneArea.H, PhoneArea.Safe, homeNow, restartNow, giftNow);
             float prev = _coachTapOn ? _glovePhase : 0f;
             if (!_coachTapOn) _tapSent = false;
             float next = prev + Mathf.Max(0f, dt);
@@ -2943,17 +3025,17 @@ namespace FlockFive
             _glovePhase = next;
             if (fire) _tapSent = true;
             float dip = TapDip(fire ? pressAt : _glovePhase);
-            var point = CoachTapPoint(seat, target, avoid, dip);
+            var point = Vector2.Lerp(pose.Rest, pose.End, dip);
             _coachTapOn = true;
             _coachTapFrame = Time.frameCount;
-            _coachTapSeat = seat;
+            _coachTapSeat = pose.End;
             _coachTapPoint = point;
-            _cueAimGui = point;
+            _cueAimGui = pose.End;
             _gloveShown = point;
             _gloveTip = point;
-            _gloveRest = point;
-            _gloveLockAim = point;
-            _gloveStepAim = point;
+            _gloveRest = pose.Rest;
+            _gloveLockAim = pose.End;
+            _gloveStepAim = pose.End;
             _gloveHoldPose = true;
             _gloveDip = dip;
             _gloveAlpha = 1f;
@@ -2962,9 +3044,10 @@ namespace FlockFive
             _gloveLockOn = true;
             _gloveSettled = true;
             _gloveFaceOn = true;
-            _gloveMirror = point.x < target.center.x;
-            _gloveShownAng = 0f;
-            _gloveFaceAng = 0f;
+            _gloveMirror = pose.Mirror;
+            _gloveFaceMirror = pose.Mirror;
+            _gloveShownAng = pose.Angle;
+            _gloveFaceAng = pose.Angle;
             _gloveApproach = float.NaN;
             _gloveStepLine = _cueLine;
             GloveArmTap(target, tapHit);
@@ -5767,7 +5850,7 @@ namespace FlockFive
             if (_gloveAlpha < 0.03f) return;
             if (!fading && !_gloveVis) return;
             float dip = _gloveHoldPose ? _gloveHoldDip : _gloveDip;
-            DrawGloveAt(_gloveShown, _gloveShownAng, GloveDh(s), _gloveAlpha, dip, _gloveMirror);
+            DrawGloveAt(_gloveShown, _gloveShownAng, GloveSize(s), _gloveAlpha, dip, _gloveMirror);
         }
 
         // Unmirrored rect keeps the fingertip pixel on the pivot. mirror is for the
@@ -6129,7 +6212,7 @@ namespace FlockFive
         void DrawRestGlove(float s)
         {
             if (!_restVis || _coachFade < 0.03f) return;
-            DrawGloveAt(_restShown, _restAng, GloveDh(s), EaseOutCubic(_coachFade), TapDip(_glovePhase), _restMirror);
+            DrawGloveAt(_restShown, _restAng, GloveSize(s), EaseOutCubic(_coachFade), TapDip(_glovePhase), _restMirror);
         }
 
         // Perch the tap hand uses, in GUI space. Matches the lesson focus, not the gift sign.

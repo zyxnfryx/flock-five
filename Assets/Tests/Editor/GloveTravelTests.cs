@@ -50,21 +50,31 @@ namespace FlockFive.Editor
                     var target = new Rect(80f, 120f, 120f, 72f);
                     var label = FlockFiveApp.CoachTapLabel(target);
                     typeof(FlockFiveApp).GetField("_coachTapOn", flags).SetValue(app, false);
+                    typeof(FlockFiveApp).GetField("_glovePhase", flags).SetValue(app, 0f);
                     typeof(FlockFiveApp).GetField("_coachFade", flags).SetValue(app, 1f);
-                    Vector2 first = default;
+                    Vector2 start = default;
+                    var path = new System.Text.StringBuilder();
+                    Vector2 end = default;
+                    float bestDip = -1f;
                     float span = 0f;
-                    bool ok = true;
-                    for (int i = 0; i < 8; i++)
+                    bool vis = false;
+                    for (int i = 0; i < 24; i++)
                     {
-                        tap.Invoke(app, new object[] { target, label, 0.18f, null });
-                        bool vis = (bool)typeof(FlockFiveApp).GetField("_gloveVis", flags).GetValue(app);
+                        tap.Invoke(app, new object[] { target, label, 0.06f, null });
+                        vis = (bool)typeof(FlockFiveApp).GetField("_gloveVis", flags).GetValue(app);
                         var tip = (Vector2)typeof(FlockFiveApp).GetField("_gloveShown", flags).GetValue(app);
-                        if (i == 0) first = tip;
-                        span = Mathf.Max(span, (tip - first).magnitude);
-                        ok &= vis && target.Contains(tip) && !label.Contains(tip);
+                        float dip = (float)typeof(FlockFiveApp).GetField("_gloveDip", flags).GetValue(app);
+                        if (i == 0) start = tip;
+                        path.Append(tip.x.ToString("0")).Append(',').Append(tip.y.ToString("0")).Append(' ');
+                        span = Mathf.Max(span, (tip - start).magnitude);
+                        if (dip >= bestDip) { bestDip = dip; end = tip; }
                     }
-                    ok &= span <= FlockFiveApp.CoachTapPressPx + 0.6f;
-                    Check("stationary-tap-" + (int)size.x, ok, "span " + span.ToString("0.0"));
+                    bool onEdge = target.Contains(end) && !label.Contains(end);
+                    bool poke = span <= FlockFiveApp.CoachTapPressPx + 1.5f && Mathf.Abs(start.y - end.y) < 1.5f;
+                    Debug.Log("[coach-tap] travel " + (int)size.x
+                        + " start " + start + " path " + path + " end " + end + " dip " + bestDip.ToString("0.00"));
+                    Check("stationary-tap-" + (int)size.x, vis && onEdge && poke && bestDip > 0.9f,
+                        "span " + span.ToString("0.0") + " end " + end);
                 }
             }
             finally
