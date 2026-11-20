@@ -4000,6 +4000,22 @@ namespace FlockFive
 #endif
                         return;
                     }
+                    // A point on Restart is Restart. HitHud can return on the
+                    // hive or the top bar before it reaches ActRestart. The X
+                    // claim already had its chance above, and it sits below
+                    // this button.
+                    if (_gift == GiftFace.Card && !_freezeOffer)
+                    {
+                        HudShaken(out var restartNow, out _);
+                        if (restartNow.width > 2f && restartNow.Contains(PlayPointer.At))
+                        {
+#if UNITY_EDITOR
+                            EditorTapStop = "restart-point";
+#endif
+                            ActRestart();
+                            return;
+                        }
+                    }
                     if (_adHand && _gift == GiftFace.Card)
                     {
                         int offerHud = HudControl(PlayPointer.At);
@@ -4076,7 +4092,7 @@ namespace FlockFive
                 if (Pressed(out var ruleTap))
                 {
                     int gloveId = PressIdNow();
-                    if (gloveId == int.MinValue) gloveId = -1;
+                    if (gloveId == int.MinValue) gloveId = PlayPointer.MouseId;
                     if (PlayPointer.Inside(PlayPointer.At) && TryDrawnGlove(PlayPointer.At, false, gloveId)) return;
                     // Home and Restart are not claimed by the caption. This call
                     // opens Home or restarts after that decline.
@@ -4102,7 +4118,7 @@ namespace FlockFive
                 }
                 if (pressRelease) return;
                 int gloveId = PressIdNow();
-                if (gloveId == int.MinValue) gloveId = -1;
+                if (gloveId == int.MinValue) gloveId = PlayPointer.MouseId;
                 if (TryDrawnGlove(PlayPointer.At, false, gloveId)) return;
                 if (OverlayOwnsPress(PlayPointer.At, false))
                 {
@@ -4214,14 +4230,14 @@ namespace FlockFive
             }
 #if ENABLE_LEGACY_INPUT_MANAGER
             bool sawMouse = Mouse.current != null && Mouse.current.leftButton.isPressed;
-            if (sawMouse) note(-1);
+            if (sawMouse) note(PlayPointer.MouseId);
             // Only when the old input backend is actually compiled in. This
             // project is Input System only, so these reads are not called.
             if (!sawTouch || !sawMouse)
                 NoteLegacyPointersDown(note, !sawTouch, !sawMouse);
 #else
             if (Mouse.current != null && Mouse.current.leftButton.isPressed)
-                note(-1);
+                note(PlayPointer.MouseId);
 #endif
             // The latched glove press is that same held contact.
             if (_glovePressLatched) note(_glovePressId);
@@ -4242,7 +4258,7 @@ namespace FlockFive
                 }
             }
             if (mouse && UnityEngine.Input.GetMouseButton(0))
-                note(-1);
+                note(PlayPointer.MouseId);
         }
 #endif
 
@@ -4409,6 +4425,11 @@ namespace FlockFive
 #if UNITY_EDITOR
                 EditorNoteResult = "drop-same-edge";
 #endif
+                // A repeated mouse up is the OnGUI echo, or a later up the
+                // frame filter still calls the same edge. Lift the touch that
+                // went down. A different finger that is still down is not it.
+                if (releaseEdge && ResumeFinger(pointerId) == PlayPointer.MouseId && _downPointer >= 0)
+                    LiftResumeOrigin(_downPointer);
                 return;
             }
 #if UNITY_EDITOR
@@ -8775,7 +8796,7 @@ namespace FlockFive
             bool liveRestart = tapEdge && HudControl(play) == 2;
             if (ResumeGloveEdge(play) && !liveRestart)
             {
-                int gloveId = -1;
+                int gloveId = PlayPointer.MouseId;
                 if (tapEdge)
                     gloveId = HomeEventId(tapEv, tapEv.type == EventType.MouseDown, tapEv.type == EventType.MouseUp);
 #if UNITY_EDITOR
