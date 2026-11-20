@@ -891,7 +891,9 @@ namespace FlockFive
             if (_pestCue != 0 && !garden) PestIntroHide();
             if (_adHand && !garden && _pestCue == 0)
             {
-                DismissAdHand();
+                // A reset cut is not a tap. DismissAdHand would arm the guard
+                // and the next Restart press would be swallowed.
+                DropAdHand(false);
                 if (_cueLine == AdHandLine)
                 {
                     _cueLine = null;
@@ -2117,7 +2119,10 @@ namespace FlockFive
             CoachHideRipples();
         }
 
-        void DismissAdHand()
+        void DismissAdHand() => DropAdHand(true);
+
+        // armGuard is the player dismiss. A restart teardown passes false.
+        void DropAdHand(bool armGuard)
         {
             if (!_adHand) return;
             _adHand = false;
@@ -2126,7 +2131,7 @@ namespace FlockFive
             _gloveVis = false;
             DropGlovePress();
             _gloveReady = false;
-            NoteLessonDismiss(CoachStep.AdHand);
+            if (armGuard) NoteLessonDismiss(CoachStep.AdHand);
         }
 
         // Hard hide. A fade that was still running does not keep a frozen hand.
@@ -6944,10 +6949,14 @@ namespace FlockFive
         Rect _bgGateFreeze; // b110: frozen Freeze Spray, its own rect (not a union with Hot Sauce)
         int _coachAteFrame = -1;
         // Unscaled. A lesson dismiss arms this. Board and HUD taps wait it out.
-        static float _lessonGuardUntil;
+        // Per instance. A static survived edit-mode tests, which never run OnEnable.
+        float _lessonGuardUntil;
 
         // Resume, a fresh round, and an ad close are not a lesson dismiss.
-        public static void ClearLessonGuard() => _lessonGuardUntil = 0f;
+        public static void ClearLessonGuard()
+        {
+            if (_app != null) _app._lessonGuardUntil = 0f;
+        }
 
 #if UNITY_EDITOR
         internal static int CoachFrameOffsetForTests;
@@ -6967,7 +6976,7 @@ namespace FlockFive
             Time.frameCount;
 #endif
 
-        static bool LessonGuardUp() => CoachDismiss.GuardBlocks(AdPause.Unscaled, _lessonGuardUntil);
+        bool LessonGuardUp() => CoachDismiss.GuardBlocks(AdPause.Unscaled, _lessonGuardUntil);
 
         // The tap that just dismissed a lesson, and any tap during the guard.
         bool LessonTapBlocked() => CoachAteThisFrame() || LessonGuardUp();

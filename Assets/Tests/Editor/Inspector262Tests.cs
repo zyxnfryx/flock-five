@@ -116,6 +116,7 @@ namespace FlockFive.Editor
             CheckRuleReentrant(Check);
             CheckGiftStampBeforeGui(Check);
             CheckGiftRestartCovers(Check);
+            CheckRestartDoesNotArmLessonGuard(Check);
             CheckSameFrameLifts(Check);
             CheckDistinctReleaseIds(Check);
             CheckRestartAskAfterResume(Check);
@@ -642,8 +643,8 @@ namespace FlockFive.Editor
             t.GetField("_restarting", flags).SetValue(app, false);
             t.GetField("_gloveVis", flags).SetValue(app, false);
             t.GetField("_ruleEatGesture", flags).SetValue(app, false);
-            var guard = t.GetField("_lessonGuardUntil", BindingFlags.NonPublic | BindingFlags.Static);
-            if (guard != null) guard.SetValue(null, 0f);
+            var guard = t.GetField("_lessonGuardUntil", flags);
+            if (guard != null) guard.SetValue(app, 0f);
             t.GetField("_ruleTip", flags).SetValue(app, RuleTip.Feeder);
             t.GetField("_cueLine", flags).SetValue(app, "Nice! That feeder now wants\na new color. Check the top.");
             t.GetField("EditorRuleRestartDirect", flags).SetValue(app, false);
@@ -1501,13 +1502,13 @@ namespace FlockFive.Editor
             }, new[] { 820, 402, 412, 360 });
         }
 
-        // LessonGuardUp reads the static until and AdPause's clock. Printed, never changed.
+        // LessonGuardUp reads this app's until and AdPause's clock. Printed, never changed.
         static string LessonGuardDiag(FlockFiveApp app, System.Type t)
         {
             const BindingFlags stat = BindingFlags.NonPublic | BindingFlags.Static;
             const BindingFlags inst = BindingFlags.NonPublic | BindingFlags.Instance;
-            float until = (float)t.GetField("_lessonGuardUntil", stat).GetValue(null);
-            bool guardUp = (bool)t.GetMethod("LessonGuardUp", stat).Invoke(null, null);
+            float until = (float)t.GetField("_lessonGuardUntil", inst).GetValue(app);
+            bool guardUp = (bool)t.GetMethod("LessonGuardUp", inst).Invoke(app, null);
             bool ateNow = (bool)t.GetMethod("CoachAteThisFrame", inst).Invoke(app, null);
             var ad = typeof(AdPause);
             bool adOn = (bool)ad.GetField("_on", stat).GetValue(null);
@@ -1580,23 +1581,82 @@ namespace FlockFive.Editor
             return "commit " + covered + " live " + restarted + " cover " + cover;
         }
 
+        static void CheckRestartDoesNotArmLessonGuard(System.Action<string, bool, string> Check)
+        {
+            var host = new GameObject("restart-guard");
+            var next = new GameObject("restart-guard-next");
+            int streak = Purse.Streak;
+            try
+            {
+                Purse.SetStreak(0);
+                var app = host.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_garden", flags).SetValue(app, new WorldBuilder.Garden());
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_busy", flags).SetValue(app, false);
+                t.GetField("_restarting", flags).SetValue(app, false);
+                t.GetField("_adHand", flags).SetValue(app, true);
+                t.GetMethod("Restart", flags, null, System.Type.EmptyTypes, null).Invoke(app, null);
+                bool handStill = (bool)t.GetField("_adHand", flags).GetValue(app);
+                if (handStill)
+                {
+                    var round = t.GetField("EditorSnapRound", flags).GetValue(app) as System.Collections.IEnumerator;
+                    if (round != null) round.MoveNext();
+                }
+                bool handLeft = (bool)t.GetField("_adHand", flags).GetValue(app);
+                bool guardUp = (bool)t.GetMethod("LessonGuardUp", flags, null, System.Type.EmptyTypes, null).Invoke(app, null);
+                float until = (float)t.GetField("_lessonGuardUntil", flags).GetValue(app);
+                Check("restart-leaves-lesson-guard-down", !guardUp && until == 0f && !handLeft,
+                    "guard " + guardUp + " until " + until.ToString("0.00")
+                    + " hand " + handLeft
+                    + " unscaled " + AdPause.Unscaled.ToString("0.00"));
+
+                var fresh = next.AddComponent<FlockFiveApp>();
+                bool freshUp = (bool)t.GetMethod("LessonGuardUp", flags, null, System.Type.EmptyTypes, null).Invoke(fresh, null);
+                float freshUntil = (float)t.GetField("_lessonGuardUntil", flags).GetValue(fresh);
+                Check("fresh-app-starts-lesson-guard-down", !freshUp && freshUntil == 0f,
+                    "guard " + freshUp + " until " + freshUntil.ToString("0.00"));
+
+                t.GetField("_adHand", flags).SetValue(fresh, true);
+                t.GetMethod("DismissAdHand", flags, null, System.Type.EmptyTypes, null).Invoke(fresh, null);
+                bool armed = (bool)t.GetMethod("LessonGuardUp", flags, null, System.Type.EmptyTypes, null).Invoke(fresh, null);
+                float armedUntil = (float)t.GetField("_lessonGuardUntil", flags).GetValue(fresh);
+                Check("lesson-dismiss-arms-the-guard",
+                    armed && armedUntil >= AdPause.Unscaled + CoachDismiss.GuardSeconds - 0.01f,
+                    "guard " + armed + " until " + armedUntil.ToString("0.00")
+                    + " unscaled " + AdPause.Unscaled.ToString("0.00"));
+            }
+            catch (System.Exception ex)
+            {
+                Check("restart-lesson-guard", false, ex.GetType().Name + " " + ex.Message);
+            }
+            finally
+            {
+                Purse.SetStreak(streak);
+                UnityEngine.Object.DestroyImmediate(host);
+                UnityEngine.Object.DestroyImmediate(next);
+            }
+        }
+
         static void CheckGiftRestartCovers(System.Action<string, bool, string> Check)
         {
-            var guard = typeof(FlockFiveApp).GetField("_lessonGuardUntil", BindingFlags.NonPublic | BindingFlags.Static);
             int[] widths = { 820, 402, 412, 360 };
             EachPhoneWidth(Check, "gift-restart-swallows-lesson", (app, t, flags) =>
             {
-                float keep = (float)guard.GetValue(null);
+                var guard = t.GetField("_lessonGuardUntil", flags);
+                float keep = (float)guard.GetValue(app);
                 try
                 {
-                    guard.SetValue(null, AdPause.Unscaled + 30f);
+                    guard.SetValue(app, AdPause.Unscaled + 30f);
                     t.GetField("_ruleTip", flags).SetValue(app, RuleTip.Feeder);
                     string fault = PressGiftRestart(app, t, flags, false);
                     string tip = t.GetField("_ruleTip", flags).GetValue(app).ToString();
                     if (fault == null && tip == "Feeder") return null;
                     return (fault ?? "restarted") + " tip " + tip;
                 }
-                finally { guard.SetValue(null, keep); }
+                finally { guard.SetValue(app, keep); }
             }, widths);
             EachPhoneWidth(Check, "gift-restart-swallows-veil", (app, t, flags) =>
             {

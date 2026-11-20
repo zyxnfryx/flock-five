@@ -3555,7 +3555,7 @@ namespace FlockFive.Editor
                 bool missReached = missVerdict != null && !VerdictIs(missVerdict, "Ignore");
                 bool greetDone = (bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
                 bool ateNow = (bool)Method(t, "CoachAteThisFrame").Invoke(app, null);
-                bool guardNow = (bool)Method(t, "LessonGuardUp").Invoke(null, null);
+                bool guardNow = (bool)Method(t, "LessonGuardUp").Invoke(app, null);
                 bool playNow = (bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { level });
                 // The dismiss eats Play on this frame on purpose. Do not clear the stamp or the guard.
                 bool sameFrameBlocked = missReached && greetDone && ateNow && guardNow && !playNow;
@@ -4006,8 +4006,8 @@ namespace FlockFive.Editor
         static void SeatOpenLesson(object app)
         {
             var t = typeof(FlockFiveApp);
-            t.GetField("_lessonGuardUntil", BindingFlags.NonPublic | BindingFlags.Static)
-                .SetValue(null, float.NegativeInfinity);
+            t.GetField("_lessonGuardUntil", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(app, float.NegativeInfinity);
             t.GetField("_coachAteFrame", BindingFlags.NonPublic | BindingFlags.Instance)
                 .SetValue(app, -1);
         }

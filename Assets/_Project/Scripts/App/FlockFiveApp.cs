@@ -580,12 +580,15 @@ namespace FlockFive
         void Reset()
         {
             ClaimAppSlot();
+            // Edit-mode AddComponent runs Reset and does not run OnEnable.
+            // The field starts at 0. This drops a guard on a reset component.
+            _lessonGuardUntil = 0f;
         }
 
         void OnEnable()
         {
             ClaimAppSlot();
-            // A new instance must not inherit another session's dismiss guard.
+            // Play mode. A re-enabled instance must not keep a dismiss guard.
             _lessonGuardUntil = 0f;
             if (_app == this)
             {
@@ -8252,7 +8255,7 @@ namespace FlockFive
                 if (_app != null && _app.ResumeHolds(rid)) return false;
             }
             if (StartupInputHeld) return false;
-            if (LessonGuardUp()) return false;
+            if (_app != null && _app.LessonGuardUp()) return false;
             // The finger wins over a synthesized mouse. On Android the mouse click
             // can sit at a stale point while the touch is the poker button.
             if (FreshTouchPress(out screen)) return true;
