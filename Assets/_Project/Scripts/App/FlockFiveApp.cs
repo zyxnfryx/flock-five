@@ -677,7 +677,7 @@ namespace FlockFive
                 if (_app != null)
                 {
                     _resumeInputUntil = GateNow + 0.35f;
-                    _lessonGuardUntil = 0f;
+                    _app._lessonGuardUntil = 0f;
                     _app._gateBlindSince = -1f;
                     _app.FreshTutorGlove();
                     // The suspend may have cut a step off. Settle it before the first tap lands.
