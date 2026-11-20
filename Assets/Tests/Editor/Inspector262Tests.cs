@@ -1385,6 +1385,9 @@ namespace FlockFive.Editor
                     t.GetField("EditorActRestartBlock", flags).SetValue(app, "");
                     bool held = false, released = false, freshLive = false;
                     string steps = "";
+                    string guardBeforeFirst = "";
+                    string guardAfterFirst = "";
+                    string guardAfterAct = "";
                     void Mark(string step, int latch)
                     {
                         bool live = RestartLive(t, flags, app);
@@ -1431,7 +1434,9 @@ namespace FlockFive.Editor
                         On = true, Down = true, Up = false, Id = heldId, Window = window
                     };
                     Mark("down", 0);
+                    if (!freeze) guardBeforeFirst = LessonGuardDiag(app, t);
                     t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                    if (!freeze) guardAfterFirst = LessonGuardDiag(app, t);
                     int afterUpdate = (int)t.GetField("EditorEdgeStamps", flags).GetValue(app);
                     Mark("update", 1);
                     t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
@@ -1455,6 +1460,7 @@ namespace FlockFive.Editor
                         On = true, Down = true, Up = false, Id = freshId, Window = fresh
                     };
                     t.GetMethod("UpdateBody", flags).Invoke(app, null);
+                    if (!freeze) guardAfterAct = LessonGuardDiag(app, t);
                     Mark("freshDown", 3);
                     FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
                     {
@@ -1480,6 +1486,9 @@ namespace FlockFive.Editor
                         + " inRestart " + restart.Contains(play)
                         + " inClaim " + xClaim.Contains(play)
                         + " overlap " + overlap
+                        + " beforeFirst " + guardBeforeFirst
+                        + " afterFirst " + guardAfterFirst
+                        + " afterAct " + guardAfterAct
                         + " | " + steps;
                     Debug.Log("[inspector-262] gift-stamp-steps " + PhoneArea.W + " " + detail);
                     if (afterUpdate == 1 && afterGui == 1 && !held && afterUp == 2 && !released && resumeOk && !overlap)
@@ -1490,6 +1499,27 @@ namespace FlockFive.Editor
                 if (gift != null) return gift;
                 return One(true, 40, 41);
             }, new[] { 820, 402, 412, 360 });
+        }
+
+        // LessonGuardUp reads the static until and AdPause's clock. Printed, never changed.
+        static string LessonGuardDiag(FlockFiveApp app, System.Type t)
+        {
+            const BindingFlags stat = BindingFlags.NonPublic | BindingFlags.Static;
+            const BindingFlags inst = BindingFlags.NonPublic | BindingFlags.Instance;
+            float until = (float)t.GetField("_lessonGuardUntil", stat).GetValue(null);
+            bool guardUp = (bool)t.GetMethod("LessonGuardUp", stat).Invoke(null, null);
+            bool ateNow = (bool)t.GetMethod("CoachAteThisFrame", inst).Invoke(app, null);
+            var ad = typeof(AdPause);
+            bool adOn = (bool)ad.GetField("_on", stat).GetValue(null);
+            float adTotal = (float)ad.GetField("_total", stat).GetValue(null);
+            float adStarted = (float)ad.GetField("_startedAt", stat).GetValue(null);
+            return "guard " + guardUp
+                + " ate " + ateNow
+                + " until " + until.ToString("0.00")
+                + " unscaled " + AdPause.Unscaled.ToString("0.00")
+                + " adOn " + adOn
+                + " adTotal " + adTotal.ToString("0.00")
+                + " adStart " + adStarted.ToString("0.00");
         }
 
         static string PressGiftRestart(FlockFiveApp app, System.Type t, BindingFlags flags, bool expectRestart)
@@ -1519,17 +1549,27 @@ namespace FlockFive.Editor
             }
             if (expectRestart)
             {
+                string guardBeforeFirst = LessonGuardDiag(app, t);
                 resume.SetValue(null, AdPause.Unscaled + 5f);
                 Down(44);
+                string guardAfterFirst = LessonGuardDiag(app, t);
                 int held = (int)t.GetField("EditorActRestartCommitted", flags).GetValue(app);
                 resume.SetValue(null, AdPause.Unscaled - 5f);
                 Down(45);
                 t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                string guardAfterAct = LessonGuardDiag(app, t);
                 int committed = (int)t.GetField("EditorActRestartCommitted", flags).GetValue(app);
                 bool live = RestartLive(t, flags, app);
+                Debug.Log("[inspector-262] gift-restart-guard " + PhoneArea.W
+                    + " beforeFirst " + guardBeforeFirst
+                    + " afterFirst " + guardAfterFirst
+                    + " afterAct " + guardAfterAct);
                 if (held == 0 && committed == 1 && live) return null;
                 string restartCover = (string)t.GetField("EditorRestartCover", flags).GetValue(app) ?? "";
-                return "held " + held + " commit " + committed + " live " + live + " cover " + restartCover;
+                return "held " + held + " commit " + committed + " live " + live + " cover " + restartCover
+                    + " beforeFirst " + guardBeforeFirst
+                    + " afterFirst " + guardAfterFirst
+                    + " afterAct " + guardAfterAct;
             }
             Down(46);
             t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
