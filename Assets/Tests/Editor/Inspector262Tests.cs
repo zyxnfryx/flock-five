@@ -115,6 +115,7 @@ namespace FlockFive.Editor
             CheckPointerGuard(Check);
             CheckRuleReentrant(Check);
             CheckGiftStampBeforeGui(Check);
+            CheckGiftRestartCovers(Check);
             CheckSameFrameLifts(Check);
             CheckDistinctReleaseIds(Check);
             CheckRestartAskAfterResume(Check);
@@ -1487,6 +1488,81 @@ namespace FlockFive.Editor
                 if (gift != null) return gift;
                 return One(true, 40, 41);
             }, new[] { 820, 402, 412, 360 });
+        }
+
+        static string PressGiftRestart(FlockFiveApp app, System.Type t, BindingFlags flags, bool expectRestart)
+        {
+            var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+            var resume = t.GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static);
+            t.GetField("_splash", flags).SetValue(app, false);
+            t.GetField("_adHand", flags).SetValue(app, true);
+            t.GetField("_freezeOffer", flags).SetValue(app, false);
+            t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
+            t.GetField("_restarting", flags).SetValue(app, false);
+            t.GetField("EditorSnapRound", flags).SetValue(app, null);
+            t.GetField("EditorActRestartEntered", flags).SetValue(app, 0);
+            t.GetField("EditorActRestartCommitted", flags).SetValue(app, 0);
+            resume.SetValue(null, AdPause.Unscaled - 5f);
+            object[] hud = { default(Rect), default(Rect) };
+            t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+            var restart = (Rect)hud[0];
+            var window = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+            void Down(int id)
+            {
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Up = false, Id = id, Window = window
+                };
+                t.GetMethod("UpdateBody", flags).Invoke(app, null);
+            }
+            if (expectRestart)
+            {
+                resume.SetValue(null, AdPause.Unscaled + 5f);
+                Down(44);
+                int held = (int)t.GetField("EditorActRestartCommitted", flags).GetValue(app);
+                resume.SetValue(null, AdPause.Unscaled - 5f);
+                Down(45);
+                t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+                int committed = (int)t.GetField("EditorActRestartCommitted", flags).GetValue(app);
+                bool live = RestartLive(t, flags, app);
+                if (held == 0 && committed == 1 && live) return null;
+                return "held " + held + " commit " + committed + " live " + live;
+            }
+            Down(46);
+            t.GetMethod("TakeGuiPointer", flags).Invoke(app, null);
+            int covered = (int)t.GetField("EditorActRestartCommitted", flags).GetValue(app);
+            bool restarted = RestartLive(t, flags, app);
+            if (covered == 0 && !restarted) return null;
+            return "commit " + covered + " live " + restarted;
+        }
+
+        static void CheckGiftRestartCovers(System.Action<string, bool, string> Check)
+        {
+            var guard = typeof(FlockFiveApp).GetField("_lessonGuardUntil", BindingFlags.NonPublic | BindingFlags.Static);
+            EachPhoneWidth(Check, "gift-restart-swallows-lesson", (app, t, flags) =>
+            {
+                float keep = (float)guard.GetValue(null);
+                try
+                {
+                    guard.SetValue(null, AdPause.Unscaled + 30f);
+                    return PressGiftRestart(app, t, flags, false);
+                }
+                finally { guard.SetValue(null, keep); }
+            }, new[] { 820, 402 });
+            EachPhoneWidth(Check, "gift-restart-swallows-veil", (app, t, flags) =>
+            {
+                t.GetField("_settingsOpen", flags).SetValue(app, true);
+                return PressGiftRestart(app, t, flags, false);
+            }, new[] { 820, 402 });
+            EachPhoneWidth(Check, "gift-restart-swallows-hive-inspect", (app, t, flags) =>
+            {
+                t.GetField("_hiveInspect", flags).SetValue(app, 0);
+                return PressGiftRestart(app, t, flags, false);
+            }, new[] { 820, 402 });
+            EachPhoneWidth(Check, "gift-restart-fires-once", (app, t, flags) =>
+            {
+                return PressGiftRestart(app, t, flags, true);
+            }, new[] { 820, 402 });
         }
 
         static void CheckSameFrameLifts(System.Action<string, bool, string> Check)

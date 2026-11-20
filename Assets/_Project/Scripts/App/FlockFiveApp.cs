@@ -473,7 +473,7 @@ namespace FlockFive
         // The pointer still down from the tap that left the level. Its release
         // is swallowed. A later press is a new gesture and is not.
         static bool _exitPointerHeld;
-        static int _exitPointerId = -1;
+        static int _exitPointerId = PlayPointer.MouseId;
         static int _exitPointerFrame = -1;
         bool _skipSplashSettle;
 
@@ -4000,15 +4000,23 @@ namespace FlockFive
 #endif
                         return;
                     }
-                    // A point on Restart is Restart. HitHud can return on the
-                    // hive or the top bar before it reaches ActRestart. The X
-                    // claim already had its chance above, and it sits below
-                    // this button.
+                    // A point on Restart is Restart, after the same covers HitHud
+                    // uses. The gift card's own veil is not one of them: Restart
+                    // stays live under that card. One call, then return, so the
+                    // later HitHud cannot fire Restart again. The resume window
+                    // is inside ActRestart.
                     if (_gift == GiftFace.Card && !_freezeOffer)
                     {
                         HudShaken(out var restartNow, out _);
                         if (restartNow.width > 2f && restartNow.Contains(PlayPointer.At))
                         {
+                            if (RestartCovered(tap))
+                            {
+#if UNITY_EDITOR
+                                EditorTapStop = "restart-covered";
+#endif
+                                return;
+                            }
 #if UNITY_EDITOR
                             EditorTapStop = "restart-point";
 #endif
@@ -4163,7 +4171,7 @@ namespace FlockFive
 
         int _gloveTookFrame = -1;
         bool _glovePressLatched;
-        int _glovePressId = -1;
+        int _glovePressId = PlayPointer.MouseId;
         // Down swallowed by the resume gate. Its Up must not hop after the window.
         int _gloveSwallowedId = int.MinValue;
         // Fingers that went down while the resume window was open. Each id is its own
@@ -4194,7 +4202,7 @@ namespace FlockFive
         void DropGlovePress()
         {
             _glovePressLatched = false;
-            _glovePressId = -1;
+            _glovePressId = PlayPointer.MouseId;
             // A stale down id must not own the next release. The down-control
             // record stays until the next Down. The hop stamp stays too: clearing
             // it here lets a second hop through on a HUD release.
@@ -4205,7 +4213,7 @@ namespace FlockFive
 
         void NoteDownAtHide(int id)
         {
-            if (id == int.MinValue) id = -1;
+            if (id == int.MinValue) id = PlayPointer.MouseId;
             _downAtHide.Add(id);
         }
 
@@ -4280,7 +4288,7 @@ namespace FlockFive
         bool ResumeHolds(int pointerId)
         {
             if (GateNow >= _resumeInputUntil) return false;
-            if (pointerId == int.MinValue) pointerId = -1;
+            if (pointerId == int.MinValue) pointerId = PlayPointer.MouseId;
             return _downAtHide.Contains(pointerId);
         }
 
@@ -4298,7 +4306,7 @@ namespace FlockFive
                 && GloveFingerMatches(_gloveSwallowedId, pointerId);
         }
 
-        static int ResumeFinger(int pointerId) => pointerId == int.MinValue ? -1 : pointerId;
+        static int ResumeFinger(int pointerId) => pointerId == int.MinValue ? PlayPointer.MouseId : pointerId;
 
         void RememberResumeOrigin(int pointerId)
         {
@@ -4352,7 +4360,7 @@ namespace FlockFive
                 return PlayPointer.MouseId;
             }
             int id = PressIdNow();
-            return id == int.MinValue ? -1 : id;
+            return id == int.MinValue ? PlayPointer.MouseId : id;
         }
 
         // Where this finger went down, including a press an overlay then claims.
@@ -7871,7 +7879,7 @@ namespace FlockFive
         void CaptureLevelExitPointer()
         {
             _exitPointerHeld = false;
-            _exitPointerId = -1;
+            _exitPointerId = PlayPointer.MouseId;
             var touch = Touchscreen.current;
             if (touch != null)
             {
@@ -8019,7 +8027,7 @@ namespace FlockFive
         {
             if (resolved >= 0) return resolved;
             if (released) return releasedId;
-            return resolved == int.MinValue ? -1 : resolved;
+            return resolved == int.MinValue ? PlayPointer.MouseId : resolved;
         }
 
         static int HomeEventId(Event e, bool down, bool up)
@@ -8033,7 +8041,7 @@ namespace FlockFive
             }
             int press = PressIdNow();
             if (down && press != int.MinValue) return press;
-            return -1;
+            return PlayPointer.MouseId;
         }
 
 #if UNITY_EDITOR
@@ -8136,7 +8144,7 @@ namespace FlockFive
 
         static bool PressReleased(out int id)
         {
-            id = -1;
+            id = PlayPointer.MouseId;
 #if UNITY_EDITOR
             if (EditorPointerInject.On && EditorPointerInject.Up)
             {
@@ -8190,17 +8198,17 @@ namespace FlockFive
                 bool down = pressId != int.MinValue;
                 int upId;
                 bool up = PressReleased(out upId);
-                int id = down ? pressId : -1;
+                int id = down ? pressId : PlayPointer.MouseId;
                 if (up)
                 {
                     // The finger that left the level still clears the gate when another
                     // press is reported on the same call. HomePointerId keeps a
                     // nonnegative press and would leave that release unread.
                     bool carryUp = _app._homeGate.CarryHeld && upId == _app._homeGate.CarryId;
-                    id = carryUp ? upId : HomePointerId(down ? pressId : -1, true, upId);
+                    id = carryUp ? upId : HomePointerId(down ? pressId : PlayPointer.MouseId, true, upId);
                 }
                 else if (!down)
-                    id = -1;
+                    id = PlayPointer.MouseId;
 #if UNITY_EDITOR
                 trace.BlockRan = true;
                 trace.Down = down;
@@ -8234,7 +8242,7 @@ namespace FlockFive
             if (GateNow < _resumeInputUntil)
             {
                 int rid = PressIdNow();
-                if (rid == int.MinValue) rid = -1;
+                if (rid == int.MinValue) rid = PlayPointer.MouseId;
                 if (_app != null && _app.ResumeHolds(rid)) return false;
             }
             if (StartupInputHeld) return false;
@@ -8455,6 +8463,18 @@ namespace FlockFive
         bool GloveOwnsHudPress()
         {
             return _glovePressLatched || _gloveTookFrame == Time.frameCount;
+        }
+
+        // Lesson, hive inspect, and a veil that is not this gift card.
+        // The card's own veil does not count: Restart stays live under it.
+        bool RestartCovered(Vector2 bottom)
+        {
+            if (EatGardenLessonTap(bottom) || LessonTapBlocked()) return true;
+            if (_hiveInspect >= 0 || _levelHive) return true;
+            var veil = ActiveVeil();
+            if (veil.Open && veil.Owner != ModalBlock.Id.Gift && VeilDrops(bottom))
+                return true;
+            return false;
         }
 
         bool ActRestart()
@@ -8815,7 +8835,7 @@ namespace FlockFive
             }
             if (_splash && _home == HomeFace.Splash && !(_avatarRename && PlateControlAt(play)))
             {
-                int id = -1;
+                int id = PlayPointer.MouseId;
                 if (tapEdge)
                     id = HomeEventId(tapEv, !release, release);
 #if UNITY_EDITOR
