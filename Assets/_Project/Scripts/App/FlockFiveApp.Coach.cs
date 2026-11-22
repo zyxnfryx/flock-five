@@ -2115,9 +2115,29 @@ namespace FlockFive
             _gloveKeepOff = default;
             _gloveInward = false;
             _glovePoseFrame = Time.frameCount;
-            // The finger is only up while a cue seats it this frame.
-            if (_coachTapOn && _coachTapFrame != Time.frameCount)
-                HideCoachTap();
+            // The finger is only up while a cue seats it this frame. A direct
+            // CoachTapAt loop never takes this clear, so the tests moved and
+            // the live hand did not. Wiping the phase here left the glove on
+            // the rest pose, about 20px short of the birds, for every frame.
+            // Keep the phase when the cue sat last frame. Zero it only after
+            // a frame that did not seat the finger again.
+            if (_coachTapFrame >= 0 && _coachTapFrame != Time.frameCount)
+            {
+                if (_coachTapOn)
+                {
+                    _coachTapOn = false;
+                    _gloveVis = false;
+                    _gloveHoldPose = false;
+                }
+                else
+                {
+                    _glovePhase = 0f;
+                    _gloveDip = 0f;
+                    _gloveHoldDip = 0f;
+                    _tapSent = false;
+                    _coachTapFrame = -1;
+                }
+            }
             float dt = PlayClock.Delta;
             NoteGloveTap();
             TickGloveAct(dt);
@@ -3159,6 +3179,10 @@ namespace FlockFive
         {
             _coachTapOn = false;
             _coachTapFrame = -1;
+            _glovePhase = 0f;
+            _gloveDip = 0f;
+            _gloveHoldDip = 0f;
+            _tapSent = false;
             _gloveVis = false;
             _gloveTapRect = default;
             _gloveTapRectOn = false;
@@ -3181,7 +3205,9 @@ namespace FlockFive
             var homeNow = CornerAnchor.TopBarHome(restartNow, PhoneArea.W, PhoneArea.Safe);
             var giftNow = _gift == GiftFace.Card ? GiftCloseHit() : default;
             var pose = CoachTapSide(target, avoid, PhoneArea.W, PhoneArea.H, PhoneArea.Safe, homeNow, restartNow, giftNow);
-            float prev = _coachTapOn ? _glovePhase : 0f;
+            // Phase survives the frame-start clear above. A real HideCoachTap
+            // zeros it, so a new cue still starts at the rest pose.
+            float prev = _glovePhase;
             if (!_coachTapOn) _tapSent = false;
             float next = prev + Mathf.Max(0f, dt);
             float pressAt = TapHover + TapPress;
@@ -3207,6 +3233,7 @@ namespace FlockFive
             _gloveLockAim = pose.End;
             _gloveStepAim = pose.End;
             _gloveHoldPose = true;
+            _gloveHoldDip = dip;
             _gloveDip = dip;
             _gloveAlpha = 1f;
             _gloveAct = TutorGloveAct.Live;
