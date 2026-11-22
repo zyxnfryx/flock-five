@@ -137,9 +137,9 @@ namespace FlockFive
         // cues use CoachTapAt, which seats the fingertip on the edge.
         public static Vector2 GloveTarget(Rect r) => r.center;
 
-        // How far the stationary finger presses toward the control, in GUI pixels.
-        // The whole tap loop stays inside this. There is no wind-up.
-        public const float CoachTapPressPx = 8f;
+        // How far the finger pokes toward the control, in GUI pixels. 8 read as
+        // a still hand. The clamp shortens this only when the screen edge is close.
+        public const float CoachTapPressPx = 28f;
 
         // A label sitting in the middle of a control. The fingertip stays outside it.
         public static Rect CoachTapLabel(Rect control)
@@ -1951,28 +1951,32 @@ namespace FlockFive
             }
             else
                 known = TutorCaptionPlate(out plate);
-            // b98: always the sideways approach (right to left, hand pointing left), never from below.
-            var branch = LessonBranchRect(aimGui, s);
-            if (known) aim = GardenSidewaysAim(aimGui, plate, s, PhoneArea.W, out _);
-            aim = KeepTipOnBranch(aim, branch);
-            // The sideways nudge can park the hand in the column gap or the next row.
-            // The settle point is the live wood, in the same space the board hit-tests.
+            // The cue aim is the top bird. The wood is the whole stick, and its far
+            // edge is the gap, so the contact stays on the bird cluster.
+            var birds = LessonBranchRect(aim, s);
+            if (known)
+            {
+                var nudged = KeepTipOnBranch(GardenSidewaysAim(aim, plate, s, PhoneArea.W, out _), birds);
+                birds = new Rect(nudged.x - birds.width * 0.5f, nudged.y - birds.height * 0.45f, birds.width, birds.height);
+            }
             if (TryLiveBranch(out var live, out var woodWorld))
             {
-                var cam = _garden.Cam;
-                var sp = cam.WorldToScreenPoint(woodWorld);
-                aim = new Vector2(sp.x, PhoneArea.H - sp.y);
-                aim.x = Mathf.Clamp(aim.x, live.xMin + 1f, live.xMax - 1f);
-                aim.y = Mathf.Clamp(aim.y, live.yMin + 1f, live.yMax - 1f);
                 _lessonWoodGui = live;
                 _cueAimWorld = woodWorld;
+                var c = birds.center;
+                float halfW = birds.width * 0.5f;
+                float halfH = birds.height * 0.45f;
+                float xLo = live.xMin + halfW;
+                float xHi = live.xMax - halfW;
+                float yLo = live.yMin + halfH;
+                float yHi = live.yMax - halfH;
+                c.x = xHi >= xLo ? Mathf.Clamp(c.x, xLo, xHi) : (live.xMin + live.xMax) * 0.5f;
+                c.y = yHi >= yLo ? Mathf.Clamp(c.y, yLo, yHi) : (live.yMin + live.yMax) * 0.5f;
+                birds.center = c;
             }
-            // Left-half target: in from the right, hand pointing left. A target at the right edge (Level 1
-            // step 2, branch 5) has no room on its right for the hand, so it is met from the left, pointing
-            // right (the mirrored default side approach), still level with the target. Never from below.
+            // Left-half birds: in from the right, hand pointing left, cuff in the gap.
             var avoid = known ? plate : default(Rect);
-            var finger = _lessonWoodGui.width > 8f ? _lessonWoodGui : branch;
-            return CoachTapAt(finger, avoid, dt, tapHit);
+            return CoachTapAt(birds, avoid, dt, tapHit);
         }
 
         void CoachPlace()
