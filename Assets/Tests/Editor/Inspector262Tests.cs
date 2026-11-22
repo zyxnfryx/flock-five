@@ -945,6 +945,7 @@ namespace FlockFive.Editor
 
         static void CheckGardenBirdPoke(System.Action<string, bool, string> Check)
         {
+            var go = new GameObject("garden-bird-poke");
             var winOn = typeof(PhoneArea).GetField("EditorWindowOn", BindingFlags.NonPublic | BindingFlags.Static);
             var winW = typeof(PhoneArea).GetField("EditorWindowW", BindingFlags.NonPublic | BindingFlags.Static);
             var winH = typeof(PhoneArea).GetField("EditorWindowH", BindingFlags.NonPublic | BindingFlags.Static);
@@ -957,6 +958,16 @@ namespace FlockFive.Editor
             float keepBot = (float)safeBot.GetValue(null);
             try
             {
+                AdPause.ResetForTest();
+                GamePause.Reset();
+                PlayClock.StepForTest(0.06f);
+                float playDt = PlayClock.Delta;
+                float showDt = ShowClock.Delta;
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var coach = typeof(FlockFiveApp).GetMethod("CoachTapAt", flags);
+                var t = typeof(FlockFiveApp);
+                bool held = true;
                 foreach (var size in new[] { new Vector2(820f, 1180f), new Vector2(402f, 874f), new Vector2(412f, 915f), new Vector2(360f, 800f) })
                 {
                     winOn.SetValue(null, true);
@@ -966,20 +977,69 @@ namespace FlockFive.Editor
                     safeBot.SetValue(null, 34f);
                     float w = PhoneArea.W;
                     float h = PhoneArea.H;
-                    var birds = FlockFiveApp.L1BranchRect(0, w, h);
-                    var pose = FlockFiveApp.CoachTapSide(birds, default, w, h, PhoneArea.Safe, default, default, default);
-                    float amp = Vector2.Distance(pose.Rest, pose.End);
-                    bool capped = amp > 0.5f && (pose.FromLeft ? pose.Glove.xMin <= 1.5f : pose.Glove.xMax >= w - 1.5f);
-                    float contactX = pose.FromLeft ? pose.Glove.xMax : pose.Glove.xMin;
-                    var tip = new Rect(contactX - 2f, pose.End.y - 2f, 4f, 4f);
-                    bool onBird = tip.Overlaps(birds);
+                    var birds = FlockFiveApp.FirstGardenTipBirds(w, h);
+                    var aim = FlockFiveApp.GardenPokeTarget(birds, w, h);
+                    var center = FlockFiveApp.FirstGardenBranch(w, h);
+                    var wood = FlockFiveApp.PlayGui(BranchHit.WoodRect(center, false, false), w, h);
+                    object[] hud = { default(Rect), default(Rect) };
+                    t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                    var restart = (Rect)hud[0];
+                    var home = CornerAnchor.TopBarHome(restart, w, PhoneArea.Safe);
+                    var pose = FlockFiveApp.CoachTapSide(aim, default, w, h, PhoneArea.Safe, home, restart, default);
+                    float amp = Mathf.Abs(pose.Rest.x - pose.End.x);
+                    bool flush = pose.FromLeft ? pose.Glove.xMin <= 1.5f : pose.Glove.xMax >= w - 1.5f;
+                    bool capped = amp + 0.75f < FlockFiveApp.CoachTapPressPx && flush && amp > 0.5f;
+                    var endpoint = new Rect(pose.End.x - 1f, pose.End.y - 1f, 2f, 2f);
+                    bool onBird = birds.width > 8f && endpoint.Overlaps(birds)
+                        && pose.End.x > birds.xMin + 0.5f && pose.End.x < birds.xMax - 0.5f
+                        && pose.End.y > birds.yMin + 0.5f && pose.End.y < birds.yMax - 0.5f
+                        && !pose.FromLeft && pose.End.x < wood.xMax - 12f;
                     bool inside = GloveInside(pose.Glove, w, 59f, h - 34f);
+                    t.GetField("_coachTapOn", flags).SetValue(app, false);
+                    t.GetField("_glovePhase", flags).SetValue(app, 0f);
+                    t.GetField("_gloveVis", flags).SetValue(app, false);
+                    t.GetField("_coachFade", flags).SetValue(app, 1f);
+                    Vector2 start = default;
+                    Vector2 end = default;
+                    float bestDip = -1f;
+                    float span = 0f;
+                    if (held)
+                    {
+                        Vector2 still = default;
+                        for (int i = 0; i < 4; i++)
+                        {
+                            coach.Invoke(app, new object[] { aim, default(Rect), 0f, null });
+                            var tip = (Vector2)t.GetField("_gloveShown", flags).GetValue(app);
+                            if (i == 0) still = tip;
+                            else if ((tip - still).magnitude > 0.5f) held = false;
+                        }
+                        t.GetField("_coachTapOn", flags).SetValue(app, false);
+                        t.GetField("_glovePhase", flags).SetValue(app, 0f);
+                    }
+                    for (int i = 0; i < 24; i++)
+                    {
+                        coach.Invoke(app, new object[] { aim, default(Rect), playDt, null });
+                        var tip = (Vector2)t.GetField("_gloveShown", flags).GetValue(app);
+                        float dip = (float)t.GetField("_gloveDip", flags).GetValue(app);
+                        if (i == 0) start = tip;
+                        span = Mathf.Max(span, (tip - start).magnitude);
+                        if (dip >= bestDip) { bestDip = dip; end = tip; }
+                    }
+                    bool moved = bestDip > 0.9f && span + 0.6f >= amp && (end - pose.End).magnitude < 1.5f;
                     string tag = ((int)size.x).ToString();
-                    string detail = "amp " + amp.ToString("0.0") + " tip " + tip + " glove " + pose.Glove;
-                    Check("garden-poke-amplitude-" + tag, amp >= 20f || capped, detail);
+                    string detail = "amp " + amp.ToString("0.0") + " span " + span.ToString("0.0")
+                        + " end " + pose.End + " birds " + birds + " glove " + pose.Glove;
+                    Check("garden-poke-amplitude-" + tag, (amp >= 20f || capped) && moved, detail);
                     Check("garden-fingertip-on-birds-" + tag, onBird, detail);
                     Check("garden-poke-inside-play-" + tag, inside, detail);
                 }
+                Check("garden-poke-follows-clock",
+                    playDt > 0.05f && Mathf.Abs(showDt - playDt) < 0.0001f && held,
+                    "play " + playDt.ToString("0.000") + " show " + showDt.ToString("0.000") + " held " + held);
+            }
+            catch (System.Exception ex)
+            {
+                Check("garden-bird-poke", false, ex.GetType().Name + " " + ex.Message);
             }
             finally
             {
@@ -988,6 +1048,7 @@ namespace FlockFive.Editor
                 winH.SetValue(null, keepH);
                 safeTop.SetValue(null, keepTop);
                 safeBot.SetValue(null, keepBot);
+                if (go != null) UnityEngine.Object.DestroyImmediate(go);
             }
         }
 
