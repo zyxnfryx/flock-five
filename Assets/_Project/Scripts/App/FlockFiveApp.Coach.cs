@@ -1937,6 +1937,101 @@ namespace FlockFive
             return new Rect(tip.x - dw * 0.5f, tip.y - dh * 0.35f, dw, dh);
         }
 
+        // Perched body, the box the leaf curtain clears. Not the sprite canvas.
+        const float PerchHalfW = 0.72f;
+        const float PerchAbove = 0.58f;
+        const float PerchBelow = 0.84f;
+
+        // World rect of the tip run. Seat 0 is the trunk. Y is up.
+        public static Rect TipBirdsWorld(Vector2 center, bool fromRight, bool gift, int count, int run)
+        {
+            if (count < 1 || run < 1) return default;
+            if (count > BranchState.Cap) count = BranchState.Cap;
+            if (run > count) run = count;
+            int tip = count - 1;
+            int first = tip - run + 1;
+            float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+            for (int s = first; s <= tip; s++)
+            {
+                var seat = WorldBuilder.SeatLocal(s, gift, fromRight);
+                float cx = center.x + seat.x;
+                float cy = center.y + seat.y + BranchView.RestLift;
+                float left = cx - PerchHalfW, right = cx + PerchHalfW;
+                float bot = cy - PerchBelow, top = cy + PerchAbove;
+                if (left < x0) x0 = left;
+                if (right > x1) x1 = right;
+                if (bot < y0) y0 = bot;
+                if (top > y1) y1 = top;
+            }
+            return Rect.MinMaxRect(x0, y0, x1, y1);
+        }
+
+        // Top-left limb of Dawn Garden, at the resting camera. Play pixels in, world out.
+        public static Vector2 FirstGardenBranch(float playW, float playH)
+        {
+            float window = playW / Mathf.Max(1f, playH);
+            float aspect = DeviceFit.PlayAspect(window);
+            float tall = Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, window));
+            float limbX = WorldBuilder.CamOrtho * aspect - WorldBuilder.WoodHalf + 0.18f;
+            return new Vector2(-limbX, WorldBuilder.RowY0For(tall));
+        }
+
+        // Resting play camera to GUI pixels (y down), including the tall-phone letterbox.
+        public static Vector2 WorldToPlay(Vector2 world, float playW, float playH)
+        {
+            float window = playW / Mathf.Max(1f, playH);
+            float want = DeviceFit.PlayAspect(window);
+            float halfH = WorldBuilder.CamOrtho;
+            float halfW = halfH * want;
+            float vh = 1f, vy = 0f, vw = 1f, vx = 0f;
+            if (window < want - 0.03f)
+            {
+                vh = window / want;
+                vy = (1f - vh) * 0.5f;
+            }
+            else if (window > want + 0.03f)
+            {
+                vw = want / window;
+                vx = (1f - vw) * 0.5f;
+            }
+            float nx = world.x / Mathf.Max(0.001f, halfW) * 0.5f + 0.5f;
+            float ny = (world.y - WorldBuilder.CamRestY) / halfH * 0.5f + 0.5f;
+            return new Vector2((vx + nx * vw) * playW, playH - (vy + ny * vh) * playH);
+        }
+
+        public static Rect PlayGui(Rect world, float playW, float playH)
+        {
+            if (world.width < 0.001f || world.height < 0.001f) return default;
+            var a = WorldToPlay(new Vector2(world.xMin, world.yMin), playW, playH);
+            var b = WorldToPlay(new Vector2(world.xMax, world.yMax), playW, playH);
+            return Rect.MinMaxRect(
+                Mathf.Min(a.x, b.x), Mathf.Min(a.y, b.y),
+                Mathf.Max(a.x, b.x), Mathf.Max(a.y, b.y));
+        }
+
+        // The three reds on the top-left branch, in GUI pixels.
+        public static Rect FirstGardenTipBirds(float playW, float playH)
+        {
+            var center = FirstGardenBranch(playW, playH);
+            return PlayGui(TipBirdsWorld(center, false, false, 3, 3), playW, playH);
+        }
+
+        // CoachTapAt stops on the near edge, and the fingertip pivot sits back from
+        // that edge by the sprite hang. Inset both sides so the pivot lands on the
+        // birds whichever side fits.
+        public static Rect GardenPokeTarget(Rect birds, float playW, float playH)
+        {
+            if (birds.width < 8f || birds.height < 4f) return birds;
+            float s = DeviceFit.Ui(playW, playH);
+            MeasureTap(false, s, 1f, out float pastRight, out _, out _, out _);
+            MeasureTap(true, s, 1f, out float pastLeft, out _, out _, out _);
+            float tuck = Mathf.Max(pastRight, pastLeft) + 6f;
+            float maxTuck = (birds.width - 8f) * 0.5f;
+            if (maxTuck < 1f) return birds;
+            if (tuck > maxTuck) tuck = maxTuck;
+            return new Rect(birds.x + tuck, birds.y, birds.width - tuck * 2f, birds.height);
+        }
+
         bool GardenGlove(Vector2 aimGui, float dt, float s, System.Func<Vector2, bool> tapHit)
         {
             var aim = aimGui;
@@ -1951,32 +2046,62 @@ namespace FlockFive
             }
             else
                 known = TutorCaptionPlate(out plate);
-            // The cue aim is the top bird. The wood is the whole stick, and its far
-            // edge is the gap, so the contact stays on the bird cluster.
-            var birds = LessonBranchRect(aim, s);
-            if (known)
-            {
-                var nudged = KeepTipOnBranch(GardenSidewaysAim(aim, plate, s, PhoneArea.W, out _), birds);
-                birds = new Rect(nudged.x - birds.width * 0.5f, nudged.y - birds.height * 0.45f, birds.width, birds.height);
-            }
+            // b98: always the sideways approach (right to left, hand pointing left), never from below.
+            var branch = LessonBranchRect(aimGui, s);
+            if (known) aim = GardenSidewaysAim(aimGui, plate, s, PhoneArea.W, out _);
+            aim = KeepTipOnBranch(aim, branch);
+            // The sideways nudge can park the hand in the column gap or the next row.
+            // The settle point is the live wood, in the same space the board hit-tests.
             if (TryLiveBranch(out var live, out var woodWorld))
             {
+                var cam = _garden.Cam;
+                var sp = cam.WorldToScreenPoint(woodWorld);
+                aim = new Vector2(sp.x, PhoneArea.H - sp.y);
+                aim.x = Mathf.Clamp(aim.x, live.xMin + 1f, live.xMax - 1f);
+                aim.y = Mathf.Clamp(aim.y, live.yMin + 1f, live.yMax - 1f);
                 _lessonWoodGui = live;
                 _cueAimWorld = woodWorld;
-                var c = birds.center;
-                float halfW = birds.width * 0.5f;
-                float halfH = birds.height * 0.45f;
-                float xLo = live.xMin + halfW;
-                float xHi = live.xMax - halfW;
-                float yLo = live.yMin + halfH;
-                float yHi = live.yMax - halfH;
-                c.x = xHi >= xLo ? Mathf.Clamp(c.x, xLo, xHi) : (live.xMin + live.xMax) * 0.5f;
-                c.y = yHi >= yLo ? Mathf.Clamp(c.y, yLo, yHi) : (live.yMin + live.yMax) * 0.5f;
-                birds.center = c;
             }
-            // Left-half birds: in from the right, hand pointing left, cuff in the gap.
+            // Left-half target: in from the right, hand pointing left. A target at the right edge (Level 1
+            // step 2, branch 5) has no room on its right for the hand, so it is met from the left, pointing
+            // right (the mirrored default side approach), still level with the target. Never from below.
             var avoid = known ? plate : default(Rect);
-            return CoachTapAt(birds, avoid, dt, tapHit);
+            // First cue only: the three reds. The wood's near edge is the far end of
+            // the stick, out in the gap. Later hops, the leaf lesson, and pest gloves
+            // still aim at that wood rect.
+            bool firstBirds = _pestCue == 0 && !_leafIntro && _coachMoves == 0;
+            if (firstBirds && TryCueBirdTarget(out var liveBirds))
+                return CoachTapAt(liveBirds, avoid, dt, tapHit);
+            if (firstBirds)
+                return CoachTapAt(GardenPokeTarget(FirstGardenTipBirds(PhoneArea.W, PhoneArea.H), PhoneArea.W, PhoneArea.H), avoid, dt, tapHit);
+            var finger = _lessonWoodGui.width > 8f ? _lessonWoodGui : branch;
+            return CoachTapAt(finger, avoid, dt, tapHit);
+        }
+
+        // Tip-run birds of the cued limb, inset so the fingertip lands on them.
+        bool TryCueBirdTarget(out Rect target)
+        {
+            target = default;
+            if (!CoachView(out var view) || _board == null || _garden.Cam == null) return false;
+            if ((uint)_cueBranch >= (uint)_board.Branches.Count) return false;
+            var st = _board.Branches[_cueBranch];
+            int run = st.TipRun();
+            if (run < 1 || st.Count < 1) return false;
+            var world = TipBirdsWorld(view.transform.position, view.FromRight, view.IsGift, st.Count, run);
+            var gui = CameraBirdGui(world, _garden.Cam);
+            if (gui.width < 4f || gui.height < 4f) return false;
+            target = GardenPokeTarget(gui, PhoneArea.W, PhoneArea.H);
+            return target.width > 2f && target.height > 2f;
+        }
+
+        static Rect CameraBirdGui(Rect world, Camera cam)
+        {
+            var a = cam.WorldToScreenPoint(new Vector3(world.xMin, world.yMax, 0f));
+            var b = cam.WorldToScreenPoint(new Vector3(world.xMax, world.yMin, 0f));
+            float x0 = Mathf.Min(a.x, b.x), x1 = Mathf.Max(a.x, b.x);
+            float y0 = PhoneArea.H - Mathf.Max(a.y, b.y);
+            float y1 = PhoneArea.H - Mathf.Min(a.y, b.y);
+            return Rect.MinMaxRect(x0, y0, x1, y1);
         }
 
         void CoachPlace()
