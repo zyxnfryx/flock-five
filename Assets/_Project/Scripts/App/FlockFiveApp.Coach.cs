@@ -1937,8 +1937,12 @@ namespace FlockFive
             return new Rect(tip.x - dw * 0.5f, tip.y - dh * 0.35f, dw, dh);
         }
 
-        // Perched body, the box the leaf curtain clears. Not the sprite canvas.
-        const float PerchHalfW = 0.72f;
+        // Chest on the beak side, in world units from the seat. The beak tip is
+        // about 0.70; the thick body ends near 0.30 (1024px ruby at 220 ppu,
+        // BirdScale 0.42). Aiming at the beak leaves the finger in the air, and
+        // that gap grows with the board. The chest keeps every size within a
+        // few pixels of the bird.
+        const float PerchHalfW = 0.30f;
         const float PerchAbove = 0.58f;
         const float PerchBelow = 0.84f;
 

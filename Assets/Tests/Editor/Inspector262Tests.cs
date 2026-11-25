@@ -1185,11 +1185,15 @@ namespace FlockFive.Editor
                             full = shown;
                         }
                     }
-                    var tip = new Rect(full.x - 1.5f, full.y - 1.5f, 3f, 3f);
-                    bool touch = showed && bestDip > 0.9f && birds.width > 8f && tip.Overlaps(birds);
+                    // Positive means the tip is still in the gap, past the chest.
+                    float pastEdge = full.x - birds.xMax;
+                    bool touch = showed && bestDip > 0.9f && birds.width > 8f
+                        && pastEdge <= 8f && pastEdge >= -8f
+                        && full.y > birds.yMin && full.y < birds.yMax;
                     float travel = showed ? maxX - minX : 0f;
                     string tag = ((int)size.x).ToString();
                     string detail = "travel " + travel.ToString("0.0") + " dip " + bestDip.ToString("0.00")
+                        + " gap " + pastEdge.ToString("0.0")
                         + " tip " + full + " birds " + birds + " vis " + showed;
                     Check("fresh-garden-poke-moves-" + tag, showed && travel >= 20f, detail);
                     Check("fresh-garden-fingertip-touches-" + tag, touch, detail);
