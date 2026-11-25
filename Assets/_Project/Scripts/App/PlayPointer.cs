@@ -29,10 +29,30 @@ namespace FlockFive
             return play.x >= 0f && play.y >= 0f && play.x <= PhoneArea.W && play.y <= PhoneArea.H;
         }
 
-        // The only pillar shift. Window GUI is top-origin and includes the bars.
+        // The only pillar shift for a raw window point (screen pixels, or an
+        // Event.mousePosition read before BeginGui sets the matrix).
         public static Vector2 Enter(Vector2 windowTop)
         {
             return new Vector2(windowTop.x - PhoneArea.OffX, windowTop.y);
+        }
+
+        // Event.mousePosition during OnGUI is already in the current GUI matrix.
+        // BeginGui translates by the pillar, so the mouse is in play space and a
+        // second OffX shift lands every HUD hit a pillar to the right of the art.
+        public static Vector2 FromGuiMouse(Vector2 mousePosition)
+        {
+            if (PillarAlreadyInMatrix(GUI.matrix)) return mousePosition;
+            return Enter(mousePosition);
+        }
+
+        public static bool PillarAlreadyInMatrix(Matrix4x4 matrix)
+        {
+            if (!PhoneArea.Pillar) return false;
+            float ox = PhoneArea.OffX;
+            if (ox < 1f) return false;
+            return Mathf.Abs(matrix.m03 - ox) <= 1f
+                && Mathf.Abs(matrix.m13) <= 1f
+                && Mathf.Abs(matrix.m23) <= 1f;
         }
 
         public static void CaptureWindow(Vector2 windowTop, bool down, bool up, int id)
@@ -69,7 +89,11 @@ namespace FlockFive
                 Live = false;
                 return;
             }
-            CaptureWindow(e.mousePosition, down, up, 0);
+            At = FromGuiMouse(e.mousePosition);
+            Live = true;
+            Down = down;
+            Up = up;
+            Id = 0;
         }
 
         public static void CaptureScreenBottom(Vector2 screenBottom, bool down, bool up, int id)
