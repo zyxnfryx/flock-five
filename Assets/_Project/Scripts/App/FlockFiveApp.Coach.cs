@@ -2015,6 +2015,27 @@ namespace FlockFive
                 Mathf.Max(a.x, b.x), Mathf.Max(a.y, b.y));
         }
 
+        // Head and beak of the rightmost bird in the run. World y is up.
+        // The beak points away from the trunk. The rect is the crown through
+        // the underside of the beak, so a hand on the chest can sit beneath it.
+        public static Rect TipBirdFaceWorld(Vector2 center, bool fromRight, bool gift, int count, int run)
+        {
+            if (count < 1 || run < 1) return default;
+            if (count > BranchState.Cap) count = BranchState.Cap;
+            if (run > count) run = count;
+            int tip = count - 1;
+            var seat = WorldBuilder.SeatLocal(tip, gift, fromRight);
+            float cx = center.x + seat.x;
+            float cy = center.y + seat.y + BranchView.RestLift;
+            const float crown = 0.58f;
+            const float beakBottom = 0.40f;
+            const float headBack = 0.08f;
+            const float beakTip = 0.72f;
+            float x0 = fromRight ? cx - beakTip : cx - headBack;
+            float x1 = fromRight ? cx + headBack : cx + beakTip;
+            return Rect.MinMaxRect(x0, cy + beakBottom, x1, cy + crown);
+        }
+
         // The three reds on the top-left branch, in GUI pixels.
         public static Rect FirstGardenTipBirds(float playW, float playH)
         {
@@ -2022,20 +2043,38 @@ namespace FlockFive
             return PlayGui(TipBirdsWorld(center, false, false, 3, 3), playW, playH);
         }
 
-        // CoachTapAt stops on the near edge, and the fingertip pivot sits back from
-        // that edge by the sprite hang. Inset both sides so the pivot lands on the
-        // birds whichever side fits.
-        public static Rect GardenPokeTarget(Rect birds, float playW, float playH)
+        public static Rect FirstGardenTipFace(float playW, float playH)
+        {
+            var center = FirstGardenBranch(playW, playH);
+            return PlayGui(TipBirdFaceWorld(center, false, false, 3, 3), playW, playH);
+        }
+
+        // Fingertip on the chest edge, and the full-poke glove below the head.
+        // The hang scales with the hand, so a bigger board does not bury the face.
+        public static Rect GardenPokeTarget(Rect birds, Rect face, float playW, float playH)
         {
             if (birds.width < 8f || birds.height < 4f) return birds;
             float s = DeviceFit.Ui(playW, playH);
-            MeasureTap(false, s, 1f, out float pastRight, out _, out _, out _);
-            MeasureTap(true, s, 1f, out float pastLeft, out _, out _, out _);
-            float tuck = Mathf.Max(pastRight, pastLeft) + 6f;
+            MeasureTap(false, s, 1f, out float pastRight, out _, out float aboveRight, out _);
+            MeasureTap(true, s, 1f, out float pastLeft, out _, out float aboveLeft, out _);
+            float tuck = Mathf.Max(pastRight, pastLeft) + 1f;
             float maxTuck = (birds.width - 8f) * 0.5f;
             if (maxTuck < 1f) return birds;
             if (tuck > maxTuck) tuck = maxTuck;
-            return new Rect(birds.x + tuck, birds.y, birds.width - tuck * 2f, birds.height);
+            float rise = Mathf.Max(aboveRight, aboveLeft);
+            float pivotY = birds.center.y;
+            if (face.height > 2f)
+            {
+                // GUI y grows downward. The pivot sits just below the beak,
+                // by the full height of the glove above the fingertip.
+                pivotY = face.yMax + rise + 1f;
+                float yLo = birds.yMin + 1f;
+                float yHi = birds.yMax - 1f;
+                if (yHi < yLo) pivotY = birds.center.y;
+                else if (pivotY < yLo) pivotY = yLo;
+                else if (pivotY > yHi) pivotY = yHi;
+            }
+            return new Rect(birds.x + tuck, pivotY - 4f, Mathf.Max(8f, birds.width - tuck * 2f), 8f);
         }
 
         bool GardenGlove(Vector2 aimGui, float dt, float s, System.Func<Vector2, bool> tapHit)
@@ -2079,7 +2118,7 @@ namespace FlockFive
             if (firstBirds && TryCueBirdTarget(out var liveBirds))
                 return CoachTapAt(liveBirds, avoid, dt, tapHit);
             if (firstBirds)
-                return CoachTapAt(GardenPokeTarget(FirstGardenTipBirds(PhoneArea.W, PhoneArea.H), PhoneArea.W, PhoneArea.H), avoid, dt, tapHit);
+                return CoachTapAt(GardenPokeTarget(FirstGardenTipBirds(PhoneArea.W, PhoneArea.H), FirstGardenTipFace(PhoneArea.W, PhoneArea.H), PhoneArea.W, PhoneArea.H), avoid, dt, tapHit);
             var finger = _lessonWoodGui.width > 8f ? _lessonWoodGui : branch;
             return CoachTapAt(finger, avoid, dt, tapHit);
         }
@@ -2094,9 +2133,11 @@ namespace FlockFive
             int run = st.TipRun();
             if (run < 1 || st.Count < 1) return false;
             var world = TipBirdsWorld(view.transform.position, view.FromRight, view.IsGift, st.Count, run);
+            var face = TipBirdFaceWorld(view.transform.position, view.FromRight, view.IsGift, st.Count, run);
             var gui = CameraBirdGui(world, _garden.Cam);
+            var faceGui = CameraBirdGui(face, _garden.Cam);
             if (gui.width < 4f || gui.height < 4f) return false;
-            target = GardenPokeTarget(gui, PhoneArea.W, PhoneArea.H);
+            target = GardenPokeTarget(gui, faceGui, PhoneArea.W, PhoneArea.H);
             return target.width > 2f && target.height > 2f;
         }
 

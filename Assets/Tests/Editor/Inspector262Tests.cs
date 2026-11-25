@@ -980,7 +980,7 @@ namespace FlockFive.Editor
                     float w = PhoneArea.W;
                     float h = PhoneArea.H;
                     var birds = FlockFiveApp.FirstGardenTipBirds(w, h);
-                    var aim = FlockFiveApp.GardenPokeTarget(birds, w, h);
+                    var aim = FlockFiveApp.GardenPokeTarget(birds, FlockFiveApp.FirstGardenTipFace(w, h), w, h);
                     var center = FlockFiveApp.FirstGardenBranch(w, h);
                     var wood = FlockFiveApp.PlayGui(BranchHit.WoodRect(center, false, false), w, h);
                     object[] hud = { default(Rect), default(Rect) };
@@ -1215,8 +1215,10 @@ namespace FlockFive.Editor
                     t.GetField("_sel", flags).SetValue(app, -1);
                     var world = FlockFiveApp.TipBirdsWorld(origin, false, false, 3, 3);
                     var birds = ProjectBirds(world, cam, h);
+                    var face = ProjectBirds(FlockFiveApp.TipBirdFaceWorld(origin, false, false, 3, 3), cam, h);
                     float minX = float.MaxValue, maxX = float.MinValue;
                     Vector2 full = default;
+                    Rect fullBox = default;
                     float bestDip = -1f;
                     bool inside = true;
                     bool showed = false;
@@ -1249,6 +1251,7 @@ namespace FlockFive.Editor
                         {
                             bestDip = dip;
                             full = shown;
+                            fullBox = box;
                         }
                         if (dip >= 0.98f) contactRun += 0.05f;
                         else
@@ -1270,8 +1273,10 @@ namespace FlockFive.Editor
                         + " gap " + pastEdge.ToString("0.0")
                         + " tip " + full + " birds " + birds + " vis " + showed;
                     Check("fresh-garden-poke-moves-" + tag, showed && travel >= 20f, detail);
+                    bool faceClear = showed && bestDip > 0.9f && face.width > 4f && !fullBox.Overlaps(face);
                     Check("fresh-garden-fingertip-touches-" + tag, touch, detail);
                     Check("fresh-garden-contact-hold-" + tag, showed && contactHold >= 0.30f && contactHold <= 0.45f, detail);
+                    Check("fresh-garden-face-visible-" + tag, faceClear, detail + " face " + face + " glove " + fullBox);
                     Check("fresh-garden-glove-inside-" + tag, showed && inside, detail);
                 }
             }
