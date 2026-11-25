@@ -480,12 +480,14 @@ namespace FlockFive
         // sheet's empty margin. The fingertip wants its center.
         static Vector2 BodyTouch(Rect drawn) => GloveTarget(drawn);
 
-        // Poke along the arc, soft curl, draw back, short pause. 0.56+0.26+0.22+0.16 = 1.20s.
-        const float TapHover = 0.56f;
-        const float TapPress = 0.26f;
-        const float TapLift = 0.22f;
-        const float TapPause = 0.16f;
-        const float TapCycle = TapHover + TapPress + TapLift + TapPause;
+        // Rest, ease in, hold on the bird, ease out, short rest.
+        // 0.22+0.14+0.36+0.14+0.10 = 0.96s. The hold is the part a player can see.
+        const float TapHover = 0.22f;
+        const float TapPress = 0.14f;
+        const float TapHold = 0.36f;
+        const float TapLift = 0.14f;
+        const float TapPause = 0.10f;
+        const float TapCycle = TapHover + TapPress + TapHold + TapLift + TapPause;
         // Tap hides the hand. The next step brings it back at the arc start.
         const float GloveFadeOutDur = 0.16f;
         const float GloveFadeInDur = 0.18f;
@@ -3628,36 +3630,40 @@ namespace FlockFive
         // 0 through the poke, 1 at full reach. The curl and the return both ease.
         static float TapDip(float phase)
         {
-            float pressAt = TapHover + TapPress;
             if (phase < TapHover) return 0f;
+            float pressAt = TapHover + TapPress;
             if (phase < pressAt)
             {
                 float u = (phase - TapHover) / TapPress;
                 return u * u * (3f - 2f * u);
             }
-            float liftEnd = pressAt + TapLift;
+            float holdEnd = pressAt + TapHold;
+            if (phase < holdEnd) return 1f;
+            float liftEnd = holdEnd + TapLift;
             if (phase < liftEnd)
             {
-                float u = (phase - pressAt) / TapLift;
+                float u = (phase - holdEnd) / TapLift;
                 float back = u * u * (3f - 2f * u);
                 return 1f - back;
             }
             return 0f;
         }
 
-        // 0 at the side hold, 1 at the end of the poke. One ease in, the same curve back out.
+        // 0 at the side hold, 1 through the poke and the hold, then back out.
         static float TapTravel(float phase)
         {
             float pressAt = TapHover + TapPress;
-            float liftEnd = pressAt + TapLift;
+            float holdEnd = pressAt + TapHold;
+            float liftEnd = holdEnd + TapLift;
             if (phase < pressAt)
             {
                 float u = phase / pressAt;
                 return u * u * (3f - 2f * u);
             }
+            if (phase < holdEnd) return 1f;
             if (phase < liftEnd)
             {
-                float u = (phase - pressAt) / TapLift;
+                float u = (phase - holdEnd) / TapLift;
                 float back = u * u * (3f - 2f * u);
                 return 1f - back;
             }

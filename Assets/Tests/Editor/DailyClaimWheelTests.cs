@@ -187,10 +187,10 @@ namespace FlockFive.Editor
                 var mid = FlockFiveApp.ClaimGloveArc(start, capSeat, 0.45f, arch);
                 var landed = FlockFiveApp.ClaimGloveArc(start, capSeat, 1f, arch);
                 var chord = Vector2.Lerp(start, capSeat, 0.45f);
-                float press = 0.82f;
+                float press = 0.36f;
                 float cycle = FlockFiveApp.ClaimGloveCycle;
                 var atPress = FlockFiveApp.ClaimGlovePose(start, capSeat, press, arch);
-                var parked = FlockFiveApp.ClaimGlovePose(start, capSeat, 1.10f, arch);
+                var parked = FlockFiveApp.ClaimGlovePose(start, capSeat, 0.90f, arch);
                 var again = FlockFiveApp.ClaimGlovePose(start, capSeat, press + cycle, arch);
                 Check("claim travel start path and seat differ " + tag,
                     apart > 70f
@@ -207,7 +207,7 @@ namespace FlockFive.Editor
                     (atPress - capSeat).magnitude < 0.5f
                     && (parked - start).magnitude < 0.5f
                     && (parked - atPress).magnitude > 28f
-                    && FlockFiveApp.ClaimGloveTravelAt(1.10f) < 0.01f
+                    && FlockFiveApp.ClaimGloveTravelAt(0.90f) < 0.01f
                     && FlockFiveApp.ClaimGloveTravelAt(press + cycle) > 0.9f
                     && (again - capSeat).magnitude < 12f
                     && Mathf.Abs(FlockFiveApp.ClaimGloveWrap(press + cycle) - FlockFiveApp.ClaimGloveWrap(press)) < 0.02f,

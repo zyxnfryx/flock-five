@@ -1155,6 +1155,7 @@ namespace FlockFive.Editor
                     float bestDip = -1f;
                     bool inside = true;
                     bool showed = false;
+                    float contactRun = 0f, contactHold = 0f;
                     for (int frame = 0; frame < 30; frame++)
                     {
                         int now = Time.frameCount;
@@ -1184,7 +1185,14 @@ namespace FlockFive.Editor
                             bestDip = dip;
                             full = shown;
                         }
+                        if (dip >= 0.98f) contactRun += 0.05f;
+                        else
+                        {
+                            if (contactRun > contactHold) contactHold = contactRun;
+                            contactRun = 0f;
+                        }
                     }
+                    if (contactRun > contactHold) contactHold = contactRun;
                     // Positive means the tip is still in the gap, past the chest.
                     float pastEdge = full.x - birds.xMax;
                     bool touch = showed && bestDip > 0.9f && birds.width > 8f
@@ -1193,10 +1201,12 @@ namespace FlockFive.Editor
                     float travel = showed ? maxX - minX : 0f;
                     string tag = ((int)size.x).ToString();
                     string detail = "travel " + travel.ToString("0.0") + " dip " + bestDip.ToString("0.00")
+                        + " hold " + contactHold.ToString("0.00")
                         + " gap " + pastEdge.ToString("0.0")
                         + " tip " + full + " birds " + birds + " vis " + showed;
                     Check("fresh-garden-poke-moves-" + tag, showed && travel >= 20f, detail);
                     Check("fresh-garden-fingertip-touches-" + tag, touch, detail);
+                    Check("fresh-garden-contact-hold-" + tag, showed && contactHold >= 0.30f && contactHold <= 0.45f, detail);
                     Check("fresh-garden-glove-inside-" + tag, showed && inside, detail);
                 }
             }
