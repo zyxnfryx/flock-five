@@ -1261,11 +1261,16 @@ namespace FlockFive.Editor
                         }
                     }
                     if (contactRun > contactHold) contactHold = contactRun;
-                    // Positive means the tip is still in the gap, past the chest.
+                    // Negative means the tip is inside the body outline. The red chest
+                    // starts past the dark rim; a tip on the perch or the outer
+                    // belly stays outside that line.
                     float pastEdge = full.x - birds.xMax;
+                    float ppu = FlockFiveApp.PlayPixelsPerWorld(w, h);
+                    float into = -pastEdge;
                     bool touch = showed && bestDip > 0.9f && birds.width > 8f
-                        && pastEdge <= 8f && pastEdge >= -8f
-                        && full.y > birds.yMin && full.y < birds.yMax;
+                        && into >= 0.10f * ppu && into <= 0.40f * ppu
+                        && full.y > birds.yMin && full.y < birds.yMax
+                        && full.y > face.yMax;
                     float travel = showed ? maxX - minX : 0f;
                     string tag = ((int)size.x).ToString();
                     string detail = "travel " + travel.ToString("0.0") + " dip " + bestDip.ToString("0.00")

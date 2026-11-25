@@ -1945,6 +1945,10 @@ namespace FlockFive
         // that gap grows with the board. The chest keeps every size within a
         // few pixels of the bird.
         const float PerchHalfW = 0.30f;
+        // At the lowered hand the belly is narrower than this outline, so the
+        // fingertip has to travel further in to overlap the red. Same distance
+        // on every board: about 12px on 820, about 7px on a phone.
+        public const float ChestOverlap = 0.22f;
         const float PerchAbove = 0.58f;
         const float PerchBelow = 0.84f;
 
@@ -1980,6 +1984,14 @@ namespace FlockFive
             float tall = Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, window));
             float limbX = WorldBuilder.CamOrtho * aspect - WorldBuilder.WoodHalf + 0.18f;
             return new Vector2(-limbX, WorldBuilder.RowY0For(tall));
+        }
+
+        // Play-canvas pixels per world unit at the resting camera. Grows with the board.
+        public static float PlayPixelsPerWorld(float playW, float playH)
+        {
+            float window = playW / Mathf.Max(1f, playH);
+            float halfW = WorldBuilder.CamOrtho * DeviceFit.PlayAspect(window);
+            return playW / Mathf.Max(0.001f, halfW * 2f);
         }
 
         // Resting play camera to GUI pixels (y down), including the tall-phone letterbox.
@@ -2057,7 +2069,7 @@ namespace FlockFive
             float s = DeviceFit.Ui(playW, playH);
             MeasureTap(false, s, 1f, out float pastRight, out _, out float aboveRight, out _);
             MeasureTap(true, s, 1f, out float pastLeft, out _, out float aboveLeft, out _);
-            float tuck = Mathf.Max(pastRight, pastLeft) + 1f;
+            float tuck = Mathf.Max(pastRight, pastLeft) + 1f + ChestOverlap * PlayPixelsPerWorld(playW, playH);
             float maxTuck = (birds.width - 8f) * 0.5f;
             if (maxTuck < 1f) return birds;
             if (tuck > maxTuck) tuck = maxTuck;
