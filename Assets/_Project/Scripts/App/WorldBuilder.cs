@@ -61,8 +61,32 @@ namespace FlockFive
         public const float CamRestY = -0.45f;
         public const float CamOrtho = 10.6f;
         // Tall phones: lift the rows so the flock sits mid-screen instead of low under a gap.
-        public static float RowY0 => RowY0For(PortraitLock.TallFactor());
-        public static float RowY0For(float tall) => 3.42f + 5.0f * (tall - 1f);
+        public static float RowY0
+        {
+            get
+            {
+                float h = Mathf.Max(1f, PhoneArea.H);
+                float w = PhoneArea.W > 2 ? PhoneArea.W : h * PortraitAspect;
+                var sa = PhoneArea.Safe;
+                float inset = sa.width < 2f || sa.height < 2f ? 0f : Mathf.Max(0f, h - sa.yMax) / h;
+                if (inset > 0.40f) inset = 0f;
+                return RowY0For(PortraitLock.TallFactor(), w, h, inset);
+            }
+        }
+        // Geometric top row, before the corner-button clearance drop.
+        public static float RowY0Base(float tall) => 3.42f + 5.0f * (tall - 1f);
+        public static float RowY0For(float tall) => RowY0Base(tall);
+        // Same row, lowered when the corner buttons would cover the top branches.
+        public static float RowY0For(float tall, float screenW, float screenH, float safeTopNorm)
+        {
+            float y = RowY0Base(tall);
+            if (screenW > 2f && screenH > 2f)
+            {
+                CornerAnchor.ContentDrop(screenW, screenH, safeTopNorm, out _, out float drop);
+                y -= drop;
+            }
+            return y;
+        }
         // Ring of the feeder art above the pivot (1024px @ 180 PPU × FeederView.Scale).
         // The painted rope above the ring may enter the island; the bulb must not.
         public const float FeederCrown = 1.34f;
@@ -76,18 +100,34 @@ namespace FlockFive
                 float h = Mathf.Max(1f, PhoneArea.H);
                 var sa = PhoneArea.Safe;
                 float inset = sa.width < 2f || sa.height < 2f ? 0f : Mathf.Max(0f, h - sa.yMax) / h;
-                return FeederYFor(PortraitLock.TallFactor(), inset);
+                return FeederYFor(PortraitLock.TallFactor(), inset, PhoneArea.W, h);
             }
         }
 
-        // Same as FeederY for a given tall factor and top safe inset (fraction of the screen height).
-        public static float FeederYFor(float tall, float safeTopNorm)
+        // Feeder pivot before the corner buttons push the row down.
+        public static float FeederYNatural(float tall, float safeTopNorm)
         {
             float legacy = 8.12f + CamOrtho * (tall - 1f);
             float top = CamRestY + CamOrtho * tall;
             float inset = safeTopNorm > 0.40f ? 0f : Mathf.Max(0f, safeTopNorm) * (CamOrtho * tall * 2f);
             float safe = top - inset - FeederSafeMargin - FeederCrown;
             return Mathf.Min(legacy, safe);
+        }
+
+        // Same as FeederY for a given tall factor and top safe inset (fraction of the screen height).
+        public static float FeederYFor(float tall, float safeTopNorm)
+            => FeederYFor(tall, safeTopNorm, 0f, 0f);
+
+        // Pass the window when the corner buttons must keep the bulbs below them.
+        public static float FeederYFor(float tall, float safeTopNorm, float screenW, float screenH)
+        {
+            float y = FeederYNatural(tall, safeTopNorm);
+            if (screenW > 2f && screenH > 2f)
+            {
+                CornerAnchor.ContentDrop(screenW, screenH, safeTopNorm, out float drop, out _);
+                y -= drop;
+            }
+            return y;
         }
 
         // Highest a perched bird's crown may sit so it stays clear of the feeder tray.

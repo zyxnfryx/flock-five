@@ -49,7 +49,22 @@ namespace FlockFive
         public const float BranchReachWorld = 3.45f + 0.6f;
         public static float TallFor(float w, float h) => Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, w / Mathf.Max(1f, h)));
         public static float PlayfieldTopGui(float w, float h)
-            => WorldToGui(w, h, 0f, WorldBuilder.RowY0For(TallFor(w, h)) + BranchReachWorld).y;
+            => PlayfieldTopGui(w, h, 0f);
+
+        // Top of the branch reach after the corner buttons have pushed the rows down.
+        public static float PlayfieldTopGui(float w, float h, float safeTopNorm)
+            => WorldToGui(w, h, 0f, WorldBuilder.RowY0For(TallFor(w, h), w, h, safeTopNorm) + BranchReachWorld).y;
+
+        // Hive plate inset from the safe-area edge. Home and Restart use this same pad.
+        public static float HiveEdgePad(float scale) => InsetRef * scale;
+
+        // 44 pt on a phone. Height / 852 is the point scale (1179x2556 is 3x of 393x852).
+        public static float PhoneCornerPx(float h)
+        {
+            float pt = h / 852f;
+            if (pt < 1f) pt = 1f;
+            return 44f * pt;
+        }
 
         // 44 pt minimum tap target, in px (Screen.dpi when known, else 1 px per pt).
         public static float MinTapPx(float dpi) => 44f * (dpi > 1f ? dpi / 163f : 1f);
@@ -127,49 +142,80 @@ namespace FlockFive
             return draw.xMin + draw.width * HiveArtFrac;
         }
 
-        // Top-right gutter of the top bar: right of every feeder bulb, above every branch / bird /
-        // perch reach, inside the safe area. The rect's right edge is the full halo quad
-        // (HiveArtRight). The counted glyph is RestartGlyphRight, which meets the pulled
-        // glow. The seat does not jump when the hive appears.
+        // Top-right corner. Outer right and top padding match the hive plate's inset
+        // from the safe edge. Phones are 44 pt. iPad keeps its previous size.
+        // Feeders and the top branches drop (ContentDrop) so this seat does not cover them.
         public static Rect TopBarRestart(float w, float h, Rect safe, float scale, float top, Rect hive)
         {
             if (safe.width < 2f || safe.height < 2f) safe = new Rect(0f, 0f, w, h);
             float safeTop = PhoneArea.GuiTopInset(h, safe);
+            // Same inset the hive plate keeps from the safe edge, on the right and the top.
+            float edge = HiveEdgePad(scale);
+            float size = TallPhone(w, h) ? PhoneCornerPx(h) : LegacyIpadSize(w, h, scale, top, hive, safeTop);
+            float y = safeTop + edge;
+            float right = safe.xMax - edge;
+            if (right > w) right = w;
+            if (right < size) right = size;
+            if (y < 0f) y = 0f;
+            return new Rect(right - size, y, size, size);
+        }
+
+        // iPad seat size from before the padding move. The right edge was the hive halo;
+        // the size itself stays, and the seat is then placed on the hive's edge pad.
+        static float LegacyIpadSize(float w, float h, float scale, float top, Rect hive, float safeTop)
+        {
             float pad = 6f * scale;
-            float limit = Mathf.Min(top, PlayfieldTopGui(w, h)) - pad;
+            float field = WorldToGui(w, h, 0f, WorldBuilder.RowY0Base(TallFor(w, h)) + BranchReachWorld).y;
+            float limit = Mathf.Min(top, field) - pad;
             float y = safeTop + pad;
+            float vert = limit - y;
+            if (vert < 0f) vert = 0f;
+            float size = Mathf.Min(SizeRef * scale, vert);
             float right = HiveArtRight(hive);
             if (right > w) right = w;
             if (right < 0f) right = 0f;
             float feeder = FeederRightGui(w, h);
-            float vert = limit - y;
-            if (vert < 0f) vert = 0f;
-            // Designed seat: the 72-ref plate, capped by the air above the playfield.
-            float size = Mathf.Min(SizeRef * scale, vert);
-            // Air from the widest feeder to the hive halo. The right edge stays on
-            // that halo, so the seat cannot grow past this without covering a bulb.
+            float gutter = right - (feeder + pad);
+            if (size > gutter) size = gutter;
             float clear = right - feeder;
             if (clear < 0f) clear = 0f;
-            if (TallPhone(w, h))
-            {
-                // The pad gutter (clear minus 6*scale) left a ~30 pt plate on a 3x
-                // phone. Use the full feeder air instead. iPad 820 and the 9:16
-                // column keep the gutter below, so that seat does not move.
-                if (size > clear) size = clear;
-            }
-            else
-            {
-                float gutter = right - (feeder + pad);
-                if (size > gutter) size = gutter;
-                // At least 44px, and the dpi tap target when the feeder air can hold it.
-                // Growth stops at FeederRightGui (already 0.12 world clear of the widest
-                // bulb) and never slides the right edge past the hive halo.
-                float tap = Mathf.Max(MinTapPx(0f), MinTapPx(Screen.dpi));
-                if (size < tap) size = tap < clear ? tap : clear;
-                if (size > vert) size = vert;
-            }
+            float tap = Mathf.Max(MinTapPx(0f), MinTapPx(Screen.dpi));
+            if (size < tap) size = tap < clear ? tap : clear;
+            if (size > vert) size = vert;
             if (size < 0f) size = 0f;
-            return new Rect(right - size, y, size, size);
+            return size;
+        }
+
+        // How far (world Y) to lower feeders and the top branches so they clear the corner buttons.
+        public static void ContentDrop(float w, float h, float safeTopNorm, out float feederDrop, out float branchDrop)
+        {
+            feederDrop = 0f;
+            branchDrop = 0f;
+            if (w < 2f || h < 2f) return;
+            if (safeTopNorm < 0f) safeTopNorm = 0f;
+            if (safeTopNorm > 0.45f) safeTopNorm = 0.45f;
+            float safeTop = safeTopNorm * h;
+            var safe = new Rect(0f, 0f, w, Mathf.Max(2f, h - safeTop));
+            Garden(w, h, safe, out _, out _, out _, out var restart, out _);
+            float world = GuiYToWorld(w, h, restart.yMax + 8f);
+            float tall = TallFor(w, h);
+            float crown = WorldBuilder.FeederYNatural(tall, safeTopNorm) + WorldBuilder.FeederCrown;
+            if (crown > world) feederDrop = crown - world;
+            float reach = WorldBuilder.RowY0Base(tall) + BranchReachWorld;
+            if (reach > world) branchDrop = reach - world;
+        }
+
+        public static float GuiYToWorld(float w, float h, float guiY)
+        {
+            float win = w / Mathf.Max(1f, h);
+            float want = DeviceFit.PlayAspect(win);
+            float py = 0f, ph = h;
+            if (Mathf.Abs(win - want) >= 0.03f && win <= want)
+            {
+                ph = h * win / want;
+                py = (h - ph) * 0.5f;
+            }
+            return WorldBuilder.CamRestY - (guiY - py - ph * 0.5f) * WorldBuilder.CamOrtho / (ph * 0.5f);
         }
 
         // Narrower than a phone (9:16). iPad 820 and its pillar column are not this.
@@ -192,16 +238,11 @@ namespace FlockFive
         {
             if (restart.width < 2f) return default;
             if (safe.width < 2f) safe = new Rect(0f, 0f, screenW, restart.yMax);
-            float left = Mathf.Max(16f, safe.xMin + 10f);
-            var home = new Rect(left, restart.y, restart.width, restart.height);
-            if (screenH < 2f) return home;
-            var gear = FlockFiveApp.SettingsGearRect(screenW, screenH, safe);
-            if (gear.width < 2f || !home.Overlaps(gear)) return home;
-            float nudged = gear.xMax + 8f;
-            var side = new Rect(nudged, home.y, home.width, home.height);
-            bool room = side.xMax <= screenW - 4f && (restart.xMin < 2f || side.xMax <= restart.xMin - 4f);
-            if (room) return side;
-            return new Rect(home.x, gear.yMax + 8f, home.width, home.height);
+            float h = screenH > 2f ? screenH : (PhoneArea.H > 2f ? PhoneArea.H : screenW * DeviceFit.PhoneAspect);
+            float pad = HiveEdgePad(DeviceFit.Ui(screenW, h));
+            float left = safe.xMin + pad;
+            if (left < 0f) left = 0f;
+            return new Rect(left, restart.y, restart.width, restart.height);
         }
 
         static void GardenCore(float screenW, float screenH, Rect safe,

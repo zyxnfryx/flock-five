@@ -116,15 +116,14 @@ namespace FlockFive.Editor
         }
 
         // Point windows Brandon named. Safe top / bottom match the device table.
-        // Phone seats are the feeder air (halo to the widest bulb), not the 72-ref
-        // plate: that plate covers a bulb. 820 is the wide iPad seat, uncapped.
+        // Phone seats are 44 pt. 820 keeps its previous size. Padding matches the hive.
         static void Corners(System.Action<string, bool, string> Check)
         {
             var devs = new[]
             {
-                new[] { 402f, 874f, 62f, 34f, 36.84f },
-                new[] { 412f, 915f, 59f, 34f, 37.03f },
-                new[] { 360f, 780f, 32f, 16f, 33.09f },
+                new[] { 402f, 874f, 62f, 34f, 45.14f },
+                new[] { 412f, 915f, 59f, 34f, 47.25f },
+                new[] { 360f, 780f, 32f, 16f, 44.00f },
                 new[] { 820f, 1180f, 24f, 20f, 84.44f },
             };
             var prev = DeviceFit.TestWindow;
@@ -135,24 +134,43 @@ namespace FlockFive.Editor
                     float w = devs[i][0], h = devs[i][1], top = devs[i][2], bot = devs[i][3], want = devs[i][4];
                     DeviceFit.TestWindow = w / h;
                     var safe = new Rect(0f, bot, w, h - bot - top);
-                    CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
+                    CornerAnchor.Garden(w, h, safe, out float sc, out _, out _, out var restart, out var hive);
                     var home = CornerAnchor.TopBarHome(restart, w, safe, h);
-                    float art = CornerAnchor.HiveArtRight(hive);
-                    float feeder = CornerAnchor.FeederRightGui(w, h);
-                    float clear = Mathf.Max(0f, art - feeder);
+                    float safeTop = h - safe.yMax;
+                    float hivePad = safe.xMax - hive.xMax;
+                    float onePt = Mathf.Max(h / 852f, 1f);
+                    float norm = safeTop / h;
+                    float tall = CornerAnchor.TallFor(w, h);
+                    float fy = WorldBuilder.FeederYFor(tall, norm, w, h);
+                    bool feeders = true;
+                    for (int count = 2; count <= 3 && feeders; count++)
+                        for (int slot = 0; slot < count; slot++)
+                        {
+                            float fx = FeederRow.X(slot, count);
+                            var a = CornerAnchor.WorldToGui(w, h, fx - FeederRow.BulbHalf, fy + 1.34f);
+                            var b = CornerAnchor.WorldToGui(w, h, fx + FeederRow.BulbHalf, fy - 1.47f);
+                            var bulb = Rect.MinMaxRect(a.x, a.y, b.x, b.y);
+                            if (bulb.Overlaps(restart) || bulb.Overlaps(home)) feeders = false;
+                        }
+                    float field = CornerAnchor.PlayfieldTopGui(w, h, norm);
                     string tag = ((int)w).ToString();
+                    bool pads = Mathf.Abs(hivePad - CornerAnchor.HiveEdgePad(sc)) <= onePt
+                        && Mathf.Abs((home.xMin - safe.xMin) - hivePad) <= onePt
+                        && Mathf.Abs((home.yMin - safeTop) - hivePad) <= onePt
+                        && Mathf.Abs((safe.xMax - restart.xMax) - hivePad) <= onePt
+                        && Mathf.Abs((restart.yMin - safeTop) - hivePad) <= onePt;
                     bool size = Mathf.Abs(restart.width - want) <= 0.75f
                         && Mathf.Abs(restart.height - restart.width) <= 0.05f
                         && Mathf.Abs(home.width - restart.width) <= 0.05f
-                        && Mathf.Abs(home.height - restart.height) <= 0.05f
-                        && restart.xMin + 0.51f >= feeder
-                        && restart.width <= clear + 0.51f;
+                        && restart.yMax <= field + 0.5f
+                        && feeders;
                     bool route = tag == "820"
                         ? !CornerAnchor.TallPhone(w, h)
-                        : CornerAnchor.TallPhone(w, h);
-                    Check("corner-seat-" + tag, size && route,
-                        "restart " + restart.width.ToString("0.00") + " home " + home.width.ToString("0.00")
-                        + " want " + want.ToString("0.00") + " tall " + CornerAnchor.TallPhone(w, h));
+                        : CornerAnchor.TallPhone(w, h) && restart.width + 0.5f >= 44f * onePt;
+                    Check("corner-seat-" + tag, pads && size && route,
+                        "size " + restart.width.ToString("0.00") + " hive " + hivePad.ToString("0.00")
+                        + " homeL " + (home.xMin - safe.xMin).ToString("0.00")
+                        + " feeders " + feeders + " field " + field.ToString("0.0"));
                 }
             }
             finally

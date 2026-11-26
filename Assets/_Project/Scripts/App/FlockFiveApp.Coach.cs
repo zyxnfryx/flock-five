@@ -1992,7 +1992,14 @@ namespace FlockFive
             float aspect = DeviceFit.PlayAspect(window);
             float tall = Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, window));
             float limbX = WorldBuilder.CamOrtho * aspect - WorldBuilder.WoodHalf + 0.18f;
-            return new Vector2(-limbX, WorldBuilder.RowY0For(tall));
+            float safeTop = 0f;
+            if (PhoneArea.H > 2f && Mathf.Abs(PhoneArea.H - playH) < 1.5f && Mathf.Abs(PhoneArea.W - playW) < 1.5f)
+            {
+                var sa = PhoneArea.Safe;
+                safeTop = sa.height < 2f ? 0f : Mathf.Max(0f, playH - sa.yMax) / Mathf.Max(1f, playH);
+                if (safeTop > 0.40f) safeTop = 0f;
+            }
+            return new Vector2(-limbX, WorldBuilder.RowY0For(tall, playW, playH, safeTop));
         }
 
         // iPad's play column is 9:16. A phone window is taller, so its canvas is

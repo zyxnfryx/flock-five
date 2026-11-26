@@ -3273,9 +3273,13 @@ namespace FlockFive.Editor
                     var safe = new Rect(0f, 34f, w[i], h[i] - 34f - 59f);
                     CornerAnchor.Garden(w[i], h[i], safe, out _, out _, out _, out var gardenRestart, out _);
                     var gardenHome = CornerAnchor.TopBarHome(gardenRestart, w[i], safe, h[i]);
-                    var gear = FlockFiveApp.SettingsGearRect(w[i], h[i], safe);
+                    float hivePad = CornerAnchor.HiveEdgePad(DeviceFit.Ui(w[i], h[i]));
+                    float safeTop = h[i] - safe.yMax;
+                    float onePt = Mathf.Max(h[i] / 852f, 1f);
                     bool phone = w[i] < 500;
-                    bool face = gardenHome.width > 2f && gear.width > 2f && !gardenHome.Overlaps(gear);
+                    bool face = gardenHome.width > 2f
+                        && Mathf.Abs((gardenHome.xMin - safe.xMin) - hivePad) <= onePt
+                        && Mathf.Abs((gardenHome.yMin - safeTop) - hivePad) <= onePt;
                     bool garden = gardenRestart.width > 2f;
                     if (!face || (phone && !garden)) sized = false;
                 }
