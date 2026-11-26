@@ -85,8 +85,8 @@ namespace FlockFive.Editor
                         var bulb = Rect.MinMaxRect(a.x, a.y, b.x, b.y);
                         bool centerClaim = rs.Contains(bulb.center)
                             || FlockFiveApp.HudClaim(bulb.center, rs, hv, true, hudTop) == FlockFiveApp.HudTap.Restart;
-                        bool edge = bulb.Overlaps(rs);
-                        if (centerClaim || (edge && !phoneSeat))
+                        bool bulbOverlapsRestart = bulb.Overlaps(rs);
+                        if (centerClaim || (bulbOverlapsRestart && !phoneSeat))
                         { fok = false; fd += " feeder" + i + " " + bulb; }
                     }
                     Check("restart clear of " + count + " feeders " + tag, fok, "restart " + rs + fd);
