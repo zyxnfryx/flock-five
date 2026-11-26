@@ -4813,16 +4813,25 @@ namespace FlockFive
             return releaseId == PlayPointer.MouseId && _gloveEchoId >= 0;
         }
 
+        // The garden Home plate and the settings gear share the top-left corner.
+        // A point in both belongs to the nearer center, so the gear still opens
+        // from its own center and Home still comes home from its own center.
+        static bool GearOwnsPoint(Vector2 gui, Rect gear, Rect home, bool gearShown)
+        {
+            if (!gearShown || gear.width <= 2f || !gear.Contains(gui)) return false;
+            if (home.width > 2f && home.Contains(gui))
+                return (gui - gear.center).sqrMagnitude <= (gui - home.center).sqrMagnitude;
+            return true;
+        }
+
         // 0 is not a button. 1 Home, 2 Restart, 3 gear. Play-canvas pixels.
         int HudControl(Vector2 play)
         {
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            // The gear is the top-left control on the home face. The garden Home
-            // seat shares that corner, so the gear owns its rect while it is shown.
             // In the garden the gear is not drawn and must not steal a tap.
-            if (HomeGear.Shown(HomeGearNow()) && gear.width > 2f && gear.Contains(play)) return 3;
+            if (GearOwnsPoint(play, gear, home, HomeGear.Shown(HomeGearNow()))) return 3;
             if (home.width > 2f && home.Contains(play)) return 1;
             if (restart.width > 2f && restart.Contains(play)) return 2;
             return 0;
@@ -8789,7 +8798,8 @@ namespace FlockFive
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             var gearHit = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             // TakeGuiPointer already opened the gear. Do not also read this point as Home.
-            if (HomeGear.Shown(HomeGearNow()) && gearHit.width > 2f && gearHit.Contains(gui))
+            // A point nearer the Home plate is Home, even when it sits inside the gear hit.
+            if (GearOwnsPoint(gui, gearHit, home, HomeGear.Shown(HomeGearNow())))
                 return true;
             bool homeHit, restartHit;
             if (GardenHudPoint(screen, PhoneArea.H, home, restart, out homeHit, out restartHit))
