@@ -4819,11 +4819,12 @@ namespace FlockFive
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            // The gear is the top-left control on the home face. The garden Home
+            // seat shares that corner, so the gear owns its rect while it is shown.
+            // In the garden the gear is not drawn and must not steal a tap.
+            if (HomeGear.Shown(HomeGearNow()) && gear.width > 2f && gear.Contains(play)) return 3;
             if (home.width > 2f && home.Contains(play)) return 1;
             if (restart.width > 2f && restart.Contains(play)) return 2;
-            // The gear is drawn only on the home face. The same rect in the garden
-            // is empty space, so it must not steal a glove or board tap.
-            if (HomeGear.Shown(HomeGearNow()) && gear.width > 2f && gear.Contains(play)) return 3;
             return 0;
         }
 
@@ -8786,6 +8787,10 @@ namespace FlockFive
             // b131: Restart lives in the top bar (above top), so it is checked before the top-bar swallow.
             // A lesson caption must not swallow Home or Restart. The tap acts.
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            var gearHit = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            // TakeGuiPointer already opened the gear. Do not also read this point as Home.
+            if (HomeGear.Shown(HomeGearNow()) && gearHit.width > 2f && gearHit.Contains(gui))
+                return true;
             bool homeHit, restartHit;
             if (GardenHudPoint(screen, PhoneArea.H, home, restart, out homeHit, out restartHit))
             {

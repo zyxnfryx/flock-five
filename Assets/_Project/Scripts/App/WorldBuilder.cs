@@ -127,7 +127,18 @@ namespace FlockFive
                 CornerAnchor.ContentDrop(screenW, screenH, safeTopNorm, out float drop, out _);
                 y -= drop;
             }
+            // The ostrich stands on this row. His bank must stay above the play HUD.
+            float bankFloor = OstrichBankFeederFloor();
+            if (y < bankFloor) y = bankFloor;
             return y;
+        }
+
+        // Lowest feeder pivot whose ostrich bank still clears the bottom of the play camera.
+        // bank = GroundY(y) - LedgeDepth, and that must stay above CamRestY - CamOrtho + 4.
+        public static float OstrichBankFeederFloor()
+        {
+            float hud = CamRestY - CamOrtho + 4f;
+            return hud + OstrichGround.LedgeDepth - OstrichMark.GroundY(0f) + 0.05f;
         }
 
         // Highest a perched bird's crown may sit so it stays clear of the feeder tray.
