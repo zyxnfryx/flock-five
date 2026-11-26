@@ -1953,6 +1953,8 @@ namespace FlockFive
         // Phones only. 820 already overlaps the chest and stays on ChestOverlap.
         public const float PhoneChestPx = 9f;
         public const float PhoneGloveDropPx = 4f;
+        // 820 only. The thumb meets the beak on the idle bob. Same drop as a phone.
+        public const float IpadGloveDropPx = 4f;
         const float PerchAbove = 0.58f;
         const float PerchBelow = 0.84f;
 
@@ -2092,15 +2094,13 @@ namespace FlockFive
             {
                 // GUI y grows downward. The pivot sits just below the beak,
                 // by the full height of the glove above the fingertip.
-                // Phones drop a few pixels more so the thumb clears the beak.
+                // Each board drops a few pixels more so the thumb clears the beak.
                 pivotY = face.yMax + rise + 1f;
                 float yLo = birds.yMin + 1f;
                 float yHi = birds.yMax - 1f;
-                if (phone)
-                {
-                    pivotY += PhoneGloveDropPx;
-                    yHi += PhoneGloveDropPx;
-                }
+                float drop = phone ? PhoneGloveDropPx : IpadGloveDropPx;
+                pivotY += drop;
+                yHi += drop;
                 if (yHi < yLo) pivotY = birds.center.y;
                 else if (pivotY < yLo) pivotY = yLo;
                 else if (pivotY > yHi) pivotY = yHi;

@@ -1230,6 +1230,8 @@ namespace FlockFive.Editor
                     bool inside = true;
                     bool showed = false;
                     float contactRun = 0f, contactHold = 0f;
+                    float reachGap = float.MaxValue;
+                    int reachFrames = 0;
                     for (int frame = 0; frame < 30; frame++)
                     {
                         int now = Time.frameCount;
@@ -1260,7 +1262,13 @@ namespace FlockFive.Editor
                             full = shown;
                             fullBox = box;
                         }
-                        if (dip >= 0.98f) contactRun += 0.05f;
+                        if (dip >= 0.98f)
+                        {
+                            contactRun += 0.05f;
+                            float gap = box.yMin - face.yMax;
+                            if (gap < reachGap) reachGap = gap;
+                            reachFrames++;
+                        }
                         else
                         {
                             if (contactRun > contactHold) contactHold = contactRun;
@@ -1306,6 +1314,13 @@ namespace FlockFive.Editor
                         Check("fresh-garden-beak-clear-" + tag,
                             showed && bestDip > 0.9f && face.width > 4f && beakGap >= 3f,
                             detail + " beakGap " + beakGap.ToString("0.0") + " face " + face + " glove " + fullBox);
+                    }
+                    else
+                    {
+                        Check("fresh-garden-beak-clear-" + tag,
+                            showed && reachFrames > 0 && face.width > 4f && reachGap >= 3f,
+                            detail + " beakGap " + (reachFrames > 0 ? reachGap : 0f).ToString("0.0")
+                                + " frames " + reachFrames + " face " + face + " glove " + fullBox);
                     }
                     Check("fresh-garden-glove-inside-" + tag, showed && inside, detail);
                 }
