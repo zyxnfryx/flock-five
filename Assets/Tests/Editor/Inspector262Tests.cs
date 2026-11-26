@@ -1314,11 +1314,11 @@ namespace FlockFive.Editor
                     {
                         // The old walk was one bob, about 0.75s, and reported a 2.7px
                         // gap on 412. The thumb meets the beak a few seconds later.
-                        float window = FlockFiveApp.IdleBeakWindow;
+                        float idleBeakWindow = FlockFiveApp.IdleBeakWindow;
                         const int steps = 80;
                         for (int step = 0; step <= steps; step++)
                         {
-                            float below = FlockFiveApp.IdleBeakBelowFace(w, h, window * step / steps);
+                            float below = FlockFiveApp.IdleBeakBelowFace(w, h, idleBeakWindow * step / steps);
                             float clear = reachTop - (face.yMax + below);
                             if (clear < beakClear) beakClear = clear;
                             bobSteps++;
