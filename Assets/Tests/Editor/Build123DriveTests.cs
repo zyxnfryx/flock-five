@@ -172,24 +172,27 @@ namespace FlockFive.Editor
                         + " homeL " + (home.xMin - safe.xMin).ToString("0.00")
                         + " feeders " + feeders + " field " + field.ToString("0.0"));
 
-                    var homeGlyph = CornerAnchor.CornerHomeGlyph(home);
-                    var restartGlyph = CornerAnchor.CornerRestartGlyph(restart);
-                    var homeLabel = CornerAnchor.CornerLabelRect(home, homeGlyph, "Home", w, h);
-                    var restartLabel = CornerAnchor.CornerLabelRect(restart, restartGlyph, "Restart", w, h);
-                    int font = CornerAnchor.CornerLabelFontPx(h);
-                    float track = CornerAnchor.CornerLabelTracking(font);
-                    bool glyphs = homeGlyph.width >= home.width * 0.78f - 0.05f
-                        && homeGlyph.height >= home.height * 0.78f - 0.05f
-                        && restartGlyph.width >= restart.width * 0.90f - 0.05f
-                        && restartGlyph.height >= restart.height * 0.90f - 0.05f
-                        && home.Contains(homeGlyph.center)
-                        && restart.Contains(restartGlyph.center);
-                    bool onScreen = homeLabel.xMin >= 0f && homeLabel.xMax <= w + 0.5f
-                        && restartLabel.xMin >= 0f && restartLabel.xMax <= w + 0.5f
-                        && homeLabel.yMin >= 0f && homeLabel.yMax <= h
-                        && restartLabel.yMin >= 0f && restartLabel.yMax <= h;
-                    bool apart = !homeLabel.Overlaps(homeGlyph) && !restartLabel.Overlaps(restartGlyph);
-                    bool readable = font + 0.01f >= 14f * onePt && track + 0.01f >= font * 0.10f;
+                    var homeOld = CornerAnchor.HomeIconAt28(home);
+                    var restartOld = CornerAnchor.RestartIconAt28(restart);
+                    CornerAnchor.HomeMark(home, out var homeIcon, out var homeWord);
+                    var restartIcon = CornerAnchor.RestartIcon(restart);
+                    var restartWord = CornerAnchor.RestartWordRect(restart, sc);
+                    int homePx = Mathf.Clamp(Mathf.RoundToInt(home.height * 0.30f), 13, 28);
+                    int restartPx = Mathf.Max(8, Mathf.RoundToInt(9f * Mathf.Min(sc, 1.15f)));
+                    bool bigger = homeIcon.width > homeOld.width + 0.5f
+                        && homeIcon.height > homeOld.height + 0.5f
+                        && restartIcon.width > restartOld.width + 0.5f
+                        && restartIcon.height > restartOld.height + 0.5f;
+                    bool sameText = CornerAnchor.HomeWordPx(home.height) == homePx
+                        && CornerAnchor.RestartWordPx(sc) == restartPx
+                        && Mathf.Abs(homeWord.height - homePx) <= 0.05f
+                        && Mathf.Abs(restartWord.height - restartPx) <= 0.05f;
+                    bool onPlate = home.Contains(homeWord.center) && restart.Contains(restartWord.center)
+                        && !homeWord.Overlaps(homeIcon);
+                    bool onScreen = homeWord.xMin >= -0.5f && homeWord.xMax <= w + 0.5f
+                        && restartWord.xMin >= -0.5f && restartWord.xMax <= w + 0.5f
+                        && homeWord.yMin >= 0f && homeWord.yMax <= h
+                        && restartWord.yMin >= 0f && restartWord.yMax <= h;
                     bool labelClear = true;
                     for (int count = 2; count <= 3 && labelClear; count++)
                         for (int slot = 0; slot < count; slot++)
@@ -198,13 +201,13 @@ namespace FlockFive.Editor
                             var a = CornerAnchor.WorldToGui(w, h, fx - FeederRow.BulbHalf, fy + 1.34f);
                             var b = CornerAnchor.WorldToGui(w, h, fx + FeederRow.BulbHalf, fy - 1.47f);
                             var bulb = Rect.MinMaxRect(a.x, a.y, b.x, b.y);
-                            if (bulb.Overlaps(homeLabel) || bulb.Overlaps(restartLabel)) labelClear = false;
+                            if (bulb.Overlaps(homeWord) || bulb.Overlaps(restartWord)) labelClear = false;
                         }
-                    Check("corner-mark-" + tag, glyphs && onScreen && apart && readable && labelClear,
-                        "glyph " + homeGlyph.width.ToString("0.00") + "/" + restartGlyph.width.ToString("0.00")
-                        + " font " + font + " track " + track.ToString("0.00")
-                        + " homeLabel " + homeLabel.width.ToString("0.0") + "x" + homeLabel.height.ToString("0.0")
-                        + " restartLabel " + restartLabel.width.ToString("0.0") + "x" + restartLabel.height.ToString("0.0")
+                    Check("corner-mark-" + tag, bigger && sameText && onPlate && onScreen && labelClear,
+                        "homeIcon " + homeOld.width.ToString("0.00") + "->" + homeIcon.width.ToString("0.00")
+                        + " restartIcon " + restartOld.width.ToString("0.00") + "x" + restartOld.height.ToString("0.00")
+                        + "->" + restartIcon.width.ToString("0.00") + "x" + restartIcon.height.ToString("0.00")
+                        + " text " + homePx + "/" + restartPx
                         + " clear " + labelClear);
                 }
             }
@@ -223,9 +226,12 @@ namespace FlockFive.Editor
             bool noChip = hud.IndexOf("DrawGardenStamp(") < 0 && hud.IndexOf("GardenStampBox(") < 0;
             bool plate = hud.IndexOf("DrawGardenHome(") >= 0
                 && hud.IndexOf("GUI.DrawTexture(home, Texture2D.whiteTexture)") < 0
+                && hud.IndexOf("GUI.Label(restart, \"Restart\"") >= 0
                 && app.IndexOf("DrawRoundedFace(home,") >= 0
                 && app.IndexOf("DrawHomeGlyph(") >= 0
-                && app.IndexOf("DrawCornerCaption(home, glyph, \"Home\"") >= 0;
+                && app.IndexOf("StampOutlined(word, \"Home\"") >= 0
+                && app.IndexOf("home.height * 0.30f") >= 0
+                && app.IndexOf("9f * Mathf.Min(uiScale, 1.15f)") >= 0;
             int reward = app.IndexOf("void DrawRewardStamp(");
             bool rewardKept = reward >= 0 && app.IndexOf("DrawRewardStamp(", reward + 10) >= 0;
             Check("play-hud-has-no-garden-stamp", noChip && rewardKept, "hud " + hud.Length + " chip " + !noChip);

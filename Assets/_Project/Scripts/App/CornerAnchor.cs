@@ -186,65 +186,85 @@ namespace FlockFive
             return size;
         }
 
-        // House drawn on the gold Home plate. Same fraction of the button on every window.
-        public const float HomeGlyphFrac = 0.82f;
-        // Caption under the button. 15 pt, then the same point scale as the phone seat.
-        public const float CornerLabelPt = 15f;
-        // Cell width and the extra gap between letters, both in ems. The gap stays open
-        // so "Home" and "Restart" do not crunch.
-        public const float CornerLetterEm = 0.70f;
-        public const float CornerTrackEm = 0.28f;
+        // fx_restart.png. ScaleToFit letterboxes this in the square seat.
+        public const float RestartArtW = 751f;
+        public const float RestartArtH = 685f;
 
-        public static Rect CornerHomeGlyph(Rect button)
+        // Word on the plate. Same clamp as the 28b6afaf Home label.
+        public static int HomeWordPx(float buttonSide)
+        {
+            return Mathf.Clamp(Mathf.RoundToInt(buttonSide * 0.30f), 13, 28);
+        }
+
+        // Word on the swirl. Same formula as the 28b6afaf Restart label.
+        public static int RestartWordPx(float uiScale)
+        {
+            return Mathf.Max(8, Mathf.RoundToInt(9f * Mathf.Min(uiScale, 1.15f)));
+        }
+
+        static Rect SpriteBox(Rect button, float texW, float texH, float scale)
+        {
+            float w = texW * scale;
+            float h = texH * scale;
+            return new Rect(button.center.x - w * 0.5f, button.center.y - h * 0.5f, w, h);
+        }
+
+        // What ScaleToFit drew at 28b6afaf: the texture fitted inside the seat.
+        public static Rect RestartIconAt28(Rect button)
         {
             if (button.width < 2f) return button;
-            float side = button.width * HomeGlyphFrac;
+            float scale = Mathf.Min(button.width / RestartArtW, button.height / RestartArtH);
+            return SpriteBox(button, RestartArtW, RestartArtH, scale);
+        }
+
+        // Cover the seat, then a little more, so the swirl is larger than that fit.
+        public static Rect RestartIcon(Rect button)
+        {
+            if (button.width < 2f) return button;
+            float scale = Mathf.Max(button.width / RestartArtW, button.height / RestartArtH) * 1.08f;
+            return SpriteBox(button, RestartArtW, RestartArtH, scale);
+        }
+
+        // 28b6afaf had no house. The only mark on the plate was the word.
+        public static Rect HomeIconAt28(Rect button)
+        {
+            float side = HomeWordPx(button.height);
             return new Rect(button.center.x - side * 0.5f, button.center.y - side * 0.5f, side, side);
         }
 
-        // The swirl is the button. The sprite already fills its texture, so this rect
-        // is the glyph. Hive straw alignment still uses this same seat.
-        public static Rect CornerRestartGlyph(Rect button) => button;
-
-        public static int CornerLabelFontPx(float screenH)
+        // House above the word. The word starts centered, as before. A house that
+        // fills the plate covers that center, so the word steps to the bottom of
+        // the plate and the house takes the room above it.
+        public static void HomeMark(Rect button, out Rect icon, out Rect word)
         {
-            float pt = screenH / 852f;
-            if (pt < 1f) pt = 1f;
-            return Mathf.Max(1, Mathf.RoundToInt(CornerLabelPt * pt));
+            int px = HomeWordPx(button.height);
+            float inset = 2f;
+            var centered = new Rect(button.x, button.center.y - px * 0.5f, button.width, px);
+            float side = Mathf.Min(button.width, button.height) * 0.86f;
+            var big = new Rect(button.center.x - side * 0.5f, button.y + inset, side, side);
+            if (big.yMax > button.yMax - inset) big.y = button.yMax - inset - side;
+            if (!big.Overlaps(centered) && big.width > HomeIconAt28(button).width)
+            {
+                icon = big;
+                word = centered;
+                return;
+            }
+            word = new Rect(button.x, button.yMax - px - inset, button.width, px);
+            float avail = word.yMin - inset - (button.y + inset);
+            if (avail < 4f) avail = 4f;
+            float fit = Mathf.Min(side, avail);
+            icon = new Rect(button.center.x - fit * 0.5f, button.y + inset, fit, fit);
         }
 
-        public static float CornerLabelTracking(int fontPx) => Mathf.Max(1f, fontPx * CornerTrackEm);
-
-        public static float CornerLabelInk(string word, int fontPx)
+        // Lower edge of the seat. Same LowerCenter anchor as the 28b6afaf label.
+        // The larger swirl is painted first, so this word stays readable on it.
+        public static Rect RestartWordRect(Rect button, float uiScale)
         {
-            if (string.IsNullOrEmpty(word) || fontPx < 1) return 0f;
-            float cell = fontPx * CornerLetterEm;
-            float gap = CornerLabelTracking(fontPx);
-            return word.Length * cell + (word.Length - 1) * gap;
+            int px = RestartWordPx(uiScale);
+            return new Rect(button.x, button.yMax - px, button.width, px);
         }
 
-        public static float CornerLabelHeight(int fontPx) => fontPx * 1.35f + 4f;
-
-        // Under the button when the word cannot sit in the band below the glyph
-        // without touching it. Centered on the button, then pulled inside the screen.
-        public static Rect CornerLabelRect(Rect button, Rect glyph, string word, float screenW, float screenH)
-        {
-            int font = CornerLabelFontPx(screenH);
-            float ink = CornerLabelInk(word, font);
-            float labH = CornerLabelHeight(font);
-            float gap = Mathf.Max(3f, font * 0.18f);
-            float bandTop = glyph.yMax + 2f;
-            float bandBot = button.yMax - 2f;
-            bool inside = ink <= button.width - 8f && labH <= bandBot - bandTop && bandBot > bandTop + 1f;
-            float y = inside ? bandTop : button.yMax + gap;
-            float x = button.center.x - ink * 0.5f;
-            if (x < 1f) x = 1f;
-            if (screenW > 2f && x + ink > screenW - 1f) x = Mathf.Max(1f, screenW - 1f - ink);
-            return new Rect(x, y, ink, labH);
-        }
-
-        // How far (world Y) to lower feeders and the top branches so they clear the corner buttons
-        // and the caption under Restart (the longer word).
+        // How far (world Y) to lower feeders and the top branches so they clear the corner buttons.
         public static void ContentDrop(float w, float h, float safeTopNorm, out float feederDrop, out float branchDrop)
         {
             feederDrop = 0f;
@@ -255,17 +275,13 @@ namespace FlockFive
             float safeTop = safeTopNorm * h;
             var safe = new Rect(0f, 0f, w, Mathf.Max(2f, h - safeTop));
             Garden(w, h, safe, out _, out _, out _, out var restart, out _);
-            var glyph = CornerRestartGlyph(restart);
-            var caption = CornerLabelRect(restart, glyph, "Restart", w, h);
-            float clearY = Mathf.Max(restart.yMax + 8f, caption.yMax + 6f);
-            float world = GuiYToWorld(w, h, clearY);
+            float world = GuiYToWorld(w, h, restart.yMax + 8f);
             float tall = TallFor(w, h);
             float crown = WorldBuilder.FeederYNatural(tall, safeTopNorm) + WorldBuilder.FeederCrown;
             if (crown > world) feederDrop = crown - world;
             float reach = WorldBuilder.RowY0Base(tall) + BranchReachWorld;
             if (reach > world) branchDrop = reach - world;
-            // The gift limbs stay put. A short window cannot spend the whole caption
-            // clearance on the rows, or the lowest wood covers the ad branch.
+            // Gift limbs stay put. The row drop stops before the lowest wood covers them.
             float low = WorldBuilder.RowY0Base(tall) - (WorldBuilder.Rows - 1) * WorldBuilder.RowGap;
             float room = (low + BranchHit.MainY0) - (WorldBuilder.GiftY + BranchHit.GiftY1) - 0.02f;
             if (room < 0f) room = 0f;

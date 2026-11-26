@@ -9401,14 +9401,22 @@ namespace FlockFive
                 GUIUtility.RotateAroundPivot(CamShake.HudTwist, new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.5f));
                 GUI.matrix = Matrix4x4.Translate(new Vector3(CamShake.HudOffset.x, CamShake.HudOffset.y, 0f)) * GUI.matrix;
             }
-            var restartGlyph = CornerAnchor.CornerRestartGlyph(restart);
+            var restartIcon = CornerAnchor.RestartIcon(restart);
             var arrow = SpriteCatalog.Restart;
+            GUI.BeginGroup(restart);
+            var restartLocal = new Rect(restartIcon.x - restart.x, restartIcon.y - restart.y, restartIcon.width, restartIcon.height);
             if (arrow != null && arrow.texture != null)
-                GUI.DrawTexture(restartGlyph, arrow.texture, ScaleMode.ScaleToFit, true);
+                GUI.DrawTexture(restartLocal, arrow.texture, ScaleMode.ScaleToFit, true);
             else
-                GUI.Box(restartGlyph, "↩");
-            DrawCornerCaption(restart, restartGlyph, "Restart", GuiPool.Label(GuiSlot.SettingsLink),
-                new Color(1f, 0.96f, 0.86f, 1f));
+                GUI.Box(restartLocal, "↩");
+            GUI.EndGroup();
+            var restartLab = GuiPool.Label(GuiSlot.SettingsLink);
+            restartLab.fontStyle = FontStyle.Bold;
+            restartLab.alignment = TextAnchor.LowerCenter;
+            restartLab.wordWrap = false;
+            restartLab.clipping = TextClipping.Overflow;
+            restartLab.fontSize = CornerAnchor.RestartWordPx(s);
+            GUI.Label(restart, "Restart", restartLab);
             var hudEv = Event.current;
             bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
             bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
@@ -13582,18 +13590,26 @@ namespace FlockFive
             return FlowerDisc(r, sink);
         }
 
-        // Garden Home. Gold rounded plate, a house that fills most of it, and the
-        // word under the plate. Not a flat dark square, and not a tiny word on the face.
+        // Garden Home. Gold plate, a house above the word. The word keeps the old
+        // size. It sits centered until the house would cover it, then steps to the
+        // bottom of the plate. Not a flat dark square.
         void DrawGardenHome(Rect home, bool held)
         {
             if (home.width < 2f || home.height < 2f) return;
             var prev = GUI.color;
             GUI.color = Color.white;
             DrawRoundedFace(home, held, PopupTint.Gold, true);
-            var glyph = CornerAnchor.CornerHomeGlyph(home);
-            DrawHomeGlyph(glyph);
-            DrawCornerCaption(home, glyph, "Home", GuiPool.Label(GuiSlot.InspectX),
-                new Color(1f, 0.96f, 0.86f, 1f));
+            CornerAnchor.HomeMark(home, out var icon, out var word);
+            DrawHomeGlyph(icon);
+            var homeLab = GuiPool.Label(GuiSlot.InspectX);
+            homeLab.fontStyle = FontStyle.Bold;
+            homeLab.alignment = TextAnchor.MiddleCenter;
+            homeLab.wordWrap = false;
+            homeLab.clipping = TextClipping.Overflow;
+            int px = Mathf.Clamp(Mathf.RoundToInt(home.height * 0.30f), 13, 28);
+            homeLab.fontSize = px;
+            homeLab.normal.textColor = new Color(0.32f, 0.14f, 0.04f, 1f);
+            StampOutlined(word, "Home", homeLab, new Color(0.32f, 0.14f, 0.04f, 1f), 1, 1);
             GUI.color = prev;
         }
 
@@ -13649,30 +13665,6 @@ namespace FlockFive
             GUI.color = new Color(0.45f, 0.72f, 0.82f, 1f);
             GUI.DrawTexture(window, Texture2D.whiteTexture);
             GUI.color = Color.white;
-        }
-
-        // One letter per cell, with CornerLabelTracking between them. The word sits
-        // under the button when it cannot fit below the glyph.
-        void DrawCornerCaption(Rect button, Rect glyph, string word, GUIStyle st, Color ink)
-        {
-            if (button.width < 2f || string.IsNullOrEmpty(word) || st == null) return;
-            var label = CornerAnchor.CornerLabelRect(button, glyph, word, PhoneArea.W, PhoneArea.H);
-            int px = CornerAnchor.CornerLabelFontPx(PhoneArea.H);
-            st.fontStyle = FontStyle.Bold;
-            st.alignment = TextAnchor.MiddleCenter;
-            st.wordWrap = false;
-            st.clipping = TextClipping.Overflow;
-            st.fontSize = px;
-            float cell = px * CornerAnchor.CornerLetterEm;
-            float gap = CornerAnchor.CornerLabelTracking(px);
-            float run = CornerAnchor.CornerLabelInk(word, px);
-            float x = label.center.x - run * 0.5f;
-            var letter = new Rect(x, label.y, cell, label.height);
-            for (int i = 0; i < word.Length; i++)
-            {
-                StampOutlined(letter, word.Substring(i, 1), st, ink, 1, 1);
-                letter.x += cell + gap;
-            }
         }
 
         static Rect DrawRoundedFace(Rect r, bool held, PopupTint tint, bool shadow)
