@@ -186,7 +186,65 @@ namespace FlockFive
             return size;
         }
 
-        // How far (world Y) to lower feeders and the top branches so they clear the corner buttons.
+        // House drawn on the gold Home plate. Same fraction of the button on every window.
+        public const float HomeGlyphFrac = 0.82f;
+        // Caption under the button. 15 pt, then the same point scale as the phone seat.
+        public const float CornerLabelPt = 15f;
+        // Cell width and the extra gap between letters, both in ems. The gap stays open
+        // so "Home" and "Restart" do not crunch.
+        public const float CornerLetterEm = 0.70f;
+        public const float CornerTrackEm = 0.28f;
+
+        public static Rect CornerHomeGlyph(Rect button)
+        {
+            if (button.width < 2f) return button;
+            float side = button.width * HomeGlyphFrac;
+            return new Rect(button.center.x - side * 0.5f, button.center.y - side * 0.5f, side, side);
+        }
+
+        // The swirl is the button. The sprite already fills its texture, so this rect
+        // is the glyph. Hive straw alignment still uses this same seat.
+        public static Rect CornerRestartGlyph(Rect button) => button;
+
+        public static int CornerLabelFontPx(float screenH)
+        {
+            float pt = screenH / 852f;
+            if (pt < 1f) pt = 1f;
+            return Mathf.Max(1, Mathf.RoundToInt(CornerLabelPt * pt));
+        }
+
+        public static float CornerLabelTracking(int fontPx) => Mathf.Max(1f, fontPx * CornerTrackEm);
+
+        public static float CornerLabelInk(string word, int fontPx)
+        {
+            if (string.IsNullOrEmpty(word) || fontPx < 1) return 0f;
+            float cell = fontPx * CornerLetterEm;
+            float gap = CornerLabelTracking(fontPx);
+            return word.Length * cell + (word.Length - 1) * gap;
+        }
+
+        public static float CornerLabelHeight(int fontPx) => fontPx * 1.35f + 4f;
+
+        // Under the button when the word cannot sit in the band below the glyph
+        // without touching it. Centered on the button, then pulled inside the screen.
+        public static Rect CornerLabelRect(Rect button, Rect glyph, string word, float screenW, float screenH)
+        {
+            int font = CornerLabelFontPx(screenH);
+            float ink = CornerLabelInk(word, font);
+            float labH = CornerLabelHeight(font);
+            float gap = Mathf.Max(3f, font * 0.18f);
+            float bandTop = glyph.yMax + 2f;
+            float bandBot = button.yMax - 2f;
+            bool inside = ink <= button.width - 8f && labH <= bandBot - bandTop && bandBot > bandTop + 1f;
+            float y = inside ? bandTop : button.yMax + gap;
+            float x = button.center.x - ink * 0.5f;
+            if (x < 1f) x = 1f;
+            if (screenW > 2f && x + ink > screenW - 1f) x = Mathf.Max(1f, screenW - 1f - ink);
+            return new Rect(x, y, ink, labH);
+        }
+
+        // How far (world Y) to lower feeders and the top branches so they clear the corner buttons
+        // and the caption under Restart (the longer word).
         public static void ContentDrop(float w, float h, float safeTopNorm, out float feederDrop, out float branchDrop)
         {
             feederDrop = 0f;
@@ -197,7 +255,10 @@ namespace FlockFive
             float safeTop = safeTopNorm * h;
             var safe = new Rect(0f, 0f, w, Mathf.Max(2f, h - safeTop));
             Garden(w, h, safe, out _, out _, out _, out var restart, out _);
-            float world = GuiYToWorld(w, h, restart.yMax + 8f);
+            var glyph = CornerRestartGlyph(restart);
+            var caption = CornerLabelRect(restart, glyph, "Restart", w, h);
+            float clearY = Mathf.Max(restart.yMax + 8f, caption.yMax + 6f);
+            float world = GuiYToWorld(w, h, clearY);
             float tall = TallFor(w, h);
             float crown = WorldBuilder.FeederYNatural(tall, safeTopNorm) + WorldBuilder.FeederCrown;
             if (crown > world) feederDrop = crown - world;

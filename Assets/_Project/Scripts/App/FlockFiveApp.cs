@@ -9401,18 +9401,14 @@ namespace FlockFive
                 GUIUtility.RotateAroundPivot(CamShake.HudTwist, new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.5f));
                 GUI.matrix = Matrix4x4.Translate(new Vector3(CamShake.HudOffset.x, CamShake.HudOffset.y, 0f)) * GUI.matrix;
             }
+            var restartGlyph = CornerAnchor.CornerRestartGlyph(restart);
             var arrow = SpriteCatalog.Restart;
             if (arrow != null && arrow.texture != null)
-                GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
+                GUI.DrawTexture(restartGlyph, arrow.texture, ScaleMode.ScaleToFit, true);
             else
-                GUI.Box(restart, "↩");
-            var restartLab = GuiPool.Label(GuiSlot.SettingsLink);
-            restartLab.fontStyle = FontStyle.Bold;
-            restartLab.alignment = TextAnchor.LowerCenter;
-            restartLab.wordWrap = false;
-            restartLab.clipping = TextClipping.Overflow;
-            restartLab.fontSize = Mathf.Max(8, Mathf.RoundToInt(9f * Mathf.Min(s, 1.15f)));
-            GUI.Label(restart, "Restart", restartLab);
+                GUI.Box(restartGlyph, "↩");
+            DrawCornerCaption(restart, restartGlyph, "Restart", GuiPool.Label(GuiSlot.SettingsLink),
+                new Color(1f, 0.96f, 0.86f, 1f));
             var hudEv = Event.current;
             bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
             bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
@@ -13586,24 +13582,97 @@ namespace FlockFive
             return FlowerDisc(r, sink);
         }
 
-        // Garden Home. Same gold rounded plate as the other buttons (bevel, rim,
-        // drop shadow), with the word on the face. Not a flat dark square.
+        // Garden Home. Gold rounded plate, a house that fills most of it, and the
+        // word under the plate. Not a flat dark square, and not a tiny word on the face.
         void DrawGardenHome(Rect home, bool held)
         {
             if (home.width < 2f || home.height < 2f) return;
             var prev = GUI.color;
             GUI.color = Color.white;
             DrawRoundedFace(home, held, PopupTint.Gold, true);
-            var homeLab = GuiPool.Label(GuiSlot.InspectX);
-            homeLab.fontStyle = FontStyle.Bold;
-            homeLab.alignment = TextAnchor.MiddleCenter;
-            homeLab.wordWrap = false;
-            homeLab.clipping = TextClipping.Overflow;
-            int px = Mathf.Clamp(Mathf.RoundToInt(home.height * 0.30f), 13, 28);
-            homeLab.fontSize = px;
-            homeLab.normal.textColor = new Color(0.32f, 0.14f, 0.04f, 1f);
-            StampOutlined(home, "Home", homeLab, new Color(0.32f, 0.14f, 0.04f, 1f), 1, 1);
+            var glyph = CornerAnchor.CornerHomeGlyph(home);
+            DrawHomeGlyph(glyph);
+            DrawCornerCaption(home, glyph, "Home", GuiPool.Label(GuiSlot.InspectX),
+                new Color(1f, 0.96f, 0.86f, 1f));
             GUI.color = prev;
+        }
+
+        static Texture2D _homeRoof;
+
+        static Texture2D HomeRoofTex()
+        {
+            if (_homeRoof != null) return _homeRoof;
+            const int n = 64;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = "HomeRoof"
+            };
+            var px = new Color32[n * n];
+            var wood = new Color(0.42f, 0.20f, 0.07f, 1f);
+            var trim = new Color(0.95f, 0.78f, 0.35f, 1f);
+            for (int y = 0; y < n; y++)
+            {
+                float v = y / (float)(n - 1);
+                float half = (1f - v) * 0.5f;
+                for (int x = 0; x < n; x++)
+                {
+                    float u = x / (float)(n - 1);
+                    float edge = Mathf.Min(u - (0.5f - half), (0.5f + half) - u) * n;
+                    if (edge <= 0f) continue;
+                    float a = Mathf.Clamp01(edge);
+                    var c = v < 0.14f ? trim : wood;
+                    c.a = a;
+                    px[y * n + x] = (Color32)c;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _homeRoof = tex;
+            return tex;
+        }
+
+        static void DrawHomeGlyph(Rect g)
+        {
+            var roof = new Rect(g.x, g.y, g.width, g.height * 0.52f);
+            var body = new Rect(g.center.x - g.width * 0.34f, g.y + g.height * 0.40f, g.width * 0.68f, g.height * 0.56f);
+            GUI.color = new Color(0.98f, 0.93f, 0.80f, 1f);
+            GUI.DrawTexture(body, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            GUI.DrawTexture(roof, HomeRoofTex(), ScaleMode.StretchToFill, true);
+            var door = new Rect(g.center.x - g.width * 0.11f, body.yMax - g.height * 0.30f, g.width * 0.22f, g.height * 0.30f);
+            GUI.color = new Color(0.34f, 0.15f, 0.05f, 1f);
+            GUI.DrawTexture(door, Texture2D.whiteTexture);
+            var window = new Rect(body.x + body.width * 0.14f, body.y + body.height * 0.18f, g.width * 0.16f, g.width * 0.16f);
+            GUI.color = new Color(0.45f, 0.72f, 0.82f, 1f);
+            GUI.DrawTexture(window, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+
+        // One letter per cell, with CornerLabelTracking between them. The word sits
+        // under the button when it cannot fit below the glyph.
+        void DrawCornerCaption(Rect button, Rect glyph, string word, GUIStyle st, Color ink)
+        {
+            if (button.width < 2f || string.IsNullOrEmpty(word) || st == null) return;
+            var label = CornerAnchor.CornerLabelRect(button, glyph, word, PhoneArea.W, PhoneArea.H);
+            int px = CornerAnchor.CornerLabelFontPx(PhoneArea.H);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
+            st.clipping = TextClipping.Overflow;
+            st.fontSize = px;
+            float cell = px * CornerAnchor.CornerLetterEm;
+            float gap = CornerAnchor.CornerLabelTracking(px);
+            float run = CornerAnchor.CornerLabelInk(word, px);
+            float x = label.center.x - run * 0.5f;
+            var letter = new Rect(x, label.y, cell, label.height);
+            for (int i = 0; i < word.Length; i++)
+            {
+                StampOutlined(letter, word.Substring(i, 1), st, ink, 1, 1);
+                letter.x += cell + gap;
+            }
         }
 
         static Rect DrawRoundedFace(Rect r, bool held, PopupTint tint, bool shadow)

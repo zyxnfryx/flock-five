@@ -171,6 +171,41 @@ namespace FlockFive.Editor
                         "size " + restart.width.ToString("0.00") + " hive " + hivePad.ToString("0.00")
                         + " homeL " + (home.xMin - safe.xMin).ToString("0.00")
                         + " feeders " + feeders + " field " + field.ToString("0.0"));
+
+                    var homeGlyph = CornerAnchor.CornerHomeGlyph(home);
+                    var restartGlyph = CornerAnchor.CornerRestartGlyph(restart);
+                    var homeLabel = CornerAnchor.CornerLabelRect(home, homeGlyph, "Home", w, h);
+                    var restartLabel = CornerAnchor.CornerLabelRect(restart, restartGlyph, "Restart", w, h);
+                    int font = CornerAnchor.CornerLabelFontPx(h);
+                    float track = CornerAnchor.CornerLabelTracking(font);
+                    bool glyphs = homeGlyph.width >= home.width * 0.78f - 0.05f
+                        && homeGlyph.height >= home.height * 0.78f - 0.05f
+                        && restartGlyph.width >= restart.width * 0.90f - 0.05f
+                        && restartGlyph.height >= restart.height * 0.90f - 0.05f
+                        && home.Contains(homeGlyph.center)
+                        && restart.Contains(restartGlyph.center);
+                    bool onScreen = homeLabel.xMin >= 0f && homeLabel.xMax <= w + 0.5f
+                        && restartLabel.xMin >= 0f && restartLabel.xMax <= w + 0.5f
+                        && homeLabel.yMin >= 0f && homeLabel.yMax <= h
+                        && restartLabel.yMin >= 0f && restartLabel.yMax <= h;
+                    bool apart = !homeLabel.Overlaps(homeGlyph) && !restartLabel.Overlaps(restartGlyph);
+                    bool readable = font + 0.01f >= 14f * onePt && track + 0.01f >= font * 0.10f;
+                    bool labelClear = true;
+                    for (int count = 2; count <= 3 && labelClear; count++)
+                        for (int slot = 0; slot < count; slot++)
+                        {
+                            float fx = FeederRow.X(slot, count);
+                            var a = CornerAnchor.WorldToGui(w, h, fx - FeederRow.BulbHalf, fy + 1.34f);
+                            var b = CornerAnchor.WorldToGui(w, h, fx + FeederRow.BulbHalf, fy - 1.47f);
+                            var bulb = Rect.MinMaxRect(a.x, a.y, b.x, b.y);
+                            if (bulb.Overlaps(homeLabel) || bulb.Overlaps(restartLabel)) labelClear = false;
+                        }
+                    Check("corner-mark-" + tag, glyphs && onScreen && apart && readable && labelClear,
+                        "glyph " + homeGlyph.width.ToString("0.00") + "/" + restartGlyph.width.ToString("0.00")
+                        + " font " + font + " track " + track.ToString("0.00")
+                        + " homeLabel " + homeLabel.width.ToString("0.0") + "x" + homeLabel.height.ToString("0.0")
+                        + " restartLabel " + restartLabel.width.ToString("0.0") + "x" + restartLabel.height.ToString("0.0")
+                        + " clear " + labelClear);
                 }
             }
             finally
@@ -189,7 +224,8 @@ namespace FlockFive.Editor
             bool plate = hud.IndexOf("DrawGardenHome(") >= 0
                 && hud.IndexOf("GUI.DrawTexture(home, Texture2D.whiteTexture)") < 0
                 && app.IndexOf("DrawRoundedFace(home,") >= 0
-                && app.IndexOf("StampOutlined(home, \"Home\"") >= 0;
+                && app.IndexOf("DrawHomeGlyph(") >= 0
+                && app.IndexOf("DrawCornerCaption(home, glyph, \"Home\"") >= 0;
             int reward = app.IndexOf("void DrawRewardStamp(");
             bool rewardKept = reward >= 0 && app.IndexOf("DrawRewardStamp(", reward + 10) >= 0;
             Check("play-hud-has-no-garden-stamp", noChip && rewardKept, "hud " + hud.Length + " chip " + !noChip);
