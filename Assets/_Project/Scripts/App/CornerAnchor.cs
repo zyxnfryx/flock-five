@@ -264,6 +264,12 @@ namespace FlockFive
             if (crown > world) feederDrop = crown - world;
             float reach = WorldBuilder.RowY0Base(tall) + BranchReachWorld;
             if (reach > world) branchDrop = reach - world;
+            // The gift limbs stay put. A short window cannot spend the whole caption
+            // clearance on the rows, or the lowest wood covers the ad branch.
+            float low = WorldBuilder.RowY0Base(tall) - (WorldBuilder.Rows - 1) * WorldBuilder.RowGap;
+            float room = (low + BranchHit.MainY0) - (WorldBuilder.GiftY + BranchHit.GiftY1) - 0.02f;
+            if (room < 0f) room = 0f;
+            if (branchDrop > room) branchDrop = room;
         }
 
         public static float GuiYToWorld(float w, float h, float guiY)
