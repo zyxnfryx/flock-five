@@ -996,8 +996,9 @@ namespace FlockFive.Editor
                     float yLimit = birds.yMax - 0.5f;
                     if (FlockFiveApp.GardenPhoneBoard(w, h))
                     {
-                        yLimit += FlockFiveApp.PhoneGloveDropPx;
-                        birdHit.height += FlockFiveApp.PhoneGloveDropPx;
+                        float drop = FlockFiveApp.GardenGloveDrop(w, h);
+                        yLimit += drop;
+                        birdHit.height += drop;
                     }
                     bool onBird = birds.width > 8f && endpoint.Overlaps(birdHit)
                         && pose.End.x > birds.xMin + 0.5f && pose.End.x < birds.xMax - 0.5f
@@ -1230,7 +1231,7 @@ namespace FlockFive.Editor
                     bool inside = true;
                     bool showed = false;
                     float contactRun = 0f, contactHold = 0f;
-                    float reachGap = float.MaxValue;
+                    float reachTop = float.MaxValue;
                     int reachFrames = 0;
                     for (int frame = 0; frame < 30; frame++)
                     {
@@ -1265,8 +1266,7 @@ namespace FlockFive.Editor
                         if (dip >= 0.98f)
                         {
                             contactRun += 0.05f;
-                            float gap = box.yMin - face.yMax;
-                            if (gap < reachGap) reachGap = gap;
+                            if (box.yMin < reachTop) reachTop = box.yMin;
                             reachFrames++;
                         }
                         else
@@ -1291,7 +1291,7 @@ namespace FlockFive.Editor
                     {
                         intoMin = 1f + FlockFiveApp.ChestOverlap * ppu + 6f;
                         intoMax = 1f + FlockFiveApp.ChestOverlap * ppu + 14f;
-                        yBot += FlockFiveApp.PhoneGloveDropPx + 1f;
+                        yBot += FlockFiveApp.GardenGloveDrop(w, h) + 1f;
                     }
                     bool touch = showed && bestDip > 0.9f && birds.width > 8f
                         && into >= intoMin && into <= intoMax
@@ -1308,20 +1308,25 @@ namespace FlockFive.Editor
                     Check("fresh-garden-fingertip-touches-" + tag, touch, detail);
                     Check("fresh-garden-contact-hold-" + tag, showed && contactHold >= 0.30f && contactHold <= 0.45f, detail);
                     Check("fresh-garden-face-visible-" + tag, faceClear, detail + " face " + face + " glove " + fullBox);
-                    if (phone)
+                    float beakClear = float.MaxValue;
+                    int bobSteps = 0;
+                    if (reachFrames > 0 && face.width > 4f)
                     {
-                        float beakGap = fullBox.yMin - face.yMax;
-                        Check("fresh-garden-beak-clear-" + tag,
-                            showed && bestDip > 0.9f && face.width > 4f && beakGap >= 3f,
-                            detail + " beakGap " + beakGap.ToString("0.0") + " face " + face + " glove " + fullBox);
+                        float period = FlockFiveApp.RubyBobPeriod;
+                        const int steps = 24;
+                        for (int step = 0; step < steps; step++)
+                        {
+                            float below = FlockFiveApp.IdleBeakBelowFace(w, h, period * step / steps);
+                            float clear = reachTop - (face.yMax + below);
+                            if (clear < beakClear) beakClear = clear;
+                            bobSteps++;
+                        }
                     }
-                    else
-                    {
-                        Check("fresh-garden-beak-clear-" + tag,
-                            showed && reachFrames > 0 && face.width > 4f && reachGap >= 3f,
-                            detail + " beakGap " + (reachFrames > 0 ? reachGap : 0f).ToString("0.0")
-                                + " frames " + reachFrames + " face " + face + " glove " + fullBox);
-                    }
+                    Check("fresh-garden-beak-clear-" + tag,
+                        showed && bobSteps > 0 && beakClear >= 2f,
+                        detail + " beakClear " + (bobSteps > 0 ? beakClear : 0f).ToString("0.0")
+                            + " bob " + bobSteps + " reach " + reachFrames
+                            + " face " + face + " glove " + fullBox);
                     Check("fresh-garden-glove-inside-" + tag, showed && inside, detail);
                 }
             }

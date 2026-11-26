@@ -1953,8 +1953,12 @@ namespace FlockFive
         // Phones only. 820 already overlaps the chest and stays on ChestOverlap.
         public const float PhoneChestPx = 9f;
         public const float PhoneGloveDropPx = 4f;
-        // 820 only. The thumb meets the beak on the idle bob. Same drop as a phone.
-        public const float IpadGloveDropPx = 4f;
+        // 402 and 360 sit about 1px tighter than 412. 412 keeps PhoneGloveDropPx.
+        public const float PhoneMarginDropPx = 1f;
+        // 820 only. Four pixels cleared the mid idle; the low bob still met the thumb.
+        // Three more put the thumb under that pose, and two more inward keep the tip on the chest.
+        public const float IpadGloveDropPx = 7f;
+        public const float IpadChestPx = 2f;
         const float PerchAbove = 0.58f;
         const float PerchBelow = 0.84f;
 
@@ -1997,6 +2001,15 @@ namespace FlockFive
         public static bool GardenPhoneBoard(float playW, float playH)
         {
             return playW / Mathf.Max(1f, playH) < DeviceFit.PhoneAspect - 0.02f;
+        }
+
+        // How far the garden glove sits below the beak. 412 (about 915 tall) is
+        // unchanged. Shorter phones take one more pixel. 820 takes the iPad drop.
+        public static float GardenGloveDrop(float playW, float playH)
+        {
+            if (!GardenPhoneBoard(playW, playH)) return IpadGloveDropPx;
+            if (playH >= 895f) return PhoneGloveDropPx;
+            return PhoneGloveDropPx + PhoneMarginDropPx;
         }
 
         // Play-canvas pixels per world unit at the resting camera. Grows with the board.
@@ -2085,6 +2098,7 @@ namespace FlockFive
             bool phone = GardenPhoneBoard(playW, playH);
             float tuck = Mathf.Max(pastRight, pastLeft) + 1f + ChestOverlap * PlayPixelsPerWorld(playW, playH);
             if (phone) tuck += PhoneChestPx;
+            else tuck += IpadChestPx;
             float maxTuck = (birds.width - 8f) * 0.5f;
             if (maxTuck < 1f) return birds;
             if (tuck > maxTuck) tuck = maxTuck;
@@ -2098,7 +2112,7 @@ namespace FlockFive
                 pivotY = face.yMax + rise + 1f;
                 float yLo = birds.yMin + 1f;
                 float yHi = birds.yMax - 1f;
-                float drop = phone ? PhoneGloveDropPx : IpadGloveDropPx;
+                float drop = GardenGloveDrop(playW, playH);
                 pivotY += drop;
                 yHi += drop;
                 if (yHi < yLo) pivotY = birds.center.y;
@@ -2106,6 +2120,33 @@ namespace FlockFive
                 else if (pivotY > yHi) pivotY = yHi;
             }
             return new Rect(birds.x + tuck, pivotY - 4f, Mathf.Max(8f, birds.width - tuck * 2f), 8f);
+        }
+
+        // How far a ruby beak sits below the rest face bottom, in play pixels.
+        // One bob cycle of the perched idle (bob, lean, and look). The face rect
+        // is the unrotated underside, so a low bob drops the beak past that line.
+        public static float IdleBeakBelowFace(float playW, float playH, float time)
+        {
+            var mood = BirdMood.Of(BirdColor.Ruby);
+            const float beakX = 0.50f;
+            const float beakY = 0.45f;
+            const float faceBottom = 0.40f;
+            float bob = Mathf.Sin(time * mood.BobHz) * mood.BobAmp;
+            float look = Mathf.Sin(time * 5.1f) * mood.Tilt;
+            float rad = (look + mood.Lean) * Mathf.Deg2Rad;
+            float ry = beakX * Mathf.Sin(rad) + beakY * Mathf.Cos(rad) + bob;
+            float below = faceBottom - ry;
+            if (below < 0f) below = 0f;
+            return below * PlayPixelsPerWorld(playW, playH);
+        }
+
+        public static float RubyBobPeriod
+        {
+            get
+            {
+                float hz = BirdMood.Of(BirdColor.Ruby).BobHz;
+                return hz < 0.01f ? 1f : Mathf.PI * 2f / hz;
+            }
         }
 
         bool GardenGlove(Vector2 aimGui, float dt, float s, System.Func<Vector2, bool> tapHit)
