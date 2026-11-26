@@ -3853,7 +3853,7 @@ namespace FlockFive.Editor
             bool splashFeeds = pollBody.Contains("FeedResumeHudButton(3");
             string app = CodeOnly(System.IO.File.ReadAllText(System.IO.Path.Combine(
                 Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs")));
-            int stamp = app.IndexOf("DrawGardenStamp(s);");
+            int stamp = app.IndexOf("FeedResumeHudButton(1, home");
             int hive = stamp >= 0 ? app.IndexOf("if (HiveReachable())", stamp) : -1;
             string level = stamp >= 0 && hive > stamp ? app.Substring(stamp, hive - stamp) : "";
             bool levelFeedsGear = level.Contains("FeedResumeHudButton(3");

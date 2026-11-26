@@ -9321,14 +9321,12 @@ namespace FlockFive
                 // glove does not jump ahead on the unscaled clock while the ad is up.
                 if (!Ads.IsShowing && _hiveTutorOn && _hiveInspect >= 0 && _home == HomeFace.Hive)
                     DrawHiveInspect(DeviceFit.Ui());
-                // The sparrow lesson freezes here and used to return before the chip,
-                // so the multiplier badge vanished for the whole lesson. Paint it at
-                // full alpha before the caption. An ad or a full-screen popup still
-                // suppresses it inside GardenStampLive.
-                if (!Ads.IsShowing && !_splash && _board != null)
+                // The sparrow lesson freezes here. The garden multiplier chip is not
+                // part of the play HUD (it lives on the post-stage reward only).
+                if (!Ads.IsShowing && !_splash && _board != null
+                    && (TutorialGuideLive() || _tutorPause != 0 || SeasonReveal.BannerLive))
                 {
                     HudLayout(out float ps, out float pTop, out _, out _, out _);
-                    DrawGardenStamp(ps);
                     if (TutorialGuideLive() || _tutorPause != 0)
                         DrawCoach(ps, pTop);
                     if (SeasonReveal.BannerLive)
@@ -9378,8 +9376,7 @@ namespace FlockFive
                 FinishLevelCurtain();
                 return;
             }
-            // Veil first. The chip is drawn after it, at full alpha, so a coach
-            // dim cannot grey the multiplier out.
+            // Veil first. The multiplier chip is not drawn on the play HUD.
             CoachDim();
             HudLayout(out float s, out float top, out _, out var restart, out var hive);
             var hudM = GUI.matrix;
@@ -9389,7 +9386,6 @@ namespace FlockFive
                 GUIUtility.RotateAroundPivot(CamShake.HudTwist, new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.5f));
                 GUI.matrix = Matrix4x4.Translate(new Vector3(CamShake.HudOffset.x, CamShake.HudOffset.y, 0f)) * GUI.matrix;
             }
-            DrawGardenStamp(s);
             var arrow = SpriteCatalog.Restart;
             if (arrow != null && arrow.texture != null)
                 GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
@@ -9410,17 +9406,7 @@ namespace FlockFive
             bool homeHeld = false;
             if (home.width > 2f)
                 FeedResumeHudButton(1, home, hudAt, hudDown, hudUp, out homeHeld);
-            GUI.color = new Color(0.10f, 0.08f, 0.05f, homeHeld ? 0.92f : 0.78f);
-            GUI.DrawTexture(home, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            var homeLab = GuiPool.Label(GuiSlot.InspectX);
-            homeLab.fontStyle = FontStyle.Bold;
-            homeLab.alignment = TextAnchor.MiddleCenter;
-            homeLab.wordWrap = false;
-            homeLab.clipping = TextClipping.Overflow;
-            homeLab.fontSize = Mathf.Max(9, Mathf.RoundToInt(11f * Mathf.Min(s, 1.15f)));
-            homeLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
-            GUI.Label(home, "Home", homeLab);
+            DrawGardenHome(home, homeHeld);
             if (HiveReachable())
                 DrawHiveButton(CornerAnchor.HiveAlignedDraw(hive, restart), s, orbit: true, pop: true);
             else
@@ -11370,10 +11356,13 @@ namespace FlockFive
                 var tip = GuiPool.Label(GuiSlot.SettingsLink);
                 tip.fontStyle = FontStyle.Bold;
                 tip.alignment = TextAnchor.MiddleCenter;
-                tip.fontSize = Mathf.Max(12, Mathf.RoundToInt(15f * s));
-                float tipW = 236f * s;
-                float tipX = Mathf.Max(16f, pig.x - 12f * s - tipW);
-                var tr = new Rect(tipX, pig.y - 36f * s, tipW, 28f * s);
+                tip.wordWrap = true;
+                tip.fontSize = Mathf.Max(14, Mathf.RoundToInt(16f * s));
+                float tipW = Mathf.Clamp(280f * s, 188f, 340f);
+                float tipH = Mathf.Max(44f * s, tip.fontSize * 2.6f);
+                float tipX = pig.x - 10f * s - tipW;
+                if (tipX < 12f) tipX = 12f;
+                var tr = new Rect(tipX, pig.y - tipH - 8f * s, tipW, tipH);
                 var tipInk = GUI.color;
                 GUI.color = new Color(0.08f, 0.06f, 0.04f, 0.94f);
                 GUI.DrawTexture(tr, Texture2D.whiteTexture);
@@ -11423,9 +11412,13 @@ namespace FlockFive
         float _coinTipUntil = -1f;
         Rect _homeCoinR;
 
+        // Long enough to read "Coins you win go in the piggy."
+        public const float CoinTipSeconds = 3.5f;
+
         void ShowCoinTip()
         {
-            _coinTipUntil = AdPause.Unscaled + 1.6f;
+            float until = AdPause.Unscaled + CoinTipSeconds;
+            if (until > _coinTipUntil) _coinTipUntil = until;
         }
 
         void DrawCoinBalance(float s, float rightX, float centerY)
@@ -11902,63 +11895,11 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        // Garden play only. One gate for the draw, the glove keep-out, and the
-        // caption drop. Lessons never hide the chip. Splash, an ad, and a
-        // full-screen popup do. The finale smash is a world logo, so it does not.
+        // The multiplier chip is a post-stage reward, not a play-HUD badge.
+        // Glove keep-out and caption drop follow this, so they do not dodge an empty seat.
         bool GardenStampLive()
         {
-            return GardenStampVis.Shown(new GardenStampQuery
-            {
-                Splash = _splash,
-                ChipArmed = _gardenStampAt >= 0f && StreakTier.AtStake(Purse.Streak),
-                AdCover = Ads.IsShowing,
-                FullPopup = StampPopupCover(),
-                FinaleSmash = FinaleShow.Playing,
-                Lesson = StampLessons()
-            });
-        }
-
-        // Gift card, restart ask, the clear-reward board, and the bee-card inspect
-        // each paint a wash over the whole glass. The level-hive panel does not.
-        bool StampPopupCover()
-        {
-            if (_clearReward) return true;
-            if (_gift != GiftFace.None) return true;
-            if (_restartAsk != RestartAsk.None) return true;
-            if (_hiveInspect >= 0) return true;
             return false;
-        }
-
-        // Every live lesson, passed through so the shared check can exempt them.
-        GardenLesson StampLessons()
-        {
-            var lesson = GardenLesson.None;
-            if (_pestCue == PestCueSparrow) lesson |= GardenLesson.Sparrow;
-            if (_pestCue == PestCueHawk) lesson |= GardenLesson.Hawk;
-            if (_pestCue == PestCueBee) lesson |= GardenLesson.Bee;
-            if (_pestCue == PestCueFire) lesson |= GardenLesson.Fire;
-            if (_leafIntro) lesson |= GardenLesson.Leaf;
-            if (BadgerGuideLive()) lesson |= GardenLesson.BadgerGuide;
-            if (_bgLessonLive) lesson |= GardenLesson.BadgerLesson;
-            if (_coach && _cueHand) lesson |= GardenLesson.Coach;
-            if (_cueHand && _coachFade >= 0.03f && _cueHolePx >= 8f) lesson |= GardenLesson.CoachDim;
-            if (_hiveLevelLive) lesson |= GardenLesson.HiveGarden;
-            if (_hiveIntroLive) lesson |= GardenLesson.HiveHome;
-            if (_hiveTutorOn) lesson |= GardenLesson.HiveAlbum;
-            if (_pokerIntroLive) lesson |= GardenLesson.PokerHome;
-            if (_pokerPageOn) lesson |= GardenLesson.PokerPage;
-            if (_pokerDealHint) lesson |= GardenLesson.PokerDeal;
-            if (PokerBackGateLive()) lesson |= GardenLesson.PokerBack;
-            if (_dailyIntroLive) lesson |= GardenLesson.Daily;
-            if (_adHand) lesson |= GardenLesson.AdHand;
-            if (_welcomeGlove) lesson |= GardenLesson.Welcome;
-            if (_adoptLive) lesson |= GardenLesson.Adopt;
-            if (_cueGift) lesson |= GardenLesson.GiftCue;
-            if (_albumTutorOn) lesson |= GardenLesson.Album;
-            if (_upgradeTutorOn) lesson |= GardenLesson.Upgrade;
-            if (_tutorPause != 0) lesson |= GardenLesson.TutorPause;
-            if (!string.IsNullOrEmpty(_cueLine)) lesson |= GardenLesson.CoachCaption;
-            return lesson;
         }
 
         // Top-left chip, about 1.7× the previous 81px disc (66..117). TopHud keeps it
@@ -12877,14 +12818,9 @@ namespace FlockFive
         {
             Sfx.Oink();
             _pigJiggle = 1f;
-            _pigBurst = Mathf.Max(_pigBurst, 0.85f);
-            var award = PigPoke.Poke();
-            if (award.Coins > 0)
-            {
-                Sfx.Clink();
-                _pigBurst = 1f;
-                BeginRewardPay(award.Coins);
-            }
+            _pigBurst = Mathf.Max(_pigBurst, 0.55f);
+            PigPoke.Poke();
+            ShowCoinTip();
         }
 
         static bool OnGuiOpen => _app != null && _app._onGuiDepth > 0;
@@ -13633,6 +13569,26 @@ namespace FlockFive
             GUI.color = Color.white;
             if (held) DrawDiscPress(r, sink);
             return FlowerDisc(r, sink);
+        }
+
+        // Garden Home. Same gold rounded plate as the other buttons (bevel, rim,
+        // drop shadow), with the word on the face. Not a flat dark square.
+        void DrawGardenHome(Rect home, bool held)
+        {
+            if (home.width < 2f || home.height < 2f) return;
+            var prev = GUI.color;
+            GUI.color = Color.white;
+            DrawRoundedFace(home, held, PopupTint.Gold, true);
+            var homeLab = GuiPool.Label(GuiSlot.InspectX);
+            homeLab.fontStyle = FontStyle.Bold;
+            homeLab.alignment = TextAnchor.MiddleCenter;
+            homeLab.wordWrap = false;
+            homeLab.clipping = TextClipping.Overflow;
+            int px = Mathf.Clamp(Mathf.RoundToInt(home.height * 0.30f), 13, 28);
+            homeLab.fontSize = px;
+            homeLab.normal.textColor = new Color(0.32f, 0.14f, 0.04f, 1f);
+            StampOutlined(home, "Home", homeLab, new Color(0.32f, 0.14f, 0.04f, 1f), 1, 1);
+            GUI.color = prev;
         }
 
         static Rect DrawRoundedFace(Rect r, bool held, PopupTint tint, bool shadow)

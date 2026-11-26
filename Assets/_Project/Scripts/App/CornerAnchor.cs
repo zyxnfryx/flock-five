@@ -144,19 +144,33 @@ namespace FlockFive
             float feeder = FeederRightGui(w, h);
             float vert = limit - y;
             if (vert < 0f) vert = 0f;
+            // Designed seat: the 72-ref plate, capped by the air above the playfield.
             float size = Mathf.Min(SizeRef * scale, vert);
-            float gutter = right - (feeder + pad);
-            if (size > gutter) size = gutter;
-            // At least 44px, and the dpi tap target when the feeder air can hold it.
-            // Growth stops at FeederRightGui (already 0.12 world clear of the widest
-            // bulb) and never slides the right edge past the hive halo.
-            float clear = right - feeder;
-            if (clear < 0f) clear = 0f;
-            float tap = Mathf.Max(MinTapPx(0f), MinTapPx(Screen.dpi));
-            if (size < tap) size = tap < clear ? tap : clear;
-            if (size > vert) size = vert;
+            // Tall phones keep that seat. The feeder gutter below was tuned on the
+            // wide iPad field and crushed 402 / 412 / 360 to a ~30 pt plate. iPad
+            // 820 and the 9:16 column stay on the gutter, so that seat does not move.
+            if (!TallPhone(w, h))
+            {
+                float gutter = right - (feeder + pad);
+                if (size > gutter) size = gutter;
+                // At least 44px, and the dpi tap target when the feeder air can hold it.
+                // Growth stops at FeederRightGui (already 0.12 world clear of the widest
+                // bulb) and never slides the right edge past the hive halo.
+                float clear = right - feeder;
+                if (clear < 0f) clear = 0f;
+                float tap = Mathf.Max(MinTapPx(0f), MinTapPx(Screen.dpi));
+                if (size < tap) size = tap < clear ? tap : clear;
+                if (size > vert) size = vert;
+            }
             if (size < 0f) size = 0f;
             return new Rect(right - size, y, size, size);
+        }
+
+        // Narrower than a phone (9:16). iPad 820 and its pillar column are not this.
+        public static bool TallPhone(float w, float h)
+        {
+            if (h < 1f) return false;
+            return w / h < DeviceFit.PhoneAspect - 0.02f;
         }
 
         // Top-left home, the same size and top inset as restart.
