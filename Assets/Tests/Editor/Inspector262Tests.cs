@@ -992,9 +992,16 @@ namespace FlockFive.Editor
                     bool flush = pose.FromLeft ? pose.Glove.xMin <= 1.5f : pose.Glove.xMax >= w - 1.5f;
                     bool capped = amp + 0.75f < FlockFiveApp.CoachTapPressPx && flush && amp > 0.5f;
                     var endpoint = new Rect(pose.End.x - 1f, pose.End.y - 1f, 2f, 2f);
-                    bool onBird = birds.width > 8f && endpoint.Overlaps(birds)
+                    var birdHit = birds;
+                    float yLimit = birds.yMax - 0.5f;
+                    if (FlockFiveApp.GardenPhoneBoard(w, h))
+                    {
+                        yLimit += FlockFiveApp.PhoneGloveDropPx;
+                        birdHit.height += FlockFiveApp.PhoneGloveDropPx;
+                    }
+                    bool onBird = birds.width > 8f && endpoint.Overlaps(birdHit)
                         && pose.End.x > birds.xMin + 0.5f && pose.End.x < birds.xMax - 0.5f
-                        && pose.End.y > birds.yMin + 0.5f && pose.End.y < birds.yMax - 0.5f
+                        && pose.End.y > birds.yMin + 0.5f && pose.End.y < yLimit
                         && !pose.FromLeft && pose.End.x < wood.xMax - 12f;
                     bool inside = GloveInside(pose.Glove, w, 59f, h - 34f);
                     t.GetField("_coachTapOn", flags).SetValue(app, false);
@@ -1263,13 +1270,24 @@ namespace FlockFive.Editor
                     if (contactRun > contactHold) contactHold = contactRun;
                     // Negative means the tip is inside the body outline. The red chest
                     // starts past the dark rim; a tip on the perch or the outer
-                    // belly stays outside that line.
+                    // belly stays outside that line. Phones need a deeper seat:
+                    // the shared overlap still leaves leaf between the tip and the red.
                     float pastEdge = full.x - birds.xMax;
                     float ppu = FlockFiveApp.PlayPixelsPerWorld(w, h);
                     float into = -pastEdge;
+                    bool phone = FlockFiveApp.GardenPhoneBoard(w, h);
+                    float intoMin = 0.10f * ppu;
+                    float intoMax = 0.40f * ppu;
+                    float yBot = birds.yMax;
+                    if (phone)
+                    {
+                        intoMin = 1f + FlockFiveApp.ChestOverlap * ppu + 6f;
+                        intoMax = 1f + FlockFiveApp.ChestOverlap * ppu + 14f;
+                        yBot += FlockFiveApp.PhoneGloveDropPx + 1f;
+                    }
                     bool touch = showed && bestDip > 0.9f && birds.width > 8f
-                        && into >= 0.10f * ppu && into <= 0.40f * ppu
-                        && full.y > birds.yMin && full.y < birds.yMax
+                        && into >= intoMin && into <= intoMax
+                        && full.y > birds.yMin && full.y < yBot
                         && full.y > face.yMax;
                     float travel = showed ? maxX - minX : 0f;
                     string tag = ((int)size.x).ToString();
@@ -1282,6 +1300,13 @@ namespace FlockFive.Editor
                     Check("fresh-garden-fingertip-touches-" + tag, touch, detail);
                     Check("fresh-garden-contact-hold-" + tag, showed && contactHold >= 0.30f && contactHold <= 0.45f, detail);
                     Check("fresh-garden-face-visible-" + tag, faceClear, detail + " face " + face + " glove " + fullBox);
+                    if (phone)
+                    {
+                        float beakGap = fullBox.yMin - face.yMax;
+                        Check("fresh-garden-beak-clear-" + tag,
+                            showed && bestDip > 0.9f && face.width > 4f && beakGap >= 3f,
+                            detail + " beakGap " + beakGap.ToString("0.0") + " face " + face + " glove " + fullBox);
+                    }
                     Check("fresh-garden-glove-inside-" + tag, showed && inside, detail);
                 }
             }

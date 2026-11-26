@@ -1947,8 +1947,12 @@ namespace FlockFive
         const float PerchHalfW = 0.30f;
         // At the lowered hand the belly is narrower than this outline, so the
         // fingertip has to travel further in to overlap the red. Same distance
-        // on every board: about 12px on 820, about 7px on a phone.
+        // on every board: about 12px on 820, about 7px on a phone. Phones still
+        // stop short of the red, so they take another fixed push below.
         public const float ChestOverlap = 0.22f;
+        // Phones only. 820 already overlaps the chest and stays on ChestOverlap.
+        public const float PhoneChestPx = 9f;
+        public const float PhoneGloveDropPx = 4f;
         const float PerchAbove = 0.58f;
         const float PerchBelow = 0.84f;
 
@@ -1984,6 +1988,13 @@ namespace FlockFive
             float tall = Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, window));
             float limbX = WorldBuilder.CamOrtho * aspect - WorldBuilder.WoodHalf + 0.18f;
             return new Vector2(-limbX, WorldBuilder.RowY0For(tall));
+        }
+
+        // iPad's play column is 9:16. A phone window is taller, so its canvas is
+        // narrower than that. 820 does not take the phone nudge.
+        public static bool GardenPhoneBoard(float playW, float playH)
+        {
+            return playW / Mathf.Max(1f, playH) < DeviceFit.PhoneAspect - 0.02f;
         }
 
         // Play-canvas pixels per world unit at the resting camera. Grows with the board.
@@ -2069,7 +2080,9 @@ namespace FlockFive
             float s = DeviceFit.Ui(playW, playH);
             MeasureTap(false, s, 1f, out float pastRight, out _, out float aboveRight, out _);
             MeasureTap(true, s, 1f, out float pastLeft, out _, out float aboveLeft, out _);
+            bool phone = GardenPhoneBoard(playW, playH);
             float tuck = Mathf.Max(pastRight, pastLeft) + 1f + ChestOverlap * PlayPixelsPerWorld(playW, playH);
+            if (phone) tuck += PhoneChestPx;
             float maxTuck = (birds.width - 8f) * 0.5f;
             if (maxTuck < 1f) return birds;
             if (tuck > maxTuck) tuck = maxTuck;
@@ -2079,9 +2092,15 @@ namespace FlockFive
             {
                 // GUI y grows downward. The pivot sits just below the beak,
                 // by the full height of the glove above the fingertip.
+                // Phones drop a few pixels more so the thumb clears the beak.
                 pivotY = face.yMax + rise + 1f;
                 float yLo = birds.yMin + 1f;
                 float yHi = birds.yMax - 1f;
+                if (phone)
+                {
+                    pivotY += PhoneGloveDropPx;
+                    yHi += PhoneGloveDropPx;
+                }
                 if (yHi < yLo) pivotY = birds.center.y;
                 else if (pivotY < yLo) pivotY = yLo;
                 else if (pivotY > yHi) pivotY = yHi;
