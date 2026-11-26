@@ -1952,12 +1952,11 @@ namespace FlockFive
         public const float ChestOverlap = 0.22f;
         // Phones only. 820 already overlaps the chest and stays on ChestOverlap.
         public const float PhoneChestPx = 9f;
-        public const float PhoneGloveDropPx = 4f;
-        // 402 and 360 sit about 1px tighter than 412. 412 keeps PhoneGloveDropPx.
-        public const float PhoneMarginDropPx = 1f;
-        // 820 only. Four pixels cleared the mid idle; the low bob still met the thumb.
-        // Three more put the thumb under that pose, and two more inward keep the tip on the chest.
-        public const float IpadGloveDropPx = 7f;
+        // Every phone. 412 was 4 and still met the beak, so it takes 2 more.
+        // 402 and 360 were 5, one pixel tight at the thumb corner, so they take 1 more.
+        public const float PhoneGloveDropPx = 6f;
+        // 820 only. One more pixel under the low look. The fingertip stays on the chest.
+        public const float IpadGloveDropPx = 8f;
         public const float IpadChestPx = 2f;
         const float PerchAbove = 0.58f;
         const float PerchBelow = 0.84f;
@@ -2003,13 +2002,11 @@ namespace FlockFive
             return playW / Mathf.Max(1f, playH) < DeviceFit.PhoneAspect - 0.02f;
         }
 
-        // How far the garden glove sits below the beak. 412 (about 915 tall) is
-        // unchanged. Shorter phones take one more pixel. 820 takes the iPad drop.
+        // How far the garden glove sits below the beak. Phones share one drop.
+        // 820 takes the iPad drop.
         public static float GardenGloveDrop(float playW, float playH)
         {
-            if (!GardenPhoneBoard(playW, playH)) return IpadGloveDropPx;
-            if (playH >= 895f) return PhoneGloveDropPx;
-            return PhoneGloveDropPx + PhoneMarginDropPx;
+            return GardenPhoneBoard(playW, playH) ? PhoneGloveDropPx : IpadGloveDropPx;
         }
 
         // Play-canvas pixels per world unit at the resting camera. Grows with the board.
@@ -2123,13 +2120,16 @@ namespace FlockFive
         }
 
         // How far a ruby beak sits below the rest face bottom, in play pixels.
-        // One bob cycle of the perched idle (bob, lean, and look). The face rect
-        // is the unrotated underside, so a low bob drops the beak past that line.
+        // Bob, lean, and look. The first bob is the mild pose. The low look
+        // that meets the thumb shows up a few seconds later.
+        public const float IdleBeakWindow = 4.6f;
+
         public static float IdleBeakBelowFace(float playW, float playH, float time)
         {
             var mood = BirdMood.Of(BirdColor.Ruby);
-            const float beakX = 0.50f;
-            const float beakY = 0.45f;
+            // Underside of the beak over the thumb, world units from the sprite center.
+            const float beakX = 0.48f;
+            const float beakY = 0.46f;
             const float faceBottom = 0.40f;
             float bob = Mathf.Sin(time * mood.BobHz) * mood.BobAmp;
             float look = Mathf.Sin(time * 5.1f) * mood.Tilt;
