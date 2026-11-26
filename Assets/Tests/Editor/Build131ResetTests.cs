@@ -70,9 +70,7 @@ namespace FlockFive.Editor
                 float topNorm = (h - safe.yMax) / h;
                 // A tap on Restart's centre reaches Restart.
                 Check("tap reaches restart " + tag, FlockFiveApp.HudClaim(rs.center, rs, hv, true, hudTop) == FlockFiveApp.HudTap.Restart, rs.center.ToString());
-                // Feeders, 2 and 3: a bulb-center tap is not Restart. Tall phones may
-                // meet the outer edge of the widest bulb; the dish center stays a feeder.
-                bool phoneSeat = CornerAnchor.TallPhone(w, h);
+                // Feeders, 2 and 3: Restart clear of every bulb, and a bulb tap is not Restart.
                 float fy = WorldBuilder.FeederYFor(tall, topNorm);
                 for (int count = 2; count <= 3; count++)
                 {
@@ -83,10 +81,7 @@ namespace FlockFive.Editor
                         var a = CornerAnchor.WorldToGui(w, h, fx - FeederRow.BulbHalf, fy + 1.34f);
                         var b = CornerAnchor.WorldToGui(w, h, fx + FeederRow.BulbHalf, fy - 1.47f);
                         var bulb = Rect.MinMaxRect(a.x, a.y, b.x, b.y);
-                        bool centerClaim = rs.Contains(bulb.center)
-                            || FlockFiveApp.HudClaim(bulb.center, rs, hv, true, hudTop) == FlockFiveApp.HudTap.Restart;
-                        bool bulbOverlapsRestart = bulb.Overlaps(rs);
-                        if (centerClaim || (bulbOverlapsRestart && !phoneSeat))
+                        if (bulb.Overlaps(rs) || FlockFiveApp.HudClaim(bulb.center, rs, hv, true, hudTop) == FlockFiveApp.HudTap.Restart)
                         { fok = false; fd += " feeder" + i + " " + bulb; }
                     }
                     Check("restart clear of " + count + " feeders " + tag, fok, "restart " + rs + fd);

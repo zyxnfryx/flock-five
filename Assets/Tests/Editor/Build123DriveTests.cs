@@ -116,14 +116,15 @@ namespace FlockFive.Editor
         }
 
         // Point windows Brandon named. Safe top / bottom match the device table.
-        // 820 is the wide iPad seat (unchanged by the phone gutter exception).
+        // Phone seats are the feeder air (halo to the widest bulb), not the 72-ref
+        // plate: that plate covers a bulb. 820 is the wide iPad seat, uncapped.
         static void Corners(System.Action<string, bool, string> Check)
         {
             var devs = new[]
             {
-                new[] { 402f, 874f, 62f, 34f, 55.87f },
-                new[] { 412f, 915f, 59f, 34f, 66.56f },
-                new[] { 360f, 780f, 32f, 16f, 65.00f },
+                new[] { 402f, 874f, 62f, 34f, 36.84f },
+                new[] { 412f, 915f, 59f, 34f, 37.03f },
+                new[] { 360f, 780f, 32f, 16f, 33.09f },
                 new[] { 820f, 1180f, 24f, 20f, 84.44f },
             };
             var prev = DeviceFit.TestWindow;
@@ -134,13 +135,18 @@ namespace FlockFive.Editor
                     float w = devs[i][0], h = devs[i][1], top = devs[i][2], bot = devs[i][3], want = devs[i][4];
                     DeviceFit.TestWindow = w / h;
                     var safe = new Rect(0f, bot, w, h - bot - top);
-                    CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out _);
+                    CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
                     var home = CornerAnchor.TopBarHome(restart, w, safe, h);
+                    float art = CornerAnchor.HiveArtRight(hive);
+                    float feeder = CornerAnchor.FeederRightGui(w, h);
+                    float clear = Mathf.Max(0f, art - feeder);
                     string tag = ((int)w).ToString();
                     bool size = Mathf.Abs(restart.width - want) <= 0.75f
                         && Mathf.Abs(restart.height - restart.width) <= 0.05f
                         && Mathf.Abs(home.width - restart.width) <= 0.05f
-                        && Mathf.Abs(home.height - restart.height) <= 0.05f;
+                        && Mathf.Abs(home.height - restart.height) <= 0.05f
+                        && restart.xMin + 0.51f >= feeder
+                        && restart.width <= clear + 0.51f;
                     bool route = tag == "820"
                         ? !CornerAnchor.TallPhone(w, h)
                         : CornerAnchor.TallPhone(w, h);

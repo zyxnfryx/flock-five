@@ -146,18 +146,24 @@ namespace FlockFive
             if (vert < 0f) vert = 0f;
             // Designed seat: the 72-ref plate, capped by the air above the playfield.
             float size = Mathf.Min(SizeRef * scale, vert);
-            // Tall phones keep that seat. The feeder gutter below was tuned on the
-            // wide iPad field and crushed 402 / 412 / 360 to a ~30 pt plate. iPad
-            // 820 and the 9:16 column stay on the gutter, so that seat does not move.
-            if (!TallPhone(w, h))
+            // Air from the widest feeder to the hive halo. The right edge stays on
+            // that halo, so the seat cannot grow past this without covering a bulb.
+            float clear = right - feeder;
+            if (clear < 0f) clear = 0f;
+            if (TallPhone(w, h))
+            {
+                // The pad gutter (clear minus 6*scale) left a ~30 pt plate on a 3x
+                // phone. Use the full feeder air instead. iPad 820 and the 9:16
+                // column keep the gutter below, so that seat does not move.
+                if (size > clear) size = clear;
+            }
+            else
             {
                 float gutter = right - (feeder + pad);
                 if (size > gutter) size = gutter;
                 // At least 44px, and the dpi tap target when the feeder air can hold it.
                 // Growth stops at FeederRightGui (already 0.12 world clear of the widest
                 // bulb) and never slides the right edge past the hive halo.
-                float clear = right - feeder;
-                if (clear < 0f) clear = 0f;
                 float tap = Mathf.Max(MinTapPx(0f), MinTapPx(Screen.dpi));
                 if (size < tap) size = tap < clear ? tap : clear;
                 if (size > vert) size = vert;

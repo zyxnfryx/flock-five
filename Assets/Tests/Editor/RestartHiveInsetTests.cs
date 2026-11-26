@@ -101,16 +101,9 @@ namespace FlockFive.Editor
                     float clear = Mathf.Max(0f, art - feeder);
                     bool above = rs.yMax <= field + 0.01f && rs.yMax <= top + 0.01f && rs.yMin + 0.01f >= d.H - safe.yMax;
                     bool square = Mathf.Abs(rs.width - rs.height) <= 0.01f && rs.width > 8f;
-                    // Tall phones use the designed seat, which can meet the outer edge of a
-                    // 3-feeder bulb. The dish center stays a feeder tap. iPad keeps the gutter.
-                    bool phoneSeat = CornerAnchor.TallPhone(d.W, d.H);
-                    bool inGutter = phoneSeat
-                        ? rs.xMax <= safe.xMax + 0.01f && rs.width + 0.51f >= CornerAnchor.MinTapPx(0f)
-                        : rs.xMin + 0.51f >= feeder && rs.xMax <= safe.xMax + 0.01f;
+                    bool inGutter = rs.xMin + 0.51f >= feeder && rs.xMax <= safe.xMax + 0.01f;
                     float floor = Mathf.Min(CornerAnchor.MinTapPx(0f), clear);
-                    bool tappable = phoneSeat
-                        ? rs.width + 0.51f >= CornerAnchor.MinTapPx(0f)
-                        : rs.width + 0.51f >= floor && rs.width <= clear + 0.51f;
+                    bool tappable = rs.width + 0.51f >= floor && rs.width <= clear + 0.51f;
                     bool feedersClear = true;
                     string hit = "";
                     float tall = CornerAnchor.TallFor(d.W, d.H);
@@ -122,12 +115,7 @@ namespace FlockFive.Editor
                             var a = CornerAnchor.WorldToGui(d.W, d.H, fx - FeederRow.BulbHalf, fy + 1.34f);
                             var b = CornerAnchor.WorldToGui(d.W, d.H, fx + FeederRow.BulbHalf, fy - 1.47f);
                             var bulb = Rect.MinMaxRect(a.x, a.y, b.x, b.y);
-                            bool centerIn = rs.Contains(bulb.center);
-                            if (centerIn || (bulb.Overlaps(rs) && !phoneSeat))
-                            {
-                                feedersClear = false;
-                                hit = "feeder " + count + ":" + i;
-                            }
+                            if (bulb.Overlaps(rs)) { feedersClear = false; hit = "feeder " + count + ":" + i; }
                         }
                     bool offHive = !rs.Overlaps(hv);
                     Check("top bar, clear of feeders " + d.Name,
