@@ -41,6 +41,8 @@ namespace FlockFive
         bool _dailyAskOpen;
         float _dailyPopAt = -1f;
         float _dailyAskAt = -1f;
+        Rect _dailyAskNoHit;
+        bool _dailyAskNoHitOn;
         // Pay stays up until the coins have landed and the balance has counted.
         // Then the card eases out. -1 means the card is not on its exit beat.
         bool _dailyPayHold;
@@ -144,9 +146,18 @@ namespace FlockFive
                 return;
             }
 #endif
-            if (_splash && _home == HomeFace.Splash && !_dailyAskOpen
-                && PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0)
-                OfferWelcome();
+            if (_splash && _home == HomeFace.Splash)
+            {
+                var step = HomePopupChain.Next(DailyReminder.PromptDue(), _dailyAskOpen,
+                    PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0, _welcomeOpen || _welcomeQueued, false);
+                if (step == HomePopupChain.Card.Reminder && !_dailyAskOpen && ReminderOpensNow(IdleAfterReward()) && GatePopup(PopupKind.Ask, false))
+                {
+                    _dailyAskOpen = true;
+                    _dailyAskAt = AdPause.Unscaled;
+                }
+                else if (step == HomePopupChain.Card.Welcome)
+                    OfferWelcome();
+            }
         }
 
         // ONE "idle after reward" gate. True only when no reward is in flight and none is
@@ -154,6 +165,9 @@ namespace FlockFive
         // it, no welcome card/coin pass/pending grant, no ask card, no Daily card. Anything
         // that must not talk over reward audio (the OS notification dialog today) waits on
         // this. Add new reward states here, not at the call sites.
+        // The reminder stays queued until the reward card and its pay are gone.
+        public static bool ReminderOpensNow(bool idleAfterReward) => idleAfterReward;
+
         bool IdleAfterReward()
         {
             if (RewardPayBusy() || RewardLessonHold() || Sfx.PayoutBusy) return false;
@@ -451,7 +465,7 @@ namespace FlockFive
                 claim = HitPad(claimHit, out claimHeld);
             HitPad(swallow, out _);
             bool outside = HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
-            if (outside && swallow.Contains(Event.current.mousePosition)) outside = false;
+            if (outside && swallow.Contains(PlayPointer.Gui(Event.current))) outside = false;
 
             float t = AdPause.Unscaled;
             bool closing = _dailyCloseAt >= 0f;
@@ -857,7 +871,7 @@ namespace FlockFive
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive) return;
 #endif
             if (!GatePopup(PopupKind.Welcome, false)) return;
-            if (RewardLessonHold() || AdoptHoldsQueue() || _dailyAskOpen)
+            if (DailyReminder.PromptDue() || RewardLessonHold() || AdoptHoldsQueue() || _dailyAskOpen)
             {
                 if (PlayerPrefs.GetInt(WelcomePendingKey, 0) == 0)
                 {
@@ -975,6 +989,18 @@ namespace FlockFive
         }
 
         // Ease-out cubic, 0.88 → 1. Resting scale is 1, so an already-open card does not drift.
+        // Hit rect of a button while its card is still scaling open. k is the
+        // open tween (DailyPop), already above 0 on the first frame.
+        public static Rect PopupHitDuringOpen(Rect button, Vector2 pivot, float k)
+        {
+            if (k >= 0.999f || button.width < 2f) return button;
+            var c = button.center;
+            var sc = pivot + (c - pivot) * k;
+            float w = button.width * k;
+            float h = button.height * k;
+            return new Rect(sc.x - w * 0.5f, sc.y - h * 0.5f, w, h);
+        }
+
         static float DailyPop(float at)
         {
             if (at < 0f) return 1f;
@@ -1046,7 +1072,16 @@ namespace FlockFive
         public static Vector2 DailyClaimGloveSeat(Rect disc)
         {
             var word = DailyClaimWordCenter(disc);
-            return new Vector2(word.x - disc.width * DailyClaimGloveBeside, word.y);
+            var aim = new Vector2(word.x - disc.width * DailyClaimGloveBeside, word.y);
+            // On the claim face. A fingertip past the left edge covers nothing
+            // and falls off a 360-wide phone.
+            float minX = Mathf.Max(8f, disc.xMin + 4f);
+            float maxX = Mathf.Max(minX, disc.xMax - 4f);
+            float minY = Mathf.Max(8f, disc.yMin + 4f);
+            float maxY = Mathf.Max(minY, disc.yMax - 4f);
+            aim.x = Mathf.Clamp(aim.x, minX, maxX);
+            aim.y = Mathf.Clamp(aim.y, minY, maxY);
+            return aim;
         }
 
         // Claim step. Fingertip is beside the word, on the pedestal face.
@@ -2277,6 +2312,23 @@ namespace FlockFive
             GUI.matrix = pressed;
         }
 
+        // True when Not now should take this point. The open tween has started
+        // (k > 0) and the point is on the button. No GUI.
+        public static bool NotNowAccepts(bool askOpen, float openK, Rect noButton, Vector2 gui)
+        {
+            if (!askOpen || openK <= 0.01f || noButton.width < 2f || noButton.height < 2f) return false;
+            return noButton.Contains(gui);
+        }
+
+        // The boot reminder's Not now. The caller passes the button rect and the
+        // point. DrawDailyAsk uses the same decision once HitPad reports the release.
+        bool TakeDailyAskNotNow(Rect noButton, Vector2 gui)
+        {
+            if (!NotNowAccepts(_dailyAskOpen, DailyPop(_dailyAskAt), noButton, gui)) return false;
+            CloseDailyAsk(false);
+            return true;
+        }
+
         void DrawDailyAsk(float s)
         {
             if (!_dailyAskOpen) return;
@@ -2284,16 +2336,27 @@ namespace FlockFive
             if (_dailyShotQuiet || EditorShotLive) return;
 #endif
             DailyAskLayout(s, out var card, out var body, out var yesR, out var noR);
-            bool yes = HitPad(yesR, out bool yesHeld);
-            bool no = HitPad(noR, out bool noHeld);
-            HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
+            // Hits use the open-tween scale from the first frame, so Not now
+            // accepts the tap that lands on the button while it is still growing.
+            float k = DailyPop(_dailyAskAt);
+            // The resting button is live from the first frame of the open tween.
+            // A tap on Not now is not waiting for the card to finish growing.
+            var yesHit = k > 0.01f ? yesR : PopupHitDuringOpen(yesR, card.center, k);
+            var noHit = k > 0.01f ? noR : PopupHitDuringOpen(noR, card.center, k);
+            _dailyAskNoHit = noHit;
+            _dailyAskNoHitOn = true;
+            bool yes = HitPad(yesHit, out bool yesHeld);
+            bool no = HitPad(noHit, out bool noHeld);
+            var e = Event.current;
+            bool onButton = e != null && (yesHit.Contains(PlayPointer.Gui(e)) || noHit.Contains(PlayPointer.Gui(e)));
+            if (!onButton)
+                HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _);
 
             float t = AdPause.Unscaled;
             float breathe = 0.5f + 0.5f * Mathf.Sin(t * 2.05f);
             var glow = GlowTex();
             ModalBlock.Paint(ModalBlock.Id.DailyAsk, new Color(0.04f, 0.03f, 0.02f, 0.72f));
 
-            float k = DailyPop(_dailyAskAt);
             var prev = GUI.matrix;
             if (k < 0.999f)
                 GUIUtility.ScaleAroundPivot(new Vector2(k, k), card.center);
@@ -2309,7 +2372,7 @@ namespace FlockFive
             GUI.color = Color.white;
 
             if (yes) CloseDailyAsk(true);
-            else if (no) CloseDailyAsk(false);
+            else if (no) TakeDailyAskNotNow(noHit, noHit.center);
         }
 
         void CloseDailyAsk(bool yes)
@@ -2317,6 +2380,7 @@ namespace FlockFive
             if (!_dailyAskOpen) return;
             _dailyAskOpen = false;
             _dailyAskAt = -1f;
+            _dailyAskNoHitOn = false;
             if (yes) DailyReminder.Accept();
             else DailyReminder.Decline();
             Sfx.CardTap();

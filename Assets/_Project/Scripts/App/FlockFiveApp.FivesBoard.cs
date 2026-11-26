@@ -72,7 +72,13 @@ namespace FlockFive
             if (_fivesOpen)
             {
                 _fivesChipHeld = false;
-                if (_fivesAnim > 0.55f && HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _))
+                if (FivesReleasePoint(out var gui) && TakeFivesClose(gui))
+                    return;
+                var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
+                var close = FivesCloseRect(g.Panel, s);
+                var e = Event.current;
+                bool onClose = e != null && close.Contains(PlayPointer.Gui(e));
+                if (!onClose && _fivesAnim > 0.55f && HitPad(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _))
                 {
                     _fivesOpen = false;
                     Sfx.Chirp(BirdColor.Gold);
@@ -245,6 +251,62 @@ namespace FlockFive
         public static string FivesCaption(BirdPoker.FiveRecord r)
             => "×" + r.Count + " · " + BirdPoker.DayLabel(r.FirstDay) + (r.Natural ? " ★" : "");
 
+        // Release point in window GUI, from the editor inject or a live IMGUI event.
+        // The close decision itself does not read Event.current.
+        bool FivesReleasePoint(out Vector2 gui)
+        {
+#if UNITY_EDITOR
+            if (EditorPointerInject.On && EditorPointerInject.Up)
+            {
+                PlayPointer.CaptureInject();
+                gui = PlayPointer.At;
+                return true;
+            }
+#endif
+            var e = Event.current;
+            if (e != null && e.type == EventType.MouseUp && e.button == 0)
+            {
+                PlayPointer.CaptureEvent(e);
+                gui = PlayPointer.At;
+                return true;
+            }
+            gui = default;
+            return false;
+        }
+
+        // Closes the Five-of-a-Kind board when the point is on the X. No GUI.
+        bool TakeFivesClose(Vector2 windowGui)
+        {
+            if (!_fivesOpen) return false;
+            float s = DeviceFit.Ui();
+            var g = LayoutFivesBoard(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s);
+            if (!FivesCloseRect(g.Panel, s).Contains(windowGui)) return false;
+            _fivesOpen = false;
+            _fivesAnim = 0f;
+            _fivesChipHeld = false;
+            return true;
+        }
+
+        public static Rect FivesCloseRect(Rect panel, float s)
+        {
+            float side = Mathf.Max(36f, 28f * s);
+            return new Rect(panel.xMax - side - 8f * s, panel.y + 8f * s, side, side);
+        }
+
+        void DrawFivesClose(Rect r, float u)
+        {
+            GUI.color = new Color(0.43f, 0.27f, 0.12f, u);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = new Color(0.98f, 0.94f, 0.84f, u);
+            float inset = r.width * 0.22f;
+            GUI.DrawTexture(new Rect(r.x + inset, r.y + inset, r.width - inset * 2f, r.height - inset * 2f), Texture2D.whiteTexture);
+            var st = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            st.fontSize = Mathf.Max(12, Mathf.RoundToInt(r.height * 0.55f));
+            st.normal.textColor = new Color(0.36f, 0.18f, 0.07f, u);
+            GUI.Label(r, "X", st);
+            GUI.color = Color.white;
+        }
+
         void DrawPokerFivesBoard(float s)
         {
             if (!GuiPaint()) return;
@@ -299,6 +361,8 @@ namespace FlockFive
                 : "All 16 = FULLCARD " + Money.Format(BirdPoker.FullcardPrize);
             _fivesSubSt.fontSize = FitFont(_fivesSubSt, foot, p.width * 0.86f, 18f * s, 9, 26);
             GUI.Label(new Rect(p.x, p.yMax - 30f * s, p.width, 20f * s), foot, _fivesSubSt);
+            var close = FivesCloseRect(p, s);
+            DrawFivesClose(close, u);
             GUI.matrix = prev;
             GUI.color = Color.white;
         }

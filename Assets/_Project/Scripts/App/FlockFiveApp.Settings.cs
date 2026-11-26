@@ -74,11 +74,11 @@ namespace FlockFive
             float x = m;
             if (safe.width >= 2f && safe.height >= 2f)
             {
-                safeTop = Mathf.Max(0f, h - safe.yMax);
+                safeTop = GuiTopInset(h, safe);
                 x = safe.xMin + m;
             }
             if (x < m) x = m;
-            return new Vector2(x, safeTop + m);
+            return new Vector2(x, TopControlY(h, safe, safeTop + m));
         }
 
         public static Rect SettingsGearDrawnRect(float w, float h, Rect safe)
@@ -114,12 +114,10 @@ namespace FlockFive
             if (_dailyOpen) cover |= HomeCover.DailyCard;
             if (_settingsOpen) cover |= HomeCover.Settings;
             bool forced = false;
-            if (home)
+            if (home && !HomeChainOpen())
             {
-                // Rail gloves, the Daily Claim step, and the adopt look step.
+                // Rail gloves still take the gear. The post-level chain does not.
                 if (HomeStepRail() >= 0) forced = true;
-                if (_dailyIntroLive && _dailyOpen && !_dailyAskOpen) forced = true;
-                if (_adoptLive && _adoptStep == AdoptStep.Look) forced = true;
                 if (ForcedGloveUp()) forced = true;
             }
             return new HomeGearQuery { Home = home, Cover = cover, ForcedTap = forced };
@@ -133,16 +131,29 @@ namespace FlockFive
             if (_settingsOpen) return;
             var q = HomeGearNow();
             var r = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            var e = Event.current;
+            bool release = e != null && e.type == EventType.MouseUp && e.button == 0;
+            var gui = e != null ? PlayPointer.Gui(e) : default;
+            if (release && _exitPointerHeld)
+            {
+                int eventId = ResolveExitEventId(e);
+                bool takes = GearTakesRelease(_exitPointerHeld, _exitPointerId, eventId, true, gui, r);
+                if (!takes && eventId == _exitPointerId)
+                {
+                    ClearLevelExit();
+                    GUIUtility.hotControl = 0;
+                    SwallowGearTap(r);
+                    return;
+                }
+            }
             if (!HomeGear.AcceptsTap(q) || VeilBlocks(r))
             {
                 if (HomeGear.Shown(q) || VeilBlocks(r)) SwallowGearTap(r);
                 return;
             }
-            if (HitPad(r, out _gearHeld))
-            {
-                ApplySettingsHit(SettingsMotion.Hit.Gear);
-                _hitLock = 1;
-            }
+            bool gearDown = e != null && e.type == EventType.MouseDown && e.button == 0;
+            var gearAt = e != null ? PlayPointer.Gui(e) : r.center;
+            FeedResumeHudButton(3, r, gearAt, gearDown, release, out _gearHeld);
         }
 
         void TickSettingsMotion()
@@ -180,7 +191,7 @@ namespace FlockFive
         {
             var e = Event.current;
             if (e == null || r.width < 2f) return;
-            if (!r.Contains(e.mousePosition)) return;
+            if (!r.Contains(PlayPointer.Gui(e))) return;
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
@@ -209,6 +220,23 @@ namespace FlockFive
             if (!HomeGear.AcceptsTap(q)) return false;
             var r = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             return r.width >= 2f && r.Contains(p);
+        }
+
+        // The post-level captions leave Play alone, the same way they leave the gear.
+        bool PlayExempt(Vector2 p)
+        {
+            // Play does not dismiss the caption. Loading the level is a
+            // separate gate (HomeDialogBlocksPlay), so the greet stays up.
+            if (!HomeChainOpen() || _home != HomeFace.Splash) return false;
+            var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            return level.width >= 2f && level.Contains(p);
+        }
+
+        bool PlayRect(Rect button)
+        {
+            var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            if (level.width < 2f || button.width < 2f) return false;
+            return level.Contains(button.center) || button.Contains(level.center);
         }
 
         // Sound On/Off and the master slider share the first row. Privacy, then
@@ -252,13 +280,39 @@ namespace FlockFive
                 var screen = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
                 bool gearFire = HitPad(gearHit, out gearHeld);
                 bool close = HitPad(CloseTapRect(frame.Close), out xHeld);
+                bool settled = _settingsPhase == SettingsPhase.Open && SettingsPanelSettled(age);
+                var ev = Event.current;
+                bool evDown = ev != null && ev.type == EventType.MouseDown && ev.button == 0;
+                bool evUp = ev != null && ev.type == EventType.MouseUp && ev.button == 0;
+                var at = ev != null ? PlayPointer.Gui(ev) : default;
                 soundFlip = HitPad(rows.SoundToggle, out soundHeld);
+                if (evDown && settled && rows.SoundToggle.Contains(at)) _soundArmed = true;
+                if (evUp)
+                {
+                    soundFlip = ToggleMayFlip(settled, _soundArmed, rows.SoundToggle.Contains(at));
+                    _soundArmed = false;
+                }
+                else soundFlip = false;
                 slid = DragMaster(rows.SoundSlider, slid, s, out slideHeld, out slideCommit);
                 link = HitPad(rows.PrivacyLink, out linkHeld);
                 var rowHit = new Rect(rows.Label.x, rows.Label.y, rows.Toggle.xMax - rows.Label.x, rows.Label.height);
                 flip = HitPad(rowHit, out rowHeld);
+                if (evDown && settled && rowHit.Contains(at)) _dnsArmed = true;
+                if (evUp)
+                {
+                    flip = ToggleMayFlip(settled, _dnsArmed, rowHit.Contains(at));
+                    _dnsArmed = false;
+                }
+                else flip = false;
                 var animHit = new Rect(rows.AnimateLabel.x, rows.AnimateLabel.y, rows.AnimateToggle.xMax - rows.AnimateLabel.x, rows.AnimateLabel.height);
                 flipAnim = HitPad(animHit, out animHeld);
+                if (evDown && settled && animHit.Contains(at)) _animArmed = true;
+                if (evUp)
+                {
+                    flipAnim = ToggleMayFlip(settled, _animArmed, animHit.Contains(at));
+                    _animArmed = false;
+                }
+                else flipAnim = false;
                 HitPad(card, out _);
                 bool overlay = HitPad(screen, out _);
                 if (gearFire) hit = SettingsMotion.Hit.Gear;
@@ -336,6 +390,9 @@ namespace FlockFive
                 if (animOn) DrawCheckMark(Inset(rows.AnimateToggle, 0.22f), new Color(0.20f, 0.42f, 0.16f, 1f));
 
                 var xBtn = frame.Close;
+#if DEVELOPMENT_BUILD
+                DrawDevSha(card, s);
+#endif
                 DrawGiftCloseX(xBtn, xHeld, s);
                 var pass = SettingsMotion.GearPassFor(HomeGearNow().Home, _settingsPhase);
                 if (pass == SettingsMotion.GearPass.AboveOverlay || _settingsOpen)
@@ -357,6 +414,7 @@ namespace FlockFive
                 }
                 if (flip)
                 {
+                    _tapWho = "do-not-sell";
                     AdConsent.DoNotSell = !on;
                     Sfx.CardTap();
                 }
@@ -380,6 +438,36 @@ namespace FlockFive
             DrawSettingsGear(spin, gearHeld);
             ApplySettingsHit(hit);
         }
+
+#if DEVELOPMENT_BUILD
+        public static string DevSettingsSha(string sha)
+        {
+            if (string.IsNullOrEmpty(sha)) return "";
+            sha = sha.Trim();
+            int n = sha.Length < 8 ? sha.Length : 8;
+            for (int i = 0; i < n; i++)
+            {
+                char c = sha[i];
+                bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                if (!hex) return "";
+            }
+            if (n < 7) return "";
+            return n == sha.Length ? sha : sha.Substring(0, n);
+        }
+
+        void DrawDevSha(Rect card, float s)
+        {
+            string sha = DevSettingsSha(DevShaStamp.Sha);
+            if (sha.Length == 0) return;
+            var st = GuiPool.Label(GuiSlot.SettingsLink);
+            st.fontStyle = FontStyle.Bold;
+            st.alignment = TextAnchor.MiddleCenter;
+            st.wordWrap = false;
+            st.fontSize = Mathf.Max(10, Mathf.RoundToInt(11f * s));
+            var r = new Rect(card.x + 8f, card.yMax - 32f * s, card.width - 16f, 14f * s);
+            StampOutlined(r, sha, st, new Color(1f, 0.97f, 0.90f, 0.7f), 0, 1);
+        }
+#endif
 
         // Full-screen black under the card. The cog is drawn after this, at full color.
         void DrawSettingsDim(float alpha)
@@ -494,16 +582,16 @@ namespace FlockFive
             if (e == null) return value;
             bool hot = GUIUtility.hotControl == id;
             var type = e.GetTypeForControl(id);
-            if (type == EventType.MouseDown && e.button == 0 && hit.Contains(e.mousePosition))
+            if (type == EventType.MouseDown && e.button == 0 && hit.Contains(PlayPointer.Gui(e)))
             {
                 GUIUtility.hotControl = id;
                 e.Use();
                 held = true;
-                return SliderAt(hit, e.mousePosition.x, scale);
+                return SliderAt(hit, PlayPointer.Gui(e).x, scale);
             }
             if (hot && (type == EventType.MouseDrag || type == EventType.MouseUp))
             {
-                float v = SliderAt(hit, e.mousePosition.x, scale);
+                float v = SliderAt(hit, PlayPointer.Gui(e).x, scale);
                 if (type == EventType.MouseUp)
                 {
                     GUIUtility.hotControl = 0;
@@ -567,15 +655,31 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
+        // A home coach or a modal eats Play. Greet, the bird, naming, and
+        // Tap Daily are coaches: Play must not skip them into the garden.
+        bool HomeDialogBlocksPlay()
+        {
+            if (!_splash || _home != HomeFace.Splash) return false;
+            if (_avatarRename || _adoptLive || _adoptStep != AdoptStep.Off) return true;
+            if ((_dailyIntro || _dailyIntroLive) && !_dailyOpen) return true;
+            if (_hiveIntroLive || _pokerIntroLive) return true;
+            return _welcomeOpen || _dailyAskOpen || _settingsOpen
+                || _restartAsk != RestartAsk.None;
+        }
+
         // Same path as the LEVEL flower: badger leap, otherwise the gate sting and Load.
         bool PressLevelButton()
         {
-            if (StartupInputHeld) return false; // b112: nothing starts while the studio card / cover is up
-            if (TakeBadgerFlower())
+            if (StartupInputHeld) return false; // b112: cover holds input
+            if (HomeDialogBlocksPlay()) return false;
+            ParkHomeChainForPlay();
+            ClearCaptionForWipe();
+            if (!HomeChainOwed() && TakeBadgerFlower())
             {
                 if (!LevelCurtain.LoadStarted) LevelCurtain.Clear();
                 return true;
             }
+            if (_splash && LevelCurtain.LoadStarted) LevelCurtain.Clear();
             if (!LevelCurtain.Armed) LevelCurtain.Arm(AdPause.Unscaled);
             if (!LevelCurtain.LoadStarted)
             {
@@ -586,6 +690,19 @@ namespace FlockFive
                 LevelCurtain.Fire(AdPause.Unscaled);
             }
             return true;
+        }
+
+        // The wipe covers the splash. Drop the plate and the hand first.
+        void ClearCaptionForWipe()
+        {
+            _cueLine = null;
+            _cueSpoken = null;
+            _gloveVis = false;
+            _gloveTapRect = default;
+            _gloveTapRectOn = false;
+            _gloveTapHit = null;
+            _gloveTapFrame = -1;
+            DropGlovePress();
         }
 
         // Simulator hook. Absent the argument and the env var, this returns before it touches consent or the level.
@@ -615,13 +732,16 @@ namespace FlockFive
 #if UNITY_WEBGL && DEVELOPMENT_BUILD
         bool _devLevelSkipDone;
         bool _devOnboardingStamped;
+        bool _devForceRewards;
 
-        // Temporary inspector hook. Compiled only for WebGL development builds.
-        // Release player builds do not contain it. Open the page with ?fflevel=3
-        // (lightning still owed) or ?fflevel=5 (bee still owed). Other gardens
-        // load too, with both of those lessons stamped seen.
-        // ?skipOnboarding=1 (alone, or with ?fflevel=) also stamps the home
-        // cascade seen, seeds the purse, and, with no fflevel, loads garden 2.
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // Compiled only for WebGL development builds. Device, iOS, Android,
+        // and release player builds do not contain it. Open the page with
+        // ?fflevel=3 (lightning still owed) or ?fflevel=5 (bee still owed).
+        // Other gardens load too, with both of those lessons stamped seen.
+        // ?skipOnboarding=1 is the same kind of inspect hook. Alone, or with
+        // ?fflevel=, it stamps the home cascade seen, seeds the purse, and,
+        // with no fflevel, loads garden 2.
         // Garden 2 can nap: a finished flock whose color is not on a feeder sleeps.
         // The nap rule tip is left unseen so that first Zzz can still raise it.
         // ?keepTips=1 on that skip also leaves the kit and feeder plates owed.
@@ -629,10 +749,24 @@ namespace FlockFive
         // and the kit line. Leaf, the first-garden coach, and the pest lessons
         // stay stamped: a live leaf or coach blocks the feeder plate.
         // ?forceFeeder=1 turns one feeder and raises that plate.
-        // ?forceNap=1 stacks a flock no feeder wants, then the live sleep
-        // raise waits until a bird has drawn Zzz.
+        // ?forceNap=1 stacks a flock no feeder wants and seats them asleep.
+        // The plate stays down until Zzz has been drawn on an open stage.
         // ?openPoker=1 stays on the home shell, deals one hand, and draws it
         // so the Back tip is the plate on screen. The Back pref stays owed.
+        // ?forceClear=1 is a WebGL Development inspect hook only, not a
+        // shipping-path change. It waits until the star wipe is down and the
+        // garden is playable, and on an ostrich garden until the entrance
+        // (honk, stride, plant) has returned him to idle. Then it empties the
+        // board and calls TryScoreGarden, the same win latch a
+        // StageClearingCollect reaches, so the real Collect / Watch Ad card
+        // opens. Default off.
+        // ?forceRewards=1 is a WebGL Development inspect hook only, not a
+        // shipping-path change. It is honored only with skipOnboarding=1 and
+        // does nothing to entrance timing. After the forceClear wait it makes
+        // Watch Ad / 2X offerable, grants one album card, and unlocks the
+        // album Upgrade glove. A tap on that button completes through the
+        // real RewardedGrant path (displayed, rewarded, flush) instead of
+        // waiting on LevelPlay. It does not grant No Ads.
         void MaybeDevLevelSkip()
         {
             if (_devLevelSkipDone) return;
@@ -705,7 +839,9 @@ namespace FlockFive
                     + " keepTips=" + (plan.KeepTips ? 1 : 0)
                     + " forceFeeder=" + (plan.ForceFeeder ? 1 : 0)
                     + " forceNap=" + (plan.ForceNap ? 1 : 0)
-                    + " openPoker=" + (plan.OpenPoker ? 1 : 0));
+                    + " openPoker=" + (plan.OpenPoker ? 1 : 0)
+                    + " forceClear=" + (plan.ForceClear ? 1 : 0)
+                    + " forceRewards=" + (plan.ForceRewards ? 1 : 0));
             if (plan.OpenPoker)
             {
                 DevOpenPokerTable();
@@ -722,17 +858,23 @@ namespace FlockFive
                 LevelCurtain.MarkReady();
                 LevelCurtain.Fire(AdPause.Unscaled);
             }
-            if (plan.ForceNap && DevForceSleepingFlock(plan.ForceFeeder))
-                StartCoroutine(DevRaiseForcedNap());
+            int napBranch = plan.ForceNap ? DevForceSleepingFlock(plan.ForceFeeder) : -1;
+            if (napBranch >= 0)
+                StartCoroutine(DevRaiseForcedNap(napBranch));
             if (plan.ForceFeeder) DevForceFeederPlate();
+            if (plan.ForceClear)
+            {
+                _devForceRewards = plan.ForceRewards;
+                StartCoroutine(DevForceStageClear());
+            }
         }
 
         // One limb becomes five of a color no feeder wants, then Sync seats them
-        // asleep. Zzz is drawn in LateUpdate. The sleep plate is raised by
-        // RaiseRuleSleepTip, which on the nap-gate build waits for that Zzz.
-        bool DevForceSleepingFlock(bool feederPlateToo)
+        // asleep. Returns that limb, or -1 when the board cannot nap.
+        // Zzz is drawn in LateUpdate. The plate waits for that draw.
+        int DevForceSleepingFlock(bool feederPlateToo)
         {
-            if (_board == null) return false;
+            if (_board == null) return -1;
             BirdColor nap = BirdColor.Ruby;
             bool free = false;
             for (int c = 0; c < 5; c++)
@@ -760,7 +902,7 @@ namespace FlockFive
                 branch = i;
                 break;
             }
-            if (branch < 0) return false;
+            if (branch < 0) return -1;
             var limb = _board.Branches[branch];
             limb.Birds.Clear();
             limb.Shrouded.Clear();
@@ -773,22 +915,31 @@ namespace FlockFive
             }
             SyncAll();
             Sfx.Sleep();
-            return _board.IsSleeping(branch);
+            return _board.IsSleeping(branch) ? branch : -1;
         }
 
-        // Retries the live raise until the plate is up. The first call lands on
-        // a build that shows the nap as soon as the flock is asleep. A build
-        // that waits for Zzz no-ops until LateUpdate notes the pose.
-        IEnumerator DevRaiseForcedNap()
+        // Seats are asleep. The plate stays down through the star wipe. Counting
+        // starts only once that wipe is gone and the garden is the picture, and
+        // Zzz has to stay up for a beat before the raise. The raise still
+        // requires NapBegun. This does not call ShowRuleTip for sleep.
+        IEnumerator DevRaiseForcedNap(int branch)
         {
+            _devNapHold = true;
             float waited = 0f;
-            while (_ruleTip != RuleTip.Sleep && waited < 3f)
+            float open = 0f;
+            while (waited < 6f)
             {
-                RaiseRuleSleepTip();
-                if (_ruleTip == RuleTip.Sleep) break;
+                bool begun = BranchNapBegun(branch);
+                bool wipe = DevLevelSkip.NapWipeCovers(PressRainbow.Live(), PressRainbow.StageHeld());
+                if (DevLevelSkip.NapPlateReady(begun, wipe, open)) break;
+                if (begun && !wipe) open += Mathf.Max(Time.unscaledDeltaTime, 0.01f);
+                else open = 0f;
                 waited += Mathf.Max(Time.unscaledDeltaTime, 0.01f);
                 yield return null;
             }
+            _devNapHold = false;
+            bool garden = !DevLevelSkip.NapWipeCovers(PressRainbow.Live(), PressRainbow.StageHeld());
+            if (garden && BranchNapBegun(branch)) RaiseRuleSleepTip();
             Debug.Log("FF_DEV_FORCE nap=1 tip=" + (_ruleTip == RuleTip.Sleep ? 1 : 0));
         }
 
@@ -852,6 +1003,86 @@ namespace FlockFive
                 + " backOwed=" + (PokerBackDone() ? 0 : 1));
         }
 
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // After the garden is on screen. The star wipe is LevelCurtain (armed
+        // until the bloom finishes). An ostrich entrance is the non-idle act:
+        // today's chain is strut, honk, then shake, and the arrival keeps the
+        // stride act through the plant until EndEntrance sets idle. The first
+        // idle frame, before that movement, is not the end. Then the board is
+        // emptied and TryScoreGarden runs. That is the latch Collect calls
+        // after StageClearingCollect, and it is what opens the real Collect /
+        // Watch Ad card. No second overlay. forceRewards, when set, runs only
+        // after this wait, so it cannot move the entrance.
+        IEnumerator DevForceStageClear()
+        {
+            float waited = 0f;
+            bool saw = false;
+            while (true)
+            {
+                if (_splash || _board == null || _restarting || _won) yield break;
+                bool ostrich = _board.Ostrich != null && _board.Ostrich.Alive && _garden.Ostrich != null;
+                bool moving = false;
+                bool idle = true;
+                if (ostrich)
+                {
+                    var act = _garden.Ostrich.Act;
+                    idle = act == OstrichAct.Idle;
+                    moving = !idle;
+                    if (moving) saw = true;
+                }
+                bool presented = !LevelCurtain.Armed && !GardenFit.Busy;
+                if (DevLevelSkip.ForceClearReady(presented, ostrich, moving, idle, saw, waited))
+                    break;
+                waited += Mathf.Max(Time.unscaledDeltaTime, 0.01f);
+                yield return null;
+            }
+            if (_splash || _board == null || _restarting || _won) yield break;
+            if (_devForceRewards) ArmDevInspectRewards();
+            var list = _board.Branches;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var br = list[i];
+                if (br == null) continue;
+                br.Birds.Clear();
+                br.Shrouded.Clear();
+            }
+            _board.Displaced.Clear();
+            SyncAll();
+            bool scored = TryScoreGarden();
+            Debug.Log("FF_DEV_FORCE clear=1 display=" + LevelData.DisplayNumber
+                + " scored=" + (scored ? 1 : 0)
+                + " saw=" + (saw ? 1 : 0)
+                + " waited=" + waited.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // WebGL Development inspect hook only. Not a shipping-path change.
+        // Runs only after DevForceStageClear has waited out the wipe and any
+        // ostrich entrance. Watch Ad / 2X need a ready rewarded unit and a
+        // clear count outside the new-player grace. One Hive.TakeVisitor card
+        // is what the album sheet and the card-back honeycombs read. The
+        // Upgrade glove arms in that album inspect only after the first
+        // honey-badger coach stamp (Hive.UpgradesUnlocked) and only while the
+        // upgrade lesson is still owed. The beehive rail already opens the
+        // album; the playing-cards icon stays Poker. NoAds.Grant is not called
+        // and flockfive.noads is not written.
+        void ArmDevInspectRewards()
+        {
+            Ads.ArmInspectRewardOffer();
+            var visit = Hive.TakeVisitor();
+            _levelBees.Add(visit);
+            NoteHiveCue(visit);
+            BadgerCopy.MarkCoach();
+            PlayerPrefs.DeleteKey(CoachHiveUpgradeKey);
+            _upgradeTutorDone = false;
+            _upgradeTutorKnown = false;
+            PlayerPrefs.Save();
+            Debug.Log("FF_DEV_FORCE rewards=1 adReady=" + (Ads.RewardedReady ? 1 : 0)
+                + " clears=" + Ads.SessionClears
+                + " card=" + visit.Slot
+                + " upgrade=" + (Hive.UpgradesUnlocked ? 1 : 0)
+                + " noAds=" + (NoAds.Owned ? 1 : 0));
+        }
+
         // Home cascade the inspector otherwise has to tap through before a garden
         // with both restart and the hive can show. Keys are the live gates:
         // ATT ask finished (AdConsent.Consider returns none once ask >= 2; WebGL
@@ -898,7 +1129,10 @@ namespace FlockFive
             if (_splash)
             {
                 HomeModals(out bool hard, out bool soft);
-                coach = hard || soft || HomeTutorLive() || TutorialGuideLive();
+                var step = HomePopupChain.Next(DailyReminder.PromptDue(), _dailyAskOpen,
+                    PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0, _welcomeOpen || _welcomeQueued, false);
+                bool earlier = step == HomePopupChain.Card.Reminder || step == HomePopupChain.Card.Welcome;
+                coach = hard || soft || earlier || HomeTutorLive() || TutorialGuideLive();
             }
             else
                 coach = TutorialGuideLive();
@@ -918,9 +1152,13 @@ namespace FlockFive
             var card = _homePrompt;
             if (card.Kind == AdConsent.Sheet.None)
             {
+                _consentShownAt = -1f;
+                _consentYesArmed = false;
+                _consentNoArmed = false;
                 AudioGuard.ReleaseReason("sheet");
                 return;
             }
+            if (_consentShownAt < 0f) _consentShownAt = GateNow;
             AudioGuard.Hold("sheet");
             if (Texture2D.whiteTexture == null) return;
             if (s < 0.5f) s = 0.5f;
@@ -939,14 +1177,26 @@ namespace FlockFive
             StampOutlined(card.Body, body, st, new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(2, Mathf.RoundToInt(st.fontSize * 0.14f)));
 
             string yes = card.Kind == AdConsent.Sheet.Att ? AdConsent.ContinueLabel : AdConsent.AllowLabel;
-            if (DrawSheetButton(card.Accept, yes, true, s))
+            bool consentSettled = SettingsPanelSettled(GateNow - _consentShownAt);
+            var cev = Event.current;
+            bool cDown = cev != null && cev.type == EventType.MouseDown && cev.button == 0;
+            bool cUp = cev != null && cev.type == EventType.MouseUp && cev.button == 0;
+            var cat = cev != null ? PlayPointer.Gui(cev) : default;
+            if (cDown && consentSettled && card.Accept.Contains(cat)) _consentYesArmed = true;
+            if (cDown && consentSettled && card.Decline.Contains(cat)) _consentNoArmed = true;
+            bool yesFlip = cUp && ToggleMayFlip(consentSettled, _consentYesArmed, card.Accept.Contains(cat));
+            bool noFlip = cUp && ToggleMayFlip(consentSettled, _consentNoArmed, card.Decline.Contains(cat));
+            if (cUp) { _consentYesArmed = false; _consentNoArmed = false; }
+            DrawSheetButton(card.Accept, yes, true, s);
+            DrawSheetButton(card.Decline, AdConsent.NotNowLabel, false, s);
+            if (yesFlip)
             {
                 if (card.Kind == AdConsent.Sheet.Att) AdConsent.ContinueAtt();
                 else AdConsent.AcceptGdpr();
                 Sfx.CardTap();
                 return;
             }
-            if (DrawSheetButton(card.Decline, AdConsent.NotNowLabel, false, s))
+            if (noFlip)
             {
                 if (card.Kind == AdConsent.Sheet.Att) AdConsent.NotNow(LevelData.NextPlay);
                 else AdConsent.DeclineGdpr();

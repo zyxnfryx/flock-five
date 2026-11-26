@@ -701,7 +701,7 @@ namespace FlockFive.Editor
                 bool paintOk = paint.Length > 0 && paint.Contains("GUI.DrawTexture") && !paint.Contains("GUI.Button")
                     && !paint.Contains("GUI.Box") && !paint.Contains("GUI.Label") && !paint.Contains("GUILayout")
                     && !paint.Contains("GUI.Toggle") && !paint.Contains("GUI.TextField");
-                int hv = app.IndexOf("DrawHiveButton(hive, s, orbit: true, pop: true);");
+                int hv = HiveOverDropCall(app);
                 int po = app.IndexOf("StormGlassRig.PaintOver(restart, HiveReachable() ? hive : Rect.zero);");
                 int mx = app.IndexOf("if (quake) GUI.matrix = hudM;", hv < 0 ? 0 : hv);
                 bool wiredApp = hv >= 0 && po > hv && mx > po;
@@ -853,6 +853,27 @@ namespace FlockFive.Editor
             string end = fail == 0 ? "STORM_GLASS_OK " + pass : "STORM_GLASS_FAIL " + fail + " passed " + pass;
             Debug.Log("[storm-glass] " + end);
             if (fail > 0) throw new System.Exception(end);
+        }
+
+        // Garden HUD hive, drawn before the drops. The rect is the hive plate or the
+        // straw column lined up with restart. Drops still paint over that button.
+        static int HiveOverDropCall(string app)
+        {
+            int from = 0;
+            while (from < app.Length)
+            {
+                int i = app.IndexOf("DrawHiveButton(", from);
+                if (i < 0) return -1;
+                int end = app.IndexOf(';', i);
+                if (end < 0) return -1;
+                string call = app.Substring(i, end - i);
+                bool flags = call.Contains("orbit: true") && call.Contains("pop: true");
+                bool plate = call.Contains("DrawHiveButton(hive,");
+                bool straw = call.Contains("CornerAnchor.HiveAlignedDraw(hive, restart)");
+                if (flags && (plate || straw)) return i;
+                from = i + 1;
+            }
+            return -1;
         }
 
         static int Step(

@@ -19,28 +19,155 @@ namespace FlockFive
         {
             get
             {
+#if UNITY_EDITOR
+                if (EditorWindowOn)
+                    return EditorWindowH > 0 && (float)EditorWindowW / EditorWindowH > DeviceFit.PhoneAspect + Slack;
+#endif
                 if (Application.isBatchMode) return false;
                 int sw = Screen.width, sh = Screen.height;
                 return sh > 0 && (float)sw / sh > DeviceFit.PhoneAspect + Slack;
             }
         }
 
-        public static int W => Pillar ? Mathf.Min(Screen.width, Mathf.RoundToInt(Screen.height * DeviceFit.PhoneAspect)) : Screen.width;
-        public static int H => Screen.height;
+        // Play column for a window. Wider than a phone (iPad 820x1180) pillars to 9:16.
+        // Phones keep the full window. Same rule as W/H, with the window passed in.
+        public static void PlayPixels(int screenW, int screenH, out int w, out int h)
+        {
+            bool pillar = screenH > 0 && (float)screenW / screenH > DeviceFit.PhoneAspect + Slack;
+            w = pillar ? Mathf.Min(screenW, Mathf.RoundToInt(screenH * DeviceFit.PhoneAspect)) : screenW;
+            h = screenH;
+        }
+
+#if UNITY_EDITOR
+        // Edit-mode layout. Off, W/H/Pillar/OffX/Safe follow the device. On, they
+        // follow this window, including a pillar OffX, so a batch run can lay out
+        // 820, 402, and 412 without a matching Game view.
+        internal static bool EditorWindowOn;
+        internal static int EditorWindowW;
+        internal static int EditorWindowH;
+        internal static float EditorSafeTop;
+        internal static float EditorSafeBottom;
+#endif
+
+        public static int W
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (EditorWindowOn)
+                {
+                    PlayPixels(EditorWindowW, EditorWindowH, out int w, out _);
+                    return w;
+                }
+#endif
+                return Pillar ? Mathf.Min(Screen.width, Mathf.RoundToInt(Screen.height * DeviceFit.PhoneAspect)) : Screen.width;
+            }
+        }
+
+        public static int H
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (EditorWindowOn) return EditorWindowH;
+#endif
+                return Screen.height;
+            }
+        }
+
         // Left edge of the area in screen pixels.
-        public static int OffX => Pillar ? (Screen.width - W) / 2 : 0;
+        public static int OffX
+        {
+            get
+            {
+#if UNITY_EDITOR
+                if (EditorWindowOn)
+                    return Pillar ? (EditorWindowW - W) / 2 : 0;
+#endif
+                return Pillar ? (Screen.width - W) / 2 : 0;
+            }
+        }
 
         // Screen.safeArea in area coordinates (bottom-up, like Screen.safeArea).
+        // Every top-anchored control reads Safe, then GuiTopInset, and nothing else.
         public static Rect Safe
         {
             get
             {
+#if UNITY_EDITOR
+                if (EditorWindowOn)
+                {
+                    float top = Mathf.Max(0f, EditorSafeTop);
+                    float bot = Mathf.Max(0f, EditorSafeBottom);
+                    float h = Mathf.Max(0f, EditorWindowH - top - bot);
+                    return new Rect(0f, bot, W, h);
+                }
+#endif
                 var s = Screen.safeArea;
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+                // DEV-ONLY inspect hook. Not a shipping-path proof. WebGL reports
+                // the full window as safe, so Inspector cannot see the notch.
+                // ?forceSafeTop=59 and optional ?forceSafeBottom=34 override it.
+                // Release players and device builds never compile this.
+                s = ApplyInspectSafe(s);
+#endif
                 if (!Pillar) return s;
                 int off = OffX, w = W;
                 float x0 = Mathf.Clamp(s.xMin - off, 0f, w), x1 = Mathf.Clamp(s.xMax - off, 0f, w);
                 return Rect.MinMaxRect(x0, s.yMin, x1, s.yMax);
             }
+        }
+
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+        static Rect ApplyInspectSafe(Rect safe)
+        {
+            float top = QueryPx("forceSafeTop");
+            float bot = QueryPx("forceSafeBottom");
+            if (top <= 0f && bot <= 0f) return safe;
+            float h = H > 1 ? H : Screen.height;
+            float y0 = Mathf.Max(0f, bot);
+            float y1 = h - Mathf.Max(0f, top);
+            if (y1 < y0) y1 = y0;
+            float x0 = safe.width > 1f ? safe.xMin : 0f;
+            float x1 = safe.width > 1f ? safe.xMax : (W > 1 ? W : Screen.width);
+            return Rect.MinMaxRect(x0, y0, x1, y1);
+        }
+
+        static float QueryPx(string key)
+        {
+            string url = Application.absoluteURL;
+            if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(key)) return 0f;
+            int q = url.IndexOf('?');
+            if (q < 0) return 0f;
+            string query = url.Substring(q + 1);
+            int from = 0;
+            while (from < query.Length)
+            {
+                int amp = query.IndexOf('&', from);
+                if (amp < 0) amp = query.Length;
+                string pair = query.Substring(from, amp - from);
+                int eq = pair.IndexOf('=');
+                string name = eq < 0 ? pair : pair.Substring(0, eq);
+                if (name == key)
+                {
+                    string val = eq < 0 ? "" : pair.Substring(eq + 1);
+                    float n;
+                    if (float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out n) && n > 0f)
+                        return n;
+                    return 0f;
+                }
+                from = amp + 1;
+            }
+            return 0f;
+        }
+#endif
+
+        // GUI pixels from the top of the screen down to the safe glass. 0 when the
+        // inset is missing (iPad, or a safe rect that already fills the screen).
+        public static float GuiTopInset(float screenH, Rect safe)
+        {
+            if (screenH < 2f || safe.width < 2f || safe.height < 2f) return 0f;
+            return Mathf.Max(0f, screenH - safe.yMax);
         }
 
         // Raw device pointer (Input System, screen pixels) to area pixels.

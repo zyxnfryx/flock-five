@@ -30,7 +30,7 @@ namespace FlockFive.Editor
             Check("sparrow-gap", sparrowGap, gapped.Replace("\n", " / "));
 
             bool single = CaptionLayout.HeadlineGap("Tap to claim!") == "Tap to claim!"
-                && CaptionLayout.HeadlineGap("Tap Daily for\nyour bonus!") == "Tap Daily for\nyour bonus!"
+                && CaptionLayout.HeadlineGap("Tap Daily\nfor a bonus!") == "Tap Daily\nfor a bonus!"
                 && CaptionLayout.HeadlineGap("Double your coins.") == "Double your coins."
                 && CaptionLayout.HeadlineGap("A!\n\nRest") == "A!\n\nRest";
             string swipe = CaptionLayout.HeadlineGap("Swipe to turn the page! Or tap a page number.");

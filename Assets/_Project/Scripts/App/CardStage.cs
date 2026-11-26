@@ -19,6 +19,68 @@ namespace FlockFive
         static Texture2D _texA, _texB;       // A = front face of the card, B = back face
         static Shader _shader;
         static bool _failed;
+        static bool _defer;
+        static bool _inside;
+        static int _renderedFrame = -1;
+        static bool _reentryLogged;
+
+        // True while a camera is already rendering. The slab must not call Camera.Render then.
+        public static bool MustDeferRender(bool insideCameraRender) => insideCameraRender;
+
+        // One manual render per camera per frame, and never while a render is already on the stack.
+        // A second request in the same frame, or a request from inside a render, is refused.
+        public static bool AllowManualRender(bool insideCameraRender, bool insideOurRender, bool alreadyThisFrame)
+        {
+            if (insideOurRender || insideCameraRender || alreadyThisFrame)
+            {
+                NoteReentry();
+                return false;
+            }
+            return true;
+        }
+
+        public static void ResetRenderGuardForTest()
+        {
+            _inside = false;
+            _renderedFrame = -1;
+            _reentryLogged = false;
+            _defer = false;
+        }
+
+        static void NoteReentry()
+        {
+            if (_reentryLogged) return;
+            _reentryLogged = true;
+            Debug.LogWarning("CardStage skipped a nested or second camera render this frame.");
+        }
+
+        public static void Flush()
+        {
+            if (!_defer || _cam == null || _rt == null) return;
+            if (!AllowManualRender(Camera.current != null, _inside, _renderedFrame == Time.frameCount))
+                return;
+            _defer = false;
+            RenderCamera();
+        }
+
+        static void RenderCamera()
+        {
+            if (_cam == null || _rt == null) return;
+            if (!AllowManualRender(Camera.current != null, _inside, _renderedFrame == Time.frameCount))
+                return;
+            _inside = true;
+            try
+            {
+                var prev = RenderTexture.active;
+                _cam.Render();
+                RenderTexture.active = prev;
+                _renderedFrame = Time.frameCount;
+            }
+            finally
+            {
+                _inside = false;
+            }
+        }
 
         public static bool Available => !_failed && CardQuality.Tier == CardTier.Full;
 
@@ -74,9 +136,12 @@ namespace FlockFive
                 float bob = Mathf.Sin(angle);
                 _slab.localRotation = Quaternion.Euler(-tilt.y * 6f + 6f * bob, angle * Mathf.Rad2Deg + tilt.x * 6f * (1f - bob), 0f);
                 _slab.localPosition = new Vector3(0f, 0f, -lift * 0.35f * bob);
-                var prev = RenderTexture.active;
-                _cam.Render();
-                RenderTexture.active = prev;
+                // OnGUI runs inside the main camera render on device, and Camera.current
+                // is often null there, so a direct Camera.Render still nests URP and
+                // throws "UniversalCameraData has already been created". Phones also
+                // run OnGUI more than once a frame. Pose now, draw the last frame,
+                // and render at most once from LateUpdate.
+                _defer = true;
                 var r = new Rect(card.center.x - card.width * Margin * 0.5f, card.center.y - card.height * Margin * 0.5f, card.width * Margin, card.height * Margin);
                 GUI.color = Color.white;
                 GUI.DrawTexture(r, _rt, ScaleMode.StretchToFill, true);

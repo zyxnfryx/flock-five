@@ -12,8 +12,73 @@ namespace FlockFive
     public partial class FlockFiveApp
     {
         bool _ostrichFight;
+        Coroutine _ostrichIntro;
         const float StartleSec = 0.14f;
         const float StartleKick = 0.38f;
+
+        // Garden taps hold still while he is walking on. HUD (restart included) is
+        // checked before this, and the stage-clear Collect / Watch AD path is not.
+        bool OstrichIntroBlocking()
+        {
+            var mark = _garden.Ostrich;
+            return mark != null && mark.Entering;
+        }
+
+        void StopOstrichEntrance()
+        {
+            if (_ostrichIntro == null) return;
+            StopCoroutine(_ostrichIntro);
+            _ostrichIntro = null;
+        }
+
+        void ArmOstrichEntrance()
+        {
+            StopOstrichEntrance();
+            var mark = _garden.Ostrich;
+            if (mark == null || _board == null || _board.Ostrich == null || !_board.Ostrich.Alive) return;
+            mark.BeginEntrance();
+            _ostrichIntro = StartCoroutine(OstrichEntrancePlay());
+        }
+
+        IEnumerator OstrichEntrancePlay()
+        {
+            int gen = _motionGen;
+            var mark = _garden.Ostrich;
+            if (mark == null) yield break;
+            if (!mark.Entering) mark.BeginEntrance();
+            // Load arms this coroutine and runs it to the first yield before
+            // LevelCurtain.Fire. Checking the rainbow here would see no wipe and
+            // start the stride under the stars. This frame stays empty.
+            yield return null;
+            if (gen != _motionGen || _garden.Ostrich != mark) yield break;
+            var gate = new OstrichEntrance.StartGate();
+            while (!gate.Beat)
+            {
+                if (gen != _motionGen || _garden.Ostrich != mark) yield break;
+                gate = OstrichEntrance.TickStart(gate,
+                    OstrichEntrance.WipeCovers(PressRainbow.Live(), PressRainbow.StageHeld()),
+                    Time.unscaledDeltaTime);
+                if (!gate.Beat) yield return null;
+            }
+            if (gen != _motionGen || _garden.Ostrich != mark) yield break;
+            bool honked = false;
+            float t = 0f;
+            while (t < OstrichEntrance.Total)
+            {
+                if (gen != _motionGen || _garden.Ostrich != mark) yield break;
+                t = OstrichEntrance.Advance(t, Time.unscaledDeltaTime);
+                if (!honked && t >= OstrichEntrance.HonkAt)
+                {
+                    honked = true;
+                    SfxLibrary.Honk();
+                }
+                mark.PresentEntrance(t);
+                yield return null;
+            }
+            if (gen != _motionGen || _garden.Ostrich != mark) yield break;
+            mark.EndEntrance();
+            _ostrichIntro = null;
+        }
 
         IEnumerator OstrichFight()
         {
@@ -197,7 +262,7 @@ namespace FlockFive
                 birds[i].sortingOrder = FlockSort.Fly;
             }
             var arrived = new bool[n];
-            bool reacted = false, swayed = false;
+            bool swayed = false;
             float total = OstrichHitTimeline.HitSec(n);
             float t = 0f;
             while (t < total)
@@ -217,14 +282,18 @@ namespace FlockFive
                     if (!arrived[i] && t >= OstrichHitTimeline.ArriveAt(i))
                     {
                         arrived[i] = true;
-                        Impact(tr.position, col);
-                        if (i == n - 1) StartCoroutine(Wow.Burst(tr.position, col, _garden.Root, 2));
-                        if (!reacted)
+                        // One, two, three, four, then the last bird is the bat: damage pose,
+                        // a planted squash, and a gold POW. Earlier birds only pop.
+                        if (OstrichHitTimeline.IsWhackBird(i, n))
                         {
-                            reacted = true;
                             mark.ShowHit(hitNo);
-                            SfxLibrary.Honk();
+                            mark.BeginWhack();
+                            SfxLibrary.SharpHit();
+                            StartCoroutine(Wow.Burst(tr.position, col, _garden.Root, 4));
+                            OstrichPow.Spawn(tr.position + Vector3.up * 0.42f, _garden.Root);
                         }
+                        else
+                            Impact(tr.position, col);
                     }
                 }
                 if (!swayed && t >= OstrichHitTimeline.LandAt(n, n - 1) - 0.1f) { swayed = true; v.LandSway(); }

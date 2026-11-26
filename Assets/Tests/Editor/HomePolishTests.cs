@@ -1,0 +1,6262 @@
+#if UNITY_EDITOR
+using System.Reflection;
+using UnityEngine;
+
+namespace FlockFive.Editor
+{
+    // Shipping polish. Back can leave during the bet coach. Goldie stays off the
+    // VIP ribbon. Flip hints hide while the upgrade coach is up. The upgrade glove
+    // stays on the glass. Top controls sit below a phone safe-area inset.
+    public static class HomePolishTests
+    {
+        const string Out = "/tmp/flock-five-home-polish-tests.txt";
+
+        static MethodInfo Method(System.Type type, string name, params System.Type[] args)
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+            var found = type.GetMethod(name, flags, null, args, null);
+            if (found == null)
+                throw new System.MissingMethodException("unresolved " + type.FullName + "." + name);
+            return found;
+        }
+
+        [UnityEditor.MenuItem("Flock Five/Home Polish Tests")]
+        public static void Run()
+        {
+            var sb = new System.Text.StringBuilder();
+            int fail = 0;
+            void Check(string name, bool ok, string detail)
+            {
+                if (!ok) fail++;
+                sb.AppendLine((ok ? "PASS  " : "FAIL  ") + name + "  " + detail);
+                System.IO.File.WriteAllText(Out, sb.ToString());
+                Debug.Log("[home-polish] " + (ok ? "PASS " : "FAIL ") + name + " " + detail);
+            }
+
+            void Gate(string name, System.Action body)
+            {
+                try { body(); }
+                catch (System.Exception ex)
+                {
+                    var inner = ex;
+                    while (inner is System.Reflection.TargetInvocationException && inner.InnerException != null)
+                        inner = inner.InnerException;
+                    var frames = "";
+                    int n = 0;
+                    var trace = inner.StackTrace ?? "";
+                    foreach (var raw in trace.Split('\n'))
+                    {
+                        var line = raw.Trim();
+                        if (line.Length == 0) continue;
+                        frames += (frames.Length == 0 ? "" : " | ") + line;
+                        if (++n == 4) break;
+                    }
+                    Check(name, false, "THREW " + inner.GetType().Name + ": " + inner.Message
+                        + (frames.Length == 0 ? "" : " @ " + frames));
+                }
+            }
+
+            try { Check("back-answers-during-bet-coach",
+                FlockFiveApp.PokerBackAccepts(true, false, true), "bet coach"); }
+                catch (System.Exception hopEx) { Check("back-answers-during-bet-coach", false, ThrowText(hopEx)); }
+            try { Check("back-stays-shut-during-a-dealt-hand",
+                !FlockFiveApp.PokerBackAccepts(true, true, true), "dealt"); }
+                catch (System.Exception hopEx) { Check("back-stays-shut-during-a-dealt-hand", false, ThrowText(hopEx)); }
+            try { Check("back-stays-shut-for-the-rest-of-the-lesson",
+                !FlockFiveApp.PokerBackAccepts(false, false, true), "lesson"); }
+                catch (System.Exception hopEx) { Check("back-stays-shut-for-the-rest-of-the-lesson", false, ThrowText(hopEx)); }
+            try { Check("back-answers-when-nothing-holds-it",
+                FlockFiveApp.PokerBackAccepts(false, false, false), "free"); }
+                catch (System.Exception hopEx) { Check("back-answers-when-nothing-holds-it", false, ThrowText(hopEx)); }
+
+            Gate("CheckBird", () => CheckBird("820", 820, 1180, Check));
+            Gate("CheckBird", () => CheckBird("402", 402, 874, Check));
+            Gate("CheckBird", () => CheckBird("412", 412, 915, Check));
+
+            try { Check("flip-hints-hide-for-upgrade-coach",
+                !FlockFiveApp.ShowFlipHints(true, false), "upgrade"); }
+                catch (System.Exception hopEx) { Check("flip-hints-hide-for-upgrade-coach", false, ThrowText(hopEx)); }
+            try { Check("flip-hints-hide-for-album-coach",
+                !FlockFiveApp.ShowFlipHints(false, true), "album"); }
+                catch (System.Exception hopEx) { Check("flip-hints-hide-for-album-coach", false, ThrowText(hopEx)); }
+            try { Check("flip-hints-show-when-both-coaches-are-clear",
+                FlockFiveApp.ShowFlipHints(true, true), "clear"); }
+                catch (System.Exception hopEx) { Check("flip-hints-show-when-both-coaches-are-clear", false, ThrowText(hopEx)); }
+
+            Gate("CheckGlove", () => CheckGlove("402", 402, 874, Check));
+            Gate("CheckGlove", () => CheckGlove("412", 412, 915, Check));
+            Gate("CheckGlove", () => CheckGlove("820", 820, 1180, Check));
+
+            Gate("CheckMaxxedPutBack", () => CheckMaxxedPutBack(Check));
+            try { Check("scene-change-holds-the-second-tap",
+                !FlockFiveApp.SceneInputBlocked(10f, -1f)
+                && FlockFiveApp.SceneInputBlocked(10f, 10.40f)
+                && FlockFiveApp.SceneInputBlocked(10.39f, 10.40f)
+                && !FlockFiveApp.SceneInputBlocked(10.40f, 10.40f)
+                && Mathf.Abs(FlockFiveApp.SceneInputSettle - 0.40f) < 0.001f,
+                "400 ms"); }
+                catch (System.Exception hopEx) { Check("scene-change-holds-the-second-tap", false, ThrowText(hopEx)); }
+            Gate("CheckSafe", () => CheckSafe("820", 820, 1180, Check));
+            Gate("CheckSafe", () => CheckSafe("402", 402, 874, Check));
+            Gate("CheckSafe", () => CheckSafe("412", 412, 915, Check));
+            Gate("CheckBackVeil", () => CheckBackVeil("820", 820, 1180, new Vector2(148f, 37f), Check));
+            Gate("CheckBackVeil", () => CheckBackVeil("402", 402, 874, new Vector2(58f, 33f), Check));
+            Gate("CheckBackVeil", () => CheckBackVeil("412", 412, 915, new Vector2(60f, 34f), Check));
+            Gate("CheckBadge", () => CheckBadge("820", 820, 1180, Check));
+            Gate("CheckBadge", () => CheckBadge("402", 402, 874, Check));
+            Gate("CheckBadge", () => CheckBadge("412", 412, 915, Check));
+            Gate("CheckUpgradeTiming", () => CheckUpgradeTiming(Check));
+            Gate("CheckFlipOccluder", () => CheckFlipOccluder(Check));
+            try { Check("card-render-defers-inside-camera",
+                CardStage.MustDeferRender(true) && !CardStage.MustDeferRender(false), "nested"); }
+                catch (System.Exception hopEx) { Check("card-render-defers-inside-camera", false, ThrowText(hopEx)); }
+            Gate("CheckCardRender", () => CheckCardRender(Check));
+            Gate("CheckFmod", () => CheckFmod(Check));
+            Gate("CheckUnityOutputInit", () => CheckUnityOutputInit(Check));
+            Gate("CheckEmulatedNoSound", () => CheckEmulatedNoSound(Check));
+            Gate("CheckOutputThenEmulated", () => CheckOutputThenEmulated(Check));
+            Gate("CheckInvalidHandle", () => CheckInvalidHandle(Check));
+            Gate("CheckPlayScheduled", () => CheckPlayScheduled(Check));
+            Gate("CheckAudioRetry", () => CheckAudioRetry(Check));
+            Gate("CheckPauseAndUnmute", () => CheckPauseAndUnmute(Check));
+            Gate("CheckUnmuteScope", () => CheckUnmuteScope(Check));
+            Gate("CheckScheduledRestore", () => CheckScheduledRestore(Check));
+            Gate("CheckScheduleHousekeeping", () => CheckScheduleHousekeeping(Check));
+            Gate("CheckRebootHolds", () => CheckRebootHolds(Check));
+            Gate("CheckRestoreWrap", () => CheckRestoreWrap(Check));
+            Gate("CheckSoftCut", () => CheckSoftCut(Check));
+            Gate("CheckMixedSoftCut", () => CheckMixedSoftCut(Check));
+            Gate("CheckPlacePhase", () => CheckPlacePhase(Check));
+            Gate("CheckTapWaitGlove", () => CheckTapWaitGlove(Check));
+            Gate("CheckBootSoftCut", () => CheckBootSoftCut(Check));
+            Gate("CheckSoftCutDisable", () => CheckSoftCutDisable(Check));
+            Gate("CheckGardenGlove", () => CheckGardenGlove(Check));
+            Gate("CheckUpgradeStack", () => CheckUpgradeStack(Check));
+            Gate("CheckPlayerGlove", () => CheckPlayerGlove(Check));
+            Gate("CheckCoachRestart", () => CheckCoachRestart(Check));
+            Gate("CheckCoachRestartPath", () => CheckCoachRestartPath(Check));
+            Gate("CheckRealPress", () => CheckRealPress(Check));
+            Gate("CheckCaptionLeave", () => CheckCaptionLeave(Check));
+            Gate("CheckExitGuards", () => CheckExitGuards(Check));
+            Gate("CheckHomeAndPrivacy", () => CheckHomeAndPrivacy(Check));
+            Gate("CheckRestartRecue", () => CheckRestartRecue(Check));
+            Gate("CheckRestartActRound", () => CheckRestartActRound(Check));
+            Gate("CheckHudSameFrameHop", () => CheckHudSameFrameHop(Check));
+            Gate("CheckHomeThenSameFrameHop", () => CheckHomeThenSameFrameHop(Check));
+            Gate("CheckTouchMouseUp", () => CheckTouchMouseUp(Check));
+            Gate("CheckAdHandOffer", () => CheckAdHandOffer(Check));
+            Gate("CheckInspectorGates", () => CheckInspectorGates(Check));
+            Gate("CheckResumeYield", () => CheckResumeYield(Check));
+            Gate("CheckResumeHeldFinger", () => CheckResumeHeldFinger(Check));
+            Gate("CheckResumeHideStamp", () => CheckResumeHideStamp(Check));
+            Gate("CheckYieldAdvances", () => CheckYieldAdvances(Check));
+            Gate("CheckDealPad", () => CheckDealPad(Check));
+            Gate("CheckForcePause", () => CheckForcePause(Check));
+            Gate("CheckHomeTouchGate", () => CheckHomeTouchGate(Check));
+            Gate("CheckGloveRoute", () => CheckGloveRoute(Check));
+            Gate("CheckGloveOneHandle", () => CheckGloveOneHandle(Check));
+            Gate("CheckFreezeLeavesRepeatGate", () => CheckFreezeLeavesRepeatGate(Check));
+            Gate("CheckHop2KeepsDestination", () => CheckHop2KeepsDestination(Check));
+            Gate("CheckResumeSwallow", () => CheckResumeSwallow(Check));
+            Gate("CheckResumeUpAfterSwallow", () => CheckResumeUpAfterSwallow(Check));
+            Gate("CheckSwallowedReleaseScope", () => CheckSwallowedReleaseScope(Check));
+            Gate("CheckResumeFollowups", () => CheckResumeFollowups(Check));
+            Gate("CheckResumeOtherFingerHome", () => CheckResumeOtherFingerHome(Check));
+            Gate("CheckResumeButtonBegan", () => CheckResumeButtonBegan(Check));
+            Gate("CheckResumeHomeFires", () => CheckResumeHomeFires(Check));
+            Gate("CheckResumeRestartFires", () => CheckResumeRestartFires(Check));
+            Gate("CheckResumeGearFires", () => CheckResumeGearFires(Check));
+            Gate("CheckResumeArmClears", () => CheckResumeArmClears(Check));
+            Gate("CheckResumeArmClearsOnPause", () => CheckResumeArmClearsOnPause(Check));
+            Gate("CheckGardenGearGoesToGlove", () => CheckGardenGearGoesToGlove(Check));
+            Gate("CheckGearFeedsOnHomeFace", () => CheckGearFeedsOnHomeFace(Check));
+            Gate("CheckPointerIdExact", () => CheckPointerIdExact(Check));
+            Gate("CheckPlayerGloveHop", () => CheckPlayerGloveHop(Check));
+            Gate("CheckMouseDownBesideTouch", () => CheckMouseDownBesideTouch(Check));
+            Gate("CheckOverlapOtherFinger", () => CheckOverlapOtherFinger(Check));
+            Gate("CheckPlayLeavesDaily", () => CheckPlayLeavesDaily(Check));
+            Gate("CheckResumeFreshAndHeld", () => CheckResumeFreshAndHeld(Check));
+            Gate("CheckFreshResumeSurfaces", () => CheckFreshResumeSurfaces(Check));
+            Gate("CheckResumeBranches", () => CheckResumeBranches(Check));
+            Gate("CheckGlovePressOwner", () => CheckGlovePressOwner(Check));
+            Gate("CheckRestartClearsCaptions", () => CheckRestartClearsCaptions(Check));
+            Gate("CheckRestartRearmsEveryLesson", () => CheckRestartRearmsEveryLesson(Check));
+            Gate("CheckHomeControlsAtSizes", () => CheckHomeControlsAtSizes(Check));
+            Gate("CheckHomeChainOneAtATime", () => CheckHomeChainOneAtATime(Check));
+            Gate("CheckPlayLeavesHomeChain", () => CheckPlayLeavesHomeChain(Check));
+            Gate("CheckDailyFinishOffersBadger", () => CheckDailyFinishOffersBadger(Check));
+            Gate("CheckPauseKeepsHeldId", () => CheckPauseKeepsHeldId(Check));
+            Gate("CheckDragReleaseOnRestart", () => CheckDragReleaseOnRestart(Check));
+
+            string end = fail == 0 ? "HOME_POLISH_OK" : "HOME_POLISH_FAIL " + fail;
+            sb.AppendLine(end);
+            System.IO.File.WriteAllText(Out, sb.ToString());
+            Debug.Log("[home-polish] " + end);
+            if (fail > 0) throw new System.Exception(end);
+        }
+
+        static void CheckBird(string tag, int screenW, int screenH, System.Action<string, bool, string> Check)
+        {
+            PhoneArea.PlayPixels(screenW, screenH, out int w, out int h);
+            var safe = new Rect(0f, 0f, w, h);
+            var medal = FlockFiveApp.SettledRailIcon(w, h, safe, false, 1);
+            var ribbon = FlockFiveApp.SplashNoAdsRibbon(medal);
+            float icon = Mathf.Max(48f, medal.width * 0.9f);
+            bool covered = !FlockFiveApp.BirdPerchClearsVip(ribbon.center, icon, 6f, 18f, medal);
+            var clear = new Vector2(medal.center.x, medal.yMax + icon + 40f);
+            bool open = FlockFiveApp.BirdPerchClearsVip(clear, icon, 6f, 18f, medal);
+            Check(tag + "-goldie-misses-vip-ribbon", covered && open,
+                "medal " + medal + " ribbon " + ribbon);
+        }
+
+        static void CheckGlove(string tag, int screenW, int screenH, System.Action<string, bool, string> Check)
+        {
+            float s = DeviceFit.Ui(screenW, screenH);
+            float dh = FlockFiveApp.GloveDh(s);
+            float dw = FlockFiveApp.GloveAuditDw(dh);
+            var aim = new Vector2(screenW * 0.42f, screenH * 0.62f);
+            var off = new Vector2(-dh, aim.y - 10f);
+            var start = FlockFiveApp.SeatGloveInside(off, 0f, false, dh, dw, screenW, screenH);
+            float overStart = FlockFiveApp.GloveQuadOverflow(start, 0f, false, dw, dh, screenW, screenH);
+            float overAim = FlockFiveApp.GloveQuadOverflow(aim, 0f, false, dw, dh, screenW, screenH);
+            bool path = true;
+            for (int i = 1; i <= 3; i++)
+            {
+                var p = Vector2.Lerp(start, aim, i / 4f);
+                var seated = FlockFiveApp.SeatGloveInside(p, 0f, false, dh, dw, screenW, screenH);
+                if (FlockFiveApp.GloveQuadOverflow(seated, 0f, false, dw, dh, screenW, screenH) > 0.5f)
+                    path = false;
+            }
+            Check(tag + "-upgrade-glove-stays-on-screen",
+                overStart <= 0.5f && overAim <= 0.5f && path,
+                "start " + start + " over " + overStart.ToString("0.0") + " aim " + overAim.ToString("0.0"));
+        }
+
+        static void CheckSafe(string tag, int screenW, int screenH, System.Action<string, bool, string> Check)
+        {
+            float inset = 59f;
+            float bottom = 34f;
+            var safe = new Rect(0f, bottom, screenW, screenH - inset - bottom);
+            float s = DeviceFit.Ui(screenW, screenH);
+            var chrome = FlockFiveApp.LayoutPokerChrome(screenW, screenH, safe, s);
+            var gear = FlockFiveApp.SettingsGearDrawnRect(screenW, screenH, safe);
+            var backDrawn = FlockFiveApp.BackMedalDrawnRect(chrome.Back);
+            var back = chrome.Back;
+            float shift = FlockFiveApp.AlbumHeaderShift(back, screenW, screenH, safe, s);
+            if (shift > 0f) back.y += shift;
+            var header = FlockFiveApp.AlbumTitleOuter(back, screenW, screenH, safe, s);
+            bool backOk = backDrawn.yMin >= inset - 0.5f;
+            bool cogOk = gear.yMin >= inset - 0.5f;
+            bool headerOk = header.yMin >= inset + 4f - 0.05f;
+            Check(tag + "-top-controls-clear-safe-inset",
+                backOk && cogOk && headerOk,
+                "inset " + inset + " back " + backDrawn.yMin + " gear " + gear.yMin + " header " + header.yMin);
+        }
+
+        static void CheckBackVeil(string tag, int screenW, int screenH, Vector2 reported, System.Action<string, bool, string> Check)
+        {
+            float s = DeviceFit.Ui(screenW, screenH);
+            var safe = new Rect(0f, 0f, screenW, screenH);
+            var chrome = FlockFiveApp.LayoutPokerChrome(screenW, screenH, safe, s);
+            var back = chrome.Back;
+            var deal = new Rect(screenW * 0.55f, screenH * 0.72f, 120f, 120f);
+            bool centerEaten = FlockFiveApp.CoachVeilEats(back.center, true, deal, false, true, false, back);
+            bool dealtEaten = FlockFiveApp.CoachVeilEats(back.center, true, deal, false, true, true, back);
+            bool reportedOk = !back.Contains(reported)
+                || !FlockFiveApp.CoachVeilEats(reported, true, deal, false, true, false, back);
+            bool emptyEaten = FlockFiveApp.CoachVeilEats(new Vector2(screenW * 0.5f, screenH * 0.5f), true, deal, false, true, false, back);
+            Check(tag + "-bet-coach-veil-lets-back",
+                !centerEaten && dealtEaten && reportedOk && emptyEaten && back.Contains(back.center),
+                "back " + back + " reported " + reported);
+        }
+
+        static void CheckBadge(string tag, int screenW, int screenH, System.Action<string, bool, string> Check)
+        {
+            float s = DeviceFit.Ui(screenW, screenH);
+            float hintW = screenW * 0.7f;
+            float hintH = 70f * s;
+            float hintY = screenH - 220f * s;
+            float btnW = screenW * 0.5f;
+            float btnH = 92f * s;
+            float gap = 20f * s;
+            FlockFiveApp.SeatHintAndBadge(screenW, screenH, hintY, hintW, hintH, btnW, btnH, gap, out var hint, out var badge);
+            Check(tag + "-maxxed-clears-flip-hint",
+                !hint.Overlaps(badge) && badge.yMin >= hint.yMax - 0.5f,
+                "hint " + hint + " badge " + badge);
+            bool putBack = FlockFiveApp.MaxxedPutBackShows(true, 0.8f, true, true)
+                && !FlockFiveApp.FlipHintsVisible(0.8f, true, true, true)
+                && !FlockFiveApp.MaxxedPutBackShows(true, 0.8f, false, true);
+            Check(tag + "-maxxed-keeps-put-back-hint", putBack, "above the plate");
+        }
+
+        static void CheckUpgradeTiming(System.Action<string, bool, string> Check)
+        {
+            bool shared = false;
+            for (int i = 0; i <= 20; i++)
+            {
+                float t = i / 20f;
+                bool upgrade = FlockFiveApp.UpgradeButtonShows(t, true);
+                bool hints = FlockFiveApp.FlipHintsVisible(t, true, true, upgrade);
+                if (hints && upgrade) shared = true;
+            }
+            bool early = FlockFiveApp.FlipHintsVisible(0.45f, true, true, false)
+                && !FlockFiveApp.UpgradeButtonShows(0.45f, true);
+            bool later = FlockFiveApp.UpgradeButtonShows(0.7f, true)
+                && !FlockFiveApp.FlipHintsVisible(0.7f, true, true, true);
+            try { Check("upgrade-not-under-flip-hints", !shared && early && later, "shared " + shared); }
+                catch (System.Exception hopEx) { Check("upgrade-not-under-flip-hints", false, ThrowText(hopEx)); }
+            bool skipMax = !FlockFiveApp.UpgradeCoachForCard(false, true);
+            bool teach = FlockFiveApp.UpgradeCoachForCard(true, true);
+            try { Check("maxxed-skips-upgrade-coach", skipMax && teach, "skip " + skipMax); }
+                catch (System.Exception hopEx) { Check("maxxed-skips-upgrade-coach", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckMaxxedPutBack(System.Action<string, bool, string> Check)
+        {
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool taps = true;
+            bool clear = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                var card = FlockFiveApp.AlbumInspectRect(w[i], h[i]);
+                bool jungle = FlockFiveApp.InspectDismissTap(new Vector2(-24f, card.center.y), card);
+                bool margin = FlockFiveApp.InspectDismissTap(new Vector2(8f, 8f), card);
+                bool onCard = FlockFiveApp.InspectDismissTap(card.center, card);
+                if (!jungle || !margin || onCard) taps = false;
+                float top = FlockFiveApp.PutBackHintTop(card.yMax, DeviceFit.Ui(w[i], h[i]));
+                if (top < card.yMax + FlockFiveApp.PutBackHintClear - 0.5f) clear = false;
+            }
+            try { Check("maxxed-put-back-includes-margins", taps, "820 jungle"); }
+                catch (System.Exception hopEx) { Check("maxxed-put-back-includes-margins", false, ThrowText(hopEx)); }
+            try { Check("put-back-hint-clears-the-frame", clear, "gap"); }
+                catch (System.Exception hopEx) { Check("put-back-hint-clears-the-frame", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckFlipOccluder(System.Action<string, bool, string> Check)
+        {
+            var card = new Rect(40f, 80f, 220f, 300f);
+            bool edge = FlockFiveApp.FlipFaceInsideOccluder(card, Mathf.PI * 0.5f);
+            bool flat = FlockFiveApp.FlipFaceInsideOccluder(card, 0f);
+            var occ = FlockFiveApp.FlipOccluder(card);
+            try { Check("flip-occluder-covers-the-gap",
+                edge && flat && Mathf.Abs(occ.width - card.width) < 0.5f && Mathf.Abs(occ.height - card.height) < 0.5f,
+                occ.ToString()); }
+                catch (System.Exception hopEx) { Check("flip-occluder-covers-the-gap", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckCardRender(System.Action<string, bool, string> Check)
+        {
+            CardStage.ResetRenderGuardForTest();
+            bool nested = !CardStage.AllowManualRender(true, false, false);
+            bool inside = !CardStage.AllowManualRender(false, true, false);
+            bool twice = !CardStage.AllowManualRender(false, false, true);
+            CardStage.ResetRenderGuardForTest();
+            bool clear = CardStage.AllowManualRender(false, false, false);
+            string path = System.IO.Path.Combine(UnityEngine.Application.dataPath, "_Project/Scripts/App/CardStage.cs");
+            string src = CodeOnly(System.IO.File.Exists(path) ? System.IO.File.ReadAllText(path) : "");
+            int draw = src.IndexOf("public static bool DrawFlip");
+            int set = src.IndexOf("static void Set(");
+            string body = draw >= 0 && set > draw ? src.Substring(draw, set - draw) : "";
+            bool onGui = body.IndexOf(".Render(") < 0 && body.IndexOf("_defer = true") >= 0;
+            try { Check("card-render-once-and-outside-ongui",
+                nested && inside && twice && clear && onGui,
+                "nested " + nested + " ongui " + onGui); }
+                catch (System.Exception hopEx) { Check("card-render-once-and-outside-ongui", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckFmod(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            bool load = !AudioGuard.IsFmodFailure("FMOD error: failed to load clip")
+                && !AudioGuard.NoteFmodFailure("FMOD error: failed to load clip");
+            bool decode = !AudioGuard.IsFmodFailure("FMOD_ERR_FORMAT decode error")
+                && !AudioGuard.NoteFmodFailure("FMOD failed to decode the sample, error code 25");
+            bool otherCode = !AudioGuard.IsFmodFailure("error code 600")
+                && !AudioGuard.IsFmodFailure("FMOD returns error code 36 (FMOD_ERR_INVALID_HANDLE)");
+            bool quiet = !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0;
+            bool named = AudioGuard.IsFmodFailure("FMOD_ERR_OUTPUT_INIT")
+                && AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+            bool latched = AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+            bool again = AudioGuard.NoteFmodFailure("FMOD returns error code 60 (FMOD_ERR_OUTPUT_INIT)");
+            bool once = latched && again && AudioGuard.FmodWarnings == 1;
+            int onceWarnings = AudioGuard.FmodWarnings;
+            AudioGuard.OnAudioConfigurationChanged(true);
+            bool config = !AudioGuard.OutputFailed;
+            bool rewarn = AudioGuard.NoteFmodFailure("FMOD returns error code 60 (FMOD_ERR_OUTPUT_INIT)") && AudioGuard.FmodWarnings == 2 && AudioGuard.OutputFailed;
+            AudioGuard.OnApplicationFocus(true);
+            bool focus = !AudioGuard.OutputFailed;
+            AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+            AudioGuard.OnApplicationFocus(false);
+            AudioGuard.OnApplicationPause(true);
+            bool held = AudioGuard.OutputFailed;
+            AudioGuard.OnApplicationPause(false);
+            bool resume = !AudioGuard.OutputFailed;
+            bool plain = !AudioGuard.NoteFmodFailure("InvalidOperationException: already created");
+            try { Check("fmod-output-init-only",
+                load && decode && otherCode && quiet && named && plain,
+                "warnings " + AudioGuard.FmodWarnings + " failed " + AudioGuard.OutputFailed); }
+                catch (System.Exception hopEx) { Check("fmod-output-init-only", false, ThrowText(hopEx)); }
+            try { Check("fmod-output-init-warns-once", once && onceWarnings == 1, "warnings " + onceWarnings); }
+                catch (System.Exception hopEx) { Check("fmod-output-init-warns-once", false, ThrowText(hopEx)); }
+            try { Check("fmod-output-recovers",
+                config && rewarn && focus && held && resume && !AudioGuard.OutputFailed,
+                "config " + config + " focus " + focus + " held " + held + " resume " + resume); }
+                catch (System.Exception hopEx) { Check("fmod-output-recovers", false, ThrowText(hopEx)); }
+            AudioGuard.ResetForTests();
+        }
+
+        static void CheckUnityOutputInit(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            const string line = "FMOD failed to initialize the output device.: \"Error initializing output device. \" (60)";
+            bool seen = AudioGuard.IsFmodFailure(line);
+            bool first = AudioGuard.NoteFmodFailure(line);
+            bool second = AudioGuard.NoteFmodFailure(line);
+            bool unity = seen && first && second && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+
+            AudioGuard.ResetForTests();
+            bool phrase = AudioGuard.IsFmodFailure("FAILED TO INITIALIZE THE OUTPUT DEVICE")
+                && AudioGuard.NoteFmodFailure("FAILED TO INITIALIZE THE OUTPUT DEVICE")
+                && AudioGuard.NoteFmodFailure("FAILED TO INITIALIZE THE OUTPUT DEVICE")
+                && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+
+            AudioGuard.ResetForTests();
+            bool paren = AudioGuard.IsFmodFailure("FMOD (60)")
+                && AudioGuard.NoteFmodFailure("FMOD (60)")
+                && AudioGuard.NoteFmodFailure("FMOD (60)")
+                && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+            AudioGuard.ResetForTests();
+            bool bare = !AudioGuard.IsFmodFailure("(60)") && !AudioGuard.NoteFmodFailure("(60)")
+                && !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0;
+
+            try { Check("unity-output-init-line-latches", unity && phrase && paren && bare,
+                "unity " + unity + " phrase " + phrase + " paren " + paren + " bare " + bare); }
+                catch (System.Exception hopEx) { Check("unity-output-init-line-latches", false, ThrowText(hopEx)); }
+            AudioGuard.ResetForTests();
+        }
+
+        static void CheckEmulatedNoSound(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            const string line = "FMOD failed to initialize any audio devices, running on emulated software output with no sound. Please check your audio drivers and/or hardware for malfunction.";
+            bool seen = AudioGuard.IsFmodFailure(line);
+            bool first = AudioGuard.NoteFmodFailure(line);
+            bool second = AudioGuard.NoteFmodFailure(line);
+            bool emulated = seen && first && second && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+
+            AudioGuard.ResetForTests();
+            bool soft = AudioGuard.IsFmodFailure("RUNNING ON EMULATED SOFTWARE OUTPUT WITH NO SOUND")
+                && AudioGuard.NoteFmodFailure("RUNNING ON EMULATED SOFTWARE OUTPUT WITH NO SOUND")
+                && AudioGuard.NoteFmodFailure("RUNNING ON EMULATED SOFTWARE OUTPUT WITH NO SOUND")
+                && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+
+            try { Check("emulated-no-sound-latches", emulated && soft, "emulated " + emulated + " soft " + soft); }
+                catch (System.Exception hopEx) { Check("emulated-no-sound-latches", false, ThrowText(hopEx)); }
+            AudioGuard.ResetForTests();
+        }
+
+        static void CheckOutputThenEmulated(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            const string unity = "FMOD failed to initialize the output device.: \"Error initializing output device. \" (60)";
+            const string emu = "FMOD failed to initialize any audio devices, running on emulated software output with no sound. Please check your audio drivers and/or hardware for malfunction.";
+            bool first = AudioGuard.NoteFmodFailure(unity);
+            bool second = AudioGuard.NoteFmodFailure(emu);
+            bool once = first && second && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+            try { Check("output-init-then-emulated-warns-once", once, "warnings " + AudioGuard.FmodWarnings); }
+                catch (System.Exception hopEx) { Check("output-init-then-emulated-warns-once", false, ThrowText(hopEx)); }
+            AudioGuard.ResetForTests();
+        }
+
+        static void CheckInvalidHandle(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("invalid-handle");
+            try
+            {
+                var src = go.AddComponent<AudioSource>();
+                src.playOnAwake = false;
+                src.loop = true;
+                src.clip = ProbeClip("handle-bed");
+                string[] bad =
+                {
+                    "FMOD returns error code 36 (FMOD_ERR_INVALID_HANDLE)",
+                    "FMOD returns error code 36 (FMOD_ERR_INVALID_HANDLE) executing disconnectFrom",
+                    "FMOD returns error code 36 (FMOD_ERR_INVALID_HANDLE) executing addDSP",
+                    "FMOD_ERR_INVALID_HANDLE",
+                    "error code 36",
+                    "(600)",
+                    "(36)",
+                    "(6)",
+                    "FMOD (600)",
+                    "FMOD (36)",
+                    "FMOD (6)"
+                };
+                bool quiet = true;
+                for (int i = 0; i < bad.Length; i++)
+                {
+                    if (AudioGuard.IsFmodFailure(bad[i]) || AudioGuard.NoteFmodFailure(bad[i])) quiet = false;
+                }
+                AudioGuard.Play(src);
+                quiet = quiet && !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0
+                    && AudioGuard.SkippedCount == 0 && !AudioGuard.NeedsRestore(src);
+
+                AudioGuard.ResetForTests();
+                bool code = AudioGuard.IsFmodFailure("FMOD returns error code 60 (FMOD_ERR_OUTPUT_INIT)")
+                    && AudioGuard.NoteFmodFailure("FMOD returns error code 60 (FMOD_ERR_OUTPUT_INIT)")
+                    && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1
+                    && !AudioGuard.Play(src) && AudioGuard.SkippedCount == 1;
+
+                AudioGuard.ResetForTests();
+                bool symbol = AudioGuard.IsFmodFailure("FMOD_ERR_OUTPUT_INIT")
+                    && AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT")
+                    && AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 1;
+
+                AudioGuard.ResetForTests();
+                bool wide = !AudioGuard.IsFmodFailure("error code 600")
+                    && !AudioGuard.NoteFmodFailure("error code 600")
+                    && !AudioGuard.OutputFailed && AudioGuard.FmodWarnings == 0
+                    && AudioGuard.SkippedCount == 0;
+
+                try { Check("invalid-handle-does-not-latch", quiet && code && symbol && wide,
+                    "quiet " + quiet + " code " + code + " symbol " + symbol + " wide " + wide); }
+                catch (System.Exception hopEx) { Check("invalid-handle-does-not-latch", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckPlayScheduled(System.Action<string, bool, string> Check)
+        {
+            string root = System.IO.Path.Combine(UnityEngine.Application.dataPath, "_Project/Scripts");
+            var bypass = new System.Collections.Generic.List<string>();
+            int routed = 0;
+            int impl = 0;
+            if (System.IO.Directory.Exists(root))
+            {
+                var files = System.IO.Directory.GetFiles(root, "*.cs", System.IO.SearchOption.AllDirectories);
+                for (int f = 0; f < files.Length; f++)
+                {
+                    var lines = CodeOnly(System.IO.File.ReadAllText(files[f])).Split('\n');
+                    bool guard = files[f].EndsWith("AudioGuard.cs");
+                    for (int i = 0; i < lines.Length; i++)
+                    {
+                        if (lines[i].IndexOf(".PlayScheduled(", System.StringComparison.Ordinal) < 0) continue;
+                        string trimmed = lines[i].TrimStart();
+                        if (trimmed.StartsWith("//")) continue;
+                        if (lines[i].IndexOf("AudioGuard.PlayScheduled(", System.StringComparison.Ordinal) >= 0)
+                        {
+                            routed++;
+                            continue;
+                        }
+                        if (guard && lines[i].IndexOf("source.PlayScheduled(", System.StringComparison.Ordinal) >= 0)
+                        {
+                            impl++;
+                            continue;
+                        }
+                        bypass.Add(System.IO.Path.GetFileName(files[f]) + ":" + (i + 1));
+                    }
+                }
+            }
+            else bypass.Add("missing " + root);
+            bool ok = bypass.Count == 0 && routed >= 3 && impl == 1;
+            try { Check("play-scheduled-goes-through-guard", ok,
+                ok ? "routed " + routed : "routed " + routed + " impl " + impl + " " + string.Join(" ", bypass.ToArray())); }
+                catch (System.Exception hopEx) { Check("play-scheduled-goes-through-guard", false, ThrowText(hopEx)); }
+        }
+
+        static AudioClip ProbeClip(string name)
+        {
+            return ProbeClip(name, 64);
+        }
+
+        static AudioClip ProbeClip(string name, int samples)
+        {
+            if (samples < 1) samples = 1;
+            var clip = AudioClip.Create(name, samples, 1, 22050, false);
+            clip.SetData(new float[samples], 0);
+            return clip;
+        }
+
+        static void CheckAudioRetry(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var idle = new UnityEngine.GameObject("retry-idle");
+            var skippedGo = new UnityEngine.GameObject("retry-skipped");
+            var otherGo = new UnityEngine.GameObject("retry-other");
+            var deskGo = new UnityEngine.GameObject("retry-desk");
+            MixDesk desk = null;
+            try
+            {
+                var idleSrc = idle.AddComponent<AudioSource>();
+                idleSrc.playOnAwake = false;
+                idleSrc.loop = true;
+                idleSrc.clip = ProbeClip("idle-bed");
+                var skipped = skippedGo.AddComponent<AudioSource>();
+                skipped.playOnAwake = false;
+                skipped.loop = true;
+                skipped.clip = ProbeClip("skipped-bed");
+                var other = otherGo.AddComponent<AudioSource>();
+                other.playOnAwake = false;
+                other.loop = true;
+                other.clip = ProbeClip("other-bed");
+                desk = deskGo.AddComponent<MixDesk>();
+                desk.AttachForTests();
+
+                int before = AudioGuard.RetryPlayCount;
+                AudioGuard.OnApplicationFocus(true);
+                AudioGuard.OnApplicationPause(false);
+                AudioGuard.OnAudioConfigurationChanged(true);
+                bool quiet = AudioGuard.RetryPlayCount == before && !AudioGuard.WasRetried(idleSrc);
+
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                bool missed = !AudioGuard.Play(skipped) && AudioGuard.SkippedCount == 1;
+                AudioGuard.OnApplicationFocus(true);
+                bool onlySkipped = AudioGuard.WasRetried(skipped) && !AudioGuard.WasRetried(other) && !AudioGuard.WasRetried(idleSrc);
+
+                AudioGuard.NoteFmodFailure("error code 60");
+                desk.PlantBadgerVoicesForTests(out var loop, out var cue, out var sting);
+                AudioGuard.Play(loop);
+                int cutAt = AudioGuard.RetryPlayCount;
+                desk.BadgerCut();
+                AudioGuard.OnApplicationPause(false);
+                bool cutQuiet = AudioGuard.RetryPlayCount == cutAt && !AudioGuard.WasRetried(loop);
+
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                AudioGuard.Play(loop);
+                int resultAt = AudioGuard.RetryPlayCount;
+                desk.BadgerResult(true);
+                AudioGuard.OnAudioConfigurationChanged(false);
+                bool resultQuiet = AudioGuard.RetryPlayCount == resultAt && !AudioGuard.WasRetried(loop) && !AudioGuard.WasRetried(sting);
+
+                var paused = skipped;
+                AudioGuard.NoteFmodFailure("error code 60");
+                AudioGuard.Pause(paused);
+                AudioGuard.Play(paused);
+                int pauseAt = AudioGuard.RetryPlayCount;
+                int pausedSample = paused.timeSamples;
+                AudioGuard.OnApplicationFocus(true);
+                bool pauseQuiet = AudioGuard.RetryPlayCount == pauseAt && !AudioGuard.WasRetried(paused) && paused.timeSamples == pausedSample;
+
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                AudioGuard.Play(other);
+                AudioGuard.SetMuted(true, false);
+                int muteAt = AudioGuard.RetryPlayCount;
+                AudioGuard.OnApplicationFocus(true);
+                bool muteQuiet = AudioGuard.RetryPlayCount == muteAt && !AudioGuard.WasRetried(other);
+                AudioGuard.SetMuted(false, false);
+
+                var goneGo = new UnityEngine.GameObject("retry-gone");
+                var gone = goneGo.AddComponent<AudioSource>();
+                gone.clip = ProbeClip("gone-clip");
+                UnityEngine.Object.DestroyImmediate(goneGo);
+                int warns = AudioGuard.PlaybackWarnings;
+                bool dead = !AudioGuard.Play(gone) && !AudioGuard.PlayScheduled(gone, 0d);
+                bool once = !AudioGuard.Play(gone) && AudioGuard.PlaybackWarnings == warns + 1;
+
+                var entrance = ProbeClip("entrance-probe");
+                desk.ArmEntranceForTests(entrance);
+                AudioGuard.RejectScheduled = loop;
+                desk.BadgerEntrance();
+                bool orphan = desk.OrphanCueStoppedForTests;
+
+                try { Check("audio-retry-only-after-a-real-failure", quiet && missed && onlySkipped,
+                    "quiet " + quiet + " missed " + missed + " only " + onlySkipped); }
+                catch (System.Exception hopEx) { Check("audio-retry-only-after-a-real-failure", false, ThrowText(hopEx)); }
+                try { Check("audio-retry-skips-cut-result-pause-mute",
+                    cutQuiet && resultQuiet && pauseQuiet && muteQuiet,
+                    "cut " + cutQuiet + " result " + resultQuiet + " pause " + pauseQuiet + " mute " + muteQuiet); }
+                catch (System.Exception hopEx) { Check("audio-retry-skips-cut-result-pause-mute", false, ThrowText(hopEx)); }
+                try { Check("destroyed-source-returns-false-once", dead && once, "warnings " + AudioGuard.PlaybackWarnings); }
+                catch (System.Exception hopEx) { Check("destroyed-source-returns-false-once", false, ThrowText(hopEx)); }
+                try { Check("entrance-stops-cue-when-loop-misses", orphan, "orphan " + orphan); }
+                catch (System.Exception hopEx) { Check("entrance-stops-cue-when-loop-misses", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.RejectScheduled = null;
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(idle);
+                UnityEngine.Object.DestroyImmediate(skippedGo);
+                UnityEngine.Object.DestroyImmediate(otherGo);
+                UnityEngine.Object.DestroyImmediate(deskGo);
+            }
+        }
+
+        static void CheckPauseAndUnmute(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            GamePause.Reset();
+            var go = new UnityEngine.GameObject("pause-bed");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("garden-bed");
+                bed.playOnAwake = false;
+
+                int routes = AudioGuard.PauseRoutes;
+                int resumes = AudioGuard.ResumeRoutes;
+                GamePause.Push();
+                bool entered = AudioGuard.PauseRoutes == routes + 1 && GamePause.Paused;
+                GamePause.Push();
+                bool once = AudioGuard.PauseRoutes == routes + 1;
+                AudioGuard.Pause(bed);
+                bool marked = AudioGuard.IsPaused(bed);
+                GamePause.Pop();
+                bool still = GamePause.Paused && AudioGuard.IsPaused(bed) && AudioGuard.ResumeRoutes == resumes;
+                GamePause.Pop();
+                bool cleared = !GamePause.Paused && !AudioGuard.IsPaused(bed) && AudioGuard.ResumeRoutes == resumes + 1;
+
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                bool missed = !AudioGuard.Play(bed) && AudioGuard.SkippedCount >= 1;
+                GamePause.Push();
+                int held = AudioGuard.RetryPlayCount;
+                AudioGuard.OnApplicationFocus(true);
+                bool deferred = AudioGuard.RetryDeferred && AudioGuard.RetryPlayCount == held && AudioGuard.SkippedCount >= 1;
+                GamePause.Pop();
+                bool resumed = !AudioGuard.RetryDeferred && AudioGuard.WasRetried(bed) && AudioGuard.RetryPlayCount == held + 1;
+
+                AudioGuard.NoteFmodFailure("error code 60");
+                desk.PlantStemForTests(0.24f);
+                bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("garden-bed");
+                bed.loop = true;
+                bool heldDead = !AudioGuard.Play(bed) && AudioGuard.NeedsRestore(bed);
+                int plays = AudioGuard.PlayCalls;
+                int stops = AudioGuard.StopCalls;
+                bed.timeSamples = 32000;
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
+                bool kept = AudioGuard.StopCalls == stops && AudioGuard.PlayCalls == plays
+                    && bed.timeSamples == 32000 && AudioGuard.NeedsRestore(bed);
+                AudioGuard.SetMuted(false, false);
+                bool brought = heldDead && kept && desk.LastReassert == 1;
+                AudioGuard.Pause(bed);
+                bool pausedStays = desk.ReassertBed() == 0 && AudioGuard.IsPaused(bed);
+                desk.PlantStemForTests(0f);
+                var quiet = desk.StemForTests(0);
+                quiet.clip = ProbeClip("silent-bed");
+                bool silent = desk.ReassertBed() == 0;
+
+                try { Check("game-pause-routes-through-audioguard",
+                    entered && once && marked && still && cleared,
+                    "entered " + entered + " once " + once + " marked " + marked + " cleared " + cleared); }
+                catch (System.Exception hopEx) { Check("game-pause-routes-through-audioguard", false, ThrowText(hopEx)); }
+                try { Check("retry-waits-until-game-resume",
+                    missed && deferred && resumed,
+                    "missed " + missed + " deferred " + deferred + " resumed " + resumed); }
+                catch (System.Exception hopEx) { Check("retry-waits-until-game-resume", false, ThrowText(hopEx)); }
+                try { Check("unmute-reasserts-the-bed",
+                    kept && brought && pausedStays && silent,
+                    "kept " + kept + " brought " + brought + " paused " + pausedStays + " silent " + silent); }
+                catch (System.Exception hopEx) { Check("unmute-reasserts-the-bed", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.ResetForTests();
+                GamePause.Reset();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckUnmuteScope(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            GamePause.Reset();
+            var go = new UnityEngine.GameObject("unmute-scope");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var mid = desk.StemForTests(0);
+                mid.clip = ProbeClip("mid-bed", 88200);
+                mid.loop = true;
+                bool started = AudioGuard.Play(mid);
+                mid.timeSamples = 44100;
+                int planted = mid.timeSamples;
+                int plays = AudioGuard.PlayCalls;
+                int stops = AudioGuard.StopCalls;
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.SetMuted(false, false);
+                bool place = started && planted == 44100
+                    && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops
+                    && mid.timeSamples == 44100 && AudioGuard.RestoreCount == 0 && !AudioGuard.NeedsRestore(mid)
+                    && desk.LastReassert == 0 && !AudioGuard.ScheduledAt(mid, out _);
+
+                AudioGuard.ResetForTests();
+                desk.PlantBadgerVoicesForTests(out var loop, out var cue, out var sting);
+                loop.clip = ProbeClip("badger-loop");
+                cue.clip = ProbeClip("badger-cue");
+                sting.clip = ProbeClip("badger-sting");
+                cue.loop = false;
+                sting.loop = false;
+                loop.loop = true;
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                AudioGuard.Play(loop);
+                AudioGuard.Play(sting);
+                desk.ArmCutForTests();
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
+                AudioGuard.SetMuted(false, false);
+                bool cut = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(loop) && !AudioGuard.NeedsRestore(sting);
+
+                AudioGuard.ResetForTests();
+                AudioGuard.NoteFmodFailure("error code 60");
+                AudioGuard.Play(loop);
+                AudioGuard.Play(sting);
+                desk.ArmResultForTests();
+                desk.BadgerResult(true);
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
+                AudioGuard.SetMuted(false, false);
+                bool result = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(loop) && !AudioGuard.NeedsRestore(sting);
+
+                AudioGuard.ResetForTests();
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                desk.PlantSplashStemForTests(false);
+                var splash = desk.StemForTests(4);
+                splash.clip = ProbeClip("splash-early");
+                splash.loop = true;
+                AudioGuard.Play(splash);
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
+                AudioGuard.SetMuted(false, false);
+                bool early = desk.LastReassert == 0 && !AudioGuard.NeedsRestore(splash);
+
+                AudioGuard.ResetForTests();
+                AudioGuard.NoteFmodFailure("error code 60");
+                desk.PlantStemForTests(0.24f);
+                var kept = desk.StemForTests(0);
+                kept.clip = ProbeClip("kept-bed");
+                kept.loop = true;
+                var other = desk.AddLoopForTests(true);
+                other.clip = ProbeClip("other-bed");
+                var oneShot = desk.AddLoopForTests(false);
+                oneShot.clip = ProbeClip("stinger");
+                AudioGuard.Play(kept);
+                AudioGuard.Play(oneShot);
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
+                AudioGuard.SetMuted(false, false);
+                bool only = desk.LastReassert == 1 && AudioGuard.WasStarted(kept) && !AudioGuard.WasStarted(other) && !AudioGuard.NeedsRestore(oneShot);
+
+                try { Check("mute-unmute-mid-bed-keeps-position", place,
+                    "place " + place + " planted " + planted + " samples " + mid.timeSamples); }
+                catch (System.Exception hopEx) { Check("mute-unmute-mid-bed-keeps-position", false, ThrowText(hopEx)); }
+                try { Check("unmute-during-cut-starts-nothing", cut, "cut " + cut); }
+                catch (System.Exception hopEx) { Check("unmute-during-cut-starts-nothing", false, ThrowText(hopEx)); }
+                try { Check("unmute-after-result-starts-nothing", result, "result " + result); }
+                catch (System.Exception hopEx) { Check("unmute-after-result-starts-nothing", false, ThrowText(hopEx)); }
+                try { Check("unmute-before-splash-welcome-starts-nothing", early, "early " + early); }
+                catch (System.Exception hopEx) { Check("unmute-before-splash-welcome-starts-nothing", false, ThrowText(hopEx)); }
+                try { Check("unmute-restores-only-the-stopped-bed", only, "only " + only + " reassert " + desk.LastReassert); }
+                catch (System.Exception hopEx) { Check("unmute-restores-only-the-stopped-bed", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.ResetForTests();
+                GamePause.Reset();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static bool SameScheduledStart(AudioSource a, AudioSource b)
+        {
+            double ta, tb;
+            return AudioGuard.ScheduledAt(a, out ta) && AudioGuard.ScheduledAt(b, out tb) && ta == tb;
+        }
+
+        static void CheckScheduledRestore(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            GamePause.Reset();
+            var go = new UnityEngine.GameObject("scheduled-restore");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var a = desk.StemForTests(0);
+                a.clip = ProbeClip("sched-a");
+                a.loop = true;
+                var b = desk.AddLoopForTests(true);
+                b.clip = ProbeClip("sched-b");
+                AudioGuard.NoteFmodFailure("FMOD_ERR_OUTPUT_INIT");
+                AudioGuard.Play(a);
+                AudioGuard.Play(b);
+                int plays = AudioGuard.PlayCalls;
+                AudioGuard.SetMuted(true, false);
+                AudioGuard.OnAudioConfigurationChanged(true);
+                AudioGuard.SetMuted(false, false);
+                bool unmute = desk.LastReassert == 2 && SameScheduledStart(a, b) && AudioGuard.PlayCalls == plays;
+
+                AudioGuard.ResetForTests();
+                // The unmute half already scheduled a and b. A playing voice is not
+                // a missed start, so the retry half uses voices that are still silent.
+                var c = desk.AddLoopForTests(true);
+                c.clip = ProbeClip("sched-c");
+                var d = desk.AddLoopForTests(true);
+                d.clip = ProbeClip("sched-d");
+                AudioGuard.NoteFmodFailure("error code 60");
+                bool missedRetry = !AudioGuard.Play(c) && !AudioGuard.Play(d);
+                plays = AudioGuard.PlayCalls;
+                AudioGuard.OnApplicationFocus(true);
+                bool retry = missedRetry && AudioGuard.WasRetried(c) && AudioGuard.WasRetried(d)
+                    && SameScheduledStart(c, d) && AudioGuard.PlayCalls == plays;
+
+                try { Check("restored-stems-share-one-scheduled-start", unmute && retry,
+                    "unmute " + unmute + " retry " + retry); }
+                catch (System.Exception hopEx) { Check("restored-stems-share-one-scheduled-start", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.ResetForTests();
+                GamePause.Reset();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckScheduleHousekeeping(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            GamePause.Reset();
+            var go = new UnityEngine.GameObject("schedule-housekeeping");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var stale = desk.StemForTests(0);
+                stale.clip = ProbeClip("stale-bed");
+                stale.loop = true;
+                stale.timeSamples = 12000;
+                var mate = desk.AddLoopForTests(true);
+                mate.clip = ProbeClip("mate-bed");
+                mate.timeSamples = 8000;
+                int plays = AudioGuard.PlayCalls;
+                int n = AudioGuard.ScheduleStemsTogether(new AudioSource[] { stale, mate });
+                bool rewound = n == 2 && stale.timeSamples == 0 && mate.timeSamples == 0
+                    && SameScheduledStart(stale, mate) && AudioGuard.PlayCalls == plays;
+
+                bool logged = AudioGuard.ScheduledAt(stale, out _) && AudioGuard.ScheduledAt(mate, out _);
+                AudioGuard.Release(stale);
+                bool dropped = !AudioGuard.ScheduledAt(stale, out _) && AudioGuard.ScheduledAt(mate, out _);
+                AudioGuard.DropRestore(mate);
+                bool both = !AudioGuard.ScheduledAt(mate, out _);
+
+                AudioGuard.ResetForTests();
+                desk.PlantStemForTests(0f);
+                var dawn = desk.StemForTests(0);
+                dawn.clip = ProbeClip("dawn-bed");
+                dawn.loop = true;
+                dawn.timeSamples = 5000;
+                var mid = desk.AddLoopForTests(true);
+                mid.clip = ProbeClip("mid-copy");
+                mid.volume = 0f;
+                var last = desk.AddLoopForTests(true);
+                last.clip = ProbeClip("last-copy");
+                last.volume = 0f;
+                plays = AudioGuard.PlayCalls;
+                int booted = desk.BootPlaceForTests();
+                bool boot = booted == 3 && dawn.timeSamples == 0 && mid.timeSamples == 0 && last.timeSamples == 0
+                    && SameScheduledStart(dawn, mid) && SameScheduledStart(dawn, last)
+                    && AudioGuard.PlayCalls == plays;
+
+                try { Check("schedule-together-rewinds-stale-stems", rewound, "rewound " + rewound + " n " + n); }
+                catch (System.Exception hopEx) { Check("schedule-together-rewinds-stale-stems", false, ThrowText(hopEx)); }
+                try { Check("release-drops-schedule-log", logged && dropped && both, "logged " + logged + " dropped " + dropped); }
+                catch (System.Exception hopEx) { Check("release-drops-schedule-log", false, ThrowText(hopEx)); }
+                try { Check("boot-stems-share-one-scheduled-start", boot, "boot " + boot + " n " + booted); }
+                catch (System.Exception hopEx) { Check("boot-stems-share-one-scheduled-start", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.SetMuted(false, false);
+                AudioGuard.ResetForTests();
+                GamePause.Reset();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckGardenGlove(System.Action<string, bool, string> Check)
+        {
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool inside = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                float s = DeviceFit.Ui(w[i], h[i]);
+                var aim = new Vector2(w[i] * 0.28f, h[i] * 0.42f);
+                var branch = FlockFiveApp.LessonBranchRect(aim, s);
+                var nudged = new Vector2(aim.x + branch.width, aim.y + branch.height);
+                var tip = FlockFiveApp.KeepTipOnBranch(nudged, branch);
+                if (!branch.Contains(tip)) inside = false;
+            }
+            bool tap = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                float H = h[i];
+                var glove = new Rect(w[i] * 0.3f, 100f, 70f, 80f);
+                var onGlove = new Vector2(glove.center.x, H - glove.center.y);
+                var mirroredScreen = new Vector2(glove.center.x, glove.center.y);
+                if (!FlockFiveApp.ScreenGloveCountsAsBranch(onGlove, H, glove, true)) tap = false;
+                if (FlockFiveApp.ScreenGloveCountsAsBranch(mirroredScreen, H, glove, true)) tap = false;
+            }
+            bool l1 = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                float H = h[i];
+                for (int step = 0; step < 5; step++)
+                {
+                    var branch = FlockFiveApp.L1BranchRect(step, w[i], h[i]);
+                    var glove = FlockFiveApp.GloveOnBranch(branch);
+                    var tip = branch.center;
+                    var tipGui = new Vector2(tip.x, tip.y);
+                    if (!branch.Contains(tip) || !branch.Contains(glove.center) || !branch.Contains(tipGui))
+                        l1 = false;
+                    if (!glove.Contains(tipGui)) l1 = false;
+                    var center = new Vector2(glove.center.x, H - glove.center.y);
+                    var tipScreen = new Vector2(tip.x, H - tip.y);
+                    if (!FlockFiveApp.ScreenGloveCountsAsBranch(center, H, glove, true)) l1 = false;
+                    if (!FlockFiveApp.ScreenGloveCountsAsBranch(tipScreen, H, glove, true)) l1 = false;
+                    var mirroredScreen = new Vector2(glove.center.x, glove.center.y);
+                    if (FlockFiveApp.ScreenGloveCountsAsBranch(mirroredScreen, H, glove, true)) l1 = false;
+                }
+            }
+            bool clear = CaptionLayout.FirstClearLine.IndexOf("Five of one color clear.") >= 0;
+            bool bottom = FlockFiveApp.IsGardenBottomLine(CaptionLayout.FirstClearLine);
+            var restart = new Rect(700f, 40f, 64f, 64f);
+            var home = CornerAnchor.TopBarHome(restart, 820f, new Rect(0f, 0f, 820f, 1180f));
+            bool mirrored = Mathf.Abs(home.y - restart.y) < 0.5f && Mathf.Abs(home.width - restart.width) < 0.5f && home.x < restart.x;
+            try { Check("glove-tip-lands-in-the-branch", inside && clear && mirrored && bottom, "820 402 412"); }
+                catch (System.Exception hopEx) { Check("glove-tip-lands-in-the-branch", false, ThrowText(hopEx)); }
+            try { Check("screen-glove-tap-hits-the-branch", tap, "820 402 412"); }
+                catch (System.Exception hopEx) { Check("screen-glove-tap-hits-the-branch", false, ThrowText(hopEx)); }
+            try { Check("l1-glove-center-advances", l1, "820 402 412 steps 0-4"); }
+                catch (System.Exception hopEx) { Check("l1-glove-center-advances", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckUpgradeStack(System.Action<string, bool, string> Check)
+        {
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool clear = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                float s = DeviceFit.Ui(w[i], h[i]);
+                var card = FlockFiveApp.SeatedInspectCard(w[i], h[i], 34f, s);
+                if (!FlockFiveApp.UpgradeClearsBottom(card, h[i], 34f, s)) clear = false;
+            }
+            try { Check("upgrade-clears-bottom-inset", clear, "820 402 412 inset 34"); }
+                catch (System.Exception hopEx) { Check("upgrade-clears-bottom-inset", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckPlayerGlove(System.Action<string, bool, string> Check)
+        {
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool tap = true, bobOk = true, settle = true, hud = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                float H = h[i];
+                float s = DeviceFit.Ui(w[i], H);
+                float dh = FlockFiveApp.GloveDh(s);
+                var branch = FlockFiveApp.L1BranchRect(1, w[i], H);
+                var pivot = branch.center;
+                var posed = FlockFiveApp.GloveBobPivot(pivot, 0f, 0f, false);
+                var drawn = FlockFiveApp.ScreenGloveRect(posed, 0f, dh, 0f, false);
+                var center = new Vector2(drawn.center.x, H - drawn.center.y);
+                var tip = new Vector2(pivot.x, H - pivot.y);
+                var near = new Vector2(drawn.xMax - 1.5f, drawn.center.y);
+                var nearScreen = new Vector2(near.x, H - near.y);
+                if (!FlockFiveApp.LessonGloveHit(center, H, drawn)) tap = false;
+                if (!drawn.Contains(pivot) || !FlockFiveApp.LessonGloveHit(tip, H, drawn)) tap = false;
+                if (!drawn.Contains(near) || !FlockFiveApp.LessonGloveHit(nearScreen, H, drawn)) tap = false;
+                var outside = new Vector2(drawn.xMin - 4f, H - drawn.center.y);
+                if (FlockFiveApp.LessonGloveHit(outside, H, drawn)) tap = false;
+                float lo = 99f, hi = -99f;
+                for (int k = 0; k <= 48; k++)
+                {
+                    float t = k / 48f * (Mathf.PI * 2f / 2.35f);
+                    float b = FlockFiveApp.GloveBobPx(t, false);
+                    if (b < lo) lo = b;
+                    if (b > hi) hi = b;
+                }
+                if (hi - lo > 8.01f) bobOk = false;
+                var btn = new Rect((w[i] - 180f) * 0.5f, H * 0.72f, 180f, 84f);
+                var aim = FlockFiveApp.UpgradeGloveSettle(btn);
+                if (!btn.Contains(aim)) settle = false;
+                var restart = new Rect(w[i] - 80f, 16f, 64f, 64f);
+                var home = new Rect(16f, 16f, 64f, 64f);
+                bool homeHit, restartHit;
+                var onRestart = new Vector2(restart.center.x, H - restart.center.y);
+                var onHome = new Vector2(home.center.x, H - home.center.y);
+                if (!FlockFiveApp.GardenHudPoint(onRestart, H, home, restart, out homeHit, out restartHit) || !restartHit || homeHit)
+                    hud = false;
+                if (!FlockFiveApp.GardenHudPoint(onHome, H, home, restart, out homeHit, out restartHit) || !homeHit || restartHit)
+                    hud = false;
+            }
+            float held = 0f;
+            for (int f = 0; f < 270; f++)
+                held = FlockFiveApp.AdvanceRuleHold(held, 1f / 60f);
+            bool gone = FlockFiveApp.RuleHoldDone(held) && !FlockFiveApp.RuleHoldDone(FlockFiveApp.AdvanceRuleHold(0f, 3.5f));
+            try { Check("player-glove-tap-advances", tap, "center tip near-miss"); }
+                catch (System.Exception hopEx) { Check("player-glove-tap-advances", false, ThrowText(hopEx)); }
+            try { Check("player-glove-bob-extent", bobOk, "peak to peak"); }
+                catch (System.Exception hopEx) { Check("player-glove-bob-extent", false, ThrowText(hopEx)); }
+            try { Check("upgrade-settle-inside-button", settle, "820 402 412"); }
+                catch (System.Exception hopEx) { Check("upgrade-settle-inside-button", false, ThrowText(hopEx)); }
+            try { Check("lesson-hud-acts", hud, "home restart"); }
+                catch (System.Exception hopEx) { Check("lesson-hud-acts", false, ThrowText(hopEx)); }
+            try { Check("caption-gone-after-4-5s", gone, "unscaled"); }
+                catch (System.Exception hopEx) { Check("caption-gone-after-4-5s", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckCoachRestart(System.Action<string, bool, string> Check)
+        {
+            const string doneKey = "flockfive.coach.done";
+            const string giftKey = "flockfive.coach.gift";
+            bool hadDone = PlayerPrefs.HasKey(doneKey);
+            bool hadGift = PlayerPrefs.HasKey(giftKey);
+            int keepDone = PlayerPrefs.GetInt(doneKey, 0);
+            int keepGift = PlayerPrefs.GetInt(giftKey, 0);
+            var go = new GameObject("coach-restart");
+            try
+            {
+                PlayerPrefs.DeleteKey(doneKey);
+                PlayerPrefs.DeleteKey(giftKey);
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_coachMoves", flags).SetValue(app, 0);
+                var pick = t.GetMethod("CoachPick", flags);
+                var moved = t.GetMethod("CoachMoved", flags);
+                var resume = t.GetMethod("FreshCoachResume", flags);
+                object[] cue = { -1, -1 };
+                bool first = (bool)pick.Invoke(app, cue);
+                int from = (int)cue[0], to = (int)cue[1];
+                bool level1 = FlockFiveApp.Level1First(board, i => false, i => false, out int wantFrom, out int wantTo);
+                t.GetField("_coachFrom", flags).SetValue(app, from);
+                t.GetField("_coachTo", flags).SetValue(app, to);
+                moved.Invoke(app, new object[] { from, to, 0 });
+                int afterHop = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                bool live = (bool)t.GetField("_coach", flags).GetValue(app);
+                resume.Invoke(app, null);
+                int reset = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                object[] again = { -1, -1 };
+                bool recued = (bool)pick.Invoke(app, again);
+                int from2 = (int)again[0], to2 = (int)again[1];
+                t.GetField("_coachFrom", flags).SetValue(app, from2);
+                t.GetField("_coachTo", flags).SetValue(app, to2);
+                moved.Invoke(app, new object[] { from2, to2, 0 });
+                int midMoves = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                bool mid = (bool)t.GetField("_coach", flags).GetValue(app);
+                moved.Invoke(app, new object[] { from2, to2, 0 });
+                bool finished = !(bool)t.GetField("_coach", flags).GetValue(app);
+                try { Check("restart-restores-level1-first",
+                    level1 && first && from == wantFrom && to == wantTo && live && afterHop == 1
+                    && reset == 0 && recued && from2 == wantFrom && to2 == wantTo
+                    && mid && midMoves == 1 && finished,
+                    "from " + from + "->" + from2 + " moves " + afterHop + "/" + reset + "/" + midMoves); }
+                catch (System.Exception hopEx) { Check("restart-restores-level1-first", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                if (hadDone) PlayerPrefs.SetInt(doneKey, keepDone);
+                else PlayerPrefs.DeleteKey(doneKey);
+                if (hadGift) PlayerPrefs.SetInt(giftKey, keepGift);
+                else PlayerPrefs.DeleteKey(giftKey);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckRealPress(System.Action<string, bool, string> Check)
+        {
+            int[] cssW = { 820, 402, 412 };
+            int[] cssH = { 1180, 874, 915 };
+            float[] dpr = { 2f, 2f, 2f };
+            bool glove = true, hud = true, release = true;
+            for (int i = 0; i < cssW.Length; i++)
+            {
+                float s = DeviceFit.Ui(cssW[i], cssH[i]);
+                float dh = FlockFiveApp.GloveDh(s);
+                float bw = cssW[i] * dpr[i], bh = cssH[i] * dpr[i];
+                var pivot = new Vector2(bw * 0.42f, bh * 0.48f);
+                var drawn = FlockFiveApp.ScreenGloveRect(FlockFiveApp.GloveBobPivot(pivot, 0f, 0f, false), 0f, dh * dpr[i], 0f, false);
+                var home = new Rect(16f, 8f, 48f, 48f);
+                var restart = new Rect(bw - 64f, 8f, 48f, 48f);
+                var gear = new Rect(16f, 8f, 48f, 48f);
+                Vector2 Buf(Vector2 css)
+                {
+                    return FlockFiveApp.CanvasPointer(css, cssW[i], cssH[i], bw, bh);
+                }
+                var center = Buf(new Vector2(drawn.center.x / dpr[i], (bh - drawn.center.y) / dpr[i]));
+                var tip = Buf(new Vector2(pivot.x / dpr[i], (bh - pivot.y) / dpr[i]));
+                var nearGui = new Vector2(drawn.xMax - 1.5f, drawn.center.y);
+                var near = Buf(new Vector2(nearGui.x / dpr[i], (bh - nearGui.y) / dpr[i]));
+                if (FlockFiveApp.GardenPressFate(center, bh, home, restart, drawn, true, true) != FlockFiveApp.PressFate.Glove)
+                    glove = false;
+                if (FlockFiveApp.GardenPressFate(tip, bh, home, restart, drawn, true, true) != FlockFiveApp.PressFate.Glove)
+                    glove = false;
+                if (!drawn.Contains(nearGui) || FlockFiveApp.GardenPressFate(near, bh, home, restart, drawn, true, true) != FlockFiveApp.PressFate.Glove)
+                    glove = false;
+                var onRestart = Buf(new Vector2(restart.center.x / dpr[i], (bh - restart.center.y) / dpr[i]));
+                var onHome = Buf(new Vector2(home.center.x / dpr[i], (bh - home.center.y) / dpr[i]));
+                if (FlockFiveApp.GardenPressFate(onRestart, bh, home, restart, drawn, true, true) != FlockFiveApp.PressFate.Restart)
+                    hud = false;
+                if (FlockFiveApp.GardenPressFate(onHome, bh, home, restart, drawn, true, true) != FlockFiveApp.PressFate.Home)
+                    hud = false;
+                var releaseGui = FlockFiveApp.PointerToGui(onHome, bh);
+                if (FlockFiveApp.GearTakesRelease(true, PlayPointer.MouseId, PlayPointer.MouseId, true, releaseGui, gear))
+                    release = false;
+                if (!FlockFiveApp.GearTakesRelease(false, PlayPointer.MouseId, PlayPointer.MouseId, true, releaseGui, gear))
+                    release = false;
+            }
+            try { Check("real-press-glove-centre-tip-near", glove, "820 402 412 dpr"); }
+                catch (System.Exception hopEx) { Check("real-press-glove-centre-tip-near", false, ThrowText(hopEx)); }
+            try { Check("real-press-hud-before-caption", hud, "home restart"); }
+                catch (System.Exception hopEx) { Check("real-press-hud-before-caption", false, ThrowText(hopEx)); }
+            try { Check("real-press-home-release-swallows-gear", release, "exit pointer"); }
+                catch (System.Exception hopEx) { Check("real-press-home-release-swallows-gear", false, ThrowText(hopEx)); }
+        }
+
+        static bool SameBirds(Board a, Board b)
+        {
+            if (a == null || b == null || a.Branches.Count != b.Branches.Count) return false;
+            for (int i = 0; i < a.Branches.Count; i++)
+            {
+                var x = a.Branches[i];
+                var y = b.Branches[i];
+                if (x == null || y == null || x.Count != y.Count) return false;
+                for (int k = 0; k < x.Count; k++)
+                    if (!x.Birds[k].SameFlock(y.Birds[k])) return false;
+            }
+            return true;
+        }
+
+        static void CheckCaptionLeave(System.Action<string, bool, string> Check)
+        {
+            const string doneKey = "flockfive.coach.done";
+            bool hadDone = PlayerPrefs.HasKey(doneKey);
+            int keepDone = PlayerPrefs.GetInt(doneKey, 0);
+            bool hadKit = PlayerPrefs.HasKey(RuleTips.KitKey);
+            int keepKit = PlayerPrefs.GetInt(RuleTips.KitKey, 0);
+            int keepStreak = Purse.Streak;
+            var go = new GameObject("caption-leave");
+            var limb = new GameObject("caption-limb");
+            var camGo = new GameObject("caption-cam");
+            try
+            {
+                PlayerPrefs.DeleteKey(doneKey);
+                PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                Purse.SetStreak(0);
+                GamePause.Reset();
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                var seed = board.Clone();
+                bool changed = false;
+                if (board.Branches.Count > 0 && board.Branches[0].Count > 0)
+                {
+                    board.Branches[0].Birds.RemoveAt(board.Branches[0].Count - 1);
+                    changed = !SameBirds(board, seed);
+                }
+                var view = limb.AddComponent<BranchView>();
+                for (int s = 0; s < BranchState.Cap; s++)
+                {
+                    var seat = new GameObject("seat");
+                    seat.transform.SetParent(limb.transform, false);
+                    view.Seats[s] = seat.transform;
+                }
+                var birdGo = new GameObject("bird");
+                birdGo.transform.SetParent(limb.transform, false);
+                view.Birds[0] = birdGo.AddComponent<SpriteRenderer>();
+                var garden = new WorldBuilder.Garden();
+                garden.Branches = new BranchView[] { view };
+                garden.Cam = camGo.AddComponent<Camera>();
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_seed", flags).SetValue(app, seed);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_coachMoves", flags).SetValue(app, 1);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetMethod("ShowRuleTip", flags).Invoke(app, new object[] { RuleTip.Kit });
+                bool heldPause = GamePause.Paused;
+                object[] hudOut = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hudOut);
+                var restart = (Rect)hudOut[0];
+                float screenH = PhoneArea.H;
+                var tap = new Vector2(restart.center.x, screenH - restart.center.y);
+                t.GetMethod("TakeRuleTipPress", flags).Invoke(app, new object[] { tap });
+                var snap = (System.Collections.IEnumerator)t.GetField("EditorSnapRound", flags).GetValue(app);
+                int frames = 0;
+                bool landed = false;
+                if (snap != null)
+                    frames = PumpFrames(snap, 48, null, out landed);
+                var now = (Board)t.GetField("_board", flags).GetValue(app);
+                var seedNow = (Board)t.GetField("_seed", flags).GetValue(app);
+                int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                t.GetMethod("CoachAdvance", flags).Invoke(app, null);
+                var line = (string)t.GetField("_cueLine", flags).GetValue(app);
+                bool level1 = FlockFiveApp.Level1First(seedNow, i => false, i => false, out int wantFrom, out int wantTo);
+                object[] cue = { -1, -1 };
+                bool picked = (bool)t.GetMethod("CoachPick", flags).Invoke(app, cue);
+                int from = (int)cue[0], to = (int)cue[1];
+                try { Check("kit-restart-restores-seed",
+                    changed && heldPause && landed && SameBirds(now, seedNow) && moves == 0
+                    && level1 && picked && from == wantFrom && to == wantTo
+                    && !string.IsNullOrEmpty(line) && line != RuleTips.KitLine && !GamePause.Paused,
+                    "held " + heldPause + " landed " + landed + " frames " + frames
+                    + " moves " + moves + " line " + line); }
+                catch (System.Exception hopEx) { Check("kit-restart-restores-seed", false, ThrowText(hopEx)); }
+
+                GamePause.Reset();
+                bool streakChanged = false;
+                if (now != null && now.Branches.Count > 0 && now.Branches[0].Count > 0)
+                {
+                    now.Branches[0].Birds.RemoveAt(now.Branches[0].Count - 1);
+                    streakChanged = !SameBirds(now, seedNow);
+                }
+                t.GetField("_holdRuleForLesson", flags).SetValue(app, false);
+                t.GetMethod("ShowRuleTip", flags).Invoke(app, new object[] { RuleTip.Kit });
+                bool streakHeld = GamePause.Paused;
+                var streak = (System.Collections.IEnumerator)t.GetMethod("FinishRestart", flags).Invoke(app, new object[] { false });
+                int streakFrames = 0;
+                bool streakLanded = false;
+                if (streak != null)
+                    streakFrames = PumpFrames(streak, 48, null, out streakLanded);
+                var streakBoard = (Board)t.GetField("_board", flags).GetValue(app);
+                try { Check("streak-finish-restart-restores-seed",
+                    streakChanged && streakHeld && streakLanded && SameBirds(streakBoard, seedNow) && !GamePause.Paused,
+                    "held " + streakHeld + " landed " + streakLanded + " frames " + streakFrames); }
+                catch (System.Exception hopEx) { Check("streak-finish-restart-restores-seed", false, ThrowText(hopEx)); }
+
+                GamePause.Reset();
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_sceneFaceSet", flags).SetValue(app, true);
+                var faceField = t.GetField("_sceneFace", flags);
+                faceField.SetValue(app, System.Enum.ToObject(faceField.FieldType, 1));
+                t.GetMethod("ArmLevelExit", flags).Invoke(app, new object[] { PlayPointer.MouseId });
+                t.GetMethod("ShowRuleTip", flags).Invoke(app, new object[] { RuleTip.Kit });
+                object[] hudHome = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hudHome);
+                var restart2 = (Rect)hudHome[0];
+                var home = CornerAnchor.TopBarHome(restart2, PhoneArea.W, PhoneArea.Safe);
+                var homeTap = new Vector2(home.center.x, screenH - home.center.y);
+                t.GetMethod("TakeRuleTipPress", flags).Invoke(app, new object[] { homeTap });
+                t.GetMethod("ArmSceneInputSettle", flags).Invoke(app, null);
+                float until = (float)t.GetField("_sceneInputUntil", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+                bool blocked = FlockFiveApp.SceneInputBlocked(AdPause.Unscaled, until);
+                bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
+                int tutor = (int)t.GetField("_tutorPause", flags).GetValue(app);
+                var tip = t.GetField("_ruleTip", flags).GetValue(app);
+                bool releaseSwallowed = FlockFiveApp.SwallowLevelExit(true, PlayPointer.MouseId, FlockFiveApp.PointerEdge.Release, PlayPointer.MouseId);
+                bool downSwallowed = FlockFiveApp.SwallowLevelExit(true, PlayPointer.MouseId, FlockFiveApp.PointerEdge.Down, PlayPointer.MouseId);
+                bool gearTakes = FlockFiveApp.GearTakesRelease(true, PlayPointer.MouseId, PlayPointer.MouseId, true, home.center, home);
+                try { Check("kit-home-releases-tutor-pause",
+                    splash && tutor == 0 && tip != null && tip.ToString() == "None" && !GamePause.Paused,
+                    "splash " + splash + " tutor " + tutor + " tip " + tip + " paused " + GamePause.Paused); }
+                catch (System.Exception hopEx) { Check("kit-home-releases-tutor-pause", false, ThrowText(hopEx)); }
+                try { Check("home-exit-release-swallows-play-down-does-not",
+                    releaseSwallowed && !downSwallowed && !gearTakes && !blocked,
+                    "release " + releaseSwallowed + " down " + downSwallowed + " gear " + gearTakes + " blocked " + blocked); }
+                catch (System.Exception hopEx) { Check("home-exit-release-swallows-play-down-does-not", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                GamePause.Reset();
+                Purse.SetStreak(keepStreak);
+                if (hadDone) PlayerPrefs.SetInt(doneKey, keepDone);
+                else PlayerPrefs.DeleteKey(doneKey);
+                if (hadKit) PlayerPrefs.SetInt(RuleTips.KitKey, keepKit);
+                else PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                UnityEngine.Object.DestroyImmediate(camGo);
+                UnityEngine.Object.DestroyImmediate(limb);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckExitGuards(System.Action<string, bool, string> Check)
+        {
+            float keepResume = ResumeUntil();
+            var go = new GameObject("exit-guards");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var held = t.GetField("_exitPointerHeld", BindingFlags.NonPublic | BindingFlags.Static);
+                var frame = t.GetField("_exitPointerFrame", BindingFlags.NonPublic | BindingFlags.Static);
+                var consume = t.GetMethod("ConsumeLevelExit", BindingFlags.NonPublic | BindingFlags.Static);
+                t.GetMethod("ArmLevelExit", flags).Invoke(app, new object[] { PlayPointer.MouseId });
+                t.GetMethod("OnApplicationFocus", flags).Invoke(app, new object[] { false });
+                bool focusCleared = !(bool)held.GetValue(null);
+                t.GetMethod("ArmLevelExit", flags).Invoke(app, new object[] { 4 });
+                t.GetMethod("OnApplicationPause", flags).Invoke(app, new object[] { false });
+                bool pauseCleared = !(bool)held.GetValue(null);
+
+                t.GetMethod("ArmLevelExit", flags).Invoke(app, new object[] { PlayPointer.MouseId });
+                frame.SetValue(null, Time.frameCount - 2);
+                // Batchmode has no IMGUI, so a constructed Event's type reads back as Ignore
+                // and ConsumeLevelExit never sees the press. When the type sticks, use that
+                // handler. Otherwise run the same MouseDown then MouseUp decisions it runs.
+                var probe = new Event { type = EventType.MouseDown, button = 0 };
+                bool eventLive = probe.type == EventType.MouseDown;
+                var clear = t.GetMethod("ClearLevelExit", BindingFlags.NonPublic | BindingFlags.Static);
+                var tracked = t.GetField("_exitPointerId", BindingFlags.NonPublic | BindingFlags.Static);
+                bool ateDown;
+                if (eventLive)
+                {
+                    var down = new Event { type = EventType.MouseDown, button = 0 };
+                    ateDown = (bool)consume.Invoke(null, new object[] { down });
+                }
+                else
+                {
+                    ateDown = false;
+                    int id = (int)tracked.GetValue(null);
+                    int armed = (int)frame.GetValue(null);
+                    if (FlockFiveApp.DropExitOnPress(true, id, PlayPointer.MouseId, armed, Time.frameCount))
+                        clear.Invoke(null, null);
+                }
+                bool pressCleared = !(bool)held.GetValue(null) && !ateDown;
+                bool ateRelease;
+                if (eventLive)
+                {
+                    var up = new Event { type = EventType.MouseUp, button = 0 };
+                    ateRelease = (bool)consume.Invoke(null, new object[] { up });
+                }
+                else
+                {
+                    int id = (int)tracked.GetValue(null);
+                    ateRelease = FlockFiveApp.SwallowLevelExit((bool)held.GetValue(null), id, FlockFiveApp.PointerEdge.Release, id);
+                    if (ateRelease) clear.Invoke(null, null);
+                }
+                bool releaseKept = pressCleared && !ateRelease && !(bool)held.GetValue(null);
+                bool leavingDown = FlockFiveApp.DropExitOnPress(true, PlayPointer.MouseId, PlayPointer.MouseId, 3, 3);
+                bool otherFinger = FlockFiveApp.DropExitOnPress(true, 4, 8, 3, 3);
+
+                int mouse = FlockFiveApp.ExitFingerId(PlayPointer.MouseId, null, true);
+                int finger = FlockFiveApp.ExitFingerId(4, new int[] { 9, 4 }, true);
+                int other = FlockFiveApp.ExitFingerId(4, new int[] { 9 }, true);
+                int mouseVsFinger = FlockFiveApp.ExitFingerId(PlayPointer.MouseId, new int[] { 9 }, true);
+                bool mouseSwallow = FlockFiveApp.SwallowLevelExit(true, PlayPointer.MouseId, FlockFiveApp.PointerEdge.Release, mouse);
+                bool fingerSwallow = FlockFiveApp.SwallowLevelExit(true, 4, FlockFiveApp.PointerEdge.Release, finger);
+                bool otherSwallow = FlockFiveApp.SwallowLevelExit(true, 4, FlockFiveApp.PointerEdge.Release, other);
+                bool mouseEatsFinger = FlockFiveApp.SwallowLevelExit(true, PlayPointer.MouseId, FlockFiveApp.PointerEdge.Release, mouseVsFinger);
+                try { Check("home-exit-clears-on-focus-loss", focusCleared && pauseCleared,
+                    "focus " + focusCleared + " pause " + pauseCleared); }
+                catch (System.Exception hopEx) { Check("home-exit-clears-on-focus-loss", false, ThrowText(hopEx)); }
+                try { Check("home-exit-clears-on-fresh-press", releaseKept && !leavingDown && otherFinger,
+                    "releaseKept " + releaseKept + " press " + pressCleared + " release " + ateRelease
+                    + " event " + eventLive + " leaving " + leavingDown + " other " + otherFinger); }
+                catch (System.Exception hopEx) { Check("home-exit-clears-on-fresh-press", false, ThrowText(hopEx)); }
+                try { Check("home-exit-matches-finger-id",
+                    mouse == PlayPointer.MouseId && finger == 4 && other == 9 && mouseVsFinger == 9
+                    && mouseSwallow && fingerSwallow && !otherSwallow && !mouseEatsFinger,
+                    "mouse " + mouse + " finger " + finger + " other " + other + " echo " + mouseVsFinger); }
+                catch (System.Exception hopEx) { Check("home-exit-matches-finger-id", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keepResume);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckHomeAndPrivacy(System.Action<string, bool, string> Check)
+        {
+            var gate = FlockFiveApp.BeginHomeGate(true, PlayPointer.MouseId);
+            bool opened = false;
+            for (int i = 0; i < 120; i++)
+            {
+                if (FlockFiveApp.HomeGateAllows(ref gate, false, true, PlayPointer.MouseId)) opened = true;
+            }
+            try { Check("home-tap-does-not-open-settings", !opened && !gate.FreshDown, "opened " + opened); }
+                catch (System.Exception hopEx) { Check("home-tap-does-not-open-settings", false, ThrowText(hopEx)); }
+            bool down = FlockFiveApp.HomeGateAllows(ref gate, true, false, PlayPointer.MouseId);
+            bool up = FlockFiveApp.HomeGateAllows(ref gate, false, true, PlayPointer.MouseId);
+            var gear = new Rect(16f, 8f, 48f, 48f);
+            bool gearTakes = up && FlockFiveApp.GearTakesRelease(false, PlayPointer.MouseId, PlayPointer.MouseId, true, gear.center, gear);
+            try { Check("home-fresh-down-then-release", down && up && gate.FreshDown && gearTakes, "down " + down + " up " + up); }
+                catch (System.Exception hopEx) { Check("home-fresh-down-then-release", false, ThrowText(hopEx)); }
+            bool unsettled = !FlockFiveApp.ToggleMayFlip(false, true, true);
+            bool outside = !FlockFiveApp.ToggleMayFlip(true, false, true);
+            bool immediate = !FlockFiveApp.SettingsPanelSettled(0.1f);
+            bool settled = FlockFiveApp.ToggleMayFlip(FlockFiveApp.SettingsPanelSettled(0.25f), true, true);
+            try { Check("privacy-toggle-needs-settled-gesture", unsettled && outside && immediate && settled,
+                "unsettled " + unsettled + " outside " + outside + " immediate " + immediate + " settled " + settled); }
+                catch (System.Exception hopEx) { Check("privacy-toggle-needs-settled-gesture", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckHomeTouchGate(System.Action<string, bool, string> Check)
+        {
+            var mismatched = FlockFiveApp.BeginHomeGate(true, 4);
+            bool mouseClearsTouch = FlockFiveApp.HomeGateAllows(ref mismatched, false, true, PlayPointer.MouseId);
+            bool stillCarried = mismatched.CarryHeld && !mouseClearsTouch;
+            bool touchClears = FlockFiveApp.HomeGateAllows(ref mismatched, false, true, 4);
+            bool fresh = !mismatched.CarryHeld && touchClears == false
+                && FlockFiveApp.HomeGateAllows(ref mismatched, true, false, 4);
+            float keepResume = ResumeUntil();
+            var go = new GameObject("home-touch-gate");
+            bool liveHeld = false, focusCleared = false, resumeCleared = false;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var gate = t.GetField("_homeGate", flags);
+                var splash = t.GetField("_splash", flags);
+                var home = t.GetField("_home", flags);
+                splash.SetValue(app, true);
+                home.SetValue(app, System.Enum.ToObject(home.FieldType, 0));
+                gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
+                object[] pressArgs = { Vector2.zero };
+                Method(t, "Pressed", typeof(Vector2).MakeByRefType()).Invoke(null, pressArgs);
+                var afterPress = (FlockFiveApp.HomeGate)gate.GetValue(app);
+                liveHeld = afterPress.CarryHeld && afterPress.CarryId == 4;
+                try { Method(t, "OnGUIBody").Invoke(app, null); }
+                catch (System.Exception) { }
+                gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
+                Method(t, "OnApplicationFocus", typeof(bool)).Invoke(app, new object[] { false });
+                focusCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).Active;
+                gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
+                Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { false });
+                resumeCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).Active;
+            }
+            finally
+            {
+                SetResumeUntil(keepResume);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+            try { Check("home-touch-release-clears-gate",
+                stillCarried && touchClears == false && !mismatched.CarryHeld && fresh && liveHeld && focusCleared && resumeCleared,
+                "carried " + stillCarried + " fresh " + fresh + " live " + liveHeld
+                + " focus " + focusCleared + " resume " + resumeCleared); }
+                catch (System.Exception hopEx) { Check("home-touch-release-clears-gate", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckGloveOneHandle(System.Action<string, bool, string> Check)
+        {
+            FlockFiveApp.ClearLessonGuard();
+            bool mouseKeepsTouchRelease = FlockFiveApp.HomePointerId(PlayPointer.MouseId, true, 4) == 4;
+            bool noReleaseStaysMouse = FlockFiveApp.HomePointerId(PlayPointer.MouseId, false, 4) == PlayPointer.MouseId;
+            bool namedFingerWins = FlockFiveApp.HomePointerId(4, true, 9) == 4;
+                var go = new GameObject("glove-one-handle");
+                var limb = new GameObject("one-handle-limb");
+                var destGo = new GameObject("one-handle-dest");
+                var rootGo = new GameObject("one-handle-root");
+                int taps = -1;
+                bool pressCleared = false, guiCleared = false;
+                string pressTrace = "";
+                bool moved = false;
+                string upTrace = "";
+                string upEx = "";
+                string hopTrace = "";
+                var keep = FlockFiveApp.EditorPointerInject;
+                try
+                {
+                    var app = go.AddComponent<FlockFiveApp>();
+                    var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                    var t = typeof(FlockFiveApp);
+                    var board = LevelData.Open(0);
+                    var before = board.Clone();
+                    bool level1 = FlockFiveApp.Level1First(board, i => false, i => false, out int from, out int to);
+                    var views = new BranchView[board.Branches.Count];
+                    views[from] = Limb(limb, from, Vector3.zero);
+                    views[to] = Limb(destGo, to, new Vector3(3f, 0f, 0f));
+                    var garden = new WorldBuilder.Garden();
+                    garden.Root = rootGo.transform;
+                    garden.Branches = views;
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_coachMoves", flags).SetValue(app, 0);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                garden.Cam = WorldBuilder.MakeCamera(rootGo.transform);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetEditorTaps(app, 0);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Up = false, Id = 4,
+                    Window = new Vector2(px + PhoneArea.OffX, py)
+                };
+                Method(t, "UpdateBody").Invoke(app, null);
+                int afterDown = EditorTaps(app);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = false, Up = true, Id = 4,
+                    Window = new Vector2(px + PhoneArea.OffX, py)
+                };
+                SeatOpenLesson(app);
+                Method(t, "TakeGuiPointer").Invoke(app, null);
+                taps = EditorTaps(app);
+                int picked = (int)t.GetField("_sel", flags).GetValue(app);
+                upTrace = FlockFiveApp.EditorGloveTraceNow.ToString() + upEx;
+                // Coach aims the destination with no finger down, the way the
+                // frame after a select does. The glove quad is then on that cue.
+                FlockFiveApp.EditorPointerInject = default;
+                Method(t, "UpdateBody").Invoke(app, null);
+                int aimed = (int)t.GetField("_cueBranch", flags).GetValue(app);
+                var hopBody = new Rect(px - 50f, py - 50f, 100f, 100f);
+                t.GetField("_gloveBody", flags).SetValue(app, hopBody);
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                if (aimed >= 0) t.GetField("_gloveVis", flags).SetValue(app, true);
+                int selBeforeHop = (int)t.GetField("_sel", flags).GetValue(app);
+                int movesBeforeHop = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                var boardBeforeHop = ((Board)t.GetField("_board", flags).GetValue(app)).Clone();
+                int tookBefore = (int)t.GetField("_gloveTookFrame", flags).GetValue(app);
+                t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
+                int tookAfter = (int)t.GetField("_gloveTookFrame", flags).GetValue(app);
+                float now = AdPause.Unscaled;
+                t.GetField("_nextTap", flags).SetValue(app, now);
+                SeatOpenLesson(app);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Up = false, Id = 4,
+                    Window = new Vector2(px + PhoneArea.OffX, py)
+                };
+                Method(t, "TakeGuiPointer").Invoke(app, null);
+                bool hopLatched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = false, Up = true, Id = 4,
+                    Window = new Vector2(px + PhoneArea.OffX, py)
+                };
+                Method(t, "TakeGuiPointer").Invoke(app, null);
+                var hopTr = FlockFiveApp.EditorGloveTraceNow;
+                var live = app.EditorLiveMove;
+                const int settleCap = 240;
+                int settledFrames = 0;
+                bool settled = live == null;
+                string stalledAt = null;
+                if (live != null) settledFrames = PumpFrames(live, settleCap, null, out settled, out stalledAt);
+                var afterBoard = (Board)t.GetField("_board", flags).GetValue(app);
+                int selAfterHop = (int)t.GetField("_sel", flags).GetValue(app);
+                int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                bool boardChanged = !SameBirds(boardBeforeHop, afterBoard);
+                bool stepAdvanced = moves > movesBeforeHop;
+                if (live != null && !settled)
+                    hopTrace = " move never settled after " + settleCap + " frames " + stalledAt
+                        + " busy=" + GardenFit.Busy;
+                hopTrace += " movedParts board=" + (boardChanged ? "diff" : "same")
+                    + " step=" + movesBeforeHop + "->" + moves
+                    + " settled=" + settled + " frames=" + settledFrames
+                    + " hop: aim=" + aimed
+                    + " glove=" + hopBody.x.ToString("0") + "," + hopBody.y.ToString("0") + ","
+                    + hopBody.width.ToString("0") + "," + hopBody.height.ToString("0")
+                    + " pt=" + px.ToString("0") + "," + py.ToString("0")
+                    + " latch=" + hopLatched
+                    + " took=" + tookBefore + "->" + tookAfter
+                    + " next=" + now.ToString("0.00") + " now=" + AdPause.Unscaled.ToString("0.00")
+                    + " sel=" + selBeforeHop + "->" + selAfterHop
+                    + " board=" + (boardChanged ? "changed" : "same")
+                    + " moves=" + moves
+                    + " live=" + (live != null)
+                    + " " + hopTr;
+                moved = settled && level1 && boardChanged && stepAdvanced;
+                bool once = afterDown == 0 && taps == 1 && picked == from && moved;
+
+                var gate = t.GetField("_homeGate", flags);
+                var splash = t.GetField("_splash", flags);
+                var homeFace = t.GetField("_home", flags);
+                Method(t, "OnEnable").Invoke(app, null);
+                splash.SetValue(app, true);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
+                var beforeGate = (FlockFiveApp.HomeGate)gate.GetValue(app);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer { On = true, Up = true, Id = 4 };
+                object[] pressArgs = { Vector2.zero };
+                Method(t, "Pressed", typeof(Vector2).MakeByRefType()).Invoke(null, pressArgs);
+                var afterGate = (FlockFiveApp.HomeGate)gate.GetValue(app);
+                var tr = FlockFiveApp.LastPressTrace;
+                pressCleared = !afterGate.CarryHeld;
+                pressTrace = "carry " + tr.CarryId + " event " + tr.EventId + " up " + tr.Up
+                    + " before " + beforeGate.CarryHeld + "/" + beforeGate.CarryId + " a" + beforeGate.Active
+                    + " after " + afterGate.CarryHeld + "/" + afterGate.CarryId + " a" + afterGate.Active
+                    + " block " + tr.BlockRan + " app " + tr.HasApp
+                    + " pressId " + tr.PressId + " upId " + tr.UpId + " down " + tr.Down;
+                gate.SetValue(app, FlockFiveApp.BeginHomeGate(true, 4));
+                try { Method(t, "OnGUIBody").Invoke(app, null); }
+                catch (System.Exception) { }
+                guiCleared = !((FlockFiveApp.HomeGate)gate.GetValue(app)).CarryHeld;
+
+                splash.SetValue(app, false);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                var locked = t.GetField("_locked", flags).GetValue(app);
+                locked.GetType().GetMethod("Clear", System.Type.EmptyTypes).Invoke(locked, null);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                object[] hud = { default(Rect), default(Rect) };
+                Method(t, "HudShaken", typeof(Rect).MakeByRefType(), typeof(Rect).MakeByRefType()).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var homeWin = new Vector2(home.center.x + PhoneArea.OffX, home.center.y);
+                var homeScreen = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                PoseGlove(app, home.center, 60f);
+                ReadyHop(app);
+                SetEditorTaps(app, 0);
+                var cuff = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool cuffDown = (bool)cuff.Invoke(app, new object[] { homeWin, false, PlayPointer.MouseId });
+                int cuffPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool cuffLatched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                bool homeOnDown = (bool)splash.GetValue(app);
+                bool cuffUp = (bool)cuff.Invoke(app, new object[] { homeWin, true, PlayPointer.MouseId });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                bool homeOnUp = (bool)splash.GetValue(app);
+                int cuffSel = (int)t.GetField("_sel", flags).GetValue(app);
+                int cuffHit = GloveHit();
+                int cuffTaps = EditorTaps(app);
+                SetEditorTaps(app, 0);
+                bool cuffAgain = (bool)cuff.Invoke(app, new object[] { homeWin, true, PlayPointer.MouseId });
+                bool cuffHop = level1 && from >= 0 && cuffDown && cuffLatched && cuffPress == PlayPointer.MouseId && cuffUp
+                    && cuffTaps == 1 && cuffSel == from && cuffHit == from
+                    && !homeOnDown && !homeOnUp && !cuffAgain && EditorTaps(app) == 0 && !SnapArmed(app);
+                try { Check("glove-down-and-up-handle-once", once,
+                    "down " + afterDown + " total " + taps + " sel " + picked + " moved " + moved
+                    + " " + upTrace + hopTrace); }
+                catch (System.Exception hopEx) { Check("glove-down-and-up-handle-once", false, ThrowText(hopEx)); }
+                try { Check("home-up-id-falls-through-to-release", mouseKeepsTouchRelease && noReleaseStaysMouse && namedFingerWins,
+                    "kept " + mouseKeepsTouchRelease + " mouse " + noReleaseStaysMouse + " finger " + namedFingerWins); }
+                catch (System.Exception hopEx) { Check("home-up-id-falls-through-to-release", false, ThrowText(hopEx)); }
+                try { Check("home-touch-up-through-pressed-and-ongui", pressCleared && guiCleared,
+                    "press " + pressCleared + " gui " + guiCleared + " " + pressTrace); }
+                catch (System.Exception hopEx) { Check("home-touch-up-through-pressed-and-ongui", false, ThrowText(hopEx)); }
+                try { Check("glove-cuff-on-home-hops", cuffHop,
+                    "downId -1 upId -1 owner glove press " + cuffPress
+                    + " down " + cuffDown + " up " + cuffUp
+                    + " home " + homeOnDown + "/" + homeOnUp
+                    + " taps " + cuffTaps + " again " + cuffAgain
+                    + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("glove-cuff-on-home-hops", false, ThrowText(hopEx)); }
+
+                splash.SetValue(app, false);
+                garden.Cam = new GameObject("glove-cam-slide").AddComponent<Camera>();
+                // The settled hop above already moved `board` and may still hold
+                // its locks. The slide is a new pick, so it needs a fresh level.
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                ClearLocks(app);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                ReadyHop(app);
+                PoseGlove(app, new Vector2(px, py), 100f);
+                SetEditorTaps(app, 0);
+                var slideGlove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var slideDownPt = new Vector2(px + PhoneArea.OffX, py);
+                bool slideDown = (bool)slideGlove.Invoke(app, new object[] { slideDownPt, false, 4 });
+                int slidePress = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool slideUp = (bool)slideGlove.Invoke(app, new object[] { homeWin, true, 4 });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                int slideSel = (int)t.GetField("_sel", flags).GetValue(app);
+                int slideHit = GloveHit();
+                bool slideHome = (bool)splash.GetValue(app);
+                bool slid = level1 && from >= 0 && slideDown && slidePress == 4 && slideUp && EditorTaps(app) == 1
+                    && slideSel == from && slideHit == from && !slideHome;
+                splash.SetValue(app, false);
+                ReadyHop(app);
+                PoseGlove(app, new Vector2(px, py), 80f);
+                SetEditorTaps(app, 0);
+                bool freshAte = (bool)slideGlove.Invoke(app, new object[] { homeWin, false, PlayPointer.MouseId });
+                int freshPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool freshLatch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { homeScreen });
+                bool freshIdOk = freshPress != -1 && freshPress == PlayPointer.MouseId;
+                bool freshHome = !freshAte && !freshLatch && (bool)splash.GetValue(app) && EditorTaps(app) == 0
+                    && freshIdOk;
+                try { Check("glove-slide-starts-on-glove-then-fresh-home", slid && freshHome,
+                    "downId 4 upId 4 owner glove press " + slidePress
+                    + " slid " + slid + " freshId " + freshPress + " ate " + freshAte + " fresh " + freshHome
+                    + " freshPress " + freshPress + " freshLatch " + freshLatch
+                    + " taps " + EditorTaps(app) + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("glove-slide-starts-on-glove-then-fresh-home", false, ThrowText(hopEx)); }
+
+                splash.SetValue(app, false);
+                garden.Cam = new GameObject("glove-cam-finger").AddComponent<Camera>();
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetEditorTaps(app, 0);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Up = false, Id = 4,
+                    Window = new Vector2(px + PhoneArea.OffX, py)
+                };
+                Method(t, "UpdateBody").Invoke(app, null);
+                bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = false, Up = true, Id = 5,
+                    Window = new Vector2(px + PhoneArea.OffX, py)
+                };
+                try { Method(t, "OnGUIBody").Invoke(app, null); }
+                catch (System.Exception) { }
+                bool otherFinger = EditorTaps(app) == 0
+                    && (int)t.GetField("_sel", flags).GetValue(app) < 0
+                    && (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                bool focusDropped = false;
+                string focusEx = "";
+                try
+                {
+                    Method(t, "OnApplicationFocus", typeof(bool)).Invoke(app, new object[] { false });
+                    focusDropped = !(bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                }
+                catch (System.Exception ex)
+                {
+                    focusEx = " " + ex.GetType().Name;
+                }
+                try { Check("glove-second-finger-up-does-not-act", latched && otherFinger && focusDropped,
+                    "latched " + latched + " other " + otherFinger + " focus " + focusDropped + focusEx); }
+                catch (System.Exception hopEx) { Check("glove-second-finger-up-does-not-act", false, ThrowText(hopEx)); }
+
+                splash.SetValue(app, false);
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetEditorTaps(app, 0);
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = true, Up = false, Id = 4,
+                    Window = new Vector2(px + PhoneArea.OffX, py)
+                };
+                Method(t, "UpdateBody").Invoke(app, null);
+                bool splashLatched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                bool splashDropped = false;
+                string splashEx = "";
+                try
+                {
+                    Method(t, "ShowSplash").Invoke(app, null);
+                    splashDropped = !(bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                }
+                catch (System.Exception ex)
+                {
+                    splashEx = " " + ex.GetType().Name;
+                }
+                FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                {
+                    On = true, Down = false, Up = true, Id = 5,
+                    Window = new Vector2(px + PhoneArea.OffX, py)
+                };
+                int tapsBeforeUp = EditorTaps(app);
+                try { Method(t, "OnGUIBody").Invoke(app, null); }
+                catch (System.Exception) { }
+                bool splashUpQuiet = EditorTaps(app) == tapsBeforeUp;
+                try { Check("glove-showsplash-drops-stale-latch", splashLatched && splashDropped && splashUpQuiet,
+                    "latched " + splashLatched + " dropped " + splashDropped + " quiet " + splashUpQuiet + splashEx); }
+                catch (System.Exception hopEx) { Check("glove-showsplash-drops-stale-latch", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                FlockFiveApp.EditorPointerInject = keep;
+                UnityEngine.Object.DestroyImmediate(destGo);
+                UnityEngine.Object.DestroyImmediate(rootGo);
+                UnityEngine.Object.DestroyImmediate(limb);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        // A dismiss in an earlier check arms the static lesson guard. A live
+        // Level 1 glove is not under that guard (ShowSplash zeroes it).
+        static void CheckFreezeLeavesRepeatGate(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("freeze-next");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                SeatOpenLesson(app);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_cueFreeze", flags).SetValue(app, true);
+                float mark = AdPause.Unscaled;
+                t.GetField("_nextTap", flags).SetValue(app, mark);
+                t.GetMethod("HandleTap", flags).Invoke(app, new object[] { Vector2.zero });
+                float after = (float)t.GetField("_nextTap", flags).GetValue(app);
+                try { Check("freeze-reject-does-not-arm-next-tap", after == mark, "mark " + mark + " after " + after); }
+                catch (System.Exception hopEx) { Check("freeze-reject-does-not-arm-next-tap", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckHop2KeepsDestination(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("hop2-cue");
+            var root = new GameObject("hop2-root");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                SeatOpenLesson(app);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var garden = new WorldBuilder.Garden();
+                garden.Root = root.transform;
+                garden.Cam = WorldBuilder.MakeCamera(root.transform);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_coachMoves", flags).SetValue(app, 1);
+                t.GetField("_cueBranch", flags).SetValue(app, 4);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                var locked = t.GetField("_locked", flags).GetValue(app);
+                locked.GetType().GetMethod("Add", new[] { typeof(int) }).Invoke(locked, new object[] { 0 });
+                t.GetMethod("CoachAdvance", flags).Invoke(app, null);
+                int cue = (int)t.GetField("_cueBranch", flags).GetValue(app);
+                bool vis = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+                bool latch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                try { Check("hop2-latched-keeps-destination", cue == 4 && vis && latch,
+                    "cue " + cue + " vis " + vis + " latch " + latch); }
+                catch (System.Exception hopEx) { Check("hop2-latched-keeps-destination", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static float ResumeUntil()
+        {
+            return (float)typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+        }
+
+        static void NoteHeld(object app, int id)
+        {
+            typeof(FlockFiveApp).GetMethod("NoteDownAtHide", BindingFlags.NonPublic | BindingFlags.Instance)
+                .Invoke(app, new object[] { id });
+        }
+
+        // Editor-only and internal members. The test assembly has no InternalsVisibleTo.
+        static System.Reflection.FieldInfo EditorField(string name)
+        {
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic
+                | BindingFlags.Instance | BindingFlags.Static;
+            var found = typeof(FlockFiveApp).GetField(name, flags);
+            if (found == null)
+                throw new System.MissingFieldException("unresolved " + typeof(FlockFiveApp).FullName + "." + name);
+            return found;
+        }
+
+        static bool SnapArmed(object app)
+        {
+            return EditorField("EditorSnapRound").GetValue(app) != null;
+        }
+
+        static int EditorTaps(object app)
+        {
+            return (int)EditorField("EditorHandleTaps").GetValue(app);
+        }
+
+        static void SetEditorTaps(object app, int n)
+        {
+            EditorField("EditorHandleTaps").SetValue(app, n);
+        }
+
+        static string GloveExit()
+        {
+            object trace = EditorField("EditorGloveTraceNow").GetValue(null);
+            var exit = trace.GetType().GetField("Exit").GetValue(trace) as string;
+            return exit ?? "";
+        }
+
+        static int GloveHit()
+        {
+            object trace = EditorField("EditorGloveTraceNow").GetValue(null);
+            return (int)trace.GetType().GetField("Hit").GetValue(trace);
+        }
+
+        static string GloveFact(object app)
+        {
+            var t = typeof(FlockFiveApp);
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            int Int(string name) => (int)t.GetField(name, flags).GetValue(app);
+            bool Bit(string name) => (bool)t.GetField(name, flags).GetValue(app);
+            return "exit " + GloveExit()
+                + " press " + Int("_glovePressId") + " latch " + Bit("_glovePressLatched")
+                + " echo " + Int("_gloveEchoId") + "@" + Int("_gloveEchoFrame")
+                + " took " + Int("_gloveTookFrame")
+                + " swallow " + Int("_gloveSwallowedId") + "/" + Int("_gloveSwallowHud")
+                + " cue " + Int("_cueBranch") + " vis " + Bit("_gloveVis")
+                + " sel " + Int("_sel") + " hit " + GloveHit()
+                + " moves " + Int("_coachMoves");
+        }
+
+        // The dismiss guard reads AdPause.Unscaled. Move that clock forward
+        // without writing the guard, the same way a young editor finishes a beat.
+        static void NudgeAdFreeClock(float seconds)
+        {
+            var total = typeof(AdPause).GetField("_total", BindingFlags.NonPublic | BindingFlags.Static);
+            float cur = (float)total.GetValue(null);
+            total.SetValue(null, cur - seconds);
+        }
+
+        static void StepCoachFrame()
+        {
+            var frame = EditorField("CoachFrameOffsetForTests");
+            frame.SetValue(null, (int)frame.GetValue(null) + 1);
+        }
+
+        static bool VerdictIs(object verdict, string act)
+        {
+            if (verdict == null) return false;
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance;
+            var verdictType = typeof(FlockFiveApp).GetNestedType("OffTargetVerdict", flags);
+            var kind = verdictType != null ? verdictType.GetField("Kind", flags) : null;
+            if (kind == null || kind.DeclaringType != verdict.GetType()) return false;
+            var value = kind.GetValue(verdict);
+            return value != null && value.ToString() == act;
+        }
+
+        static void ClearLocks(object app)
+        {
+            var locked = typeof(FlockFiveApp).GetField("_locked", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(app);
+            locked.GetType().GetMethod("Clear", System.Type.EmptyTypes).Invoke(locked, null);
+        }
+
+        static void ReadyHop(object app)
+        {
+            var t = typeof(FlockFiveApp);
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            t.GetField("_sel", flags).SetValue(app, -1);
+            t.GetField("_nextTap", flags).SetValue(app, 0f);
+        }
+
+        static void PoseGlove(object app, Vector2 play, float size)
+        {
+            var t = typeof(FlockFiveApp);
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            t.GetField("_gloveBody", flags).SetValue(app, new Rect(play.x - size * 0.5f, play.y - size * 0.5f, size, size));
+            t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+            t.GetField("_gloveShown", flags).SetValue(app, play);
+            t.GetField("_gloveVis", flags).SetValue(app, true);
+        }
+
+        static string ThrowText(System.Exception ex)
+        {
+            while (ex is System.Reflection.TargetInvocationException && ex.InnerException != null)
+                ex = ex.InnerException;
+            return "THREW " + ex.GetType().Name + ": " + ex.Message;
+        }
+
+        // Comments are not code. A negative scan must not fail on a note.
+        static string CodeOnly(string src)
+        {
+            if (string.IsNullOrEmpty(src)) return "";
+            var sb = new System.Text.StringBuilder(src.Length);
+            bool line = false, block = false;
+            for (int i = 0; i < src.Length; i++)
+            {
+                char c = src[i];
+                char n = i + 1 < src.Length ? src[i + 1] : '\0';
+                if (block)
+                {
+                    if (c == '*' && n == '/') { block = false; i++; sb.Append("  "); }
+                    else sb.Append(c == '\n' ? '\n' : ' ');
+                    continue;
+                }
+                if (line)
+                {
+                    if (c == '\n') { line = false; sb.Append('\n'); }
+                    else sb.Append(' ');
+                    continue;
+                }
+                if (c == '/' && n == '/') { line = true; sb.Append(' '); continue; }
+                if (c == '/' && n == '*') { block = true; sb.Append(' '); continue; }
+                sb.Append(c);
+            }
+            return sb.ToString();
+        }
+
+        static int ReplayGlove(FlockFiveApp app, Vector2 down, int downId, Vector2 up, int upId)
+        {
+            var replay = typeof(FlockFiveApp).GetMethod("DevReplayGloveTap",
+                BindingFlags.Public | BindingFlags.Instance, null,
+                new[] { typeof(Vector2), typeof(int), typeof(Vector2), typeof(int) }, null);
+            return (int)replay.Invoke(app, new object[] { down, downId, up, upId });
+        }
+
+        static WorldBuilder.Garden SeatGarden(out GameObject limb, out GameObject camGo)
+        {
+            limb = new GameObject("hop-limb");
+            camGo = new GameObject("hop-cam");
+            var view = limb.AddComponent<BranchView>();
+            for (int s = 0; s < BranchState.Cap; s++)
+            {
+                var seat = new GameObject("seat");
+                seat.transform.SetParent(limb.transform, false);
+                view.Seats[s] = seat.transform;
+            }
+            var garden = new WorldBuilder.Garden();
+            garden.Branches = new[] { view };
+            garden.Cam = camGo.AddComponent<Camera>();
+            garden.Feeders = new FeederView[0];
+            return garden;
+        }
+
+        static void SetResumeUntil(float until)
+        {
+            typeof(FlockFiveApp).GetField("_resumeInputUntil", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, until);
+        }
+
+        static void CheckResumeSwallow(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-swallow");
+            var t = typeof(FlockFiveApp);
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_coachMoves", flags).SetValue(app, 0);
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                t.GetField("_glovePressId", flags).SetValue(app, 4);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(0f, 0f, 80f, 80f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetEditorTaps(app, 0);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                NoteHeld(app, 4);
+                bool swallowed = (bool)Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int))
+                    .Invoke(app, new object[] { new Vector2(10f, 10f), true, 4 });
+                bool latch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                int sel = (int)t.GetField("_sel", flags).GetValue(app);
+                int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                bool route = swallowed && !latch && sel == -1 && moves == 0 && EditorTaps(app) == 0
+                    && GloveExit() == "resume";
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, 0);
+                Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero });
+                bool tapLatch = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                int selAfter = (int)t.GetField("_sel", flags).GetValue(app);
+                int movesAfter = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                bool tap = !tapLatch && selAfter == 0 && movesAfter == 0 && EditorTaps(app) == 0
+                    && GloveExit() == "resume";
+                try { Check("resume-swallow-blocks-glove", route && tap,
+                    "route " + swallowed + " latch " + latch + " sel " + sel + "->" + selAfter
+                    + " moves " + moves + "->" + movesAfter + " taps " + EditorTaps(app)
+                    + " exit " + GloveExit()); }
+                catch (System.Exception hopEx) { Check("resume-swallow-blocks-glove", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeUpAfterSwallow(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-up-after");
+            var t = typeof(FlockFiveApp);
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_coachMoves", flags).SetValue(app, 0);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetEditorTaps(app, 0);
+                var point = new Vector2(px + PhoneArea.OffX, py);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                NoteHeld(app, 4);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                string downExit = GloveExit();
+                SetResumeUntil(float.NegativeInfinity);
+                bool up = (bool)glove.Invoke(app, new object[] { point, true, 4 });
+                int sel = (int)t.GetField("_sel", flags).GetValue(app);
+                int moves = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                string upExit = GloveExit();
+                bool quiet = down && downExit == "resume" && !latched
+                    && up && upExit == "swallowed-up"
+                    && EditorTaps(app) == 0 && sel == -1 && moves == 0;
+                try { Check("resume-up-after-swallowed-down-does-not-hop", quiet,
+                    "down " + down + " " + downExit + " latch " + latched
+                    + " up " + up + " " + upExit + " taps " + EditorTaps(app)
+                    + " sel " + sel + " moves " + moves); }
+                catch (System.Exception hopEx) { Check("resume-up-after-swallowed-down-does-not-hop", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckSwallowedReleaseScope(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("swallow-scope");
+            var t = typeof(FlockFiveApp);
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                var point = new Vector2(px + PhoneArea.OffX, py);
+                var off = new Vector2(-1000f, -1000f);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var idField = t.GetField("_gloveSwallowedId", flags);
+                int Swallowed() => (int)idField.GetValue(app);
+                bool Arm()
+                {
+                    t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                    t.GetField("_splash", flags).SetValue(app, false);
+                    t.GetField("_gloveVis", flags).SetValue(app, true);
+                    t.GetField("_cueBranch", flags).SetValue(app, 0);
+                    t.GetField("_cueForce", flags).SetValue(app, true);
+                    t.GetField("_sel", flags).SetValue(app, -1);
+                    t.GetField("_coachMoves", flags).SetValue(app, 0);
+                    t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                    t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                    SetEditorTaps(app, 0);
+                    SetResumeUntil(AdPause.Unscaled + 0.35f);
+                    NoteHeld(app, 4);
+                    bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                    SetResumeUntil(float.NegativeInfinity);
+                    return down && GloveExit() == "resume"
+                        && !(bool)t.GetField("_glovePressLatched", flags).GetValue(app)
+                        && Swallowed() == 4;
+                }
+                bool ReleaseAt(Vector2 at, int id, out string exit)
+                {
+                    bool up = (bool)glove.Invoke(app, new object[] { at, true, id });
+                    exit = GloveExit();
+                    return up;
+                }
+
+                bool focusArmed = Arm();
+                string focusEx = "";
+                try { Method(t, "OnApplicationFocus", typeof(bool)).Invoke(app, new object[] { false }); }
+                catch (System.Exception ex) { focusEx = TapFault(ex); }
+                int focusId = Swallowed();
+                bool focusUp = ReleaseAt(off, 4, out string focusExit);
+                bool focusCleared = focusArmed && focusId == int.MinValue
+                    && focusUp && focusExit == "no-press" && EditorTaps(app) == 0;
+                try { Check("resume-focus-loss-clears-swallow", focusCleared,
+                    "focus " + focusArmed + " id " + focusId + " " + focusExit + focusEx
+                    + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("resume-focus-loss-clears-swallow", false, ThrowText(hopEx)); }
+
+                bool homeArmed = Arm();
+                string homeEx = "";
+                try { Method(t, "ShowSplash").Invoke(app, null); }
+                catch (System.Exception ex) { homeEx = TapFault(ex); }
+                int homeId = Swallowed();
+                bool homeUp = ReleaseAt(off, 4, out string homeExit);
+                bool loadArmed = Arm();
+                string loadEx = "";
+                try { Method(t, "Load", typeof(int)).Invoke(app, new object[] { 0 }); }
+                catch (System.Exception ex) { loadEx = TapFault(ex); }
+                int loadId = Swallowed();
+                bool loadUp = ReleaseAt(off, 4, out string loadExit);
+                bool exitArmed = Arm();
+                t.GetField("_app", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, app);
+                Method(t, "ClearLevelExit").Invoke(null, null);
+                int exitId = Swallowed();
+                bool hideArmed = Arm();
+                Method(t, "CoachHideNow").Invoke(app, null);
+                int hideId = Swallowed();
+                bool snapArmed = Arm();
+                string snapEx = "";
+                try
+                {
+                    var snap = (System.Collections.IEnumerator)Method(t, "SnapRound").Invoke(app, null);
+                    snap.MoveNext();
+                }
+                catch (System.Exception ex) { snapEx = TapFault(ex); }
+                int snapId = Swallowed();
+                bool cancelArmed = Arm();
+                Method(t, "NoteSwallowedCancel", typeof(int)).Invoke(app, new object[] { 4 });
+                int cancelId = Swallowed();
+                t.GetField("_gloveCancelFrame", flags).SetValue(app, -1);
+                bool stateClears = exitArmed && hideArmed && snapArmed && cancelArmed
+                    && exitId == int.MinValue && hideId == int.MinValue
+                    && snapId == int.MinValue && cancelId == int.MinValue;
+                bool left = homeArmed && loadArmed && homeId == int.MinValue && loadId == int.MinValue
+                    && homeUp && homeExit == "no-press"
+                    && loadUp && loadExit == "no-press";
+                try { Check("resume-swallow-clears-on-home-and-load", left,
+                    "home " + homeArmed + " id " + homeId + " " + homeExit + homeEx
+                    + " load " + loadArmed + " id " + loadId + " " + loadExit + loadEx); }
+                catch (System.Exception hopEx) { Check("resume-swallow-clears-on-home-and-load", false, ThrowText(hopEx)); }
+                try { Check("resume-swallow-clears-on-exit-hide-snap-cancel", stateClears,
+                    "exit " + exitArmed + "/" + exitId + " hide " + hideArmed + "/" + hideId
+                    + " snap " + snapArmed + "/" + snapId + snapEx
+                    + " cancel " + cancelArmed + "/" + cancelId); }
+                catch (System.Exception hopEx) { Check("resume-swallow-clears-on-exit-hide-snap-cancel", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckPointerIdExact(System.Action<string, bool, string> Check)
+        {
+            var mouse = FlockFiveApp.BeginHomeGate(true, PlayPointer.MouseId);
+            bool otherNeg = FlockFiveApp.HomeGateAllows(ref mouse, false, true, -2);
+            bool mouseHeld = mouse.CarryHeld && !otherNeg;
+            var same = FlockFiveApp.BeginHomeGate(true, PlayPointer.MouseId);
+            FlockFiveApp.HomeGateAllows(ref same, false, true, PlayPointer.MouseId);
+            bool mouseCleared = !same.CarryHeld;
+            var missing = FlockFiveApp.BeginHomeGate(true, int.MinValue);
+            FlockFiveApp.HomeGateAllows(ref missing, false, true, PlayPointer.MouseId);
+            bool missingHeld = missing.CarryHeld;
+            try { Check("pointer-id-exact-on-home-gate", mouseHeld && mouseCleared && missingHeld,
+                "held " + mouse.CarryHeld + " cleared " + !same.CarryHeld + " missing " + missing.CarryHeld); }
+                catch (System.Exception hopEx) { Check("pointer-id-exact-on-home-gate", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckMouseDownBesideTouch(System.Action<string, bool, string> Check)
+        {
+            FlockFiveApp.ClearLessonGuard();
+            var go = new GameObject("mouse-with-touch");
+            GameObject limb = null, camGo = null;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                var home = HudPlayRect(1);
+                var homeAt = HudWindow(home);
+                float below = home.yMax + 180f;
+                var glovePlay = new Vector2(home.center.x, below);
+                PoseGlove(app, glovePlay, 48f);
+                var gloveAt = new Vector2(glovePlay.x + PhoneArea.OffX, glovePlay.y);
+                var sprite = new Rect(glovePlay.x - 24f, glovePlay.y - 24f, 48f, 48f);
+                bool offSprite = !sprite.Contains(home.center);
+                ReadyHop(app);
+                SetEditorTaps(app, 0);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool touchDown = (bool)glove.Invoke(app, new object[] { gloveAt, false, 7 });
+                int press = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool mouseDown = (bool)glove.Invoke(app, new object[] { homeAt, false, PlayPointer.MouseId });
+                int still = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                string mouseExit = GloveExit();
+                var screen = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { screen });
+                Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { screen });
+                bool homeClosed = !(bool)t.GetField("_splash", flags).GetValue(app);
+                bool up = (bool)glove.Invoke(app, new object[] { gloveAt, true, PlayPointer.MouseId });
+                int sel = (int)t.GetField("_sel", flags).GetValue(app);
+                bool kept = offSprite && touchDown && mouseDown && press == 7 && still == 7 && latched
+                    && mouseExit == "mouse-with-touch" && homeClosed
+                    && up && EditorTaps(app) == 1 && sel == 0 && GloveHit() == 0;
+                try { Check("touch-down-ignores-synthesized-mouse-down", kept,
+                    "touch 7 on glove, mouse " + PlayPointer.MouseId + " off sprite press " + press + "->" + still
+                    + " off " + offSprite + " exit " + mouseExit
+                    + " latch " + latched + " home " + homeClosed
+                    + " up " + up + " sel " + sel + " hit " + GloveHit()
+                    + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("touch-down-ignores-synthesized-mouse-down", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckOverlapOtherFinger(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("overlap-other-finger");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                var home = HudPlayRect(1);
+                var at = HudWindow(home);
+                PoseGlove(app, home.center, 96f);
+                SetEditorTaps(app, 0);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool down = (bool)glove.Invoke(app, new object[] { at, false, 4 });
+                bool other = (bool)glove.Invoke(app, new object[] { at, true, 5 });
+                bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                int press = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool quiet = EditorTaps(app) == 0 && GloveExit() == "no-glove" && !other && down && latched && press == 4;
+                try { Check("other-finger-on-glove-home-overlap-is-no-glove", quiet,
+                    "downId 4 upId 5 exit " + GloveExit()
+                    + " other " + other + " latch " + latched + " press " + press
+                    + " taps " + EditorTaps(app) + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("other-finger-on-glove-home-overlap-is-no-glove", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckPlayLeavesDaily(System.Action<string, bool, string> Check)
+        {
+            const string key = "flockfive.coach.daily";
+            const string next = "flockfive.next";
+            bool hadKey = PlayerPrefs.HasKey(key);
+            int keepKey = PlayerPrefs.GetInt(key, 0);
+            bool hadNext = PlayerPrefs.HasKey(next);
+            int keepNext = PlayerPrefs.GetInt(next, 0);
+            bool keepShot = FlockFiveApp.EditorShotLive;
+            var go = new GameObject("play-leaves-daily");
+            try
+            {
+                PlayerPrefs.SetInt(key, 0);
+                PlayerPrefs.SetInt(next, 1);
+                FlockFiveApp.EditorShotLive = false;
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_splash", flags).SetValue(app, true);
+                var homeFace = t.GetField("_home", flags);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                t.GetField("_railInit", flags).SetValue(app, true);
+                t.GetField("_dailyIntro", flags).SetValue(app, true);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                t.GetField("_dailyIntroSaw", flags).SetValue(app, true);
+                t.GetField("_dailyShotQuiet", flags).SetValue(app, false);
+                t.GetField("_pokerPlayrun", flags).SetValue(app, false);
+                Method(t, "NoteDailyIntroLeft", typeof(bool)).Invoke(app, new object[] { true });
+                int afterPlay = PlayerPrefs.GetInt(key, 0);
+                bool cleared = !(bool)t.GetField("_dailyIntro", flags).GetValue(app)
+                    && !(bool)t.GetField("_dailyIntroSaw", flags).GetValue(app);
+                Method(t, "ArmDailyIntro").Invoke(app, null);
+                bool back = (bool)t.GetField("_dailyIntro", flags).GetValue(app) && afterPlay == 0;
+                try { Check("play-during-tap-daily-does-not-finish-it", cleared && back,
+                    "pref " + afterPlay + " cleared " + cleared + " back " + back); }
+                catch (System.Exception hopEx) { Check("play-during-tap-daily-does-not-finish-it", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                if (hadKey) PlayerPrefs.SetInt(key, keepKey);
+                else PlayerPrefs.DeleteKey(key);
+                if (hadNext) PlayerPrefs.SetInt(next, keepNext);
+                else PlayerPrefs.DeleteKey(next);
+                FlockFiveApp.EditorShotLive = keepShot;
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static bool BirdsMoved(FlockFiveApp app, Board before)
+        {
+            var live = app.EditorLiveMove;
+            if (live != null) live.MoveNext();
+            var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            var after = (Board)typeof(FlockFiveApp).GetField("_board", flags).GetValue(app);
+            return after != null && !SameBirds(before, after);
+        }
+
+        static void CheckPlayerGloveHop(System.Action<string, bool, string> Check)
+        {
+            FlockFiveApp.ClearLessonGuard();
+            var go = new GameObject("player-glove-hop");
+            GameObject limb = null, destGo = null, camGo = null;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var board = LevelData.Open(0);
+                bool level1 = FlockFiveApp.Level1First(board, i => false, i => false, out int from, out int to);
+                var views = new BranchView[board.Branches.Count];
+                limb = new GameObject("hop-from");
+                destGo = new GameObject("hop-to");
+                if (from >= 0 && from < views.Length) views[from] = Limb(limb, from, Vector3.zero);
+                if (to >= 0 && to < views.Length) views[to] = Limb(destGo, to, new Vector3(3f, 0f, 0f));
+                var garden = new WorldBuilder.Garden();
+                garden.Branches = views;
+                camGo = new GameObject("hop-cam");
+                garden.Cam = camGo.AddComponent<Camera>();
+                garden.Feeders = new FeederView[0];
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_board", flags).SetValue(app, board);
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_coachMoves", flags).SetValue(app, 0);
+                PoseGlove(app, new Vector2(px, py), 80f);
+                var down = new Vector2(px + PhoneArea.OffX, py);
+                var up = new Vector2(px + PhoneArea.OffX + 180f, py + 180f);
+                SetEditorTaps(app, 0);
+                ReadyHop(app);
+                int hops = ReplayGlove(app, down, 7, up, PlayPointer.MouseId);
+                int hopSel = (int)t.GetField("_sel", flags).GetValue(app);
+                int hopHit = GloveHit();
+                var beforeMove = ((Board)t.GetField("_board", flags).GetValue(app)).Clone();
+                t.GetField("_nextTap", flags).SetValue(app, 0f);
+                t.GetField("_cueBranch", flags).SetValue(app, to);
+                PoseGlove(app, new Vector2(px, py), 80f);
+                int moveTaps = ReplayGlove(app, down, 7, up, PlayPointer.MouseId);
+                int moveHit = GloveHit();
+                string moveExit = GloveExit();
+                bool moved = BirdsMoved(app, beforeMove);
+                var held = ((Board)t.GetField("_board", flags).GetValue(app)).Clone();
+                int tapsAfterMove = EditorTaps(app);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                glove.Invoke(app, new object[] { up, true, PlayPointer.MouseId });
+                bool extraQuiet = EditorTaps(app) == tapsAfterMove;
+                bool heldStill = SameBirds(held, (Board)t.GetField("_board", flags).GetValue(app));
+                bool realHops = level1 && hops == 1 && hopSel == from && hopHit == from
+                    && moveTaps == 1 && moveHit == to && moveExit == "move" && moved && extraQuiet && heldStill;
+                try { Check("player-touch-down-mouse-up-hops-once", realHops,
+                    "downId 7 upId -1 hops " + hops + " sel " + hopSel + " hit " + hopHit
+                    + " from " + from + " to " + to
+                    + " move " + moveTaps + " hit " + moveHit + " exit " + moveExit + " birds " + moved
+                    + " extraQuiet " + extraQuiet + " held " + heldStill
+                    + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("player-touch-down-mouse-up-hops-once", false, ThrowText(hopEx)); }
+                Rect home;
+                try { home = HudPlayRect(1); }
+                catch (System.Exception ex)
+                {
+                    try { Check("player-glove-on-hud-hops-at-later-steps", false, ex.Message); }
+                catch (System.Exception hopEx) { Check("player-glove-on-hud-hops-at-later-steps", false, ThrowText(hopEx)); }
+                    return;
+                }
+                var onHome = HudWindow(home);
+                var stepBoard = LevelData.Open(0);
+                bool stepLevel = FlockFiveApp.Level1First(stepBoard, i => false, i => false, out int stepFrom, out int stepTo);
+                t.GetField("_board", flags).SetValue(app, stepBoard);
+                // The hop above locked its limbs and edit mode never finishes the flight.
+                ClearLocks(app);
+                t.GetField("_coachMoves", flags).SetValue(app, 1);
+                t.GetField("_cueBranch", flags).SetValue(app, stepFrom);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                PoseGlove(app, home.center, 72f);
+                ReadyHop(app);
+                int step2 = ReplayGlove(app, onHome, 7, onHome, PlayPointer.MouseId);
+                int step2Sel = (int)t.GetField("_sel", flags).GetValue(app);
+                int step2Hit = GloveHit();
+                var beforeStep = stepBoard.Clone();
+                t.GetField("_nextTap", flags).SetValue(app, 0f);
+                t.GetField("_cueBranch", flags).SetValue(app, stepTo);
+                t.GetField("_coachMoves", flags).SetValue(app, 2);
+                PoseGlove(app, home.center, 72f);
+                int step3 = ReplayGlove(app, onHome, 8, onHome, PlayPointer.MouseId);
+                int step3Hit = GloveHit();
+                string step3Exit = GloveExit();
+                bool stepMoved = BirdsMoved(app, beforeStep);
+                try { Check("player-glove-on-hud-hops-at-later-steps",
+                    stepLevel && step2 == 1 && step2Sel == stepFrom && step2Hit == stepFrom
+                    && step3 == 1 && step3Hit == stepTo && step3Exit == "move" && stepMoved,
+                    "downId 7 then 8 upId -1 step2 " + step2 + " sel " + step2Sel + " hit " + step2Hit
+                    + " from " + stepFrom + " step3 " + step3 + " hit " + step3Hit
+                    + " exit " + step3Exit + " birds " + stepMoved
+                    + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("player-glove-on-hud-hops-at-later-steps", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (destGo != null) UnityEngine.Object.DestroyImmediate(destGo);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeFreshAndHeld(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-fresh-held");
+            float keep = ResumeUntil();
+            GameObject limb = null, camGo = null;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 40f, py - 40f, 80f, 80f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                var point = new Vector2(px + PhoneArea.OffX, py);
+                SetResumeUntil(AdPause.Unscaled + 0.10f);
+                SetEditorTaps(app, 0);
+                int fresh = ReplayGlove(app, point, 9, point, PlayPointer.MouseId);
+                NoteHeld(app, 4);
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                t.GetField("_glovePressId", flags).SetValue(app, 4);
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetEditorTaps(app, 0);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool heldUp = (bool)glove.Invoke(app, new object[] { point, true, 4 });
+                try { Check("resume-fresh-tap-hops-held-press-swallowed",
+                    fresh == 1 && heldUp && EditorTaps(app) == 0
+                    && GloveExit() == "resume",
+                    "fresh " + fresh + " held " + heldUp + " " + GloveExit()
+                    + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("resume-fresh-tap-hops-held-press-swallowed", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void SetInject(bool on, bool down, Vector2 playBottom)
+        {
+            // playBottom is phone-local, y up. The inject stores the real window point.
+            FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+            {
+                On = on,
+                Down = down,
+                Up = false,
+                Id = PlayPointer.MouseId,
+                Window = new Vector2(playBottom.x + PhoneArea.OffX, PhoneArea.H - playBottom.y)
+            };
+        }
+
+        static void CheckGlovePressOwner(System.Action<string, bool, string> Check)
+        {
+            FlockFiveApp.ClearLessonGuard();
+            var go = new GameObject("glove-press-owner");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            GameObject limb = null, camGo = null;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_coach", flags).SetValue(app, true);
+                var home = HudPlayRect(1);
+                var onHome = HudWindow(home);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(home.center.x - 36f, home.center.y - 36f, 72f, 72f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetResumeUntil(float.NegativeInfinity);
+                SetEditorTaps(app, 0);
+                ReadyHop(app);
+                PoseGlove(app, home.center, 72f);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool ownerDown = (bool)glove.Invoke(app, new object[] { onHome, false, 7 });
+                int ownerPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                var screen = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { screen });
+                bool downQuiet = !(bool)t.GetField("_splash", flags).GetValue(app) && !SnapArmed(app);
+                glove.Invoke(app, new object[] { onHome, true, PlayPointer.MouseId });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { screen });
+                int ownerSel = (int)t.GetField("_sel", flags).GetValue(app);
+                int ownerHit = GloveHit();
+                bool owned = ownerDown && ownerPress == 7 && EditorTaps(app) == 1 && downQuiet
+                    && ownerSel == 0 && ownerHit == 0
+                    && !(bool)t.GetField("_splash", flags).GetValue(app) && !SnapArmed(app);
+                t.GetField("_gloveEchoFrame", flags).SetValue(app, Time.frameCount - 8);
+                SetEditorTaps(app, 0);
+                glove.Invoke(app, new object[] { onHome, true, PlayPointer.MouseId });
+                bool oneHop = EditorTaps(app) == 0 && !SnapArmed(app);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                t.GetField("_gloveEchoFrame", flags).SetValue(app, -1);
+                SetEditorTaps(app, 0);
+                bool toHud = !(bool)glove.Invoke(app, new object[] { onHome, true, PlayPointer.MouseId });
+                var off = new Vector2((PhoneArea.W > 0f ? PhoneArea.W : 400f) * 0.5f + PhoneArea.OffX,
+                    (PhoneArea.H > 0f ? PhoneArea.H : 800f) * 0.5f);
+                bool dropped = (bool)glove.Invoke(app, new object[] { off, true, PlayPointer.MouseId });
+                bool loose = toHud && dropped && EditorTaps(app) == 0;
+                try { Check("glove-press-owns-home-and-restart", owned && oneHop && loose,
+                    "downId 7 upId -1 owner glove press " + ownerPress
+                    + " owned " + owned + " sel " + ownerSel + " hit " + ownerHit
+                    + " once " + oneHop + " loose " + loose
+                    + " taps " + EditorTaps(app) + " " + GloveFact(app)); }
+                catch (System.Exception hopEx) { Check("glove-press-owns-home-and-restart", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                Event.current = prev;
+                SetResumeUntil(keep);
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeBranches(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-branches");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            GameObject limb = null, camGo = null;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var restart = HudPlayRect(2);
+                var play = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                SetInject(true, true, play);
+                t.GetField("_frozen", flags).SetValue(app, true);
+                string frozenEx = "";
+                try { Method(t, "UpdateBody").Invoke(app, null); }
+                catch (System.Exception ex) { frozenEx = TapFault(ex); }
+                bool frozen = !SnapArmed(app) && !(bool)t.GetField("_splash", flags).GetValue(app) && frozenEx.Length == 0;
+                t.GetField("_frozen", flags).SetValue(app, false);
+                var gift = t.GetField("_gift", flags);
+                gift.SetValue(app, System.Enum.ToObject(gift.FieldType, 1));
+                string giftEx = "";
+                try { Method(t, "UpdateBody").Invoke(app, null); }
+                catch (System.Exception ex) { giftEx = TapFault(ex); }
+                bool gifted = !SnapArmed(app) && giftEx.Length == 0;
+                gift.SetValue(app, System.Enum.ToObject(gift.FieldType, 0));
+                var hold = typeof(SeasonReveal).GetProperty("HoldsPlay", BindingFlags.Public | BindingFlags.Static);
+                hold.GetSetMethod(true).Invoke(null, new object[] { true });
+                string seasonEx = "";
+                try { Method(t, "UpdateBody").Invoke(app, null); }
+                catch (System.Exception ex) { seasonEx = TapFault(ex); }
+                bool season = !SnapArmed(app) && seasonEx.Length == 0;
+                var appField = t.GetField("_app", BindingFlags.NonPublic | BindingFlags.Static);
+                var live = appField.GetValue(null);
+                appField.SetValue(null, null);
+                var home = HudPlayRect(1);
+                var down = new Event { type = EventType.MouseDown, mousePosition = HudWindow(home), button = 0 };
+                Event.current = down;
+                Method(t, "SwallowResumePointer").Invoke(null, null);
+                bool left = down.type != EventType.Used;
+                appField.SetValue(null, live);
+                try { Check("resume-branches-leave-restart",
+                    frozen && gifted && season && left,
+                    "frozen " + frozen + frozenEx + " gift " + gifted + giftEx
+                    + " season " + season + seasonEx + " null " + left); }
+                catch (System.Exception hopEx) { Check("resume-branches-leave-restart", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                var hold = typeof(SeasonReveal).GetProperty("HoldsPlay", BindingFlags.Public | BindingFlags.Static);
+                if (hold != null) hold.GetSetMethod(true).Invoke(null, new object[] { false });
+                SetInject(false, false, default);
+                Event.current = prev;
+                SetResumeUntil(keep);
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckRestartClearsCaptions(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("restart-captions");
+            var key = "flockfive.coach.done";
+            bool had = PlayerPrefs.HasKey(key);
+            int keep = PlayerPrefs.GetInt(key, 0);
+            bool hadKit = PlayerPrefs.HasKey(RuleTips.KitKey);
+            int kitKeep = PlayerPrefs.GetInt(RuleTips.KitKey, 0);
+            try
+            {
+                PlayerPrefs.DeleteKey(key);
+                PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                LevelData.Open(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var board = LevelData.Open(0);
+                t.GetField("_board", flags).SetValue(app, board);
+                bool crowns = RearmFromCaption(app, t, flags, 1, RuleTips.KitLine);
+                bool nice = RearmFromCaption(app, t, flags, 2, RuleTips.FeederLine);
+                if (board.Branches.Count > 0 && board.Branches[0].Birds.Count > 0)
+                {
+                    var bird = board.Branches[0].Birds[0];
+                    board.Branches[0].Birds[0] = new Bird(bird.Color, BirdKit.Crown);
+                }
+                t.GetField("_ruleTip", flags).SetValue(app, System.Enum.ToObject(
+                    t.GetField("_ruleTip", flags).FieldType, 0));
+                t.GetField("_ruleTurned", flags).SetValue(app, false);
+                t.GetField("_cueLine", flags).SetValue(app, null);
+                Method(t, "SettleRestartLesson").Invoke(app, null);
+                bool advanced = (bool)Method(t, "RuleTipAdvance").Invoke(app, null);
+                Method(t, "ShowRuleTip", typeof(RuleTip)).Invoke(app, new object[] { RuleTip.Kit });
+                var tip = t.GetField("_ruleTip", flags).GetValue(app).ToString();
+                string line = (string)t.GetField("_cueLine", flags).GetValue(app);
+                bool held = (bool)t.GetField("_holdRuleForLesson", flags).GetValue(app);
+                bool stale = !advanced && tip == "None" && line != null && line.IndexOf("Tap a branch") >= 0
+                    && line.IndexOf("Crowns") < 0 && held;
+                try { Check("restart-clears-crowns-and-rearms-step-one", crowns,
+                    "crowns " + crowns); }
+                catch (System.Exception hopEx) { Check("restart-clears-crowns-and-rearms-step-one", false, ThrowText(hopEx)); }
+                try { Check("restart-clears-nice-and-rearms-step-one", nice, "nice " + nice); }
+                catch (System.Exception hopEx) { Check("restart-clears-nice-and-rearms-step-one", false, ThrowText(hopEx)); }
+                try { Check("restart-after-fifth-red-does-not-replay-crowns", stale,
+                    "advanced " + advanced + " tip " + tip + " line " + line + " held " + held); }
+                catch (System.Exception hopEx) { Check("restart-after-fifth-red-does-not-replay-crowns", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                if (had) PlayerPrefs.SetInt(key, keep);
+                else PlayerPrefs.DeleteKey(key);
+                if (hadKit) PlayerPrefs.SetInt(RuleTips.KitKey, kitKeep);
+                else PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static bool RearmFromCaption(FlockFiveApp app, System.Type t, BindingFlags flags, int tipValue, string caption)
+        {
+            t.GetField("_ruleTip", flags).SetValue(app, System.Enum.ToObject(
+                t.GetField("_ruleTip", flags).FieldType, tipValue));
+            t.GetField("_ruleTurned", flags).SetValue(app, true);
+            t.GetField("_cueLine", flags).SetValue(app, caption);
+            t.GetField("_gloveVis", flags).SetValue(app, false);
+            t.GetField("_cueBranch", flags).SetValue(app, -1);
+            Method(t, "SettleRestartLesson").Invoke(app, null);
+            var tip = t.GetField("_ruleTip", flags).GetValue(app).ToString();
+            string line = (string)t.GetField("_cueLine", flags).GetValue(app);
+            bool vis = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+            bool cue = (int)t.GetField("_cueBranch", flags).GetValue(app) >= 0;
+            return tip == "None" && line != null && line.IndexOf("Tap a branch") >= 0
+                && line.IndexOf("Crowns") < 0 && line.IndexOf("Nice!") < 0 && vis && cue;
+        }
+
+        static void CheckRestartRearmsEveryLesson(System.Action<string, bool, string> Check)
+        {
+            const string doneKey = "flockfive.coach.done";
+            bool had = PlayerPrefs.HasKey(doneKey);
+            int keep = PlayerPrefs.GetInt(doneKey, 0);
+            float keepResume = ResumeUntil();
+            var go = new GameObject("restart-every-lesson");
+            try
+            {
+                PlayerPrefs.DeleteKey(doneKey);
+                LevelData.Open(0);
+                GamePause.Reset();
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var steps = CoachTap.All;
+                bool covered = LessonRestart.CoversAll();
+                bool ok = covered;
+                string detail = covered ? "" : "a lesson step has no stage ";
+                int n = 0;
+                var restart = Method(t, "EditorRestartLesson", typeof(CoachStep), typeof(string));
+                for (int i = 0; i < steps.Length; i++)
+                {
+                    var step = steps[i];
+                    var staged = LessonRestart.Of(step);
+                    bool dropTip = staged == LessonRestart.Stage.Crowns || staged == LessonRestart.Stage.Nice
+                        || staged == LessonRestart.Stage.Garden || staged == LessonRestart.Stage.None;
+                    string want = dropTip ? "Tap a branch to pick up its top birds." : LessonRestart.Line(step);
+                    bool gloveWant = dropTip || LessonRestart.ArmsGlove(step);
+                    string stale = LessonRestart.Of(step) == LessonRestart.Stage.Crowns
+                        ? RuleTips.FeederLine : RuleTips.KitLine;
+                    restart.Invoke(app, new object[] { step, stale });
+                    string line = (string)t.GetField("_cueLine", flags).GetValue(app);
+                    bool glove = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+                    bool step1 = line == want && glove == gloveWant && (dropTip || !LessonRestart.Foreign(step, line));
+                    if (LessonRestart.Of(step) == LessonRestart.Stage.BadgerLesson)
+                        step1 = step1 && (int)t.GetField("_bgLessonStep", flags).GetValue(app) == 0;
+                    if (LessonRestart.Of(step) == LessonRestart.Stage.Album)
+                        step1 = step1 && (int)t.GetField("_albumTutorStep", flags).GetValue(app) == 0;
+                    if (LessonRestart.Of(step) == LessonRestart.Stage.Garden)
+                        step1 = step1 && (int)t.GetField("_coachMoves", flags).GetValue(app) == 0;
+                    if (!step1)
+                    {
+                        ok = false;
+                        detail += step + " line \"" + line + "\" want \"" + want + "\" glove " + glove + "/" + gloveWant + " ";
+                        break;
+                    }
+                    n++;
+                }
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool blocked = (bool)Method(t, "ResumeSwallowsRestart").Invoke(app, null);
+                SetResumeUntil(float.NegativeInfinity);
+                bool open = (bool)Method(t, "ResumeSwallowsRestart").Invoke(app, null);
+                try { Check("restart-rearms-every-lesson-step",
+                    ok && n == steps.Length,
+                    "steps " + n + "/" + steps.Length + " " + detail); }
+                catch (System.Exception hopEx) { Check("restart-rearms-every-lesson-step", false, ThrowText(hopEx)); }
+                try { Check("restart-stays-blocked-in-resume-window",
+                    blocked && !open, "blocked " + blocked + " open " + open); }
+                catch (System.Exception hopEx) { Check("restart-stays-blocked-in-resume-window", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keepResume);
+                var rel = typeof(FlockFiveApp).GetMethod("ReleaseTutorPause", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (rel != null && go != null)
+                {
+                    var live = go.GetComponent<FlockFiveApp>();
+                    if (live != null) rel.Invoke(live, null);
+                }
+                GamePause.Reset();
+                if (had) PlayerPrefs.SetInt(doneKey, keep);
+                else PlayerPrefs.DeleteKey(doneKey);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckHomeControlsAtSizes(System.Action<string, bool, string> Check)
+        {
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool clear = true;
+            string detail = "";
+            for (int i = 0; i < w.Length; i++)
+            {
+                var safe = new Rect(0f, 34f, w[i], h[i] - 34f - 59f);
+                var buttons = new Rect[4];
+                FlockFiveApp.FillMainButtons(w[i], h[i], safe, buttons, true);
+                bool play = buttons[0].width > 2f && buttons[0].height > 2f;
+                bool gear = buttons[3].width > 2f && buttons[3].height > 2f;
+                bool restart = buttons[1].width > 2f && buttons[1].height > 2f;
+                bool home = CornerAnchor.TopBarHome(buttons[1], w[i], safe).width > 2f;
+                bool apart = play && gear && restart && home && !buttons[0].Overlaps(buttons[3]);
+                var garden = new Rect[4];
+                FlockFiveApp.FillMainButtons(w[i], h[i], safe, garden, false);
+                bool noGear = garden[3].width <= 0f;
+                if (!apart || !noGear) clear = false;
+                detail += w[i] + " play " + play + " gear " + gear + " apart " + apart + " bare " + noGear + " ";
+            }
+            bool tappable = HomeGear.AcceptsTap(new HomeGearQuery { Home = true, ForcedTap = false });
+            try { Check("home-chain-keeps-play-and-gear", clear && tappable, detail); }
+                catch (System.Exception hopEx) { Check("home-chain-keeps-play-and-gear", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckPauseKeepsHeldId(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("pause-keeps-id");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                t.GetField("_glovePressId", flags).SetValue(app, 6);
+                string pauseEx = "";
+                try { Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { true }); }
+                catch (System.Exception ex) { pauseEx = TapFault(ex); }
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool holds = (bool)Method(t, "ResumeHolds", typeof(int)).Invoke(app, new object[] { 6 });
+                bool fresh = (bool)Method(t, "ResumeHolds", typeof(int)).Invoke(app, new object[] { 9 });
+                try { Check("pause-keeps-the-held-pointer", holds && !fresh, "holds " + holds + " fresh " + fresh + pauseEx); }
+                catch (System.Exception hopEx) { Check("pause-keeps-the-held-pointer", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static Rect HudPlayRect(int which)
+        {
+            object[] hud = { default(Rect), default(Rect) };
+            typeof(FlockFiveApp).GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static)
+                .Invoke(null, hud);
+            var restart = (Rect)hud[0];
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            var rect = which == 2 ? restart : which == 3 ? gear : home;
+            if (rect.width <= 0f || rect.height <= 0f)
+                throw new System.Exception("[home-polish] edit-mode hud rect " + which + " is empty: " + rect);
+            return rect;
+        }
+
+        static Vector2 HudWindow(Rect play)
+        {
+            return new Vector2(play.center.x + PhoneArea.OffX, play.center.y);
+        }
+
+        static void CheckResumeOtherFingerHome(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-other-home");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                var point = new Vector2(px + PhoneArea.OffX, py);
+                var home = HudPlayRect(1);
+                var homePt = HudWindow(home);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                NoteHeld(app, 4);
+                bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                SetResumeUntil(float.NegativeInfinity);
+                bool up = (bool)glove.Invoke(app, new object[] { homePt, true, 5 });
+                int id = (int)t.GetField("_gloveSwallowedId", flags).GetValue(app);
+                bool onHome = FlockFiveApp.HudBeatsGlove(home.center, home, new Rect(0f, 0f, 0f, 0f), new Rect(0f, 0f, 0f, 0f), false);
+                try { Check("resume-swallow-leaves-other-finger",
+                    onHome && down && !up && GloveExit() == "no-glove"
+                    && id == 4 && EditorTaps(app) == 0,
+                    "down " + down + " up " + up + " "
+                    + GloveExit() + " id " + id); }
+                catch (System.Exception hopEx) { Check("resume-swallow-leaves-other-finger", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeButtonBegan(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-button-began");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                var point = new Vector2(px + PhoneArea.OffX, py);
+                var home = HudPlayRect(1);
+                var homePt = HudWindow(home);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetEditorTaps(app, 0);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                NoteHeld(app, 4);
+                bool down = (bool)glove.Invoke(app, new object[] { homePt, false, 4 });
+                string downExit = GloveExit();
+                int id = (int)t.GetField("_gloveSwallowedId", flags).GetValue(app);
+                SetResumeUntil(float.NegativeInfinity);
+                bool up = (bool)glove.Invoke(app, new object[] { homePt, true, 4 });
+                bool began = !down && downExit == "resume-hud" && id == 4
+                    && !up && GloveExit() == "hud" && EditorTaps(app) == 0;
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool gloveDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                SetResumeUntil(float.NegativeInfinity);
+                SetEditorTaps(app, 0);
+                bool slide = (bool)glove.Invoke(app, new object[] { homePt, true, 4 });
+                bool slideEaten = gloveDown && slide && GloveExit() == "swallowed-up"
+                    && EditorTaps(app) == 0;
+                try { Check("resume-button-press-still-fires", began && slideEaten,
+                    "down " + down + " " + downExit + " up " + up
+                    + " slide " + slide + " " + GloveExit()); }
+                catch (System.Exception hopEx) { Check("resume-button-press-still-fires", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static bool FeedHud(FlockFiveApp app, int which, Rect play, bool down, bool up)
+        {
+            var t = typeof(FlockFiveApp);
+            object[] args = { which, play, HudWindow(play), down, up, false };
+            var feed = t.GetMethod("FeedResumeHudButton",
+                BindingFlags.NonPublic | BindingFlags.Instance, null,
+                new[] { typeof(int), typeof(Rect), typeof(Vector2), typeof(bool), typeof(bool), typeof(bool).MakeByRefType() },
+                null);
+            return (bool)feed.Invoke(app, args);
+        }
+
+        static void CheckResumeHomeFires(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-home-fires");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var home = HudPlayRect(1);
+                var at = HudWindow(home);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
+                Event.current = down;
+                Method(t, "SwallowResumePointer").Invoke(null, null);
+                bool left = down.type != EventType.Used;
+                bool armed = FeedHud(app, 1, home, true, false);
+                SetResumeUntil(float.NegativeInfinity);
+                var up = new Event { type = EventType.MouseUp, mousePosition = at, button = 0 };
+                Event.current = up;
+                bool fired = false;
+                string fireEx = "";
+                try { fired = FeedHud(app, 1, home, false, true); }
+                catch (System.Exception ex) { fireEx = TapFault(ex); }
+                bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("resume-home-press-fires", left && !armed && splash,
+                    "left " + left + " type " + down.type
+                    + " armed " + armed + " fired " + fired + " splash " + splash + fireEx); }
+                catch (System.Exception hopEx) { Check("resume-home-press-fires", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                Event.current = prev;
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static bool FreshDownLeft(FlockFiveApp app, Vector2 at)
+        {
+            var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
+            Event.current = down;
+            Method(typeof(FlockFiveApp), "SwallowResumePointer").Invoke(null, null);
+            return down.type != EventType.Used;
+        }
+
+        static void CheckFreshResumeSurfaces(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("fresh-resume-surfaces");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            int streak = Purse.Streak;
+            try
+            {
+                Purse.SetStreak(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                SetResumeUntil(AdPause.Unscaled + 0.10f);
+                var home = HudPlayRect(1);
+                bool homeLeft = FreshDownLeft(app, HudWindow(home));
+                var restart = HudPlayRect(2);
+                var screen = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                try { Method(t, "GardenHudAct", typeof(Vector2)).Invoke(app, new object[] { screen }); }
+                catch (System.Exception) { }
+                bool restartLeftDown = !SnapArmed(app)
+                    && !(bool)t.GetField("_restarting", flags).GetValue(app)
+                    && t.GetField("_restartAsk", flags).GetValue(app).ToString() == "None";
+                t.GetField("_gloveEdgeId", flags).SetValue(app, 11);
+                SetEditorTaps(app, 0);
+                string boardEx = "";
+                try { Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero }); }
+                catch (System.Exception ex) { boardEx = TapFault(ex); }
+                bool board = EditorTaps(app) == 1
+                    && GloveExit() != "resume";
+                t.GetField("_splash", flags).SetValue(app, true);
+                var homeFace = t.GetField("_home", flags);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                bool gearLeft = FreshDownLeft(app, HudWindow(HudPlayRect(3)));
+                NoteHeld(app, PlayPointer.MouseId);
+                var heldHome = new Event { type = EventType.MouseDown, mousePosition = HudWindow(home), button = 0 };
+                Event.current = heldHome;
+                Method(t, "SwallowResumePointer").Invoke(null, null);
+                bool heldEaten = heldHome.type == EventType.Used || heldHome.type != EventType.MouseDown;
+                int[] w = { 820, 402, 412 };
+                int[] h = { 1180, 874, 915 };
+                bool sized = true;
+                for (int i = 0; i < w.Length; i++)
+                {
+                    var safe = new Rect(0f, 34f, w[i], h[i] - 34f - 59f);
+                    CornerAnchor.Garden(w[i], h[i], safe, out _, out _, out _, out var gardenRestart, out _);
+                    var gardenHome = CornerAnchor.TopBarHome(gardenRestart, w[i], safe, h[i]);
+                    var gear = FlockFiveApp.SettingsGearRect(w[i], h[i], safe);
+                    bool phone = w[i] < 500;
+                    bool face = gardenHome.width > 2f && gear.width > 2f && !gardenHome.Overlaps(gear);
+                    bool garden = gardenRestart.width > 2f;
+                    if (!face || (phone && !garden)) sized = false;
+                }
+                try { Check("resume-fresh-home-gear-board",
+                    homeLeft && gearLeft && heldEaten && board && sized && restartLeftDown,
+                    "home " + homeLeft + " gear " + gearLeft + " held " + heldEaten
+                    + " board " + board + " sized " + sized + " restart " + restartLeftDown + boardEx); }
+                catch (System.Exception hopEx) { Check("resume-fresh-home-gear-board", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                Event.current = prev;
+                Purse.SetStreak(streak);
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckPlayLeavesHomeChain(System.Action<string, bool, string> Check)
+        {
+            int next = UnityEngine.PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = UnityEngine.PlayerPrefs.HasKey("flockfive.next");
+            var warm = typeof(FlockFiveApp).GetField("_warmCoverOff", BindingFlags.NonPublic | BindingFlags.Static);
+            bool warmWas = warm != null && (bool)warm.GetValue(null);
+            if (warm != null) warm.SetValue(null, true);
+            bool shot = FlockFiveApp.EditorShotLive;
+            FlockFiveApp.EditorShotLive = false;
+            try
+            {
+                foreach (bool clear in new[] { true, false })
+                {
+                    string tag = clear ? "clear-g1" : "leave-g1";
+                    PlayChainCase(Check, "greet", tag, clear, true, true, false);
+                    PlayChainCase(Check, "look", tag, clear, true, true, false);
+                    PlayChainCase(Check, "daily", tag, clear, false, true, false);
+                    PlayChainCase(Check, "greet", tag + "-relaunch", clear, true, true, true);
+                    PlayChainCase(Check, "look", tag + "-relaunch", clear, true, true, true);
+                    PlayChainCase(Check, "daily", tag + "-relaunch", clear, false, true, true);
+                }
+            }
+            finally
+            {
+                FlockFiveApp.EditorShotLive = shot;
+                if (warm != null) warm.SetValue(null, warmWas);
+                if (hadNext) UnityEngine.PlayerPrefs.SetInt("flockfive.next", next);
+                else UnityEngine.PlayerPrefs.DeleteKey("flockfive.next");
+            }
+        }
+
+        static void PlayChainCase(System.Action<string, bool, string> Check, string where, string tag, bool clear, bool wantLook, bool wantDaily, bool relaunch)
+        {
+            var go = new GameObject("play-chain-" + where + "-" + tag);
+            try
+            {
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.adopted");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.named");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.name");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.coach.daily");
+                UnityEngine.PlayerPrefs.SetInt("flockfive.next", 0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_railInit", flags).SetValue(app, true);
+                if (where == "daily")
+                {
+                    UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.adopted", 1);
+                    UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.named", 1);
+                    UnityEngine.PlayerPrefs.SetString("flockfive.avatar.name", "Pip");
+                    t.GetField("_birdSettledOnBranch", flags).SetValue(app, true);
+                    t.GetField("_dailyIntro", flags).SetValue(app, true);
+                    t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                }
+                else
+                {
+                    Method(t, "BeginAdopt").Invoke(app, null);
+                    t.GetField("_adoptLive", flags).SetValue(app, true);
+                    if (where == "look")
+                    {
+                        var step = t.GetField("_adoptStep", flags);
+                        step.SetValue(app, System.Enum.ToObject(step.FieldType, 2));
+                        t.GetField("_adoptGreetDone", flags).SetValue(app, true);
+                    }
+                }
+                bool played = (bool)Method(t, "PressLevelButton").Invoke(app, null);
+                bool stayed = (bool)t.GetField("_splash", flags).GetValue(app);
+                bool coachUp = where == "daily"
+                    ? (bool)t.GetField("_dailyIntroLive", flags).GetValue(app)
+                    : (bool)t.GetField("_adoptLive", flags).GetValue(app);
+                Check("play-at-" + where + "-" + tag + "-play-consumed", !played && stayed && coachUp,
+                    "played " + played + " splash " + stayed + " coach " + coachUp);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        // Same session, no relaunch. Finishing Tap Daily has to match the save:
+        // the badger flower is offered, and the next Home does not arm Daily again.
+        static void CheckDailyFinishOffersBadger(System.Action<string, bool, string> Check)
+        {
+            int next = UnityEngine.PlayerPrefs.GetInt("flockfive.next", 0);
+            bool hadNext = UnityEngine.PlayerPrefs.HasKey("flockfive.next");
+            int badger = BadgerSave.PendingFor(true);
+            bool badgerOn = BadgerSchedule.Enabled;
+            var warm = typeof(FlockFiveApp).GetField("_warmCoverOff", BindingFlags.NonPublic | BindingFlags.Static);
+            bool warmWas = warm != null && (bool)warm.GetValue(null);
+            if (warm != null) warm.SetValue(null, true);
+            bool shot = FlockFiveApp.EditorShotLive;
+            FlockFiveApp.EditorShotLive = false;
+            BadgerSchedule.Enabled = true;
+            try
+            {
+                FinishDailyThenOffer(Check, "greet");
+                FinishDailyThenOffer(Check, "daily");
+            }
+            finally
+            {
+                FlockFiveApp.EditorShotLive = shot;
+                BadgerSchedule.Enabled = badgerOn;
+                if (badger > 0) BadgerSave.Set(badger, true);
+                else BadgerSave.Clear();
+                if (warm != null) warm.SetValue(null, warmWas);
+                if (hadNext) UnityEngine.PlayerPrefs.SetInt("flockfive.next", next);
+                else UnityEngine.PlayerPrefs.DeleteKey("flockfive.next");
+            }
+        }
+
+        static void FinishDailyThenOffer(System.Action<string, bool, string> Check, string where)
+        {
+            var go = new GameObject("daily-finish-" + where);
+            try
+            {
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.adopted");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.named");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.avatar.name");
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.coach.daily");
+                UnityEngine.PlayerPrefs.SetInt("flockfive.next", 0);
+                BadgerSave.Set(15, true);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_railInit", flags).SetValue(app, true);
+                if (where == "daily")
+                {
+                    UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.adopted", 1);
+                    UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.named", 1);
+                    UnityEngine.PlayerPrefs.SetString("flockfive.avatar.name", "Pip");
+                    t.GetField("_birdSettledOnBranch", flags).SetValue(app, true);
+                    t.GetField("_dailyIntro", flags).SetValue(app, true);
+                    t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                }
+                else
+                {
+                    Method(t, "BeginAdopt").Invoke(app, null);
+                    t.GetField("_adoptLive", flags).SetValue(app, true);
+                }
+                bool played = (bool)Method(t, "PressLevelButton").Invoke(app, null);
+                bool stayedHome = (bool)t.GetField("_splash", flags).GetValue(app);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                PressHud(app, t, homePlay, 2, false);
+                t.GetField("_railInit", flags).SetValue(app, true);
+                t.GetField("_splash", flags).SetValue(app, true);
+                if (where == "greet")
+                {
+                    t.GetField("_avatarRenameText", flags).SetValue(app, "Pip");
+                    Method(t, "CommitAvatarRename").Invoke(app, null);
+                }
+                string name = where == "greet"
+                    ? "play-at-greet-finish-daily-offers-badger"
+                    : "play-at-daily-finish-daily-offers-badger";
+                bool saw = false, flower = false, quiet = false;
+                int key = 0;
+                try
+                {
+                    Method(t, "TickDailyIntro").Invoke(app, null);
+                    saw = (bool)t.GetField("_dailyIntroSaw", flags).GetValue(app);
+                    Method(t, "DismissDailyIntro").Invoke(app, null);
+                    key = UnityEngine.PlayerPrefs.GetInt("flockfive.coach.daily", 0);
+                    t.GetField("_bgPendFrame", flags).SetValue(app, -1);
+                    BadgerSave.Set(15, true);
+                    t.GetField("_splash", flags).SetValue(app, true);
+                    Method(t, "PressLevelButton").Invoke(app, null);
+                    flower = (bool)t.GetField("_splash", flags).GetValue(app);
+                    PressHud(app, t, homePlay, 3, false);
+                    t.GetField("_railInit", flags).SetValue(app, true);
+                    quiet = !(bool)t.GetField("_dailyIntro", flags).GetValue(app)
+                        && !(bool)t.GetField("_dailyIntroLive", flags).GetValue(app);
+                    Check(name, !played && stayedHome && saw && key == 1 && flower && quiet,
+                        "played " + played + " stayed " + stayedHome + " saw " + saw + " key " + key
+                        + " flower " + flower + " quiet " + quiet);
+                }
+                catch (System.Exception hopEx) { Check(name, false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckHomeChainOneAtATime(System.Action<string, bool, string> Check)
+        {
+            FlockFiveApp.ClearLessonGuard();
+            var go = new GameObject("home-chain");
+            var prev = Event.current;
+            float keepResume = ResumeUntil();
+            bool keepShot = FlockFiveApp.EditorShotLive;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_splash", flags).SetValue(app, true);
+                var homeFace = t.GetField("_home", flags);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                t.GetField("_railInit", flags).SetValue(app, true);
+                t.GetField("_adoptLive", flags).SetValue(app, true);
+                var step = t.GetField("_adoptStep", flags);
+                step.SetValue(app, System.Enum.ToObject(step.FieldType, 1));
+                bool greetHolds = (bool)Method(t, "AdoptHoldsQueue").Invoke(app, null);
+                t.GetField("_adoptLive", flags).SetValue(app, false);
+                step.SetValue(app, System.Enum.ToObject(step.FieldType, 0));
+                t.GetField("_avatarRename", flags).SetValue(app, true);
+                bool nameHolds = (bool)Method(t, "AdoptHoldsQueue").Invoke(app, null);
+                t.GetField("_avatarRename", flags).SetValue(app, false);
+                t.GetField("_dailyIntro", flags).SetValue(app, true);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                t.GetField("_adoptLive", flags).SetValue(app, true);
+                t.GetField("_adoptGreetDone", flags).SetValue(app, false);
+                t.GetField("_dailyShotQuiet", flags).SetValue(app, false);
+                t.GetField("_pokerPlayrun", flags).SetValue(app, false);
+                t.GetField("_bgPendFrame", flags).SetValue(app, Time.frameCount);
+                t.GetField("_bgPendValue", flags).SetValue(app, 0);
+                FlockFiveApp.EditorShotLive = false;
+                GamePause.Reset();
+                SetResumeUntil(float.NegativeInfinity);
+                // The name check parked the step on Off. The greet sentence is Fly.
+                step.SetValue(app, System.Enum.ToObject(step.FieldType, 1));
+                bool gearDuring = HomeGear.AcceptsTap((HomeGearQuery)Method(t, "HomeGearNow").Invoke(app, null));
+                var level = SplashPress.LevelRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                var playAt = new Vector2(level.center.x, level.center.y);
+                var judge = Method(t, "JudgeOffTargetTap", typeof(EventType), typeof(Vector2), typeof(int));
+                string playEx = "";
+                object playVerdict = null;
+                try { playVerdict = judge.Invoke(app, new object[] { EventType.MouseDown, playAt, 0 }); }
+                catch (System.Exception ex) { playEx = TapFault(ex); }
+                bool playLeft = VerdictIs(playVerdict, "Pass");
+                bool greetHeld = !(bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
+                var missAt = new Vector2(
+                    PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 200f,
+                    PhoneArea.H > 0f ? PhoneArea.H * 0.42f : 300f);
+                if (level.width > 2f && level.Contains(missAt))
+                    missAt = new Vector2(missAt.x, level.yMin - 24f);
+                // Gear and Play are allowed through the caption, so a point on
+                // either does not dismiss the greet. Walk until the miss is neither.
+                var playExempt = Method(t, "PlayExempt", typeof(Vector2));
+                var gearExempt = Method(t, "HomeGearExempt", typeof(Vector2));
+                for (int n = 0; n < 6; n++)
+                {
+                    bool onPlay = (bool)playExempt.Invoke(app, new object[] { missAt });
+                    bool onGear = (bool)gearExempt.Invoke(app, new object[] { missAt });
+                    if (!onPlay && !onGear) break;
+                    missAt = new Vector2(16f + n * 10f, 16f + n * 10f);
+                }
+                string missEx = "";
+                object missVerdict = null;
+                try { missVerdict = judge.Invoke(app, new object[] { EventType.MouseDown, missAt, 0 }); }
+                catch (System.Exception ex) { missEx = TapFault(ex); }
+                bool missReached = missVerdict != null && !VerdictIs(missVerdict, "Ignore");
+                bool greetDone = (bool)t.GetField("_adoptGreetDone", flags).GetValue(app);
+                bool ateNow = (bool)Method(t, "CoachAteThisFrame").Invoke(app, null);
+                bool guardNow = (bool)Method(t, "LessonGuardUp").Invoke(app, null);
+                bool playNow = (bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { level });
+                // The dismiss eats Play on this frame on purpose. Do not clear the stamp or the guard.
+                bool sameFrameBlocked = missReached && greetDone && ateNow && guardNow && !playNow;
+                PlayClock.StepForTest(CoachDismiss.GuardSeconds + 1f / 60f);
+                NudgeAdFreeClock(CoachDismiss.GuardSeconds + 1f / 60f);
+                StepCoachFrame();
+                bool playCan = false;
+                string canEx = "";
+                string queue = "";
+                try
+                {
+                    bool greetUp = (bool)Method(t, "AdoptGreetUp").Invoke(app, null);
+                    bool turn = (bool)Method(t, "AdoptTurn").Invoke(app, null);
+                    string line = (string)Method(t, "AdoptCaptionLine").Invoke(app, null);
+                    var stepType = t.GetNestedType("StepGate", BindingFlags.NonPublic);
+                    var stepMethod = t.GetMethod("StepTapGate", flags, null, new[] { stepType.MakeByRefType() }, null);
+                    object[] stepArgs = { null };
+                    bool gated = stepMethod != null && (bool)stepMethod.Invoke(app, stepArgs);
+                    int stepNo = -1;
+                    bool any = false;
+                    if (stepArgs[0] != null)
+                    {
+                        var gt = stepArgs[0].GetType();
+                        stepNo = (int)gt.GetField("Step").GetValue(stepArgs[0]);
+                        any = (bool)gt.GetField("AnyTap").GetValue(stepArgs[0]);
+                    }
+                    bool stepBlocks = (bool)Method(t, "StepGateBlocks", typeof(Rect)).Invoke(app, new object[] { level });
+                    var gates = Method(t, "HomePressGates", typeof(int)).Invoke(app, new object[] { -1 });
+                    var gf = gates.GetType().GetFields();
+                    var bits = new System.Text.StringBuilder();
+                    for (int i = 0; i < gf.Length; i++)
+                    {
+                        if (gf[i].FieldType != typeof(bool)) continue;
+                        if (!(bool)gf[i].GetValue(gates)) continue;
+                        if (bits.Length > 0) bits.Append(",");
+                        bits.Append(gf[i].Name);
+                    }
+                    playCan = (bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { level });
+                    queue = " line \"" + line + "\" greetUp " + greetUp + " turn " + turn
+                        + " gate " + gated + " step " + stepNo + " any " + any
+                        + " stepBlocks " + stepBlocks + " bits " + bits
+                        + " shot " + FlockFiveApp.EditorShotLive
+                        + " miss " + missAt.x.ToString("0") + "," + missAt.y.ToString("0")
+                        + " level " + level.width.ToString("0") + "x" + level.height.ToString("0");
+                }
+                catch (System.Exception ex) { canEx = TapFault(ex); }
+                try { Check("home-captions-queue-and-leave-play",
+                    greetHolds && nameHolds && gearDuring && playLeft && greetHeld && missReached && greetDone
+                    && sameFrameBlocked && !playCan,
+                    "greet " + greetHolds + " name " + nameHolds + " gear " + gearDuring
+                    + " play " + playLeft + " held " + greetHeld
+                    + " reached " + missReached + " done " + greetDone
+                    + " sameFrameBlocked " + sameFrameBlocked + " can " + playCan
+                    + " " + queue + playEx + canEx + missEx); }
+                catch (System.Exception hopEx) { Check("home-captions-queue-and-leave-play", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                EditorField("CoachFrameOffsetForTests").SetValue(null, 0);
+                Event.current = prev;
+                SetResumeUntil(keepResume);
+                FlockFiveApp.EditorShotLive = keepShot;
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeRestartFires(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-restart-fires");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            int streak = Purse.Streak;
+            try
+            {
+                Purse.SetStreak(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var restart = HudPlayRect(2);
+                var at = HudWindow(restart);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
+                Event.current = down;
+                Method(t, "SwallowResumePointer").Invoke(null, null);
+                bool swallowed = down.type != EventType.MouseDown || down.type == EventType.Used;
+                bool going = SnapArmed(app)
+                    || (bool)t.GetField("_restarting", flags).GetValue(app)
+                    || t.GetField("_restartAsk", flags).GetValue(app).ToString() != "None";
+                try { Check("resume-restart-stays-swallowed", swallowed && !going,
+                    "type " + down.type + " going " + going); }
+                catch (System.Exception hopEx) { Check("resume-restart-stays-swallowed", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                Event.current = prev;
+                Purse.SetStreak(streak);
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeGearFires(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-gear-fires");
+            float keep = ResumeUntil();
+            var prev = Event.current;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_splash", flags).SetValue(app, true);
+                var homeFace = t.GetField("_home", flags);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                var gear = HudPlayRect(3);
+                var at = HudWindow(gear);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                var down = new Event { type = EventType.MouseDown, mousePosition = at, button = 0 };
+                Event.current = down;
+                Method(t, "SwallowResumePointer").Invoke(null, null);
+                bool left = down.type != EventType.Used;
+                FeedHud(app, 3, gear, true, false);
+                SetResumeUntil(float.NegativeInfinity);
+                var up = new Event { type = EventType.MouseUp, mousePosition = at, button = 0 };
+                Event.current = up;
+                bool fired = false;
+                string fireEx = "";
+                try { fired = FeedHud(app, 3, gear, false, true); }
+                catch (System.Exception ex) { fireEx = TapFault(ex); }
+                bool open = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("resume-gear-press-fires", left && open,
+                    "left " + left + " type " + down.type
+                    + " fired " + fired + " open " + open + fireEx); }
+                catch (System.Exception hopEx) { Check("resume-gear-press-fires", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                Event.current = prev;
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeArmClears(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-arm-clears");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var home = HudPlayRect(1);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool armed = FeedHud(app, 1, home, true, false);
+                int arm = (int)t.GetField("_resumeHudArm", flags).GetValue(app);
+                Method(t, "ClearSwallowedGlove").Invoke(app, null);
+                int cleared = (int)t.GetField("_resumeHudArm", flags).GetValue(app);
+                SetResumeUntil(float.NegativeInfinity);
+                bool fired = FeedHud(app, 1, home, false, true);
+                bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("resume-hud-arm-clears-with-swallow",
+                    !armed && arm == 1 && cleared == 0 && !fired && !splash,
+                    "arm " + arm + "->" + cleared + " fired " + fired + " splash " + splash); }
+                catch (System.Exception hopEx) { Check("resume-hud-arm-clears-with-swallow", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeArmClearsOnPause(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-arm-pause");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var home = HudPlayRect(1);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool armed = FeedHud(app, 1, home, true, false);
+                int arm = (int)t.GetField("_resumeHudArm", flags).GetValue(app);
+                string pauseEx = "";
+                try { Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { true }); }
+                catch (System.Exception ex) { pauseEx = TapFault(ex); }
+                int after = (int)t.GetField("_resumeHudArm", flags).GetValue(app);
+                SetResumeUntil(float.NegativeInfinity);
+                bool fired = FeedHud(app, 1, home, false, true);
+                bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("resume-hud-arm-clears-on-pause",
+                    !armed && arm == 1 && after == 0 && !fired && !splash,
+                    "arm " + arm + "->" + after + " fired " + fired + " splash " + splash + pauseEx); }
+                catch (System.Exception hopEx) { Check("resume-hud-arm-clears-on-pause", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckGardenGearGoesToGlove(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("garden-gear-tap");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                var gear = HudPlayRect(3);
+                var homeR = HudPlayRect(1);
+                var restartR = HudPlayRect(2);
+                var play = gear.center;
+                if (homeR.Contains(play) || restartR.Contains(play))
+                    play = new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.55f);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(play.x - 40f, play.y - 40f, 80f, 80f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                var point = new Vector2(play.x + PhoneArea.OffX, play.y);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool inDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                bool inHeld = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                int inPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                int inSwallow = (int)t.GetField("_gloveSwallowedId", flags).GetValue(app);
+                string inExit = GloveExit();
+                int inArm = (int)t.GetField("_resumeHudArm", flags).GetValue(app);
+                bool inGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                SetResumeUntil(float.NegativeInfinity);
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetEditorTaps(app, 0);
+                bool outDown = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                string outExit = GloveExit();
+                bool latched = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                int outPress = (int)t.GetField("_glovePressId", flags).GetValue(app);
+                bool outGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                t.GetField("_gloveBody", flags).SetValue(app, new Rect(0f, 0f, 4f, 4f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                bool missIn = (bool)glove.Invoke(app, new object[] { point, false, 8 });
+                SetResumeUntil(float.NegativeInfinity);
+                bool missOut = (bool)glove.Invoke(app, new object[] { point, false, 8 });
+                bool stillGear = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                bool beats = FlockFiveApp.HudBeatsGlove(gear.center, new Rect(0f, 0f, 0f, 0f),
+                    new Rect(0f, 0f, 0f, 0f), gear, false);
+                bool afterMiss = (bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                try { Check("garden-gear-rect-goes-to-glove-or-board",
+                    inDown && inHeld && inExit != "resume-hud" && inArm == 0 && !inGear
+                    && outDown && latched && outExit != "resume-hud" && !outGear
+                    && !missIn && !missOut && !stillGear && !beats
+                    && EditorTaps(app) == 0,
+                    "downId 4 owner " + inExit
+                    + " in " + inDown + " held " + inHeld + " press " + inPress
+                    + " swallow " + inSwallow + " " + inExit + " arm " + inArm
+                    + " out " + outDown + " press " + outPress + " " + outExit + " latch " + latched
+                    + " afterMiss " + afterMiss
+                    + " miss " + missIn + "/" + missOut + " gear " + inGear + "/" + outGear
+                    + " beats " + beats + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("garden-gear-rect-goes-to-glove-or-board", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckGearFeedsOnHomeFace(System.Action<string, bool, string> Check)
+        {
+            bool garden = !HomeGear.Shown(new HomeGearQuery { Home = false });
+            bool home = HomeGear.Shown(new HomeGearQuery { Home = true });
+            string settings = CodeOnly(System.IO.File.ReadAllText(System.IO.Path.Combine(
+                Application.dataPath, "_Project/Scripts/App/FlockFiveApp.Settings.cs")));
+            int poll = settings.IndexOf("void PollHomeGear()");
+            int tick = settings.IndexOf("void TickSettingsMotion()", poll);
+            string pollBody = poll >= 0 && tick > poll ? settings.Substring(poll, tick - poll) : "";
+            bool splashFeeds = pollBody.Contains("FeedResumeHudButton(3");
+            string app = CodeOnly(System.IO.File.ReadAllText(System.IO.Path.Combine(
+                Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs")));
+            int stamp = app.IndexOf("DrawGardenStamp(s);");
+            int hive = stamp >= 0 ? app.IndexOf("if (HiveReachable())", stamp) : -1;
+            string level = stamp >= 0 && hive > stamp ? app.Substring(stamp, hive - stamp) : "";
+            bool levelFeedsGear = level.Contains("FeedResumeHudButton(3");
+            try { Check("gear-feeds-on-the-home-face",
+                garden && home && splashFeeds && !levelFeedsGear,
+                "garden " + garden + " home " + home + " splash " + splashFeeds
+                + " level " + levelFeedsGear); }
+                catch (System.Exception hopEx) { Check("gear-feeds-on-the-home-face", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckResumeFollowups(System.Action<string, bool, string> Check)
+        {
+            bool exact = FlockFiveApp.GloveFingerMatches(PlayPointer.MouseId, PlayPointer.MouseId)
+                && !FlockFiveApp.GloveFingerMatches(PlayPointer.MouseId, -2)
+                && !FlockFiveApp.GloveFingerMatches(int.MinValue, PlayPointer.MouseId)
+                && FlockFiveApp.GloveFingerMatches(4, 4)
+                && !FlockFiveApp.GloveFingerMatches(4, 5);
+            try { Check("glove-finger-matches-exact-id", exact, "mouse and missing id"); }
+                catch (System.Exception hopEx) { Check("glove-finger-matches-exact-id", false, ThrowText(hopEx)); }
+
+            var go = new GameObject("resume-follow");
+            var t = typeof(FlockFiveApp);
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                float px = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float py = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                var point = new Vector2(px + PhoneArea.OffX, py);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var idField = t.GetField("_gloveSwallowedId", flags);
+                int Swallowed() => (int)idField.GetValue(app);
+                void Pose()
+                {
+                    t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                    t.GetField("_splash", flags).SetValue(app, false);
+                    t.GetField("_gloveVis", flags).SetValue(app, true);
+                    t.GetField("_cueBranch", flags).SetValue(app, 0);
+                    t.GetField("_cueForce", flags).SetValue(app, true);
+                    t.GetField("_sel", flags).SetValue(app, -1);
+                    t.GetField("_coachMoves", flags).SetValue(app, 0);
+                    t.GetField("_gloveBody", flags).SetValue(app, new Rect(px - 50f, py - 50f, 100f, 100f));
+                    t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                    t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                    SetEditorTaps(app, 0);
+                }
+                bool Arm()
+                {
+                    Pose();
+                    SetResumeUntil(AdPause.Unscaled + 0.35f);
+                    NoteHeld(app, 4);
+                    bool down = (bool)glove.Invoke(app, new object[] { point, false, 4 });
+                    SetResumeUntil(float.NegativeInfinity);
+                    return down && GloveExit() == "resume" && Swallowed() == 4;
+                }
+
+                bool armedFocus = Arm();
+                string focusEx = "";
+                try { Method(t, "OnApplicationFocus", typeof(bool)).Invoke(app, new object[] { true }); }
+                catch (System.Exception ex) { focusEx = TapFault(ex); }
+                int afterFocus = Swallowed();
+                SetResumeUntil(float.NegativeInfinity);
+                bool focusUp = (bool)glove.Invoke(app, new object[] { point, true, 4 });
+                bool focusKeeps = armedFocus && afterFocus == 4 && focusUp
+                    && GloveExit() == "swallowed-up"
+                    && EditorTaps(app) == 0;
+                try { Check("resume-focus-gain-keeps-swallowed-id", focusKeeps,
+                    "armed " + armedFocus + " id " + afterFocus + " up " + focusUp
+                    + " " + GloveExit() + focusEx
+                    + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("resume-focus-gain-keeps-swallowed-id", false, ThrowText(hopEx)); }
+
+                Pose();
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                t.GetField("_glovePressId", flags).SetValue(app, 4);
+                idField.SetValue(app, int.MinValue);
+                string pauseEx = "";
+                try
+                {
+                    Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { true });
+                    Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { false });
+                }
+                catch (System.Exception ex) { pauseEx = TapFault(ex); }
+                int held = Swallowed();
+                SetResumeUntil(float.NegativeInfinity);
+                Pose();
+                idField.SetValue(app, held);
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                SetEditorTaps(app, 0);
+                bool pauseUp = (bool)glove.Invoke(app, new object[] { point, true, 4 });
+                bool heldQuiet = held == 4 && pauseUp
+                    && GloveExit() == "swallowed-up"
+                    && EditorTaps(app) == 0
+                    && (int)t.GetField("_sel", flags).GetValue(app) == -1;
+                try { Check("resume-held-through-pause-does-not-hop", heldQuiet,
+                    "id " + held + " up " + pauseUp + " " + GloveExit()
+                    + " taps " + EditorTaps(app) + pauseEx); }
+                catch (System.Exception hopEx) { Check("resume-held-through-pause-does-not-hop", false, ThrowText(hopEx)); }
+
+                bool armedTap = Arm();
+                t.GetField("_gloveEdgeId", flags).SetValue(app, 4);
+                t.GetField("_sel", flags).SetValue(app, 0);
+                SetEditorTaps(app, 0);
+                Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero });
+                bool tapAte = armedTap && EditorTaps(app) == 0
+                    && (int)t.GetField("_sel", flags).GetValue(app) == 0
+                    && Swallowed() == int.MinValue
+                    && GloveExit() == "swallowed-up";
+                try { Check("resume-handletap-gates-swallowed-id", tapAte,
+                    "armed " + armedTap + " taps " + EditorTaps(app)
+                    + " sel " + t.GetField("_sel", flags).GetValue(app)
+                    + " id " + Swallowed() + " " + GloveExit()); }
+                catch (System.Exception hopEx) { Check("resume-handletap-gates-swallowed-id", false, ThrowText(hopEx)); }
+
+                bool armedCancel = Arm();
+                Method(t, "NoteSwallowedCancel", typeof(int)).Invoke(app, new object[] { 9 });
+                int otherCancel = Swallowed();
+                Method(t, "NoteSwallowedCancel", typeof(int)).Invoke(app, new object[] { 4 });
+                SetEditorTaps(app, 0);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                bool mouseUp = (bool)glove.Invoke(app, new object[] { point, true, PlayPointer.MouseId });
+                bool cancelQuiet = armedCancel && otherCancel == 4 && Swallowed() == int.MinValue
+                    && mouseUp && GloveExit() == "cancel-frame"
+                    && EditorTaps(app) == 0
+                    && (int)t.GetField("_sel", flags).GetValue(app) == -1;
+                t.GetField("_board", flags).SetValue(app, null);
+                t.GetField("_gloveEdgeId", flags).SetValue(app, 5);
+                SetEditorTaps(app, 0);
+                Method(t, "HandleTap", typeof(Vector2)).Invoke(app, new object[] { Vector2.zero });
+                bool otherOpen = GloveExit() == "board" && EditorTaps(app) == 1;
+                t.GetField("_gloveCancelFrame", flags).SetValue(app, -1);
+                try { Check("resume-cancel-leaves-other-finger", otherOpen,
+                    "exit " + GloveExit() + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("resume-cancel-leaves-other-finger", false, ThrowText(hopEx)); }
+                try { Check("resume-cancel-and-mouse-up-does-not-hop", cancelQuiet,
+                    "armed " + armedCancel + " other " + otherCancel + " up " + mouseUp
+                    + " " + GloveExit()
+                    + " taps " + EditorTaps(app)); }
+                catch (System.Exception hopEx) { Check("resume-cancel-and-mouse-up-does-not-hop", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void SeatOpenLesson(object app)
+        {
+            var t = typeof(FlockFiveApp);
+            t.GetField("_lessonGuardUntil", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(app, float.NegativeInfinity);
+            t.GetField("_coachAteFrame", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(app, -1);
+        }
+
+        static string TapFault(System.Exception ex)
+        {
+            var inner = ex is System.Reflection.TargetInvocationException tie && tie.InnerException != null
+                ? tie.InnerException : ex;
+            return " " + inner.GetType().Name + ": " + inner.Message + " | " + inner.StackTrace;
+        }
+
+        static BranchView Limb(GameObject host, int index, Vector3 at)
+        {
+            host.transform.position = at;
+            var view = host.AddComponent<BranchView>();
+            view.Index = index;
+            for (int s = 0; s < BranchState.Cap; s++)
+            {
+                var seat = new GameObject("seat");
+                seat.transform.SetParent(host.transform, false);
+                view.Seats[s] = seat.transform;
+                var bird = new GameObject("bird");
+                bird.transform.SetParent(host.transform, false);
+                view.Birds[s] = bird.AddComponent<SpriteRenderer>();
+            }
+            return view;
+        }
+
+        static void CheckGloveRoute(System.Action<string, bool, string> Check)
+        {
+            var home = new Rect(0f, 0f, 80f, 80f);
+            var glove = new Rect(0f, 0f, 120f, 120f);
+            var cuff = new Vector2(home.center.x, home.center.y);
+            bool cuffInHome = home.Contains(cuff);
+            bool cuffInGlove = glove.Contains(cuff);
+            bool hudPoint = FlockFiveApp.HudBeatsGlove(cuff, home, new Rect(400f, 0f, 40f, 40f), new Rect(200f, 200f, 20f, 20f), false);
+            bool gloveSkipsHud = !FlockFiveApp.GloveMayAct(true, true, false);
+            bool hudWins = cuffInHome && cuffInGlove && hudPoint && gloveSkipsHud;
+            bool downSkips = !FlockFiveApp.GloveMayAct(false, false, false);
+            bool busyRefuses = !FlockFiveApp.GloveMayAct(true, false, true);
+            bool oneEdge = FlockFiveApp.GloveMayAct(true, false, false);
+            var go = new GameObject("glove-route");
+            var limb = new GameObject("glove-limb");
+            bool pickedOnly = false, stayed = false;
+            string routeTrace = "";
+            int sawDown = -2, sawUp = -2;
+            bool downHit = false, upHit = false;
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                bool level1 = FlockFiveApp.Level1First(board, i => false, i => false, out int from, out _);
+                if (!level1) from = 0;
+                var view = Limb(limb, from, Vector3.zero);
+                var garden = new WorldBuilder.Garden();
+                var views = new BranchView[board.Branches.Count];
+                views[from] = view;
+                garden.Branches = views;
+                garden.Cam = WorldBuilder.MakeCamera(go.transform);
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, from);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                SeatOpenLesson(app);
+                float gx = PhoneArea.W > 0f ? PhoneArea.W * 0.5f : 360f;
+                float gy = PhoneArea.H > 0f ? PhoneArea.H * 0.45f : 520f;
+                var body = t.GetField("_gloveBody", flags);
+                body.SetValue(app, new Rect(gx - 40f, gy - 45f, 80f, 90f));
+                t.GetField("_gloveBodyFrame", flags).SetValue(app, Time.frameCount);
+                var point = new Vector2(gx + PhoneArea.OffX, gy);
+                var gloveTap = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                downHit = (bool)gloveTap.Invoke(app, new object[] { point, false, PlayPointer.MouseId });
+                sawDown = (int)t.GetField("_sel", flags).GetValue(app);
+                upHit = (bool)gloveTap.Invoke(app, new object[] { point, true, PlayPointer.MouseId });
+                sawUp = (int)t.GetField("_sel", flags).GetValue(app);
+                routeTrace = FlockFiveApp.EditorGloveTraceNow.ToString();
+                int afterDown = sawDown;
+                int afterUp = sawUp;
+                pickedOnly = level1 && downHit && upHit && afterDown < 0 && afterUp == from;
+                var turn = (OstrichTurnGate)t.GetField("_turnGate", flags).GetValue(app);
+                turn.TryBeginMove();
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
+                gloveTap.Invoke(app, new object[] { point, true, PlayPointer.MouseId });
+                stayed = (int)t.GetField("_sel", flags).GetValue(app) < 0;
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(limb);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+            try { Check("glove-one-tap-does-not-pick-and-move", downSkips && oneEdge && pickedOnly,
+                "down " + downSkips + " edge " + oneEdge + " pick " + pickedOnly
+                + " hit " + downHit + "/" + upHit + " sel " + sawDown + "->" + sawUp + " " + routeTrace); }
+                catch (System.Exception hopEx) { Check("glove-one-tap-does-not-pick-and-move", false, ThrowText(hopEx)); }
+            try { Check("glove-hud-beats-cuff", hudWins,
+                "home " + cuffInHome + " glove " + cuffInGlove + " hud " + hudPoint + " skip " + gloveSkipsHud
+                + " cuff " + cuff.x.ToString("0") + "," + cuff.y.ToString("0")); }
+                catch (System.Exception hopEx) { Check("glove-hud-beats-cuff", false, ThrowText(hopEx)); }
+            try { Check("glove-turn-gate-refuses", busyRefuses && stayed, "stayed " + stayed); }
+                catch (System.Exception hopEx) { Check("glove-turn-gate-refuses", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckForcePause(System.Action<string, bool, string> Check)
+        {
+            bool forever = DevLevelSkip.ForcePauseBlocks("http://x/?forcePause=1", 30f);
+            bool waiting = DevLevelSkip.ForcePauseBlocks("http://x/?forcePause=4", 3f);
+            bool elapsed = !DevLevelSkip.ForcePauseBlocks("http://x/?forcePause=4", 4f);
+            DevLevelSkip.DevPauseHeld = false;
+            DevLevelSkip.DevPauseFlip();
+            bool held = DevLevelSkip.CaptionHeld("http://x/", 0f);
+            DevLevelSkip.DevPauseFlip();
+            bool resumed = !DevLevelSkip.DevPauseHeld && !DevLevelSkip.CaptionHeld("http://x/", 0f);
+            try { Check("force-pause-timeout-and-toggle", forever && waiting && elapsed && held && resumed,
+                "forever " + forever + " waiting " + waiting + " elapsed " + elapsed + " held " + held + " resumed " + resumed); }
+                catch (System.Exception hopEx) { Check("force-pause-timeout-and-toggle", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckRestartRecue(System.Action<string, bool, string> Check)
+        {
+            const string doneKey = "flockfive.coach.done";
+            bool hadDone = PlayerPrefs.HasKey(doneKey);
+            int keepDone = PlayerPrefs.GetInt(doneKey, 0);
+            bool hadKit = PlayerPrefs.HasKey(RuleTips.KitKey);
+            int keepKit = PlayerPrefs.GetInt(RuleTips.KitKey, 0);
+            bool hadFeeder = PlayerPrefs.HasKey(RuleTips.FeederKey);
+            int keepFeeder = PlayerPrefs.GetInt(RuleTips.FeederKey, 0);
+            int keepStreak = Purse.Streak;
+            var go = new GameObject("restart-recue");
+            var limb = new GameObject("recue-limb");
+            try
+            {
+                PlayerPrefs.DeleteKey(doneKey);
+                PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                Purse.SetStreak(0);
+                GamePause.Reset();
+                LevelData.Open(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                var seed = board.Clone();
+                var view = limb.AddComponent<BranchView>();
+                for (int s = 0; s < BranchState.Cap; s++)
+                {
+                    var seat = new GameObject("seat");
+                    seat.transform.SetParent(limb.transform, false);
+                    view.Seats[s] = seat.transform;
+                }
+                var birdGo = new GameObject("bird");
+                birdGo.transform.SetParent(limb.transform, false);
+                view.Birds[0] = birdGo.AddComponent<SpriteRenderer>();
+                var garden = new WorldBuilder.Garden();
+                garden.Branches = new BranchView[] { view };
+                garden.Cam = go.AddComponent<Camera>();
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_seed", flags).SetValue(app, seed);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_splash", flags).SetValue(app, false);
+                bool nice = RecueFrom(app, t, flags, RuleTip.Feeder);
+                bool crowns = RecueFrom(app, t, flags, RuleTip.Kit);
+                try { Check("restart-nice-and-crowns-recues-level1", nice && crowns, "nice " + nice + " crowns " + crowns); }
+                catch (System.Exception hopEx) { Check("restart-nice-and-crowns-recues-level1", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                GamePause.Reset();
+                Purse.SetStreak(keepStreak);
+                if (hadDone) PlayerPrefs.SetInt(doneKey, keepDone);
+                else PlayerPrefs.DeleteKey(doneKey);
+                if (hadKit) PlayerPrefs.SetInt(RuleTips.KitKey, keepKit);
+                else PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                if (hadFeeder) PlayerPrefs.SetInt(RuleTips.FeederKey, keepFeeder);
+                else PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                UnityEngine.Object.DestroyImmediate(limb);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static bool RecueFrom(FlockFiveApp app, System.Type t, BindingFlags flags, RuleTip tip)
+        {
+            GamePause.Reset();
+            t.GetField("_splash", flags).SetValue(app, false);
+            t.GetField("_restarting", flags).SetValue(app, false);
+            t.GetField("_coach", flags).SetValue(app, true);
+            t.GetMethod("ShowRuleTip", flags).Invoke(app, new object[] { tip });
+            object[] hud = { default(Rect), default(Rect) };
+            t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+            var restart = (Rect)hud[0];
+            var tap = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+            t.GetMethod("TakeRuleTipPress", flags).Invoke(app, new object[] { tap });
+            var snap = (System.Collections.IEnumerator)t.GetField("EditorSnapRound", flags).GetValue(app);
+            bool landed = false;
+            if (snap != null) PumpFrames(snap, 64, null, out landed);
+            var line = (string)t.GetField("_cueLine", flags).GetValue(app);
+            bool glove = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+            var now = t.GetField("_ruleTip", flags).GetValue(app);
+            bool clear = now != null && now.ToString() == "None";
+            return landed && glove && clear && line == "Tap a branch to pick up its top birds."
+                && line != RuleTips.KitLine && line != RuleTips.FeederLine;
+        }
+
+        static void CheckRestartActRound(System.Action<string, bool, string> Check)
+        {
+            const string doneKey = "flockfive.coach.done";
+            bool hadDone = PlayerPrefs.HasKey(doneKey);
+            int keepDone = PlayerPrefs.GetInt(doneKey, 0);
+            bool hadKit = PlayerPrefs.HasKey(RuleTips.KitKey);
+            int keepKit = PlayerPrefs.GetInt(RuleTips.KitKey, 0);
+            bool hadFeeder = PlayerPrefs.HasKey(RuleTips.FeederKey);
+            int keepFeeder = PlayerPrefs.GetInt(RuleTips.FeederKey, 0);
+            int keepStreak = Purse.Streak;
+            float keepResume = ResumeUntil();
+            var go = new GameObject("restart-act-round");
+            var limb = new GameObject("act-round-limb");
+            try
+            {
+                PlayerPrefs.SetInt(doneKey, 1);
+                PlayerPrefs.SetInt(RuleTips.KitKey, 1);
+                PlayerPrefs.SetInt(RuleTips.FeederKey, 1);
+                Purse.SetStreak(0);
+                GamePause.Reset();
+                SetResumeUntil(float.NegativeInfinity);
+                LevelData.Open(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                var seed = board.Clone();
+                var view = limb.AddComponent<BranchView>();
+                for (int s = 0; s < BranchState.Cap; s++)
+                {
+                    var seat = new GameObject("seat");
+                    seat.transform.SetParent(limb.transform, false);
+                    view.Seats[s] = seat.transform;
+                }
+                var birdGo = new GameObject("bird");
+                birdGo.transform.SetParent(limb.transform, false);
+                view.Birds[0] = birdGo.AddComponent<SpriteRenderer>();
+                var garden = new WorldBuilder.Garden();
+                garden.Branches = new BranchView[] { view };
+                garden.Cam = go.AddComponent<Camera>();
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_seed", flags).SetValue(app, seed);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_busy", flags).SetValue(app, false);
+                string crowns = "";
+                string nice = "";
+                try
+                {
+                    crowns = ActRound(app, t, flags, RuleTip.Kit, RuleTips.FeederLine);
+                    nice = ActRound(app, t, flags, RuleTip.Feeder, RuleTips.KitLine);
+                }
+                catch (System.Exception ex) { crowns = TapFault(ex); }
+                try { Check("restart-act-round-rearms-crowns-and-nice",
+                    crowns == null && nice == null, "crowns " + crowns + " nice " + nice); }
+                catch (System.Exception hopEx) { Check("restart-act-round-rearms-crowns-and-nice", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keepResume);
+                GamePause.Reset();
+                Purse.SetStreak(keepStreak);
+                if (hadDone) PlayerPrefs.SetInt(doneKey, keepDone);
+                else PlayerPrefs.DeleteKey(doneKey);
+                if (hadKit) PlayerPrefs.SetInt(RuleTips.KitKey, keepKit);
+                else PlayerPrefs.DeleteKey(RuleTips.KitKey);
+                if (hadFeeder) PlayerPrefs.SetInt(RuleTips.FeederKey, keepFeeder);
+                else PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                UnityEngine.Object.DestroyImmediate(limb);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        // Real Restart: ActRestart starts SnapRound. The cue is read when the
+        // parade finishes, before CoachAdvance, so Due cannot raise it later.
+        static string ActRound(FlockFiveApp app, System.Type t, BindingFlags flags, RuleTip tip, string stale)
+        {
+            GamePause.Reset();
+            t.GetField("_splash", flags).SetValue(app, false);
+            t.GetField("_busy", flags).SetValue(app, false);
+            t.GetField("_restarting", flags).SetValue(app, false);
+            t.GetField("_coach", flags).SetValue(app, false);
+            var ask = t.GetField("_restartAsk", flags);
+            ask.SetValue(app, System.Enum.ToObject(ask.FieldType, 0));
+            var live = (Board)t.GetField("_board", flags).GetValue(app);
+            var seed = (Board)t.GetField("_seed", flags).GetValue(app);
+            if (SameBirds(live, seed))
+            {
+                for (int i = 0; i < live.Branches.Count; i++)
+                {
+                    if (live.Branches[i] == null || live.Branches[i].Count <= 0) continue;
+                    live.Branches[i].Birds.RemoveAt(live.Branches[i].Count - 1);
+                    break;
+                }
+            }
+            bool differed = !SameBirds(live, seed);
+            Method(t, "ShowRuleTip", typeof(RuleTip)).Invoke(app, new object[] { tip });
+            t.GetField("_cueLine", flags).SetValue(app, stale);
+            Method(t, "ActRestart").Invoke(app, null);
+            var snap = (System.Collections.IEnumerator)t.GetField("EditorSnapRound", flags).GetValue(app);
+            bool landed = false;
+            if (snap != null) PumpFrames(snap, 64, null, out landed);
+            var after = (Board)t.GetField("_board", flags).GetValue(app);
+            bool reseated = SameBirds(after, seed);
+            string line = (string)t.GetField("_cueLine", flags).GetValue(app) ?? "";
+            string now = t.GetField("_ruleTip", flags).GetValue(app).ToString();
+            bool glove = (bool)t.GetField("_gloveVis", flags).GetValue(app);
+            bool step1 = now == "None" && glove && line.IndexOf("Tap a branch") >= 0
+                && line.IndexOf("Crowns") < 0 && line.IndexOf("Nice!") < 0;
+            if (differed && landed && reseated && step1) return null;
+            return "differed " + differed + " landed " + landed + " reseated " + reseated
+                + " tip " + now + " glove " + glove + " line \"" + line + "\"";
+        }
+
+        // The deal pad is the same Down then Up the HUD buttons take in batch.
+        // Event.current is set too, for an editor that still has IMGUI. A batch
+        // with no GUI event reads EditorPointerInject instead. A null event
+        // alone does not deal.
+        static void PressDealPad(Rect pad, bool down)
+        {
+            Event.current = new Event
+            {
+                type = down ? EventType.MouseDown : EventType.MouseUp,
+                mousePosition = new Vector2(pad.center.x + PhoneArea.OffX, pad.center.y),
+                button = 0
+            };
+            FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+            {
+                On = true,
+                Down = down,
+                Up = !down,
+                Id = 1,
+                Window = new Vector2(pad.center.x + PhoneArea.OffX, pad.center.y)
+            };
+        }
+
+        // EditorPointerInject drives these presses. The cases are inspect-only:
+        // edit mode has no touch screen, so this is the real Down then Up the
+        // game reads, not a device recording.
+        static void PressHud(FlockFiveApp app, System.Type t, Vector2 play, int id, bool down)
+        {
+            // The editor batch stays on one frame, so a glove hop must not own the next press.
+            t.GetField("_gloveTookFrame", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(app, -1);
+            FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+            {
+                On = true,
+                Down = down,
+                Up = !down,
+                Id = id,
+                Window = new Vector2(play.x + PhoneArea.OffX, PhoneArea.H - play.y)
+            };
+            Method(t, "TakeGuiPointer").Invoke(app, null);
+            Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { play });
+        }
+
+        static bool RestartBegan(FlockFiveApp app, System.Type t, BindingFlags flags)
+        {
+            string ask = t.GetField("_restartAsk", flags).GetValue(app).ToString();
+            return t.GetField("EditorSnapRound", flags).GetValue(app) != null
+                || (bool)t.GetField("_restarting", flags).GetValue(app)
+                || ask != "None";
+        }
+
+        static void ClearRestart(FlockFiveApp app, System.Type t, BindingFlags flags)
+        {
+            t.GetField("EditorSnapRound", flags).SetValue(app, null);
+            t.GetField("_restarting", flags).SetValue(app, false);
+            var ask = t.GetField("_restartAsk", flags);
+            ask.SetValue(app, System.Enum.ToObject(ask.FieldType, 0));
+        }
+
+        static void HoldThroughResume(FlockFiveApp app, System.Type t, BindingFlags flags, int id)
+        {
+            t.GetField("_glovePressLatched", flags).SetValue(app, true);
+            t.GetField("_glovePressId", flags).SetValue(app, id);
+            try { Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { true }); }
+            catch (System.Exception) { }
+            t.GetField("_resumeNoteFrame", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, -1);
+            try { Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { false }); }
+            catch (System.Exception) { }
+            t.GetField("_glovePressLatched", flags).SetValue(app, false);
+            t.GetField("_glovePressId", flags).SetValue(app, PlayPointer.MouseId);
+            SetResumeUntil(AdPause.Unscaled - 1f);
+        }
+
+        // A drag is one gesture. The finger that went down decides the release.
+        // Outside the resume window, a press that did not start on the glove
+        // restarts when it comes up on Restart. A press that did start on the
+        // glove is that hop, so Restart stays down. A press that started inside
+        // the resume window never restarts, even after it slides onto Restart
+        // and even if the window has already closed.
+        static void CheckDragReleaseOnRestart(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("drag-restart");
+            float keep = ResumeUntil();
+            int streak = Purse.Streak;
+            GameObject limb = null, camGo = null;
+            try
+            {
+                Purse.SetStreak(0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_cueBranch", flags).SetValue(app, -1);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var restartPlay = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                float w = PhoneArea.W > 2f ? PhoneArea.W : 400f;
+                float h = PhoneArea.H > 2f ? PhoneArea.H : 800f;
+                var away = new Vector2(w * 0.5f, h * 0.55f);
+                if (restart.Contains(away)) away = new Vector2(restart.center.x, restart.yMax + 80f);
+
+                SetResumeUntil(float.NegativeInfinity);
+                ClearRestart(app, t, flags);
+                var drag = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var awayGui = new Vector2(away.x + PhoneArea.OffX, away.y);
+                var restartGui = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                drag.Invoke(app, new object[] { awayGui, false, 4 });
+                drag.Invoke(app, new object[] { restartGui, true, 4 });
+                bool fresh = RestartBegan(app, t, flags);
+                try { Check("drag-onto-restart-outside-window-restarts", fresh, "restarted " + fresh); }
+                catch (System.Exception hopEx) { Check("drag-onto-restart-outside-window-restarts", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                ReadyHop(app);
+                PoseGlove(app, away, 72f);
+                var gloveAt = new Vector2(away.x + PhoneArea.OffX, away.y);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                bool owned = (bool)glove.Invoke(app, new object[] { gloveAt, false, 6 });
+                bool hopped = false;
+                string hopExText = "";
+                try { hopped = (bool)glove.Invoke(app, new object[] { new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y), true, 6 }); }
+                catch (System.Exception ex) { hopExText = ThrowText(ex); }
+                bool gloveKept = owned && hopped && !RestartBegan(app, t, flags);
+                try { Check("drag-from-glove-onto-restart-does-not-restart", gloveKept,
+                    "owned " + owned + " hopped " + hopped + " restarted " + RestartBegan(app, t, flags) + hopExText); }
+                catch (System.Exception hopEx) { Check("drag-from-glove-onto-restart-does-not-restart", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                drag.Invoke(app, new object[] { awayGui, false, 8 });
+                drag.Invoke(app, new object[] { restartGui, true, 8 });
+                bool heldOpen = !RestartBegan(app, t, flags);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                drag.Invoke(app, new object[] { awayGui, false, 9 });
+                SetResumeUntil(float.NegativeInfinity);
+                drag.Invoke(app, new object[] { restartGui, true, 9 });
+                bool heldPast = !RestartBegan(app, t, flags);
+                try { Check("drag-onto-restart-from-resume-window-does-not-restart", heldOpen && heldPast,
+                    "open " + heldOpen + " past " + heldPast); }
+                catch (System.Exception hopEx) { Check("drag-onto-restart-from-resume-window-does-not-restart", false, ThrowText(hopEx)); }
+
+                // Gear is only drawn on the home face. A fresh tap there stays
+                // live. A glove drag and a press from before the window do not.
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                var gearGui = new Vector2(gear.center.x + PhoneArea.OffX, gear.center.y);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                drag.Invoke(app, new object[] { gearGui, false, 11 });
+                drag.Invoke(app, new object[] { gearGui, true, 11 });
+                bool gearTap = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("gear-tap-inside-resume-window-opens", gearTap, "open " + gearTap); }
+                catch (System.Exception hopEx) { Check("gear-tap-inside-resume-window-opens", false, ThrowText(hopEx)); }
+
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                var phase = t.GetField("_settingsPhase", flags);
+                phase.SetValue(app, System.Enum.ToObject(phase.FieldType, 0));
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                PoseGlove(app, away, 72f);
+                SetResumeUntil(float.NegativeInfinity);
+                bool gearDown = (bool)drag.Invoke(app, new object[] { awayGui, false, 12 });
+                drag.Invoke(app, new object[] { gearGui, true, 12 });
+                bool gearGlove = gearDown && !(bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("drag-from-glove-onto-gear-does-not-open", gearGlove,
+                    "down " + gearDown + " open " + t.GetField("_settingsOpen", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("drag-from-glove-onto-gear-does-not-open", false, ThrowText(hopEx)); }
+
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                phase.SetValue(app, System.Enum.ToObject(phase.FieldType, 0));
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                SetResumeUntil(float.NegativeInfinity);
+                drag.Invoke(app, new object[] { awayGui, false, 13 });
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                Method(t, "RememberResumeOrigin", typeof(int)).Invoke(app, new object[] { 13 });
+                drag.Invoke(app, new object[] { gearGui, true, 13 });
+                bool gearBefore = !(bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("press-from-before-window-onto-gear-does-not-open", gearBefore,
+                    "open " + t.GetField("_settingsOpen", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("press-from-before-window-onto-gear-does-not-open", false, ThrowText(hopEx)); }
+
+                // Home uses the same echo rule. HitHud is the one open.
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var homeGui = new Vector2(home.center.x + PhoneArea.OffX, home.center.y);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                drag.Invoke(app, new object[] { homeGui, false, 14 });
+                drag.Invoke(app, new object[] { homeGui, true, 14 });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homePlay });
+                bool homeTap = (bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("home-tap-inside-resume-window-opens", homeTap, "open " + homeTap); }
+                catch (System.Exception hopEx) { Check("home-tap-inside-resume-window-opens", false, ThrowText(hopEx)); }
+
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                PoseGlove(app, away, 72f);
+                SetResumeUntil(float.NegativeInfinity);
+                bool homeDown = (bool)drag.Invoke(app, new object[] { awayGui, false, 15 });
+                drag.Invoke(app, new object[] { homeGui, true, 15 });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homePlay });
+                bool homeGlove = homeDown && !(bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("drag-from-glove-onto-home-does-not-open", homeGlove,
+                    "down " + homeDown + " open " + t.GetField("_splash", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("drag-from-glove-onto-home-does-not-open", false, ThrowText(hopEx)); }
+
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                SetResumeUntil(float.NegativeInfinity);
+                drag.Invoke(app, new object[] { awayGui, false, 16 });
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                Method(t, "RememberResumeOrigin", typeof(int)).Invoke(app, new object[] { 16 });
+                drag.Invoke(app, new object[] { homeGui, true, 16 });
+                Method(t, "HitHud", typeof(Vector2)).Invoke(app, new object[] { homePlay });
+                bool homeBefore = !(bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("press-from-before-window-onto-home-does-not-open", homeBefore,
+                    "open " + t.GetField("_splash", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("press-from-before-window-onto-home-does-not-open", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                Purse.SetStreak(streak);
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeHeldFinger(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-held");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var play = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                ClearRestart(app, t, flags);
+                HoldThroughResume(app, t, flags, 6);
+                PressHud(app, t, play, PlayPointer.MouseId, false);
+                bool quiet = !RestartBegan(app, t, flags);
+                try { Check("resume-held-finger-does-not-restart", quiet, "restarted " + !quiet); }
+                catch (System.Exception hopEx) { Check("resume-held-finger-does-not-restart", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                SetResumeUntil(AdPause.Unscaled - 1f);
+                PressHud(app, t, play, 8, true);
+                PressHud(app, t, play, 8, false);
+                bool fresh = RestartBegan(app, t, flags);
+                try { Check("resume-held-fresh-press-restarts", fresh, "restarted " + fresh); }
+                catch (System.Exception hopEx) { Check("resume-held-fresh-press-restarts", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, false);
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                t.GetField("_gloveTapRect", flags).SetValue(app, home);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                HoldThroughResume(app, t, flags, 9);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                PressHud(app, t, homePlay, 9, false);
+                bool homeOk = (bool)t.GetField("_splash", flags).GetValue(app);
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                t.GetField("_gloveTapRect", flags).SetValue(app, gear);
+                HoldThroughResume(app, t, flags, 10);
+                var gearPlay = new Vector2(gear.center.x, PhoneArea.H - gear.center.y);
+                PressHud(app, t, gearPlay, 10, false);
+                bool gearOk = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("resume-held-finger-home-and-gear", homeOk && gearOk,
+                    "home " + homeOk + " gear " + gearOk); }
+                catch (System.Exception hopEx) { Check("resume-held-finger-home-and-gear", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void HideThenResume(FlockFiveApp app, System.Type t, BindingFlags flags, int id)
+        {
+            t.GetField("_glovePressLatched", flags).SetValue(app, false);
+            t.GetField("_glovePressId", flags).SetValue(app, PlayPointer.MouseId);
+            try { Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { true }); }
+            catch (System.Exception) { }
+            Method(t, "NoteDownAtHide", typeof(int)).Invoke(app, new object[] { id });
+            t.GetField("_resumeNoteFrame", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, -1);
+            try { Method(t, "OnApplicationPause", typeof(bool)).Invoke(app, new object[] { false }); }
+            catch (System.Exception) { }
+            SetResumeUntil(AdPause.Unscaled - 1f);
+        }
+
+        static void CheckResumeHideStamp(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-hide");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var play = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                ClearRestart(app, t, flags);
+                HideThenResume(app, t, flags, 6);
+                bool unlatched = !(bool)t.GetField("_glovePressLatched", flags).GetValue(app);
+                t.GetField("_gloveEdgeId", flags).SetValue(app, 6);
+                Method(t, "ActRestart").Invoke(app, null);
+                bool retryQuiet = unlatched && !RestartBegan(app, t, flags);
+                try { Check("resume-hide-up-does-not-retry", retryQuiet, "restarted " + !retryQuiet); }
+                catch (System.Exception hopEx) { Check("resume-hide-up-does-not-retry", false, ThrowText(hopEx)); }
+                PressHud(app, t, play, PlayPointer.MouseId, false);
+                bool quiet = !RestartBegan(app, t, flags);
+                try { Check("resume-hide-up-does-not-restart", quiet, "restarted " + !quiet); }
+                catch (System.Exception hopEx) { Check("resume-hide-up-does-not-restart", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, false);
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                t.GetField("_gloveTapRect", flags).SetValue(app, home);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                HideThenResume(app, t, flags, 9);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                PressHud(app, t, homePlay, 9, false);
+                bool homeOk = (bool)t.GetField("_splash", flags).GetValue(app);
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                t.GetField("_gloveTapRect", flags).SetValue(app, gear);
+                HideThenResume(app, t, flags, 10);
+                var gearPlay = new Vector2(gear.center.x, PhoneArea.H - gear.center.y);
+                PressHud(app, t, gearPlay, 10, false);
+                bool gearOk = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("resume-hide-home-and-gear", homeOk && gearOk, "home " + homeOk + " gear " + gearOk); }
+                catch (System.Exception hopEx) { Check("resume-hide-home-and-gear", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckResumeYield(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("resume-yield");
+            float keep = ResumeUntil();
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_adHand", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var play = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                var window = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                void Offer(string name, bool inside, int id, bool holdPast)
+                {
+                    ClearRestart(app, t, flags);
+                    SetResumeUntil(AdPause.Unscaled + 0.35f);
+                    Method(t, "NoteDownAtHide", typeof(int)).Invoke(app, new object[] { id });
+                    var glove = inside
+                        ? new Rect(window.x - 30f, window.y - 30f, 60f, 60f)
+                        : new Rect(-200f, -200f, 8f, 8f);
+                    t.GetField("_gloveTapRect", flags).SetValue(app, glove);
+                    t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                    PressHud(app, t, play, id, true);
+                    if (holdPast) SetResumeUntil(AdPause.Unscaled - 1f);
+                    PressHud(app, t, play, id, false);
+                    bool quiet = !RestartBegan(app, t, flags);
+                    try { Check(name, quiet, "restarted " + RestartBegan(app, t, flags)); }
+                    catch (System.Exception hopEx) { Check(name, false, ThrowText(hopEx)); }
+                }
+                Offer("resume-window-restart-does-not-snap", true, 4, false);
+                Offer("resume-restart-inside-glove-touch", true, 5, false);
+                Offer("resume-restart-inside-glove-mouse", true, PlayPointer.MouseId, false);
+                Offer("resume-restart-outside-glove-touch", false, 6, false);
+                Offer("resume-restart-outside-glove-mouse", false, PlayPointer.MouseId, false);
+                Offer("resume-restart-held-past-window", true, 7, true);
+
+                ClearRestart(app, t, flags);
+                SetResumeUntil(AdPause.Unscaled - 1f);
+                PressHud(app, t, play, 8, true);
+                PressHud(app, t, play, 8, false);
+                bool fresh = RestartBegan(app, t, flags);
+                try { Check("resume-restart-fresh-press", fresh, "restarted " + fresh); }
+                catch (System.Exception hopEx) { Check("resume-restart-fresh-press", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                t.GetField("_freezeOffer", flags).SetValue(app, true);
+                var neutral = new Vector2(play.x, 80f);
+                PressHud(app, t, neutral, 13, true);
+                SetResumeUntil(AdPause.Unscaled - 1f);
+                PressHud(app, t, neutral, PlayPointer.MouseId, false);
+                Method(t, "ActRestart").Invoke(app, null);
+                bool retryQuiet = !RestartBegan(app, t, flags);
+                try { Check("resume-freeze-retry-does-not-restart", retryQuiet, "restarted " + !retryQuiet); }
+                catch (System.Exception hopEx) { Check("resume-freeze-retry-does-not-restart", false, ThrowText(hopEx)); }
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+
+                ClearRestart(app, t, flags);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                PressHud(app, t, play, 14, true);
+                SetResumeUntil(AdPause.Unscaled - 1f);
+                PressHud(app, t, play, PlayPointer.MouseId, false);
+                bool pairQuiet = !RestartBegan(app, t, flags);
+                try { Check("resume-touch-down-mouse-up", pairQuiet, "restarted " + !pairQuiet); }
+                catch (System.Exception hopEx) { Check("resume-touch-down-mouse-up", false, ThrowText(hopEx)); }
+
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                t.GetField("_adHand", flags).SetValue(app, false);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 0));
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                t.GetField("_gloveTapRect", flags).SetValue(app, home);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                PressHud(app, t, homePlay, 9, true);
+                PressHud(app, t, homePlay, 9, false);
+                bool homeOk = (bool)t.GetField("_splash", flags).GetValue(app);
+                var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                t.GetField("_gloveTapRect", flags).SetValue(app, gear);
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                var gearPlay = new Vector2(gear.center.x, PhoneArea.H - gear.center.y);
+                var gearWindow = new Vector2(gear.center.x + PhoneArea.OffX, gear.center.y);
+                var gearFeed = Method(t, "FeedResumeHudButton", typeof(int), typeof(Rect), typeof(Vector2), typeof(bool), typeof(bool), typeof(bool).MakeByRefType());
+                object[] gearDown = { 3, gear, gearWindow, true, false, false };
+                object[] gearUp = { 3, gear, gearWindow, false, true, false };
+                gearFeed.Invoke(app, gearDown);
+                gearFeed.Invoke(app, gearUp);
+                bool gearOk = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("resume-window-home-and-gear-work", homeOk && gearOk,
+                    "home " + homeOk + " gear " + gearOk); }
+                catch (System.Exception hopEx) { Check("resume-window-home-and-gear-work", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, false);
+                SetResumeUntil(AdPause.Unscaled + 0.35f);
+                PressHud(app, t, play, 15, true);
+                Method(t, "NoteSwallowedCancel", typeof(int)).Invoke(app, new object[] { 15 });
+                SetResumeUntil(AdPause.Unscaled - 1f);
+                PressHud(app, t, play, PlayPointer.MouseId, true);
+                PressHud(app, t, play, PlayPointer.MouseId, false);
+                bool afterCancel = RestartBegan(app, t, flags);
+                try { Check("resume-cancel-then-fresh-press-restarts", afterCancel, "restarted " + afterCancel); }
+                catch (System.Exception hopEx) { Check("resume-cancel-then-fresh-press-restarts", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckDealPad(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("deal-pad");
+            int hands = UnityEngine.PlayerPrefs.GetInt("flockfive.ads.pokerhands", 0);
+            var prev = Event.current;
+            try
+            {
+                UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", 0);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_pokerDealHint", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 2));
+                BirdPoker.ResetRound();
+                BirdPoker.Boot();
+                if (Purse.Coins < 500) Purse.Credit(500 - Purse.Coins);
+                BirdPoker.SyncBet();
+                int before = Purse.Coins;
+                int bet = BirdPoker.Bet;
+                GUIUtility.hotControl = 0;
+                var rect = app.PokerDealButtonRect();
+                PressDealPad(rect, true);
+                app.PokerPageDealHit();
+                bool armed = (bool)t.GetField("_pokerDealHint", flags).GetValue(app)
+                    && BirdPoker.PhaseNow == BirdPoker.Phase.Idle
+                    && Purse.Coins == before;
+                PressDealPad(rect, false);
+                app.PokerPageDealHit();
+                bool dealt = armed
+                    && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt
+                    && Purse.Coins == before - bet
+                    && !(bool)t.GetField("_pokerDealHint", flags).GetValue(app);
+                try { Check("deal-pad-down-up-deals-once", dealt,
+                    "phase " + BirdPoker.PhaseNow + " coins " + Purse.Coins + " before " + before + " bet " + bet
+                    + " hint " + t.GetField("_pokerDealHint", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("deal-pad-down-up-deals-once", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                Event.current = prev;
+                FlockFiveApp.EditorPointerInject = default;
+                GUIUtility.hotControl = 0;
+                UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", hands);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckYieldAdvances(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("yield-advances");
+            float keep = ResumeUntil();
+            var prevEvent = Event.current;
+            Event.current = new Event { type = EventType.Layout };
+            int hands = UnityEngine.PlayerPrefs.GetInt("flockfive.ads.pokerhands", 0);
+            string claimStamp = UnityEngine.PlayerPrefs.GetString("flockfive.daily.last24", "");
+            int adopted = UnityEngine.PlayerPrefs.GetInt("flockfive.avatar.adopted", 0);
+            int backPref = UnityEngine.PlayerPrefs.GetInt("flockfive.coach.pokerback", 0);
+            try
+            {
+                SetResumeUntil(-1f);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                float h = PhoneArea.H > 2f ? PhoneArea.H : 800f;
+                float w = PhoneArea.W > 2f ? PhoneArea.W : 400f;
+                var play = new Vector2(w * 0.5f, 80f);
+                var window = new Vector2(play.x + PhoneArea.OffX, h - play.y);
+                void Arm()
+                {
+                    t.GetField("_splash", flags).SetValue(app, false);
+                    t.GetField("_gloveTapRect", flags).SetValue(app, new Rect(window.x - 36f, window.y - 36f, 72f, 72f));
+                    t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                    t.GetField("_gloveVis", flags).SetValue(app, true);
+                }
+                void Release()
+                {
+                    Arm();
+                    PressHud(app, t, play, 3, true);
+                    PressHud(app, t, play, 3, false);
+                }
+
+                UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", 0);
+                BirdPoker.ResetRound();
+                BirdPoker.Boot();
+                if (Purse.Coins < 500) Purse.Credit(500 - Purse.Coins);
+                BirdPoker.SyncBet();
+                int before = Purse.Coins;
+                int bet = BirdPoker.Bet;
+                t.GetField("_pokerDealHint", flags).SetValue(app, true);
+                t.GetField("_pokerMotion", flags).SetValue(app, System.Enum.ToObject(t.GetField("_pokerMotion", flags).FieldType, 0));
+                Release();
+                bool held = BirdPoker.PhaseNow == BirdPoker.Phase.Idle && Purse.Coins == before;
+                var dealRect = app.PokerDealButtonRect();
+                var dealEvent = Event.current;
+                GUIUtility.hotControl = 0;
+                PressDealPad(dealRect, true);
+                app.PokerPageDealHit();
+                PressDealPad(dealRect, false);
+                app.PokerPageDealHit();
+                Event.current = dealEvent;
+                FlockFiveApp.EditorPointerInject = default;
+                bool dealt = held && BirdPoker.PhaseNow == BirdPoker.Phase.Dealt && Purse.Coins == before - bet;
+                try { Check("yield-deal-deals-once", dealt,
+                    "phase " + BirdPoker.PhaseNow + " coins " + Purse.Coins + " before " + before + " bet " + bet); }
+                catch (System.Exception hopEx) { Check("yield-deal-deals-once", false, ThrowText(hopEx)); }
+                t.GetField("_pokerDealHint", flags).SetValue(app, false);
+
+                UnityEngine.PlayerPrefs.DeleteKey("flockfive.daily.last24");
+                DailyBonus.TestRelease();
+                DailyBonus.Boot();
+                t.GetField("_dailyOpen", flags).SetValue(app, true);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                Release();
+                int quiet = DailyBonus.SpinCoins;
+                Method(t, "StartDailySpin").Invoke(app, null);
+                int once = DailyBonus.SpinCoins;
+                Method(t, "StartDailySpin").Invoke(app, null);
+                bool claim = quiet == 0 && once > 0 && DailyBonus.SpinCoins == once;
+                try { Check("yield-claim-grants-once", claim, "quiet " + quiet + " once " + once + " again " + DailyBonus.SpinCoins); }
+                catch (System.Exception hopEx) { Check("yield-claim-grants-once", false, ThrowText(hopEx)); }
+                t.GetField("_dailyOpen", flags).SetValue(app, false);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, false);
+
+                UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.adopted", 1);
+                t.GetField("_adoptLive", flags).SetValue(app, true);
+                t.GetField("_adoptPick", flags).SetValue(app, 1);
+                var step = t.GetField("_adoptStep", flags);
+                step.SetValue(app, System.Enum.ToObject(step.FieldType, 2));
+                t.GetField("_avatarRename", flags).SetValue(app, false);
+                Release();
+                bool stillLook = step.GetValue(app).ToString() == "Look" && !(bool)t.GetField("_avatarRename", flags).GetValue(app);
+                Method(t, "NoteAdoptLook").Invoke(app, null);
+                bool looked = stillLook && (bool)t.GetField("_avatarRename", flags).GetValue(app) && step.GetValue(app).ToString() == "Look";
+                Method(t, "NoteAdoptLook").Invoke(app, null);
+                looked = looked && (bool)t.GetField("_avatarRename", flags).GetValue(app) && step.GetValue(app).ToString() == "Look";
+                try { Check("yield-adopt-look-once", looked, "step " + step.GetValue(app) + " rename " + t.GetField("_avatarRename", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("yield-adopt-look-once", false, ThrowText(hopEx)); }
+                t.GetField("_adoptLive", flags).SetValue(app, false);
+
+                if (!BadgerCopy.CoachDone()) BadgerCopy.MarkCoach();
+                BadgerSchedule.Enabled = true;
+                if (Purse.Coins < Hive.UpgradeCost) Purse.Credit(Hive.UpgradeCost - Purse.Coins + 50);
+                int slot = -1;
+                for (int i = 0; i < Hive.AlbumSlots; i++)
+                    if (Hive.CanUpgrade(i)) { slot = i; break; }
+                int level = slot >= 0 ? Hive.UpgradeOfSlot(slot) : -1;
+                t.GetField("_upgradeTutorOn", flags).SetValue(app, true);
+                Release();
+                bool untouched = slot >= 0 && Hive.UpgradeOfSlot(slot) == level;
+                if (slot >= 0) Method(t, "ApplyBeeUpgrade", typeof(int)).Invoke(app, new object[] { slot });
+                bool upgraded = untouched && Hive.UpgradeOfSlot(slot) == level + 1
+                    && !(bool)t.GetField("_upgradeTutorOn", flags).GetValue(app);
+                try { Check("yield-upgrade-applies-once", upgraded, "slot " + slot + " level " + (slot >= 0 ? Hive.UpgradeOfSlot(slot) : -1) + " was " + level); }
+                catch (System.Exception hopEx) { Check("yield-upgrade-applies-once", false, ThrowText(hopEx)); }
+
+                t.GetField("_adHand", flags).SetValue(app, true);
+                var gift = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(gift, 1));
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                t.GetField("_watchStarts", flags).SetValue(app, 0);
+                t.GetField("_watchGiftLive", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, false);
+                var keptEvent = Event.current;
+                Event.current = null;
+                object[] placed = { DeviceFit.Ui(), default(Rect), default(Rect) };
+                Method(t, "GiftCardPlaced", typeof(float), typeof(Rect).MakeByRefType(), typeof(Rect).MakeByRefType()).Invoke(app, placed);
+                var flower = (Rect)placed[2];
+                var watch = (Rect)t.GetMethod("FlowerHit", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { flower, DeviceFit.Ui() });
+                // What PressHud used to inject: a bottom-origin play point, then a Y flip.
+                var oldPlay = new Vector2(watch.center.x - PhoneArea.OffX, h - watch.center.y);
+                var oldWindow = new Vector2(oldPlay.x + PhoneArea.OffX, PhoneArea.H - oldPlay.y);
+                var oldEnter = PlayPointer.Enter(oldWindow);
+                // The path that already passes: a real window point, UpdateBody, then OnGUI.
+                var watchWindow = new Vector2(watch.center.x + PhoneArea.OffX, watch.center.y);
+                string Trace(string edge, Vector2 win, bool down)
+                {
+                    var entered = PlayPointer.Enter(win);
+                    int which = (int)t.GetMethod("HudControl", flags).Invoke(app, new object[] { entered });
+                    bool contains = watch.Contains(entered);
+                    FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                    {
+                        On = true, Down = down, Up = !down, Id = 4, Window = win
+                    };
+                    int edgeId = (int)t.GetMethod("EdgeIdNow", BindingFlags.NonPublic | BindingFlags.Static)
+                        .Invoke(null, new object[] { !down });
+                    Method(t, "UpdateBody").Invoke(app, null);
+                    Method(t, "TakeGuiPointer").Invoke(app, null);
+                    string who = (string)t.GetField("_tapWho", flags).GetValue(app) ?? "";
+                    int startsNow = (int)t.GetField("_watchStarts", flags).GetValue(app);
+                    int seam = (int)t.GetField("EditorWatchRequests", flags).GetValue(app);
+                    bool live = (bool)t.GetField("_watchGiftLive", flags).GetValue(app);
+                    string giftNow = t.GetField("_gift", flags).GetValue(app).ToString();
+                    return edge
+                        + " win " + win + " enter " + entered
+                        + " watch " + watch + " contains " + contains
+                        + " hud " + which + " who " + who
+                        + " edgeId " + edgeId + " injectId 4"
+                        + " gift " + giftNow + " adHand " + t.GetField("_adHand", flags).GetValue(app)
+                        + " live " + live + " starts " + startsNow + " seam " + seam;
+                }
+                string pressTrace = Trace("press", watchWindow, true);
+                string releaseTrace = Trace("release", watchWindow, false);
+                Debug.Log("[home-polish] yield-watch press " + pressTrace);
+                Debug.Log("[home-polish] yield-watch release " + releaseTrace);
+                int starts = (int)t.GetField("_watchStarts", flags).GetValue(app);
+                Event.current = keptEvent;
+                try { Check("yield-watch-starts-once", starts == 1,
+                    "starts " + starts
+                    + " | oldPlay " + oldPlay + " oldWindow " + oldWindow + " oldEnter " + oldEnter
+                    + " oldContains " + watch.Contains(oldEnter)
+                    + " | " + pressTrace + " | " + releaseTrace); }
+                catch (System.Exception hopEx) { Check("yield-watch-starts-once", false, ThrowText(hopEx)); }
+                t.GetField("_adHand", flags).SetValue(app, false);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(gift, 0));
+
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                t.GetField("_dailyOpen", flags).SetValue(app, false);
+                Release();
+                bool shut = !(bool)t.GetField("_dailyOpen", flags).GetValue(app);
+                var homeFace = t.GetField("_home", flags);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                t.GetField("_splash", flags).SetValue(app, true);
+                Method(t, "OpenDailyCard").Invoke(app, null);
+                bool opened = shut && (bool)t.GetField("_dailyOpen", flags).GetValue(app);
+                float pop = (float)t.GetField("_dailyPopAt", flags).GetValue(app);
+                Method(t, "OpenDailyCard").Invoke(app, null);
+                bool rail = opened && (float)t.GetField("_dailyPopAt", flags).GetValue(app) == pop;
+                try { Check("yield-daily-rail-opens-once", rail, "open " + t.GetField("_dailyOpen", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("yield-daily-rail-opens-once", false, ThrowText(hopEx)); }
+                t.GetField("_dailyOpen", flags).SetValue(app, false);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, false);
+                t.GetField("_splash", flags).SetValue(app, false);
+
+                t.GetField("_hiveIntroLive", flags).SetValue(app, true);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 0));
+                Release();
+                bool notHive = homeFace.GetValue(app).ToString() != "Hive";
+                Method(t, "OpenHiveAlbum").Invoke(app, null);
+                bool hive = notHive && homeFace.GetValue(app).ToString() == "Hive";
+                Method(t, "OpenHiveAlbum").Invoke(app, null);
+                hive = hive && homeFace.GetValue(app).ToString() == "Hive";
+                try { Check("yield-hive-rail-opens-once", hive, "home " + homeFace.GetValue(app)); }
+                catch (System.Exception hopEx) { Check("yield-hive-rail-opens-once", false, ThrowText(hopEx)); }
+                t.GetField("_hiveIntroLive", flags).SetValue(app, false);
+
+                FlockFiveApp.EditorShotLive = false;
+                UnityEngine.PlayerPrefs.SetInt("flockfive.coach.pokerback", 0);
+                t.GetField("_pokerBackKnown", flags).SetValue(app, false);
+                homeFace.SetValue(app, System.Enum.ToObject(homeFace.FieldType, 2));
+                t.GetField("_pokerShowPay", flags).SetValue(app, true);
+                t.GetField("_pokerPageOn", flags).SetValue(app, true);
+                Release();
+                bool stayed = homeFace.GetValue(app).ToString() == "Poker";
+                Method(t, "LeavePokerFromBack").Invoke(app, null);
+                bool left = stayed && homeFace.GetValue(app).ToString() == "Splash"
+                    && UnityEngine.PlayerPrefs.GetInt("flockfive.coach.pokerback", 0) == 1;
+                Method(t, "LeavePokerFromBack").Invoke(app, null);
+                left = left && homeFace.GetValue(app).ToString() == "Splash";
+                try { Check("yield-poker-back-leaves-once", left, "home " + homeFace.GetValue(app)); }
+                catch (System.Exception hopEx) { Check("yield-poker-back-leaves-once", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                UnityEngine.PlayerPrefs.SetInt("flockfive.ads.pokerhands", hands);
+                if (claimStamp.Length == 0) UnityEngine.PlayerPrefs.DeleteKey("flockfive.daily.last24");
+                else UnityEngine.PlayerPrefs.SetString("flockfive.daily.last24", claimStamp);
+                UnityEngine.PlayerPrefs.SetInt("flockfive.avatar.adopted", adopted);
+                UnityEngine.PlayerPrefs.SetInt("flockfive.coach.pokerback", backPref);
+                DailyBonus.TestRelease();
+                Event.current = prevEvent;
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckInspectorGates(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("inspector-gates");
+            try
+            {
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(
+                    t.GetField("_home", flags).FieldType, 0));
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var target = new Rect(100f, 200f, 80f, 80f);
+                t.GetField("_gloveTapRect", flags).SetValue(app, target);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_dailyIntroLive", flags).SetValue(app, true);
+                int taps = app.EditorHandleTaps;
+                bool onButton = !(bool)glove.Invoke(app, new object[] { target.center, true, 2 });
+                var offHand = new Vector2(PhoneArea.W > 2f ? PhoneArea.W - 6f : 390f, PhoneArea.H > 2f ? PhoneArea.H - 6f : 790f);
+                bool outside = !(bool)glove.Invoke(app, new object[] { offHand, true, 2 });
+                try { Check("coach-glove-yields-its-button", onButton && app.EditorHandleTaps == taps,
+                    "yield " + onButton + " taps " + app.EditorHandleTaps); }
+                catch (System.Exception hopEx) { Check("coach-glove-yields-its-button", false, ThrowText(hopEx)); }
+                try { Check("coach-glove-outside-is-not-swallowed", outside,
+                    "outside " + outside); }
+                catch (System.Exception hopEx) { Check("coach-glove-outside-is-not-swallowed", false, ThrowText(hopEx)); }
+
+                t.GetField("_dailyIntroLive", flags).SetValue(app, false);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, false);
+                t.GetField("_adHand", flags).SetValue(app, true);
+                var gift = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(gift, 1));
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                var x = (Rect)t.GetMethod("GiftCloseHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, null);
+                glove.Invoke(app, new object[] { x.center, true, 2 });
+                bool closed = t.GetField("_gift", flags).GetValue(app).ToString() == "None";
+                try { Check("gift-x-closes-under-glove", closed, t.GetField("_gift", flags).GetValue(app).ToString()); }
+                catch (System.Exception hopEx) { Check("gift-x-closes-under-glove", false, ThrowText(hopEx)); }
+
+                t.GetField("_adHand", flags).SetValue(app, false);
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_avatarRename", flags).SetValue(app, true);
+                bool naming = !(bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { new Rect(10f, 10f, 40f, 40f) });
+                t.GetField("_avatarRename", flags).SetValue(app, false);
+                t.GetField("_hiveIntroLive", flags).SetValue(app, true);
+                bool caption = !(bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { new Rect(10f, 10f, 40f, 40f) });
+                t.GetField("_hiveIntroLive", flags).SetValue(app, false);
+                t.GetField("_welcomeOpen", flags).SetValue(app, true);
+                bool dialog = !(bool)Method(t, "LevelCanTakeTap", typeof(Rect)).Invoke(app, new object[] { new Rect(10f, 10f, 40f, 40f) });
+                try { Check("play-blocked-while-naming", naming, "naming " + naming); }
+                catch (System.Exception hopEx) { Check("play-blocked-while-naming", false, ThrowText(hopEx)); }
+                try { Check("play-blocked-while-coach-caption", caption, "caption " + caption); }
+                catch (System.Exception hopEx) { Check("play-blocked-while-coach-caption", false, ThrowText(hopEx)); }
+                try { Check("play-blocked-while-dialog", dialog, "dialog " + dialog); }
+                catch (System.Exception hopEx) { Check("play-blocked-while-dialog", false, ThrowText(hopEx)); }
+
+                t.GetField("_welcomeOpen", flags).SetValue(app, false);
+                var warm = t.GetField("_warmCoverOff", BindingFlags.NonPublic | BindingFlags.Static);
+                bool warmWas = warm != null && (bool)warm.GetValue(null);
+                if (warm != null) warm.SetValue(null, true);
+                t.GetField("_cueLine", flags).SetValue(app, "Tap Daily\nfor a bonus!");
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                Method(t, "PressLevelButton").Invoke(app, null);
+                bool cleared = t.GetField("_cueLine", flags).GetValue(app) == null
+                    && !(bool)t.GetField("_gloveVis", flags).GetValue(app)
+                    && !(bool)t.GetField("_gloveTapRectOn", flags).GetValue(app);
+                if (warm != null) warm.SetValue(null, warmWas);
+                try { Check("caption-cleared-before-wipe", cleared, "line " + t.GetField("_cueLine", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("caption-cleared-before-wipe", false, ThrowText(hopEx)); }
+
+                string avatar = System.IO.File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Avatar.cs");
+                bool firstTap = avatar.Contains("bool doneFire = HitPad(done, out doneHeld);")
+                    && !avatar.Contains("doneFire = !arm && HitPad");
+                try { Check("naming-done-accepts-open-frame", firstTap, ""); }
+                catch (System.Exception hopEx) { Check("naming-done-accepts-open-frame", false, ThrowText(hopEx)); }
+
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_gloveTapRectOn", flags).SetValue(app, true);
+                t.GetField("_gloveTapRect", flags).SetValue(app, target);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                Method(t, "CoachDone").Invoke(app, null);
+                bool gone = !(bool)t.GetField("_gloveTapRectOn", flags).GetValue(app)
+                    && !(bool)t.GetField("_gloveVis", flags).GetValue(app);
+                try { Check("lesson-end-clears-glove-rect", gone, "on " + t.GetField("_gloveTapRectOn", flags).GetValue(app)); }
+                catch (System.Exception hopEx) { Check("lesson-end-clears-glove-rect", false, ThrowText(hopEx)); }
+
+                bool order = HomePopupChain.Next(true, false, true, false, true) == HomePopupChain.Card.Reminder
+                    && HomePopupChain.Next(false, false, true, false, true) == HomePopupChain.Card.Welcome
+                    && HomePopupChain.Next(false, false, false, false, true) == HomePopupChain.Card.Att
+                    && HomePopupChain.Next(false, true, true, true, true) == HomePopupChain.Card.Reminder;
+                try { Check("home-popups-reminder-then-welcome-then-att", order, ""); }
+                catch (System.Exception hopEx) { Check("home-popups-reminder-then-welcome-then-att", false, ThrowText(hopEx)); }
+
+                bool sign = WorldBuilder.GiftSignIn < 1.08f && WorldBuilder.GiftSignUp > 0.48f
+                    && System.IO.File.ReadAllText("Assets/_Project/Scripts/App/WorldBuilder.cs")
+                        .Contains("new Vector3(-GiftSignIn * dir, GiftSignUp, 0f)");
+                try { Check("gift-sign-sits-on-the-limb", sign, WorldBuilder.GiftSignIn + "," + WorldBuilder.GiftSignUp); }
+                catch (System.Exception hopEx) { Check("gift-sign-sits-on-the-limb", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                GamePause.Reset();
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckAdHandOffer(System.Action<string, bool, string> Check)
+        {
+            const string key = "flockfive.coach.adhand";
+            bool had = PlayerPrefs.HasKey(key);
+            int keep = PlayerPrefs.GetInt(key, 0);
+            float keepResume = ResumeUntil();
+            var go = new GameObject("ad-hand-offer");
+            try
+            {
+                PlayerPrefs.DeleteKey(key);
+                SetResumeUntil(float.NegativeInfinity);
+                GamePause.Reset();
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_freezeOffer", flags).SetValue(app, false);
+                t.GetField("_busy", flags).SetValue(app, false);
+                var face = t.GetNestedType("GiftFace", BindingFlags.NonPublic);
+                Purse.SetStreak(0);
+                void Offer()
+                {
+                    GamePause.Reset();
+                    Purse.SetStreak(0);
+                    t.GetField("_splash", flags).SetValue(app, false);
+                    t.GetField("_restarting", flags).SetValue(app, false);
+                    t.GetField("_watchGiftLive", flags).SetValue(app, false);
+                    t.GetField("_gift", flags).SetValue(app, System.Enum.ToObject(face, 1));
+                    t.GetField("_adHand", flags).SetValue(app, false);
+                    PlayerPrefs.DeleteKey(key);
+                    Method(t, "ArmAdHand").Invoke(app, null);
+                }
+                string Tap(Vector2 gui)
+                {
+                    Offer();
+                    t.GetField("_gloveTookFrame", flags).SetValue(app, -1);
+                    FlockFiveApp.EditorPointerInject = new FlockFiveApp.EditorPointer
+                    {
+                        On = true, Down = false, Up = true, Id = 3,
+                        Window = new Vector2(gui.x + PhoneArea.OffX, gui.y)
+                    };
+                    Method(t, "TakeGuiPointer").Invoke(app, null);
+                    FlockFiveApp.EditorPointerInject = default;
+                    var gift = t.GetField("_gift", flags).GetValue(app).ToString();
+                    bool hand = (bool)t.GetField("_adHand", flags).GetValue(app);
+                    bool splash = (bool)t.GetField("_splash", flags).GetValue(app);
+                    bool live = (bool)t.GetField("_watchGiftLive", flags).GetValue(app);
+                    bool round = t.GetField("EditorSnapRound", flags).GetValue(app) != null;
+                    return "gift " + gift + " hand " + hand + " splash " + splash + " watch " + live + " round " + round;
+                }
+                float s = DeviceFit.Ui();
+                object[] placed = { s, default(Rect), default(Rect) };
+                t.GetMethod("GiftCardPlaced", flags).Invoke(app, placed);
+                var cta = (Rect)placed[2];
+                var watchR = (Rect)t.GetMethod("FlowerHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { cta, s });
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var x = (Rect)t.GetMethod("GiftCloseHit", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, null);
+                string watch = Tap(watchR.center);
+                string close = Tap(x.center);
+                string wentHome = Tap(home.center);
+                string restarted = Tap(restart.center);
+                bool watchOk = watch.Contains("watch True") || watch.Contains("gift Wait") || watch.Contains("gift Movie");
+                bool ok = watchOk && close.Contains("gift None")
+                    && wentHome.Contains("splash True") && restarted.Contains("round True");
+                try { Check("ad-hand-offer-buttons", ok,
+                    "watch [" + watch + "] x [" + close + "] home [" + wentHome + "] restart [" + restarted + "]"); }
+                catch (System.Exception hopEx) { Check("ad-hand-offer-buttons", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keepResume);
+                GamePause.Reset();
+                if (had) PlayerPrefs.SetInt(key, keep);
+                else PlayerPrefs.DeleteKey(key);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckHomeThenSameFrameHop(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("home-then-hop");
+            float keep = ResumeUntil();
+            GameObject limb = null, camGo = null;
+            try
+            {
+                SetResumeUntil(float.NegativeInfinity);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                PressHud(app, t, homePlay, 3, true);
+                PressHud(app, t, homePlay, 3, false);
+                bool opened = (bool)t.GetField("_splash", flags).GetValue(app);
+                var garden = SeatGarden(out limb, out camGo);
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_cueBranch", flags).SetValue(app, 0);
+                t.GetField("_cueForce", flags).SetValue(app, true);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                // Home occupied this frame. The glove's own Down must clear that.
+                t.GetField("_gloveTookFrame", flags).SetValue(app, Time.frameCount);
+                float w = PhoneArea.W > 2f ? PhoneArea.W : 400f;
+                float h = PhoneArea.H > 2f ? PhoneArea.H : 800f;
+                var away = new Vector2(w * 0.5f, h * 0.55f);
+                if (home.Contains(away) || restart.Contains(away))
+                    away = new Vector2(restart.center.x, restart.yMax + 80f);
+                ReadyHop(app);
+                PoseGlove(app, away, 72f);
+                SetEditorTaps(app, 0);
+                var glove = Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int));
+                var at = new Vector2(away.x + PhoneArea.OffX, away.y);
+                bool down = (bool)glove.Invoke(app, new object[] { at, false, 4 });
+                bool up = (bool)glove.Invoke(app, new object[] { at, true, 4 });
+                bool hopped = opened && down && up && EditorTaps(app) == 1
+                    && FlockFiveApp.EditorGloveTraceNow.Exit == "handle";
+                try { Check("home-then-same-frame-hop", hopped,
+                    "home " + opened + " down " + down + " up " + up
+                    + " taps " + EditorTaps(app) + " exit " + FlockFiveApp.EditorGloveTraceNow.Exit); }
+                catch (System.Exception hopEx) { Check("home-then-same-frame-hop", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
+                if (limb != null) UnityEngine.Object.DestroyImmediate(limb);
+                if (camGo != null) UnityEngine.Object.DestroyImmediate(camGo);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        // A touch Down and the mouse Up are one press. The down-control decides.
+        static void CheckTouchMouseUp(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("touch-mouse-up");
+            float keep = ResumeUntil();
+            try
+            {
+                SetResumeUntil(float.NegativeInfinity);
+                var app = go.AddComponent<FlockFiveApp>();
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                t.GetField("_board", flags).SetValue(app, LevelData.Open(0));
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+                var gear = FlockFiveApp.SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+                var restartPlay = new Vector2(restart.center.x, PhoneArea.H - restart.center.y);
+                var homePlay = new Vector2(home.center.x, PhoneArea.H - home.center.y);
+                var gearPlay = new Vector2(gear.center.x, PhoneArea.H - gear.center.y);
+
+                ClearRestart(app, t, flags);
+                PressHud(app, t, homePlay, 4, true);
+                PressHud(app, t, restartPlay, PlayPointer.MouseId, false);
+                bool homeDownQuiet = !RestartBegan(app, t, flags);
+                try { Check("touch-down-home-mouse-up-restart-stays", homeDownQuiet,
+                    "restarted " + !homeDownQuiet); }
+                catch (System.Exception hopEx) { Check("touch-down-home-mouse-up-restart-stays", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                PressHud(app, t, gearPlay, 5, true);
+                t.GetField("_splash", flags).SetValue(app, false);
+                PressHud(app, t, restartPlay, PlayPointer.MouseId, false);
+                bool gearDownQuiet = !RestartBegan(app, t, flags);
+                try { Check("touch-down-gear-mouse-up-restart-stays", gearDownQuiet,
+                    "restarted " + !gearDownQuiet); }
+                catch (System.Exception hopEx) { Check("touch-down-gear-mouse-up-restart-stays", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, false);
+                PressHud(app, t, homePlay, 6, true);
+                PressHud(app, t, homePlay, PlayPointer.MouseId, false);
+                bool homeOpen = (bool)t.GetField("_splash", flags).GetValue(app);
+                try { Check("touch-down-home-mouse-up-opens", homeOpen, "home " + homeOpen); }
+                catch (System.Exception hopEx) { Check("touch-down-home-mouse-up-opens", false, ThrowText(hopEx)); }
+
+                t.GetField("_splash", flags).SetValue(app, true);
+                t.GetField("_home", flags).SetValue(app, System.Enum.ToObject(t.GetField("_home", flags).FieldType, 0));
+                t.GetField("_settingsOpen", flags).SetValue(app, false);
+                PressHud(app, t, gearPlay, 7, true);
+                PressHud(app, t, gearPlay, PlayPointer.MouseId, false);
+                bool gearOpen = (bool)t.GetField("_settingsOpen", flags).GetValue(app);
+                try { Check("touch-down-gear-mouse-up-opens", gearOpen, "gear " + gearOpen); }
+                catch (System.Exception hopEx) { Check("touch-down-gear-mouse-up-opens", false, ThrowText(hopEx)); }
+
+                ClearRestart(app, t, flags);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_glovePressLatched", flags).SetValue(app, false);
+                t.GetField("_gloveVis", flags).SetValue(app, false);
+                t.GetField("_downPointer", flags).SetValue(app, int.MinValue);
+                t.GetField("_downControl", flags).SetValue(app, -2);
+                Method(t, "ClearResumeOrigins").Invoke(app, null);
+                // The echo release, not the button hit. A bare Up with no Down
+                // must not restart. GardenHudAct and ActRestart still do.
+                var restartGui = new Vector2(restartPlay.x + PhoneArea.OffX, restart.center.y);
+                Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int))
+                    .Invoke(app, new object[] { restartGui, true, PlayPointer.MouseId });
+                bool bare = !RestartBegan(app, t, flags);
+                try { Check("restart-without-down-record-stays", bare, "restarted " + !bare); }
+                catch (System.Exception hopEx) { Check("restart-without-down-record-stays", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                FlockFiveApp.EditorPointerInject = default;
+                SetResumeUntil(keep);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckHudSameFrameHop(System.Action<string, bool, string> Check)
+        {
+            var go = new GameObject("hud-same-frame");
+            float keepResume = ResumeUntil();
+            try
+            {
+                SetResumeUntil(float.NegativeInfinity);
+                var app = go.AddComponent<FlockFiveApp>();
+                int taps = app.EditorHandleTaps;
+                var t = typeof(FlockFiveApp);
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var board = LevelData.Open(0);
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_splash", flags).SetValue(app, false);
+                t.GetField("_sel", flags).SetValue(app, -1);
+                t.GetField("_gloveVis", flags).SetValue(app, true);
+                t.GetField("_glovePressLatched", flags).SetValue(app, true);
+                t.GetField("_glovePressId", flags).SetValue(app, 4);
+                t.GetField("_gloveTookFrame", flags).SetValue(app, Time.frameCount);
+                object[] hud = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
+                var restart = (Rect)hud[0];
+                var point = new Vector2(restart.center.x + PhoneArea.OffX, restart.center.y);
+                bool swallowed = (bool)Method(t, "TryDrawnGlove", typeof(Vector2), typeof(bool), typeof(int))
+                    .Invoke(app, new object[] { point, true, 4 });
+                int sel = (int)t.GetField("_sel", flags).GetValue(app);
+                int took = (int)t.GetField("_gloveTookFrame", flags).GetValue(app);
+                string exit = FlockFiveApp.EditorGloveTraceNow.Exit;
+                bool blocked = swallowed && sel < 0 && took == Time.frameCount
+                    && app.EditorHandleTaps == taps && exit == "same-frame";
+                try { Check("hud-same-frame-blocks-hop", blocked,
+                    "swallowed " + swallowed + " sel " + sel + " took " + took
+                    + " taps " + app.EditorHandleTaps + " exit " + exit); }
+                catch (System.Exception hopEx) { Check("hud-same-frame-blocks-hop", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                SetResumeUntil(keepResume);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckCoachRestartPath(System.Action<string, bool, string> Check)
+        {
+            const string doneKey = "flockfive.coach.done";
+            const string giftKey = "flockfive.coach.gift";
+            bool hadDone = PlayerPrefs.HasKey(doneKey);
+            bool hadGift = PlayerPrefs.HasKey(giftKey);
+            int keepDone = PlayerPrefs.GetInt(doneKey, 0);
+            int keepGift = PlayerPrefs.GetInt(giftKey, 0);
+            int keepStreak = Purse.Streak;
+            var go = new GameObject("coach-restart-path");
+            try
+            {
+                PlayerPrefs.DeleteKey(doneKey);
+                PlayerPrefs.DeleteKey(giftKey);
+                Purse.SetStreak(0);
+                GamePause.Reset();
+                var app = go.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance;
+                var t = typeof(FlockFiveApp);
+                var board = LevelData.Open(0);
+                t.GetField("_board", flags).SetValue(app, board);
+                t.GetField("_seed", flags).SetValue(app, board.Clone());
+                var garden = new WorldBuilder.Garden();
+                garden.Branches = new BranchView[0];
+                t.GetField("_garden", flags).SetValue(app, garden);
+                t.GetField("_coach", flags).SetValue(app, true);
+                t.GetField("_coachMoves", flags).SetValue(app, 0);
+                t.GetField("_splash", flags).SetValue(app, false);
+                var pick = t.GetMethod("CoachPick", flags);
+                var moved = t.GetMethod("CoachMoved", flags);
+                object[] cue = { -1, -1 };
+                bool first = (bool)pick.Invoke(app, cue);
+                int from = (int)cue[0], to = (int)cue[1];
+                bool level1 = FlockFiveApp.Level1First(board, i => false, i => false, out int wantFrom, out int wantTo);
+                t.GetField("_coachFrom", flags).SetValue(app, from);
+                t.GetField("_coachTo", flags).SetValue(app, to);
+                moved.Invoke(app, new object[] { from, to, 0 });
+                int afterHop = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                object[] hudOut = { default(Rect), default(Rect) };
+                t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hudOut);
+                var restart = (Rect)hudOut[0];
+                float screenH = PhoneArea.H;
+                var tap = new Vector2(restart.center.x, screenH - restart.center.y);
+                bool acted = (bool)t.GetMethod("GardenHudAct", flags).Invoke(app, new object[] { tap });
+                var snap = (System.Collections.IEnumerator)t.GetField("EditorSnapRound", flags).GetValue(app);
+                int frames = 0;
+                bool landed = false;
+                int movesNow = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                if (acted && snap != null)
+                {
+                    frames = PumpFrames(snap, 64, null, out landed);
+                    landed = landed && !(bool)t.GetField("_restarting", flags).GetValue(app);
+                }
+                int reset = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                object[] again = { -1, -1 };
+                bool recued = (bool)pick.Invoke(app, again);
+                int from2 = (int)again[0], to2 = (int)again[1];
+                t.GetField("_coachFrom", flags).SetValue(app, from2);
+                t.GetField("_coachTo", flags).SetValue(app, to2);
+                moved.Invoke(app, new object[] { from2, to2, 0 });
+                int midMoves = (int)t.GetField("_coachMoves", flags).GetValue(app);
+                bool mid = (bool)t.GetField("_coach", flags).GetValue(app);
+                moved.Invoke(app, new object[] { from2, to2, 0 });
+                bool finished = !(bool)t.GetField("_coach", flags).GetValue(app);
+                try { Check("restart-button-runs-snapround",
+                    level1 && first && from == wantFrom && to == wantTo && afterHop == 1
+                    && acted && restart.width > 2f
+                    && reset == 0 && recued && from2 == wantFrom && to2 == wantTo
+                    && mid && midMoves == 1 && finished
+                    && landed && (frames > 0 || movesNow == 0),
+                    "acted " + acted + " restart " + restart + " frames " + frames
+                    + " moves " + afterHop + "/" + reset + "/" + midMoves); }
+                catch (System.Exception hopEx) { Check("restart-button-runs-snapround", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                GamePause.Reset();
+                Purse.SetStreak(keepStreak);
+                if (hadDone) PlayerPrefs.SetInt(doneKey, keepDone);
+                else PlayerPrefs.DeleteKey(doneKey);
+                if (hadGift) PlayerPrefs.SetInt(giftKey, keepGift);
+                else PlayerPrefs.DeleteKey(giftKey);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static int PumpFrames(System.Collections.IEnumerator root, int maxFrames, System.Action afterFirstFrame, out bool done)
+        {
+            return PumpFrames(root, maxFrames, afterFirstFrame, out done, out _);
+        }
+
+        // Nested enumerators are stepped. WaitForSeconds and any other
+        // non-enumerator yield counts as one elapsed frame: the instruction
+        // itself does not hold the clock, the runner does, and there is no
+        // player loop here. A null yield is one frame.
+        static int PumpFrames(System.Collections.IEnumerator root, int maxFrames, System.Action afterFirstFrame, out bool done, out string stalledAt)
+        {
+            int frames = 0;
+            bool noted = false;
+            object yielded = null;
+            var stack = new System.Collections.Generic.Stack<System.Collections.IEnumerator>();
+            stack.Push(root);
+            while (stack.Count > 0 && frames < maxFrames)
+            {
+                var top = stack.Peek();
+                if (!top.MoveNext())
+                {
+                    stack.Pop();
+                    continue;
+                }
+                var child = top.Current as System.Collections.IEnumerator;
+                if (child != null) stack.Push(child);
+                else
+                {
+                    frames++;
+                    yielded = top.Current;
+                    if (!noted)
+                    {
+                        noted = true;
+                        if (afterFirstFrame != null) afterFirstFrame();
+                    }
+                }
+            }
+            done = stack.Count == 0;
+            stalledAt = done ? null : DescribeStall(yielded, stack);
+            return frames;
+        }
+
+        static string DescribeStall(object yielded, System.Collections.Generic.Stack<System.Collections.IEnumerator> stack)
+        {
+            string current;
+            if (yielded == null) current = "null";
+            else
+            {
+                var yt = yielded.GetType();
+                current = yt.FullName ?? yt.Name;
+                var secs = yt.GetField("m_Seconds", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (secs != null) current += " seconds=" + secs.GetValue(yielded);
+                else current += " value=" + yielded;
+            }
+            var at = new System.Text.StringBuilder();
+            foreach (var e in stack)
+            {
+                if (at.Length > 0) at.Append(" < ");
+                at.Append(e.GetType().Name);
+            }
+            return "current=" + current + " at=" + at;
+        }
+
+        static void CheckTapWaitGlove(System.Action<string, bool, string> Check)
+        {
+            bool onlyWait = true;
+            string miss = "";
+            foreach (CoachStep step in System.Enum.GetValues(typeof(CoachStep)))
+            {
+                string cap = CoachTap.Caption(step);
+                bool show = TapWaitGlove.Shows(cap);
+                if (show != CoachTap.AnyTap(step))
+                {
+                    onlyWait = false;
+                    miss = step + " show " + show;
+                    break;
+                }
+            }
+            bool hid = !TapWaitGlove.Shows(CoachTap.Caption(CoachStep.DailyRail))
+                && !TapWaitGlove.Shows("");
+            int[] w = { 820, 402, 412 };
+            int[] h = { 1180, 874, 915 };
+            bool laid = true;
+            bool loop = true;
+            for (int i = 0; i < w.Length; i++)
+            {
+                var text = new Rect(w[i] * 0.14f, h[i] * 0.40f, w[i] * 0.72f, 64f);
+                var stepGlove = new Rect(text.xMax - 30f, text.yMax - 8f, 100f, 130f);
+                var slot = TapWaitGlove.CueSlot(text, text, stepGlove, w[i], h[i]);
+                if (slot.width < 2f || slot.Overlaps(text) || slot.Overlaps(stepGlove)
+                    || slot.x < 0f || slot.y < 0f || slot.xMax > w[i] || slot.yMax > h[i])
+                    laid = false;
+                var a = TapWaitGlove.Frame(slot, 0f);
+                var b = TapWaitGlove.Frame(slot, TapWaitGlove.LoopSeconds * 0.25f);
+                if (a.width < 2f || b.width < 2f || Mathf.Abs(a.y - b.y) < 0.5f
+                    || a.Overlaps(text) || b.Overlaps(text) || a.Overlaps(stepGlove) || b.Overlaps(stepGlove))
+                    loop = false;
+            }
+            try { Check("tap-wait-glove-shows-then-hides", onlyWait && hid && laid && loop,
+                "only " + onlyWait + " " + miss + " hid " + hid + " laid " + laid + " loop " + loop); }
+            catch (System.Exception hopEx) { Check("tap-wait-glove-shows-then-hides", false, ThrowText(hopEx)); }
+        }
+
+        static void CheckRestoreWrap(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("restore-wrap");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var bed = desk.StemForTests(0);
+                int length = 88200;
+                bed.clip = ProbeClip("wrap-bed", length);
+                bed.loop = true;
+                AudioGuard.Play(bed);
+                AudioSettings.GetDSPBufferSize(out int buffer, out _);
+                if (buffer < 1) buffer = 1;
+                var restore = Method(typeof(MixDesk), "RestorePlaceHeads", typeof(int[]));
+                // One sample before the end, then the head wraps to 0. The
+                // forward distance is 1, inside one buffer, so it stays.
+                bed.timeSamples = 0;
+                restore.Invoke(desk, new object[] { new int[] { length - 1, -1, -1, -1, -1 } });
+                bool kept = bed.timeSamples == 0;
+                // A backward jump that does not fit in one buffer is still a seek.
+                bed.timeSamples = 100;
+                restore.Invoke(desk, new object[] { new int[] { 20000, -1, -1, -1, -1 } });
+                bool snapped = bed.timeSamples == 20000;
+                try { Check("restore-wrap-keeps-one-buffer", kept && snapped,
+                    "kept " + kept + " snapped " + snapped
+                    + " samples " + bed.timeSamples + " buffer " + buffer); }
+                catch (System.Exception hopEx) { Check("restore-wrap-keeps-one-buffer", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckMixedSoftCut(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("soft-cut-mixed");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.4f);
+                var heard = desk.StemForTests(0);
+                heard.clip = ProbeClip("mixed-heard", 44100);
+                heard.loop = true;
+                AudioGuard.Play(heard);
+                var set = Method(typeof(MixDesk), "SetStem", typeof(int), typeof(float));
+                set.Invoke(desk, new object[] { 0, 0.4f });
+                var paused = desk.AddLoopForTests(true);
+                paused.clip = ProbeClip("mixed-paused", 44100);
+                paused.loop = true;
+                AudioGuard.Play(paused);
+                set.Invoke(desk, new object[] { 1, 0.4f });
+                AudioGuard.Pause(paused);
+                paused.timeSamples = 3000;
+                float pausedVol = paused.volume;
+                var muted = desk.AddLoopForTests(true);
+                muted.clip = ProbeClip("mixed-muted", 44100);
+                muted.loop = true;
+                AudioGuard.Play(muted);
+                set.Invoke(desk, new object[] { 2, 0f });
+                muted.mute = true;
+                muted.timeSamples = 4000;
+                int plays = AudioGuard.PlayCalls;
+                int started = desk.BootPlaceForTests();
+                float heardFull = heard.volume;
+                desk.StepSoftCutForTests(1f / 60f);
+                set.Invoke(desk, new object[] { 0, 0.4f });
+                bool heardCut = desk.SoftCutLiveForTests && heard.volume < heardFull - 0.0001f;
+                bool othersHeld = Mathf.Abs(paused.volume - pausedVol) < 0.0001f
+                    && paused.timeSamples == 3000
+                    && muted.timeSamples == 4000
+                    && !AudioGuard.ScheduledAt(paused, out _)
+                    && !AudioGuard.ScheduledAt(muted, out _);
+                int guard = 0;
+                while (desk.SoftCutLiveForTests && guard < 8)
+                {
+                    desk.StepSoftCutForTests(1f / 60f);
+                    set.Invoke(desk, new object[] { 0, 0.4f });
+                    guard++;
+                }
+                bool mutedJoined = AudioGuard.ScheduledAt(muted, out _)
+                    && muted.timeSamples == heard.timeSamples
+                    && Mathf.Abs(muted.volume) < 0.0001f;
+                bool onlyHeard = started == 2
+                    && heardCut && othersHeld
+                    && !desk.SoftCutLiveForTests
+                    && desk.SoftCutSchedulesForTests == 1
+                    && AudioGuard.PlayCalls == plays
+                    && AudioGuard.ScheduledAt(heard, out _)
+                    && mutedJoined
+                    && !AudioGuard.ScheduledAt(paused, out _)
+                    && paused.timeSamples == 3000
+                    && AudioGuard.IsPaused(paused)
+                    && Mathf.Abs(paused.volume - pausedVol) < 0.0001f;
+                try { Check("soft-cut-mixed-cuts-only-the-audible", onlyHeard,
+                    "started " + started + " cut " + heardCut + " held " + othersHeld
+                    + " schedules " + desk.SoftCutSchedulesForTests
+                    + " paused " + paused.timeSamples + " muted " + muted.timeSamples
+                    + " plays " + AudioGuard.PlayCalls); }
+                catch (System.Exception hopEx) { Check("soft-cut-mixed-cuts-only-the-audible", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void PlantPhaseTrio(MixDesk desk, out AudioSource a, out AudioSource b, out AudioSource c)
+        {
+            desk.PlantStemForTests(0.4f);
+            a = desk.StemForTests(0);
+            a.clip = ProbeClip("phase-a", 88200);
+            a.loop = true;
+            while (desk.StemForTests(2) == null) desk.AddLoopForTests(true);
+            b = desk.StemForTests(1);
+            c = desk.StemForTests(2);
+            b.clip = ProbeClip("phase-b", 88200);
+            c.clip = ProbeClip("phase-c", 88200);
+            b.loop = true;
+            c.loop = true;
+            AudioGuard.Play(a);
+            AudioGuard.Play(b);
+            AudioGuard.Play(c);
+            var set = Method(typeof(MixDesk), "SetStem", typeof(int), typeof(float));
+            set.Invoke(desk, new object[] { 0, 0.4f });
+            set.Invoke(desk, new object[] { 1, 0.4f });
+            set.Invoke(desk, new object[] { 2, 0.4f });
+            a.timeSamples = 100;
+            b.timeSamples = 9000;
+            c.timeSamples = 20000;
+        }
+
+        static bool PlaceHeadsLocked(MixDesk desk, out string detail)
+        {
+            AudioSettings.GetDSPBufferSize(out int buffer, out _);
+            if (buffer < 1) buffer = 1;
+            int[] place = { 0, 1, 2 };
+            int lo = int.MaxValue;
+            int hi = int.MinValue;
+            int n = 0;
+            for (int p = 0; p < place.Length; p++)
+            {
+                var a = desk.StemForTests(place[p]);
+                if (a == null || a.clip == null) continue;
+                n++;
+                if (a.timeSamples < lo) lo = a.timeSamples;
+                if (a.timeSamples > hi) hi = a.timeSamples;
+            }
+            bool ok = n == 3 && hi >= lo && hi - lo <= buffer;
+            detail = "n " + n + " lo " + lo + " hi " + hi + " buffer " + buffer;
+            return ok;
+        }
+
+        static void CheckPlacePhase(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var unmuteGo = new UnityEngine.GameObject("phase-unmute");
+            MixDesk unmute = null;
+            try
+            {
+                unmute = unmuteGo.AddComponent<MixDesk>();
+                unmute.AttachForTests();
+                PlantPhaseTrio(unmute, out _, out _, out _);
+                AudioGuard.SetMuted(true, false);
+                unmute.BootPlaceForTests();
+                AudioGuard.SetMuted(false, false);
+                bool locked = PlaceHeadsLocked(unmute, out string detail);
+                try { Check("place-phase-after-unmute", locked, detail); }
+                catch (System.Exception hopEx) { Check("place-phase-after-unmute", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (unmute != null) MixDesk.DetachForTests(unmute);
+                UnityEngine.Object.DestroyImmediate(unmuteGo);
+            }
+
+            var adGo = new UnityEngine.GameObject("phase-ad");
+            MixDesk ad = null;
+            try
+            {
+                ad = adGo.AddComponent<MixDesk>();
+                ad.AttachForTests();
+                PlantPhaseTrio(ad, out _, out _, out _);
+                ad.ForceDuckForTests(0f, 1f, 1f, 0f);
+                ad.BootPlaceForTests();
+                ad.ForceDuckForTests(1f, 1f, 1f, 0f);
+                bool locked = PlaceHeadsLocked(ad, out string detail);
+                try { Check("place-phase-after-ad", locked, detail); }
+                catch (System.Exception hopEx) { Check("place-phase-after-ad", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (ad != null) MixDesk.DetachForTests(ad);
+                UnityEngine.Object.DestroyImmediate(adGo);
+            }
+
+            var resumeGo = new UnityEngine.GameObject("phase-resume");
+            MixDesk resume = null;
+            try
+            {
+                resume = resumeGo.AddComponent<MixDesk>();
+                resume.AttachForTests();
+                PlantPhaseTrio(resume, out var a, out var b, out var c);
+                int beforeA = a.timeSamples;
+                int beforeB = b.timeSamples;
+                int beforeC = c.timeSamples;
+                AudioGuard.Pause(a);
+                AudioGuard.Pause(b);
+                AudioGuard.Pause(c);
+                resume.BootPlaceForTests();
+                bool held = a.timeSamples == beforeA && b.timeSamples == beforeB && c.timeSamples == beforeC
+                    && AudioGuard.IsPaused(a) && AudioGuard.IsPaused(b) && AudioGuard.IsPaused(c);
+                resume.ResumeForGame();
+                bool back = a.timeSamples == beforeA && b.timeSamples == beforeB && c.timeSamples == beforeC
+                    && beforeA == 100 && beforeB == 9000 && beforeC == 20000;
+                try { Check("place-phase-after-resume", held && back,
+                    "held " + held + " " + a.timeSamples + " " + b.timeSamples + " " + c.timeSamples); }
+                catch (System.Exception hopEx) { Check("place-phase-after-resume", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (resume != null) MixDesk.DetachForTests(resume);
+                UnityEngine.Object.DestroyImmediate(resumeGo);
+            }
+
+            var plainGo = new UnityEngine.GameObject("phase-plain");
+            MixDesk plain = null;
+            try
+            {
+                plain = plainGo.AddComponent<MixDesk>();
+                plain.AttachForTests();
+                PlantPhaseTrio(plain, out var a, out var b, out var c);
+                int beforeA = a.timeSamples;
+                int beforeB = b.timeSamples;
+                int beforeC = c.timeSamples;
+                AudioGuard.Pause(a);
+                AudioGuard.Pause(b);
+                AudioGuard.Pause(c);
+                plain.ResumeForGame();
+                bool own = a.timeSamples == beforeA && b.timeSamples == beforeB && c.timeSamples == beforeC
+                    && beforeA == 100 && beforeB == 9000 && beforeC == 20000;
+                try { Check("place-pause-keeps-its-head", own,
+                    a.timeSamples + " " + b.timeSamples + " " + c.timeSamples); }
+                catch (System.Exception hopEx) { Check("place-pause-keeps-its-head", false, ThrowText(hopEx)); }
+                a.timeSamples = 30000;
+                b.timeSamples = 30000;
+                c.timeSamples = 30000;
+                int syncA = a.timeSamples;
+                int syncB = b.timeSamples;
+                int syncC = c.timeSamples;
+                AudioGuard.Pause(a);
+                AudioGuard.Pause(b);
+                AudioGuard.Pause(c);
+                plain.ResumeForGame();
+                bool synced = a.timeSamples == syncA && b.timeSamples == syncB && c.timeSamples == syncC
+                    && syncA == 30000 && syncB == 30000 && syncC == 30000;
+                try { Check("place-pause-keeps-a-shared-head", synced,
+                    a.timeSamples + " " + b.timeSamples + " " + c.timeSamples); }
+                catch (System.Exception hopEx) { Check("place-pause-keeps-a-shared-head", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (plain != null) MixDesk.DetachForTests(plain);
+                UnityEngine.Object.DestroyImmediate(plainGo);
+            }
+
+            var markGo = new UnityEngine.GameObject("phase-mark");
+            MixDesk mark = null;
+            try
+            {
+                mark = markGo.AddComponent<MixDesk>();
+                mark.AttachForTests();
+                PlantPhaseTrio(mark, out var a, out var b, out var c);
+                var shortClip = ProbeClip("phase-short", 8000);
+                c.clip = shortClip;
+                AudioGuard.Pause(b);
+                AudioGuard.Pause(c);
+                b.timeSamples = 100;
+                c.timeSamples = 9000;
+                a.timeSamples = 30000;
+                mark.BootPlaceForTests();
+                a.timeSamples = 50000;
+                mark.ResumeForGame();
+                int wantB = 50000 % b.clip.samples;
+                int wantC = 50000 % c.clip.samples;
+                bool landed = a.timeSamples == 50000 && b.timeSamples == wantB && c.timeSamples == wantC;
+                try { Check("place-phase-reboot-lands-on-mark", landed,
+                    "a " + a.timeSamples + " b " + b.timeSamples + " want " + wantB
+                    + " c " + c.timeSamples + " want " + wantC); }
+                catch (System.Exception hopEx) { Check("place-phase-reboot-lands-on-mark", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (mark != null) MixDesk.DetachForTests(mark);
+                UnityEngine.Object.DestroyImmediate(markGo);
+            }
+        }
+
+        static void CheckSoftCut(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("soft-cut");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.4f);
+                var bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("soft-bed", 44100);
+                bed.loop = true;
+                AudioGuard.Play(bed);
+                var mate = desk.AddLoopForTests(true);
+                mate.clip = ProbeClip("soft-mate", 44100);
+                mate.loop = true;
+                mate.volume = 0f;
+                var set = Method(typeof(MixDesk), "SetStem", typeof(int), typeof(float));
+                const float mix = 0.4f;
+                set.Invoke(desk, new object[] { 0, mix });
+                float expect = mix * desk.FreezeDuck * desk.SoftCutForTests * AudioGuard.MusicScale;
+                float full = bed.volume;
+                int plays = AudioGuard.PlayCalls;
+                int started = desk.BootPlaceForTests();
+                bool armed = started == 2 && desk.SoftCutLiveForTests
+                    && desk.SoftCutSchedulesForTests == 0
+                    && !AudioGuard.ScheduledAt(bed, out _);
+                float frame = 1f / 60f;
+                float prev = full;
+                bool down = full > prev * 0.5f;
+                for (int i = 0; i < 4; i++)
+                {
+                    desk.StepSoftCutForTests(frame);
+                    set.Invoke(desk, new object[] { 0, mix });
+                    if (!(bed.volume < prev - 0.0001f)) down = false;
+                    prev = bed.volume;
+                }
+                bool stillOpen = desk.SoftCutLiveForTests && desk.SoftCutSchedulesForTests == 0
+                    && AudioGuard.PlayCalls == plays;
+                int again = desk.BootPlaceForTests();
+                bool noDouble = again == started && desk.SoftCutSchedulesForTests == 0
+                    && !AudioGuard.ScheduledAt(bed, out _) && AudioGuard.PlayCalls == plays;
+                desk.StepSoftCutForTests(frame);
+                float floor = desk.SoftCutFloorForTests;
+                set.Invoke(desk, new object[] { 0, mix });
+                float after = bed.volume;
+                bool done = !desk.SoftCutLiveForTests
+                    && desk.SoftCutSchedulesForTests == 1
+                    && Mathf.Abs(floor) < 0.0001f
+                    && Mathf.Abs(desk.SoftCutForTests - 1f) < 0.0001f
+                    && Mathf.Abs(after - expect) < 0.0001f
+                    && AudioGuard.PlayCalls == plays
+                    && AudioGuard.ScheduledAt(bed, out _);
+                try { Check("soft-cut-fades-through-setstem", armed && down && stillOpen && done,
+                    "armed " + armed + " down " + down + " open " + stillOpen
+                    + " floor " + floor.ToString("0.000") + " after " + after.ToString("0.000")
+                    + " expect " + expect.ToString("0.000")
+                    + " gain " + desk.SoftCutForTests.ToString("0.000")
+                    + " schedules " + desk.SoftCutSchedulesForTests
+                    + " plays " + AudioGuard.PlayCalls); }
+                catch (System.Exception hopEx) { Check("soft-cut-fades-through-setstem", false, ThrowText(hopEx)); }
+                try { Check("soft-cut-second-start-does-not-reschedule", noDouble && desk.SoftCutSchedulesForTests == 1,
+                    "again " + again + " schedules " + desk.SoftCutSchedulesForTests
+                    + " plays " + AudioGuard.PlayCalls); }
+                catch (System.Exception hopEx) { Check("soft-cut-second-start-does-not-reschedule", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckBootSoftCut(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("boot-soft-cut");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.5f);
+                var bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("boot-place-0", 44100);
+                bed.loop = true;
+                AudioGuard.Play(bed);
+                while (desk.StemForTests(3) == null) desk.AddLoopForTests(true);
+                var combo = desk.StemForTests(3);
+                combo.clip = ProbeClip("boot-place-3", 44100);
+                combo.loop = true;
+                combo.volume = 0f;
+                int plays = AudioGuard.PlayCalls;
+                int stops = AudioGuard.StopCalls;
+                MixDesk.Boot(go);
+                bool armed = desk.SoftCutLiveForTests && desk.SoftCutSchedulesForTests == 0;
+                int stopsDuring = AudioGuard.StopCalls;
+                int guard = 0;
+                while (desk.SoftCutLiveForTests && guard < 8)
+                {
+                    desk.StepSoftCutForTests(1f / 60f);
+                    guard++;
+                }
+                bool once = !desk.SoftCutLiveForTests
+                    && desk.SoftCutSchedulesForTests == 1
+                    && AudioGuard.PlayCalls == plays
+                    && AudioGuard.ScheduledAt(desk.StemForTests(0), out _);
+                try { Check("boot-soft-cut-waits-for-silence",
+                    armed && stopsDuring == stops && once,
+                    "armed " + armed + " stops " + stops + "->" + stopsDuring
+                    + " schedules " + desk.SoftCutSchedulesForTests
+                    + " plays " + AudioGuard.PlayCalls + " steps " + guard); }
+                catch (System.Exception hopEx) { Check("boot-soft-cut-waits-for-silence", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckSoftCutDisable(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("soft-cut-disable");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.4f);
+                var bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("disable-bed", 44100);
+                bed.loop = true;
+                AudioGuard.Play(bed);
+                var mate = desk.AddLoopForTests(true);
+                mate.clip = ProbeClip("disable-mate", 44100);
+                mate.volume = 0f;
+                int plays = AudioGuard.PlayCalls;
+                desk.BootPlaceForTests();
+                desk.StepSoftCutForTests(1f / 60f);
+                bool mid = desk.SoftCutLiveForTests && desk.SoftCutSchedulesForTests == 0;
+                go.SetActive(false);
+                // Edit mode does not dispatch OnDisable. The shipping callback
+                // is the same method, so invoke it once when the cut is still held.
+                if (desk.SoftCutLiveForTests)
+                    Method(typeof(MixDesk), "OnDisable").Invoke(desk, null);
+                bool closed = mid && !desk.SoftCutLiveForTests
+                    && desk.SoftCutSchedulesForTests == 1
+                    && Mathf.Abs(desk.SoftCutForTests - 1f) < 0.0001f
+                    && AudioGuard.PlayCalls == plays
+                    && AudioGuard.ScheduledAt(bed, out _);
+                try { Check("soft-cut-disable-schedules-once", closed,
+                    "mid " + mid + " live " + desk.SoftCutLiveForTests
+                    + " gain " + desk.SoftCutForTests.ToString("0.000")
+                    + " schedules " + desk.SoftCutSchedulesForTests
+                    + " plays " + AudioGuard.PlayCalls); }
+                catch (System.Exception hopEx) { Check("soft-cut-disable-schedules-once", false, ThrowText(hopEx)); }
+
+                GamePause.Reset();
+                var go2 = new UnityEngine.GameObject("soft-cut-pause");
+                MixDesk paused = null;
+                try
+                {
+                    paused = go2.AddComponent<MixDesk>();
+                    paused.AttachForTests();
+                    paused.PlantStemForTests(0.4f);
+                    var voice = paused.StemForTests(0);
+                    voice.clip = ProbeClip("pause-bed", 44100);
+                    voice.loop = true;
+                    AudioGuard.Play(voice);
+                    var quiet = paused.AddLoopForTests(true);
+                    quiet.clip = ProbeClip("pause-mate", 44100);
+                    quiet.volume = 0f;
+                    int before = AudioGuard.PlayCalls;
+                    paused.BootPlaceForTests();
+                    GamePause.Push();
+                    paused.StepSoftCutForTests(1f);
+                    bool held = paused.SoftCutLiveForTests && paused.SoftCutSchedulesForTests == 0;
+                    GamePause.Pop();
+                    paused.FlushSoftCutForTests();
+                    bool resumed = held && !paused.SoftCutLiveForTests
+                        && paused.SoftCutSchedulesForTests == 1
+                        && AudioGuard.PlayCalls == before;
+                    try { Check("soft-cut-waits-for-resume", resumed,
+                        "held " + held + " schedules " + paused.SoftCutSchedulesForTests
+                        + " plays " + AudioGuard.PlayCalls); }
+                    catch (System.Exception hopEx) { Check("soft-cut-waits-for-resume", false, ThrowText(hopEx)); }
+                }
+                finally
+                {
+                    GamePause.Reset();
+                    if (paused != null) MixDesk.DetachForTests(paused);
+                    UnityEngine.Object.DestroyImmediate(go2);
+                }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
+        static void CheckRebootHolds(System.Action<string, bool, string> Check)
+        {
+            AudioGuard.ResetForTests();
+            var go = new UnityEngine.GameObject("reboot-bed");
+            var strayGo = new UnityEngine.GameObject("stray-loop");
+            MixDesk desk = null;
+            try
+            {
+                desk = go.AddComponent<MixDesk>();
+                desk.AttachForTests();
+                desk.PlantStemForTests(0.24f);
+                var bed = desk.StemForTests(0);
+                bed.clip = ProbeClip("reboot-bed", 88200);
+                bed.loop = true;
+                AudioGuard.Play(bed);
+                AudioGuard.ScheduleStemsTogether(new AudioSource[] { bed });
+                bed.timeSamples = 20000;
+                var stray = strayGo.AddComponent<AudioSource>();
+                stray.playOnAwake = false;
+                stray.loop = true;
+                stray.clip = ProbeClip("stray-loop");
+                stray.volume = 0.5f;
+                AudioGuard.Play(stray);
+                int plays = AudioGuard.PlayCalls;
+                int stops = AudioGuard.StopCalls;
+                MixDesk.Boot(go);
+                bool stillScheduled = AudioGuard.ScheduledAt(bed, out _);
+                int samples = bed.timeSamples;
+                AudioSettings.GetDSPBufferSize(out int dspBuffer, out _);
+                if (dspBuffer < 1) dspBuffer = 1;
+                bool bedHeld = stillScheduled && samples >= 20000 && samples <= 20000 + dspBuffer
+                    && AudioGuard.PlayCalls == plays && AudioGuard.StopCalls == stops + 1;
+                bool strayDown = !stray.isPlaying && stray.volume == 0f;
+                try { Check("second-boot-keeps-the-bed", bedHeld && strayDown,
+                    "scheduled " + stillScheduled + " samples " + samples
+                    + " buffer " + dspBuffer
+                    + " plays " + AudioGuard.PlayCalls + " stops " + AudioGuard.StopCalls
+                    + " stray " + stray.volume); }
+                catch (System.Exception hopEx) { Check("second-boot-keeps-the-bed", false, ThrowText(hopEx)); }
+            }
+            finally
+            {
+                AudioGuard.ResetForTests();
+                if (desk != null) MixDesk.DetachForTests(desk);
+                UnityEngine.Object.DestroyImmediate(strayGo);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+    }
+}
+#endif

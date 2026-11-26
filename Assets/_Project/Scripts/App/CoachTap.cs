@@ -288,7 +288,7 @@ namespace FlockFive
                 case CoachStep.PokerDeal: return "Pick your bet, then tap Deal. (later visit)";
                 case CoachStep.PokerBack: return "Tap the back button to return home.";
                 case CoachStep.PokerKeep: return "TAP A CARD TO KEEP";
-                case CoachStep.DailyRail: return "Tap Daily for your bonus!";
+                case CoachStep.DailyRail: return "Tap Daily for a bonus!";
                 case CoachStep.DailyClaim: return "Tap to claim!";
                 case CoachStep.AlbumTap: return "Tap a card you have to enlarge it.";
                 case CoachStep.AlbumEmpty: return "Tap a card to take a closer look!";

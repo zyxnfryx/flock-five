@@ -18,7 +18,22 @@ namespace FlockFive
         public bool Frozen;
         public bool Flapping;
         public float FlapMul = 1f;
-        public bool Sleeping;
+        // Property so leaving the nap clears NapBegun in the same call.
+        // A public field would stay true across a wake-and-sleep in one frame,
+        // and the rule tip would treat the commit as the pose.
+        bool _asleep;
+        public bool Sleeping
+        {
+            get => _asleep;
+            set
+            {
+                if (_asleep == value) return;
+                _asleep = value;
+                if (!value) NapBegun = false;
+            }
+        }
+        // First Zzz of this nap. The sleep rule tip waits on it.
+        public bool NapBegun { get; private set; }
         public bool Shrouded;
         // Drawn as a black silhouette: shrouded, seated or in flight (see BirdDress.Silhouette).
         bool Veiled => BirdDress.Silhouette(Shrouded);
@@ -194,6 +209,12 @@ namespace FlockFive
         public void Cheer(float seconds)
         {
             _cheerUntil = Time.time + Mathf.Max(0.05f, seconds);
+        }
+
+        // LateUpdate calls this on the frame Zzz is drawn for a sleeping bird.
+        public void NoteNapZzz()
+        {
+            if (_asleep) NapBegun = true;
         }
 
         // One seated bounce. Restores whatever Lift the perch already had.
@@ -509,7 +530,11 @@ namespace FlockFive
                 transform.localRotation = Quaternion.Euler(0f, 0f, z);
                 float breathe = 1f + snore * 0.045f;
                 transform.localScale = new Vector3(RestScale.x * scale * breathe, RestScale.y * scale * (2f - breathe) * 0.98f, 1f);
-                if (show) PlaceZzz(snore);
+                if (show)
+                {
+                    PlaceZzz(snore);
+                    NoteNapZzz();
+                }
                 else HideZzz();
                 return;
             }

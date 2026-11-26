@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using UnityEngine;
 
 namespace FlockFive.Editor
@@ -142,6 +143,50 @@ namespace FlockFive.Editor
                 !blocked && first.Launch && !again.Launch && !release.Launch && !gesture.Pressed,
                 "blocked=" + blocked + " first=" + first.Launch + " again=" + again.Launch + " release=" + release.Launch);
 
+            var cueGo = new GameObject("poker-cue-tip");
+            try
+            {
+                var cue = cueGo.AddComponent<FlockFiveApp>();
+                var flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public;
+                var k = (float[])typeof(FlockFiveApp).GetField("_railK", flags).GetValue(cue);
+                var goal = (float[])typeof(FlockFiveApp).GetField("_railGoal", flags).GetValue(cue);
+                for (int i = 0; i < k.Length; i++) { k[i] = 1f; goal[i] = 1f; }
+                typeof(FlockFiveApp).GetField("_railInit", flags).SetValue(cue, true);
+                typeof(FlockFiveApp).GetMethod("ApplySplashRails", flags).Invoke(cue, null);
+                var rail = (Rect)typeof(FlockFiveApp).GetMethod("SplashPokerRect", flags).Invoke(cue, null);
+                typeof(FlockFiveApp).GetField("_coachTapOn", flags).SetValue(cue, false);
+                typeof(FlockFiveApp).GetField("_coachFade", flags).SetValue(cue, 1f);
+                var tapAt = typeof(FlockFiveApp).GetMethod("CoachTapAt", flags);
+                typeof(FlockFiveApp).GetField("_glovePhase", flags).SetValue(cue, 0f);
+                bool onRail = rail.width > 2f;
+                Vector2 settled = default;
+                float bestDip = -1f;
+                var path = new System.Text.StringBuilder();
+                Vector2 start = default;
+                for (int i = 0; i < 24 && onRail; i++)
+                {
+                    tapAt.Invoke(cue, new object[] { rail, new Rect(rail.x, rail.yMax + 12f, rail.width, 36f), 0.06f, null });
+                    var tip = (Vector2)typeof(FlockFiveApp).GetField("_gloveShown", flags).GetValue(cue);
+                    float dip = (float)typeof(FlockFiveApp).GetField("_gloveDip", flags).GetValue(cue);
+                    if (i == 0) start = tip;
+                    path.Append(tip.x.ToString("0")).Append(',').Append(tip.y.ToString("0")).Append(' ');
+                    if (dip >= bestDip) { bestDip = dip; settled = tip; }
+                }
+                var railPose = FlockFiveApp.CoachTapSide(rail, new Rect(rail.x, rail.yMax + 12f, rail.width, 36f),
+                    PhoneArea.W, PhoneArea.H, PhoneArea.Safe, default, default, default);
+                bool touch = railPose.FromLeft
+                    ? Mathf.Abs(railPose.Glove.xMax - rail.xMin) <= 1.2f
+                    : Mathf.Abs(railPose.Glove.xMin - rail.xMax) <= 1.2f;
+                onRail = touch && bestDip > 0.9f && Mathf.Abs(settled.x - railPose.End.x) < 1.5f;
+                Debug.Log("[coach-tap] poker-rail start " + start + " path " + path
+                    + " end " + settled + " dip " + bestDip.ToString("0.00"));
+                Check("poker-cue-fingertip-on-rail", onRail, rail + " end " + settled);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(cueGo);
+            }
+
             string app = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs"));
             string press = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.SplashPress.cs"));
             string coach = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.Coach.cs"));
@@ -152,7 +197,7 @@ namespace FlockFive.Editor
                 && press.Contains("ownTarget")
                 && app.Contains("RailTapRect(RailPoker)")
                 && pokerBody.Contains("pokerGates.LessonOwn")
-                && coach.Contains("RailTapRect(RailPoker)")
+                && coach.Contains("CoachTapAt(box, pokerText")
                 && coach.Contains("_gloveHidStep = -1")
                 && coach.Contains("_gloveFadeDismissed")
                 && coach.Contains("_gloveAlpha = 0f");

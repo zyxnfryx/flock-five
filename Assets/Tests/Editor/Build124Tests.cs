@@ -114,14 +114,24 @@ namespace FlockFive.Editor
                 var aim = new Vector2(w * 0.3f, h * 0.4f);
                 var far = aim + new Vector2(dh * 6f, -dh * 2f);
                 var p = FlockFiveApp.GloveNearStartPoint(far, aim, s, safe);
-                float cap = 1.6f * dh;
-                bool capped = (p - aim).magnitude <= cap + 0.5f;
+                // 1.6 hands is the pull-in, then GloveTravelScale (0.5) shortens every start.
+                // A far glove therefore lands at half of 1.6 hands, not at 1.6.
+                float cap = 1.6f * dh * FlockFiveApp.GloveTravelScale;
+                float got = (p - aim).magnitude;
+                bool capped = Mathf.Abs(got - cap) <= 0.5f;
                 var near = aim + new Vector2(dh * 0.9f, 0f);
-                bool keepsNear = FlockFiveApp.GloveNearStartPoint(near, aim, s, safe) == near;
+                var kept = FlockFiveApp.GloveNearStartPoint(near, aim, s, safe);
+                float nearGot = (kept - aim).magnitude;
+                float nearWant = 0.9f * dh * FlockFiveApp.GloveTravelScale;
+                bool keepsNear = Mathf.Abs(nearGot - nearWant) <= 0.5f
+                    && nearGot <= (near - aim).magnitude + 0.01f
+                    && kept.x > aim.x;
                 var edge = new Vector2(w - 2f, h * 0.5f);
                 var pe = FlockFiveApp.GloveNearStartPoint(edge, new Vector2(w - dh, h * 0.5f), s, safe);
                 bool onScreen = pe.x <= safe.xMax - dh * 0.42f + 0.01f && pe.x >= safe.xMin;
-                Check("glove-near-start-" + names[d], capped && keepsNear && onScreen, "cap " + cap + " got " + (p - aim).magnitude);
+                Check("glove-near-start-" + names[d], capped && keepsNear && onScreen,
+                    "capped " + capped + " near " + keepsNear + " screen " + onScreen
+                    + " cap " + cap + " got " + got + " nearGot " + nearGot);
                 var entry = FlockFiveApp.GloveMiddleRightEntry(safe);
                 Check("poker-back-glove-entry-middle-right-" + names[d], Mathf.Approximately(entry.x, safe.xMax) && Mathf.Approximately(entry.y, safe.center.y), "");
                 // (5) banner covers the whole bet-control seat, full width.
@@ -137,7 +147,11 @@ namespace FlockFive.Editor
                 app.Contains("if (PokerFirstHandResultHoldsBetBar()) return true;")
                 && app.Contains("_home == HomeFace.Poker && !PokerBackDone() && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn"), "");
             Check("poker-back-uses-shared-banner-spot", CaptionStyles.IsBanner("poker.back") && app.Contains("\"poker.back\""), "");
-            Check("dealer-button-held-with-bar", app.Contains("|| PokerFirstHandResultHoldsBetBar()) return false;"), "");
+            // Deal is hit before the steppers, and it is not eligible while the
+            // first-hand result is holding the bet bar. deal is false, so the
+            // button does not fire.
+            Check("dealer-button-held-with-bar",
+                app.Contains("bool deal = !string.IsNullOrEmpty(act) && !PokerFirstHandResultHoldsBetBar();"), "");
 
             // (6) claimed Daily: no burst, no squish; unclaimed still bursts.
             string daily = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.DailyBonus.cs");

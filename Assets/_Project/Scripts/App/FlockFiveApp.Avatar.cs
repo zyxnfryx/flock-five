@@ -148,6 +148,9 @@ namespace FlockFive
         const string AvatarAdoptedPref = "flockfive.avatar.adopted";
         const string AvatarKitPref = "flockfive.avatar.kit";
         const string AvatarNamedPref = "flockfive.avatar.named";
+        // Set only when Play leaves the greet or the look. Level 1 otherwise
+        // boots to nothing (b131). Cleared when the name is saved.
+        const string ChainLookParkPref = "flockfive.chain.look";
         const string AdoptGreetLine = CaptionLayout.AdoptGreetLine;
         const string AdoptLookLine = "Tap your bird for a closer look.";
         const string AdoptNameLine = "Please give me a name!";
@@ -218,12 +221,23 @@ namespace FlockFive
         // Greet caption has been dismissed. The look line is up while the bird
         // may still be flying to the tip. A LEVEL tap sets this and does not Load.
         bool _adoptGreetDone;
+        // How many times this session resumed the look, then Tap Daily.
+        int _chainLookRuns;
+        bool _lookResumedThisVisit;
+        bool _dailyResumedThisVisit;
+        int _chainDailyRuns;
         Rect _adoptBirdR;
 
         bool _avatarRename;
         bool _avatarRenameFocus;
         string _avatarRenameText = "";
         Rect _avatarRenameR;
+        Rect _avatarFieldR;
+        Rect _avatarDoneR;
+        // Interactive controls on the name plate, filled by RegisterAvatarPlate
+        // from the same rects DrawAvatarRename paints. The hit test does not
+        // list them, so a new control is exempt only when it is registered here.
+        readonly System.Collections.Generic.List<Rect> _plateControls = new System.Collections.Generic.List<Rect>(8);
         Rect _avatarPlateR;
         // Pose offset from the bird center. Not a screen point, so a glide
         // does not leave the tag behind.
@@ -272,11 +286,20 @@ namespace FlockFive
             return false;
         }
 
-        // Daily, hive, and poker wait until the adoption scene has finished.
+        // Daily, hive, and poker wait until the bird, then its name, have finished.
+        // One caption at a time: greet, naming, then Tap Daily.
         bool AdoptHoldsQueue()
         {
+            if (_avatarRename) return true;
             if (_adoptLive || _adoptStep != AdoptStep.Off) return true;
             return _adoptOwed && !AvatarAdopted() && LevelData.NextPlay >= 1;
+        }
+
+        // The post-level captions. Gear and Play stay tappable through all three.
+        bool HomeChainOpen()
+        {
+            if (_avatarRename || _adoptLive || _adoptStep != AdoptStep.Off) return true;
+            return _dailyIntro || _dailyIntroLive;
         }
 
         bool BirdSettledOnBranch() => _birdSettledOnBranch;
@@ -387,24 +410,54 @@ namespace FlockFive
             right = R;
         }
 
+        // Play during the greet, the look, or Tap Daily does not finish them.
+        // The save is the record: look while the bird is adopted and unnamed,
+        // Tap Daily while the greet has been seen and the coach key is still 0.
+        void ParkHomeChainForPlay()
+        {
+            if (_avatarRename || !HomeChainOpen()) return;
+            bool look = _adoptLive && (_adoptStep == AdoptStep.Fly || _adoptStep == AdoptStep.Look);
+            if (!look) return;
+            PlayerPrefs.SetInt(ChainLookParkPref, 1);
+            PlayerPrefs.Save();
+        }
+
+        bool ChainLookParked()
+        {
+            if (PlayerPrefs.GetInt(ChainLookParkPref, 0) == 0) return false;
+            if (AdoptResume.LookOwed(AvatarAdopted(),
+                PlayerPrefs.GetInt(AvatarNamedPref, -1),
+                ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0))
+                return true;
+            PlayerPrefs.DeleteKey(ChainLookParkPref);
+            return false;
+        }
+
         void ArmAdopt()
         {
+            // One Home press opens from the glove release and from HitHud.
+            // The first call already resumed the look and cleared the park.
+            // Resetting here would leave the step Off with the count already at 1.
+            if (_lookResumedThisVisit && _adoptLive && _adoptStep == AdoptStep.Look)
+                return;
             _adoptLive = false;
             _adoptStep = AdoptStep.Off;
             _adoptOwed = false;
             _adoptPick = -1;
             CloseAvatarRename();
-            if (LevelData.NextPlay < 1)
-            {
-                _birdSettledOnBranch = true;
-                return;
-            }
             var boot = AdoptResume.Plan(LevelData.NextPlay, AvatarAdopted(),
                 PlayerPrefs.GetInt(AvatarNamedPref, -1),
                 ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0);
-            if (boot == AdoptBoot.ResumeLook)
+            // The save wins. flockfive.chain.look resumes the look after a kill
+            // even while garden 1 is still uncleared.
+            if (boot == AdoptBoot.ResumeLook || ChainLookParked())
             {
                 ResumeAdoptLook();
+                return;
+            }
+            if (LevelData.NextPlay < 1)
+            {
+                _birdSettledOnBranch = true;
                 return;
             }
             if (AvatarAdopted())
@@ -437,6 +490,17 @@ namespace FlockFive
             _avatarLandGlove = false;
             _avatarPerchHold = 0f;
             _adoptGreetDone = true;
+            _adoptLive = true;
+            // Home can be opened from the glove release and from HitHud.
+            // Count the look once per visit. Load clears the mark.
+            if (!_lookResumedThisVisit)
+            {
+                _chainLookRuns++;
+                _lookResumedThisVisit = true;
+            }
+            // One resume, in-session or after a kill. A second Home must not
+            // play the look again off the same Play.
+            PlayerPrefs.DeleteKey(ChainLookParkPref);
             _adoptBirdR = default;
             _birdSettledOnBranch = false;
             _coachFade = 0f;
@@ -815,13 +879,39 @@ namespace FlockFive
             return bird.width > 2f;
         }
 
+        // Window GUI point. True when this tap is the bird or its name plate,
+        // so the home gate leaves it for naming.
+        bool AdoptLookOwnsTap(Vector2 windowGui)
+        {
+            if (!AdoptLookRects(HomeAvatarIcon(DeviceFit.Ui()), out var bird, out var plate)) return false;
+            if (bird.width > 2f && bird.Contains(windowGui)) return true;
+            return plate.width > 2f && plate.Contains(windowGui);
+        }
+
+        // The look tap, with no IMGUI event. The home gate calls this on release
+        // so naming opens before that gate can send the player back into a level.
+        bool TakeAdoptLookTap(Vector2 windowGui)
+        {
+            if (!AdoptLookOwnsTap(windowGui)) return false;
+            NoteAdoptLook();
+            return _avatarRename;
+        }
+
         void HitAdoptBirds(float icon)
         {
             if (!AdoptLookRects(icon, out var r, out var plate)) return;
             bool birdHit = HitHomeFirst(r, out _);
             bool plateHit = plate.width > 2f && HitHomeFirst(plate, out _);
             if (!birdHit && !plateHit) return;
+            NoteAdoptLook();
+        }
+
+        // The look tap. Opens the closer look once. A second tap does not settle the bird.
+        void NoteAdoptLook()
+        {
+            if (!_adoptLive || _avatarRename) return;
             int i = _adoptPick;
+            if (i < 0 || i > 4) return;
             _adoptHop[i] = 1f;
             Sfx.Chirp(_adoptCol);
             OpenAvatarRename();
@@ -868,14 +958,18 @@ namespace FlockFive
             if (!_avatarRename || Event.current == null) return;
             if (Event.current.type != EventType.MouseDown || Event.current.button != 0) return;
             AvatarRenameLayout(s, out _, out _, out _);
-            if (_avatarRenameR.Contains(Event.current.mousePosition)) return;
+            if (_avatarRenameR.Contains(PlayPointer.Gui(Event.current))) return;
             CloseAvatarRename();
             Event.current.Use();
         }
 
         void OpenAvatarRename()
         {
-            if (_avatarRename || !AvatarAdopted()) return;
+            if (_avatarRename) return;
+            // The look tap is how a first bird gets its name. A bird already
+            // saved opens the same page when the player comes Home.
+            bool look = _adoptLive && _adoptStep == AdoptStep.Look;
+            if (!AvatarAdopted() && !look) return;
             _avatarRename = true;
             _avatarRenameText = SavedAvatarName();
             _avatarRenameFocus = AvatarNeedsName();
@@ -905,6 +999,7 @@ namespace FlockFive
             _adoptName = n;
             PlayerPrefs.SetString(AvatarNamePref, n);
             PlayerPrefs.SetInt(AvatarNamedPref, 1);
+            PlayerPrefs.DeleteKey(ChainLookParkPref);
             PlayerPrefs.Save();
             bool look = _adoptLive && _adoptStep == AdoptStep.Look;
             CloseAvatarRename();
@@ -1024,7 +1119,8 @@ namespace FlockFive
                 else if (id == 1) bow = _avatarKitR[i];
                 else if (id == 2) crown = _avatarKitR[i];
             }
-            int hit = AvatarKitChipHit(none, bow, crown, e.mousePosition, PhoneArea.OffX);
+            PlayPointer.CaptureEvent(e);
+            int hit = AvatarKitChipHit(none, bow, crown, PlayPointer.At, 0);
             if (hit < 0) return;
             e.Use();
             PickAvatarKit(hit);
@@ -1045,11 +1141,10 @@ namespace FlockFive
                 else if (id == 1) bow = _avatarKitR[i];
                 else if (id == 2) crown = _avatarKitR[i];
             }
-            int ox = PhoneArea.OffX;
             string line = "FF_AVATAR_KIT_CHIPS selected=" + SavedAvatarKit()
-                + " none=" + ChipLog(none, ox)
-                + " bow=" + ChipLog(bow, ox)
-                + " crown=" + ChipLog(crown, ox);
+                + " none=" + ChipLog(none, 0)
+                + " bow=" + ChipLog(bow, 0)
+                + " crown=" + ChipLog(crown, 0);
             if (line == _avatarKitChipLog) return;
             _avatarKitChipLog = line;
             Debug.Log(line);
@@ -1242,11 +1337,66 @@ namespace FlockFive
             }
         }
 
+        void RegisterAvatarPlate(float s)
+        {
+            _plateControls.Clear();
+            if (!_avatarRename) return;
+            AvatarRenameLayout(s, out _, out var field, out var done);
+            _avatarFieldR = field;
+            _avatarDoneR = done;
+            for (int i = 0; i < 5; i++) NotePlateControl(_avatarSwatch[i]);
+            for (int i = 0; i < _avatarKitN; i++) NotePlateControl(_avatarKitR[i]);
+            NotePlateControl(field);
+            NotePlateControl(done);
+        }
+
+        void NotePlateControl(Rect r)
+        {
+            if (r.width > 2f && r.height > 2f) _plateControls.Add(r);
+        }
+
+        bool PlateControlAt(Vector2 play)
+        {
+            for (int i = 0; i < _plateControls.Count; i++)
+                if (_plateControls[i].Contains(play)) return true;
+            return false;
+        }
+
+        // The same controls DrawAvatarRename paints. A release on one of them
+        // changes the bird, the kit, the field, or the name.
+        void ApplyAvatarPlate(Vector2 play)
+        {
+            if (_avatarDoneR.width > 2f && _avatarDoneR.Contains(play))
+            {
+                CommitAvatarRename();
+                return;
+            }
+            for (int i = 0; i < 5; i++)
+            {
+                if (_avatarSwatch[i].width > 2f && _avatarSwatch[i].Contains(play))
+                {
+                    PickAvatarColor(i);
+                    return;
+                }
+            }
+            for (int i = 0; i < _avatarKitN; i++)
+            {
+                if (_avatarKitR[i].width > 2f && _avatarKitR[i].Contains(play))
+                {
+                    PickAvatarKit(_avatarKitId[i]);
+                    return;
+                }
+            }
+            if (_avatarFieldR.width > 2f && _avatarFieldR.Contains(play))
+                _avatarRenameFocus = true;
+        }
+
         void DrawAvatarRename(float s)
         {
             if (!_avatarRename) return;
             bool cue = AvatarNeedsName();
             string prompt = cue ? AdoptNameLine : AvatarRenameLine;
+            RegisterAvatarPlate(s);
             AvatarRenameLayout(s, out var line, out var field, out var done);
             // Inverse of CoachPanelRect. Subtracting the old fixed 18×12 and then
             // drawing applied BoxPad a second time, so the plate ran off both sides.
@@ -1299,7 +1449,9 @@ namespace FlockFive
                 _avatarRenameFocus = false;
             }
             bool doneHeld = false;
-            bool doneFire = !arm && HitPad(done, out doneHeld);
+            // The open frame used to drop Done. A press that begins once the
+            // sheet is up counts, including the first one.
+            bool doneFire = HitPad(done, out doneHeld);
             DrawPlaqueChip(done, AvatarDoneLabel, s, doneHeld);
             if (doneFire) CommitAvatarRename();
         }
@@ -1627,15 +1779,19 @@ namespace FlockFive
         // bird is met from the left.
         void AdoptPlaceGlove(float dt, float s)
         {
-            if (!AdoptGloveAim(s, out var aim))
+            if (_avatarRename)
             {
-                _gloveVis = false;
+                AvatarRenameLayout(s, out _, out _, out var done);
+                CoachTapAt(done, CoachTapLabel(done), dt, null);
                 return;
             }
-            float lift = GloveRise(s);
-            float hang = GloveDh(s) * 0.48f;
-            if (lift < hang) lift = hang;
-            CoachGloveAt(aim, dt, s, lift, false, float.NaN, default, FnAdoptTap());
+            if (!AdoptLookRects(HomeAvatarIcon(s), out var bird, out var plate))
+            {
+                HideCoachTap();
+                return;
+            }
+            // Fingertip on the bird, off the name tag. Already seated.
+            CoachTapAt(bird, plate, dt, FnAdoptTap());
         }
 
         // Bird body or name plate. Same rects HitAdoptBirds claims, without using the event.
@@ -1653,17 +1809,22 @@ namespace FlockFive
         {
             aim = default;
             if (_avatarRename) return false;
-            if (_avatarPose != AvatarPose.GlovePointing) return false;
+            bool look = AdoptCaptionLine() == AdoptLookLine || _avatarPose == AvatarPose.GlovePointing;
+            if (!look) return false;
+            if (!_birdSettledOnBranch && _avatarPose != AvatarPose.GlovePointing && _avatarPose != AvatarPose.Perched)
+                return false;
+            // The painted bird, once this frame has drawn it. Otherwise the
+            // landed perch: a small bird on the twig at the pad's top-right.
             Rect bird = _adoptBirdR;
             if (bird.width < 2f)
             {
                 float icon = HomeAvatarIcon(s);
+                if (icon < 8f) return false;
                 var c = AvatarHomePoint();
-                bird = new Rect(c.x - icon * 0.5f, c.y - icon * 0.5f, icon, icon);
+                bird = new Rect(c.x - icon * 0.28f, c.y - icon * 0.42f, icon * 0.56f, icon * 0.56f);
             }
-            if (bird.width < 2f) return false;
             aim = BodyTouch(bird);
-            return true;
+            return bird.width > 2f;
         }
 
         // Rest pose only. The shared arc still lands the fingertip on BodyTouch.

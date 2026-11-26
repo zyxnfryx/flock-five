@@ -588,18 +588,30 @@ namespace FlockFive.Editor
 
         static Texture2D Render(Camera cam, int w, int h)
         {
+            RenderTexture.active = null;
             var rt = new RenderTexture(w, h, 24);
             var prev = cam.targetTexture;
-            cam.targetTexture = rt;
-            cam.Render();
-            RenderTexture.active = rt;
-            var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
-            tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
-            tex.Apply();
-            cam.targetTexture = prev;
-            RenderTexture.active = null;
-            Object.DestroyImmediate(rt);
-            return tex;
+            Texture2D tex = null;
+            try
+            {
+                cam.targetTexture = rt;
+                cam.Render();
+                RenderTexture.active = rt;
+                tex = new Texture2D(w, h, TextureFormat.RGB24, false);
+                tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+                tex.Apply();
+                return tex;
+            }
+            finally
+            {
+                cam.targetTexture = prev;
+                RenderTexture.active = null;
+                if (rt != null)
+                {
+                    rt.Release();
+                    Object.DestroyImmediate(rt);
+                }
+            }
         }
 
         static void WriteStrip(List<Texture2D> frames, string path)

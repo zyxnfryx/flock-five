@@ -59,11 +59,21 @@ namespace FlockFive
             // (ClearBusy, or an instant fit) owns the pose, so do not start another ease.
             if (!instant && _busy)
             {
-                int waitFor = _fitSerial;
-                while (_busy && _fitSerial == waitFor)
-                    yield return null;
-                if (_fitSerial != waitFor)
-                    yield break;
+#if UNITY_EDITOR
+                // Edit mode never ticks the coroutine UpdateBody started, so Busy
+                // stays set and a pumped move yields null here until the cap.
+                // Take the pose. The abandoned ease exits when its serial changes.
+                if (!Application.isPlaying)
+                    ClearBusy();
+                else
+#endif
+                {
+                    int waitFor = _fitSerial;
+                    while (_busy && _fitSerial == waitFor)
+                        yield return null;
+                    if (_fitSerial != waitFor)
+                        yield break;
+                }
             }
 
             int run = ++_fitSerial;
@@ -103,7 +113,12 @@ namespace FlockFive
                 while (u < 1f)
                 {
                     if (run != _fitSerial) yield break;
-                    u += EaseDelta(Time.deltaTime) / SettleSeconds;
+                    float dt = Time.deltaTime;
+#if UNITY_EDITOR
+                    // An EditMode pump has no player loop, so delta stays 0 and the ease never lands.
+                    if (!Application.isPlaying && dt <= 0f) dt = 0.25f;
+#endif
+                    u += EaseDelta(dt) / SettleSeconds;
                     if (u > 1f) u = 1f;
                     float k = Mathf.SmoothStep(0f, 1f, u);
                     for (int i = 0; i < n; i++)

@@ -19,7 +19,8 @@ namespace FlockFive
     // The gift line still sits above its branch. The plate does not move when
     // the glove animates. ClearGloveOfCaption still keeps the perch off that
     // plate. DrawTutorOverlay paints the glove after the caption, so the hand
-    // is always on top.
+    // is on top. Poker Back paints its bottom tip after the glove, so that
+    // plate stays the highest layer on that step.
     // The pose clock is PlayClock, so a suspension cannot skip the arc.
     // Other taps wait. One glove on screen at a time.
     public sealed partial class FlockFiveApp
@@ -55,7 +56,7 @@ namespace FlockFive
         // Two lines, snug. The break is the wrap; the plate is measured to these lines.
         const string PokerIntroLine = "You earned coins!\nTap poker to bet them.";
         // Break is the two-line wrap. The plate is measured to these lines.
-        const string DailyIntroLine = "Tap Daily for\nyour bonus!";
+        const string DailyIntroLine = "Tap Daily\nfor a bonus!";
         const string DailyClaimLine = "Tap to claim!";
         // Informational only. Any tap dismisses it, and so does a collect (that
         // collect is what calls Board.Breeze). It does not point a glove, and it
@@ -88,9 +89,12 @@ namespace FlockFive
         const float BeePlateSeconds = 8f;
         // Hawk waits out the sparrow line, then this long, so the two never share a frame.
         const float PestCueGap = 1.05f;
-        // About 20% under the old 118px lesson hand.
-        const float GlovePx = 94.4f;
-        public static float GloveDh(float s) => GlovePx * s;
+        // One pointing-finger size for every glove draw. 64 keeps the sideways
+        // hand inside a 360-wide play canvas and the 59/34 safe band. The old
+        // lesson hand was 94.4, itself about 20% under 118.
+        public const float GlovePx = 64f;
+        public static float GloveSize(float s) => GlovePx * s;
+        public static float GloveDh(float s) => GloveSize(s);
         static float GloveDrawW(float dh)
         {
             var tex = CoachGloveTex();
@@ -129,9 +133,237 @@ namespace FlockFive
         // Extra height of the apex above that perch, so the path rises before it falls.
         static float GloveArch(float s) => Mathf.Max(18f * s, GloveDh(s) * 0.20f);
 
-        // Center of the real control. The fingertip lands here. The perch, via
-        // GloveRise and _gloveKeepOff, keeps the palm off the button.
-        static Vector2 GloveTarget(Rect r) => r.center;
+        // Center of the real control. Older cues still read this. First-garden
+        // cues use CoachTapAt, which seats the fingertip on the edge.
+        public static Vector2 GloveTarget(Rect r) => r.center;
+
+        // How far the finger pokes toward the control, in GUI pixels. 8 read as
+        // a still hand. The clamp shortens this only when the screen edge is close.
+        public const float CoachTapPressPx = 28f;
+
+        // A label sitting in the middle of a control. The fingertip stays outside it.
+        public static Rect CoachTapLabel(Rect control)
+        {
+            if (control.width < 4f || control.height < 4f) return default;
+            float ix = control.width * 0.28f;
+            float iy = control.height * 0.30f;
+            return new Rect(control.x + ix, control.y + iy, Mathf.Max(4f, control.width - ix * 2f), Mathf.Max(4f, control.height - iy * 2f));
+        }
+
+        // Sample targets for the CoachTapAt sites. Play-canvas pixels, y down.
+        public static Rect CoachTapSiteRect(string site, float w, float h)
+        {
+            if (site == "branch") return L1BranchRect(0, w, h);
+            if (site == "bird") return new Rect(w * 0.62f, 59f + 28f, 54f, 48f);
+            if (site == "daily") return new Rect(18f, 59f + 86f, 64f, 64f);
+            if (site == "claim") return new Rect(w * 0.5f - 80f, h * 0.62f, 160f, 110f);
+            if (site == "deal") return new Rect(w - 86f, h - 34f - 96f, 72f, 72f);
+            if (site == "back") return new Rect(16f, 59f + 8f, 48f, 48f);
+            if (site == "poker") return new Rect(w - 86f, 59f + 150f, 64f, 64f);
+            if (site == "watch") return new Rect(w * 0.28f, h * 0.58f, 140f, 52f);
+            return new Rect(w * 0.5f - 70f, h * 0.72f, 140f, 64f);
+        }
+
+        // Landed fingertip for a horizontal poke. On the target's near edge.
+        public static Vector2 CoachTapSeat(Rect target, Rect avoid, float screenW, float screenH, Rect safe)
+        {
+            return CoachTapSide(target, avoid, screenW, screenH, safe, default, default, default).End;
+        }
+
+        public struct CoachTapPose
+        {
+            public bool FromLeft;
+            public bool Flipped;
+            public bool Mirror;
+            public float Angle;
+            public Vector2 Rest;
+            public Vector2 End;
+            public Rect Glove;
+        }
+
+        // Glove on the left of a right-half target, pointing right. Otherwise on
+        // the right, pointing left. The other side is used when the first one
+        // leaves the play canvas, the safe band, a caption, or Home, Restart,
+        // or the gift X. safe is PhoneArea.Safe (bottom-origin).
+        public static CoachTapPose CoachTapSide(Rect target, Rect avoid, float playW, float playH, Rect safe,
+            Rect home, Rect restart, Rect giftX)
+        {
+            float top = 0f;
+            float bot = playH;
+            if (safe.height > 2f && playH > 2f)
+            {
+                top = playH - safe.yMax;
+                bot = playH - safe.yMin;
+                if (bot < top)
+                {
+                    float swap = top;
+                    top = bot;
+                    bot = swap;
+                }
+            }
+            bool preferLeft = target.center.x >= playW * 0.5f;
+            bool fitPrefer = TryCoachTap(target, preferLeft, playW, playH, top, bot, avoid, home, restart, giftX, out var prefer, out float preferBad);
+            bool fitOther = TryCoachTap(target, !preferLeft, playW, playH, top, bot, avoid, home, restart, giftX, out var other, out float otherBad);
+            prefer.Flipped = false;
+            other.Flipped = true;
+            if (fitPrefer) return prefer;
+            if (fitOther) return other;
+            var pick = preferBad <= otherBad ? prefer : other;
+            Debug.Log("[coach-tap] neither side fits target " + target
+                + " preferLeft " + preferLeft
+                + " leftBad " + (preferLeft ? preferBad : otherBad).ToString("0.0")
+                + " rightBad " + (preferLeft ? otherBad : preferBad).ToString("0.0")
+                + " chose " + (pick.FromLeft ? "left" : "right"));
+            return pick;
+        }
+
+        // The sprite hangs past the fingertip, and the press widens it. Place the
+        // pivot so the deepest dip touches the target edge, and every frame of
+        // the poke (rest, path, dip, settle) stays inside the safe band.
+        static bool TryCoachTap(Rect target, bool fromLeft, float playW, float playH, float top, float bot,
+            Rect avoid, Rect home, Rect restart, Rect giftX, out CoachTapPose pose, out float bad)
+        {
+            float s = DeviceFit.Ui(playW, playH);
+            MeasureTap(fromLeft, s, 1f, out float pastPress, out float backPress, out float abovePress, out float belowPress);
+            MeasureTap(fromLeft, s, 0f, out float pastRest, out float backRest, out float aboveRest, out float belowRest);
+            float above = Mathf.Max(abovePress, aboveRest);
+            float below = Mathf.Max(belowPress, belowRest);
+            float back = Mathf.Max(backPress, backRest);
+            float contact = fromLeft ? target.xMin - 0.05f : target.xMax + 0.05f;
+            float endX = fromLeft ? contact - pastPress : contact + pastPress;
+            float yLo = Mathf.Max(target.yMin, top + above);
+            float yHi = Mathf.Min(target.yMax, bot - below);
+            bool yOnEdge = yHi >= yLo - 0.01f;
+            float y = yOnEdge
+                ? Mathf.Clamp(target.center.y, yLo, yHi)
+                : Mathf.Clamp(target.center.y, top + above, Mathf.Max(top + above, bot - below));
+            var end = new Vector2(endX, y);
+            float outward = fromLeft ? endX - back : playW - (endX + back);
+            float need = Mathf.Max(0f, pastRest - pastPress);
+            bool pokeFits = outward + 0.01f >= need;
+            float press = pokeFits
+                ? Mathf.Clamp(CoachTapPressPx, need, Mathf.Max(need, outward))
+                : Mathf.Max(0f, outward);
+            var rest = end + new Vector2((fromLeft ? -1f : 1f) * press, 0f);
+            var glove = PokeBounds(rest, end, fromLeft, s);
+            bad = 0f;
+            if (glove.xMin < 0f) bad += -glove.xMin;
+            if (glove.yMin < top) bad += top - glove.yMin;
+            if (glove.xMax > playW) bad += glove.xMax - playW;
+            if (glove.yMax > bot) bad += glove.yMax - bot;
+            if (bad > 0.01f) bad += 5000f;
+            bad += CoachTapOverlap(glove, avoid);
+            bad += CoachTapOverlap(glove, home);
+            bad += CoachTapOverlap(glove, restart);
+            bad += CoachTapOverlap(glove, giftX);
+            bad += CoachTapOverlap(glove, target) * 4f;
+            if (!yOnEdge || !pokeFits) bad += 1000f;
+            pose = new CoachTapPose
+            {
+                FromLeft = fromLeft,
+                Mirror = fromLeft,
+                Angle = ClampUpright(fromLeft),
+                Rest = rest,
+                End = end,
+                Glove = glove
+            };
+            return bad <= 0.5f;
+        }
+
+        static void MeasureTap(bool fromLeft, float s, float dip, out float past, out float back, out float above, out float below)
+        {
+            var box = TapGloveBox(Vector2.zero, fromLeft, s, dip);
+            if (fromLeft)
+            {
+                past = box.xMax;
+                back = -box.xMin;
+            }
+            else
+            {
+                past = -box.xMin;
+                back = box.xMax;
+            }
+            above = -box.yMin;
+            below = box.yMax;
+        }
+
+        // Rest, the press, and the points between them. This is the box the tests clamp.
+        static Rect PokeBounds(Vector2 rest, Vector2 end, bool fromLeft, float s)
+        {
+            var box = TapGloveBox(rest, fromLeft, s, 0f);
+            for (int i = 1; i <= 4; i++)
+            {
+                float dip = i / 4f;
+                var pivot = Vector2.Lerp(rest, end, dip);
+                box = Encapsulate(box, TapGloveBox(pivot, fromLeft, s, dip));
+            }
+            return box;
+        }
+
+        static Rect Encapsulate(Rect a, Rect b)
+        {
+            return Rect.MinMaxRect(
+                Mathf.Min(a.xMin, b.xMin), Mathf.Min(a.yMin, b.yMin),
+                Mathf.Max(a.xMax, b.xMax), Mathf.Max(a.yMax, b.yMax));
+        }
+
+        public static Rect CoachTapFrameBox(Vector2 pivot, bool fromLeft, float dip, float playW, float playH)
+        {
+            return TapGloveBox(pivot, fromLeft, DeviceFit.Ui(playW, playH), dip);
+        }
+
+        static Rect TapGloveBox(Vector2 tip, bool fromLeft, float s, float dip)
+        {
+            float dh = GloveSize(s);
+            GloveSpan(tip, ClampUpright(fromLeft), dh, dip, fromLeft, out float x0, out float y0, out float x1, out float y1);
+            return Rect.MinMaxRect(x0, y0, x1, y1);
+        }
+
+        static float CoachTapOverlap(Rect a, Rect b)
+        {
+            if (b.width < 2f || b.height < 2f || !a.Overlaps(b)) return 0f;
+            float x = Mathf.Min(a.xMax, b.xMax) - Mathf.Max(a.xMin, b.xMin);
+            float y = Mathf.Min(a.yMax, b.yMax) - Mathf.Max(a.yMin, b.yMin);
+            return Mathf.Max(0f, x) + Mathf.Max(0f, y);
+        }
+
+        // dip 0 is the rest, just outside the target. dip 1 is the near edge.
+        public static Vector2 CoachTapPoint(Vector2 seat, Rect target, Rect avoid, float dip)
+        {
+            bool fromLeft = seat.x <= target.center.x;
+            var rest = seat + new Vector2((fromLeft ? -1f : 1f) * CoachTapPressPx, 0f);
+            var p = Vector2.Lerp(rest, seat, Mathf.Clamp01(dip));
+            if (avoid.width > 2f && avoid.height > 2f && avoid.Contains(p) && dip < 0.95f)
+                p = seat;
+            return p;
+        }
+
+        // Fingertip for a Claim or Upgrade label. On the plate, just off the word,
+        // on the side the hand approaches from, so the palm and the tip leave the glyphs readable.
+        // fromLeft: the hand comes from the left (palm trails left); the tip sits just left of the label.
+        public static Vector2 ButtonLabelAim(Rect button, Rect label, bool fromLeft)
+        {
+            if (button.width < 4f || button.height < 4f) return button.center;
+            if (label.width < 4f || label.height < 4f)
+            {
+                float ix = button.width * 0.16f;
+                float iy = button.height * 0.22f;
+                label = new Rect(button.x + ix, button.y + iy, Mathf.Max(4f, button.width - ix * 2f), Mathf.Max(4f, button.height - iy * 2f));
+            }
+            float gap = Mathf.Max(4f, label.height * 0.12f);
+            float x = fromLeft ? label.xMin - gap : label.xMax + gap;
+            float y = label.center.y;
+            float inset = Mathf.Max(4f, button.height * 0.10f);
+            float x0 = button.xMin + inset;
+            float x1 = button.xMax - inset;
+            float y0 = button.yMin + inset;
+            float y1 = button.yMax - inset;
+            if (x1 < x0) x = button.center.x;
+            else x = Mathf.Clamp(x, x0, x1);
+            if (y1 < y0) y = button.center.y;
+            else y = Mathf.Clamp(y, y0, y1);
+            return new Vector2(x, y);
+        }
 
         // A point inside the real control at fractions of its rect (0,0 = top-left). For a
         // button whose art body is not centred in its square. The fingertip lands here.
@@ -248,12 +480,14 @@ namespace FlockFive
         // sheet's empty margin. The fingertip wants its center.
         static Vector2 BodyTouch(Rect drawn) => GloveTarget(drawn);
 
-        // Poke along the arc, soft curl, draw back, short pause. 0.56+0.26+0.22+0.16 = 1.20s.
-        const float TapHover = 0.56f;
-        const float TapPress = 0.26f;
-        const float TapLift = 0.22f;
-        const float TapPause = 0.16f;
-        const float TapCycle = TapHover + TapPress + TapLift + TapPause;
+        // Rest, ease in, hold on the bird, ease out, short rest.
+        // 0.22+0.14+0.36+0.14+0.10 = 0.96s. The hold is the part a player can see.
+        const float TapHover = 0.22f;
+        const float TapPress = 0.14f;
+        const float TapHold = 0.36f;
+        const float TapLift = 0.14f;
+        const float TapPause = 0.10f;
+        const float TapCycle = TapHover + TapPress + TapHold + TapLift + TapPause;
         // Tap hides the hand. The next step brings it back at the arc start.
         const float GloveFadeOutDur = 0.16f;
         const float GloveFadeInDur = 0.18f;
@@ -330,9 +564,11 @@ namespace FlockFive
         bool _gloveVis;
         bool _gloveReady;
         Vector2 _gloveTip;
-        // b124: a caller may seat the angled glove's entry point (poker Back: middle right). Clamped to the safe rect.
+        // b124: a caller may seat the angled glove's entry point (poker Back rises from just below the medal).
         Vector2 _gloveEntryOverride;
         bool _gloveEntryOverrideOn;
+        // Poker Back: once the fingertip reaches the medal it stays there, inside the hitbox.
+        bool _pokerBackGloveHeld;
         Vector2 _gloveVel;
         Vector2 _gloveAway;
         float _gloveAng;
@@ -377,6 +613,9 @@ namespace FlockFive
         float _gloveFadeFrom;
         float _gloveActT;
         bool _gloveLockOn;
+        bool _gloveSettled;
+        bool _gloveRouted;
+        Rect _lessonWoodGui;
         // b88: approach heading, committed in GloveLockPose before the first pixel.
         // Draw reads these and does not re-aim. Cleared with the veil.
         bool _gloveFaceOn;
@@ -391,6 +630,10 @@ namespace FlockFive
         bool _gloveStepFromLeft;
         float _gloveStepApproach = float.NaN;
         int _gloveClaimFrame = -1;
+        bool _coachTapOn;
+        int _coachTapFrame = -1;
+        Vector2 _coachTapSeat;
+        Vector2 _coachTapPoint;
         // What the posing step calls a valid tap. Rect is GUI, y down.
         // Hit, when set, is screen space (y up), same as Pressed, and wins over the rect.
         // Armed only while that step is actually posing, so a stale target cannot fire.
@@ -413,6 +656,9 @@ namespace FlockFive
         SpriteRenderer _coachGlow;
         SpriteRenderer[] _ripples;
         float[] _rippleAge;
+        bool _holdRuleForLesson;
+        // Lesson that was up when Restart began. -1 if none. The caption is not this.
+        int _restartFrom = -1;
         bool _coachLineHeld;
         float _coachLineHold;
         float _coachLineHoldX;
@@ -435,6 +681,18 @@ namespace FlockFive
         struct ScreenBox
         {
             public float X0, Y0, X1, Y1;
+        }
+
+        // A live level-1 coach goes back to the first hop. CoachBegin is not on
+        // the Restart path. SnapRound and its landing both call this so a guided
+        // hop cannot stay counted while the board is restored.
+        void ResetLiveCoachStep()
+        {
+            if (!_coach) return;
+            _coachMoves = 0;
+            _coachFrom = -1;
+            _coachTo = -1;
+            _cueSpoken = null;
         }
 
         void CoachBegin(int index)
@@ -464,6 +722,7 @@ namespace FlockFive
             _cueSpoken = null;
             _cueBranch = -1;
             _gloveVis = false;
+            DropGlovePress();
             GloveVeilReset();
             _adHand = false;
             _pestCue = 0;
@@ -492,6 +751,7 @@ namespace FlockFive
         {
             if (!_coach) return;
             _coach = false;
+            _holdRuleForLesson = false;
             PlayerPrefs.SetInt(CoachKey, 1);
             if (PlayerPrefs.GetInt(CoachGiftKey, 0) == 0 && GiftBranch() >= 0)
             {
@@ -500,6 +760,15 @@ namespace FlockFive
             }
             PlayerPrefs.Save();
             NoteLessonDismiss(CoachStep.CoachPlace);
+            // Step 2's finger must not keep eating releases after the lesson.
+            HideCoachTap();
+            _gloveTapRect = default;
+            _gloveTapRectOn = false;
+            _gloveTapHit = null;
+            _gloveTapFrame = -1;
+            _gloveBody = default;
+            _gloveBodyFrame = -10;
+            _gloveVis = false;
         }
 
         // Build 89. Last hops, so a take-back is not counted as a real move.
@@ -658,6 +927,8 @@ namespace FlockFive
             _cueSpoken = null;
             GloveVeilReset();
             CoachClearCue();
+            DropGlovePress();
+            ClearSwallowedGlove();
             CoachHideGlow();
             CoachHideRipples();
             _pestCue = 0;
@@ -742,7 +1013,9 @@ namespace FlockFive
             if (_pestCue != 0 && !garden) PestIntroHide();
             if (_adHand && !garden && _pestCue == 0)
             {
-                DismissAdHand();
+                // A reset cut is not a tap. DismissAdHand would arm the guard
+                // and the next Restart press would be swallowed.
+                DropAdHand(false);
                 if (_cueLine == AdHandLine)
                 {
                     _cueLine = null;
@@ -752,6 +1025,7 @@ namespace FlockFive
             }
             _coachFade = 0f;
             _gloveVis = false;
+            DropGlovePress();
             _restVis = false;
             GloveVeilReset();
             _tutorSeatOn = false;
@@ -767,6 +1041,283 @@ namespace FlockFive
 
         // Landing: the interrupted step's caption is set once and fades in from 0.
         // The bonus hint restarts its whole window so the fade-out tail cannot flash.
+        // Restart dropped the tip. The first-garden lesson comes back as step 1.
+        // A Crowns or Nice line that was up, or still due, does not return.
+        void SettleRestartLesson()
+        {
+            _ruleTip = RuleTip.None;
+            _ruleHeld = 0f;
+            _ruleEatGesture = false;
+            _ruleTurned = false;
+            _cueLine = null;
+            _cueSpoken = null;
+            bool level1 = LevelData.DisplayNumber == 1;
+            if (PlayerPrefs.GetInt(CoachKey, 0) != 0 && !level1) return;
+            if (!level1) return;
+            // Crowns or Nice may still be up, or already gone a few seconds
+            // after the fifth red. Either way it does not come back over step 1.
+            _holdRuleForLesson = true;
+            _coach = true;
+            _coachMoves = 0;
+            _coachFrom = -1;
+            _coachTo = -1;
+            _coachReset = default;
+            _coachResetVerb = CoachResetVerb.None;
+            _coachResetWant = false;
+            _cueHand = true;
+            _cueForce = true;
+            _cueLine = "Tap a branch to pick up its top birds.";
+            _cueSpoken = _cueLine;
+            _gloveVis = true;
+            _gloveReady = true;
+            _coachFade = 1f;
+            if (!CoachPick(out int from, out int to) && !Level1First(_board, Locked, GiftLocked, out from, out to))
+                return;
+            _coachFrom = from;
+            _coachTo = to;
+            _cueBranch = from;
+        }
+
+        LessonRestart.Marks LessonMarksNow()
+        {
+            return new LessonRestart.Marks
+            {
+                Rule = _ruleTip,
+                Coach = _coach,
+                Pest = _pestCue,
+                Leaf = _leafIntro,
+                HiveGarden = _hiveLevelLive,
+                HiveHome = _hiveIntroLive,
+                Gift = _cueGift,
+                BadgerLesson = _bgLessonLive,
+                BadgerGuide = _bgCoachFight,
+                BadgerPower = _bgPowerGuideOn,
+                BreakFree = _bgBreakFreeOn,
+                Album = _albumTutorOn,
+                Upgrade = _upgradeTutorOn,
+                Daily = _dailyIntroLive,
+                Adopt = _adoptLive,
+                PokerIntro = _pokerIntroLive,
+                PokerTable = _pokerPageOn,
+                PokerDeal = _pokerDealHint,
+                PokerBack = _pokerBackGloveHeld,
+                AdHand = _adHand,
+                Vip = _welcomeOpen || _welcomeGlove,
+                RestartAsk = (int)_restartAsk,
+            };
+        }
+
+        // Read before the caption is cleared. A second Restart during the parade keeps the first read.
+        void NoteRestartLesson()
+        {
+            if (_restarting) return;
+            var stage = LessonRestart.Identify(LessonMarksNow());
+            _restartFrom = stage == LessonRestart.Stage.None ? -1 : (int)stage;
+        }
+
+        // Drop the plate and the pause without marking the lesson seen.
+        // DismissRuleTip would finish Crowns or Nice, and the fresh board would
+        // then raise whichever other tip was still due.
+        void SuspendCaptionForRestart()
+        {
+            _ruleTip = RuleTip.None;
+            _ruleHeld = 0f;
+            _ruleEatGesture = false;
+            _ruleTurned = false;
+            _cueLine = null;
+            _cueSpoken = null;
+            _cueHand = false;
+            _cueForce = false;
+            _gloveVis = false;
+            DropGlovePress();
+            // The parade yields inside one editor frame. Drop the hop stamp here,
+            // not in DropGlovePress: that runs before the same-frame hop check,
+            // and clearing it there lets a second hop through on a HUD release.
+            _gloveTookFrame = -1;
+            _tutorSeatOn = false;
+            _tutorPlateOn = false;
+            _coachLineHeld = false;
+            _coachHoldXOn = false;
+            ReleaseTutorPause();
+        }
+
+        void ClearRestartLessons()
+        {
+            _ruleTip = RuleTip.None;
+            _ruleHeld = 0f;
+            _ruleEatGesture = false;
+            _ruleTurned = false;
+            _holdRuleForLesson = false;
+            _pestCue = 0;
+            _leafIntro = false;
+            _hiveLevelLive = false;
+            _hiveIntroLive = false;
+            _cueGift = false;
+            _bgLessonLive = false;
+            _bgLessonStep = 0;
+            _bgCoachFight = false;
+            _bgPowerGuideOn = false;
+            _bgBreakFreeOn = false;
+            _albumTutorOn = false;
+            _albumTutorStep = 0;
+            _upgradeTutorOn = false;
+            _dailyIntroLive = false;
+            _dailyOpen = false;
+            _adoptLive = false;
+            _adoptStep = AdoptStep.Off;
+            _pokerIntroLive = false;
+            _pokerPageOn = false;
+            _pokerDealHint = false;
+            _pokerBackGloveHeld = false;
+            _adHand = false;
+            _welcomeOpen = false;
+            _welcomeGlove = false;
+            _coach = false;
+            _coachMoves = 0;
+            _sel = -1;
+            _restartAsk = RestartAsk.None;
+            _cueLine = null;
+            _cueSpoken = null;
+            _cueHand = false;
+            _cueForce = false;
+            _gloveVis = false;
+            _gloveReady = false;
+            DropGlovePress();
+            _tutorSeatOn = false;
+            _coachLineHeld = false;
+        }
+
+        // Flags only. The caption may still be the previous lesson's line.
+        void SeatRestartStage(LessonRestart.Stage stage)
+        {
+            ClearRestartLessons();
+            switch (stage)
+            {
+                case LessonRestart.Stage.Garden: _coach = true; break;
+                case LessonRestart.Stage.Crowns: _ruleTip = RuleTip.Kit; break;
+                case LessonRestart.Stage.Nice: _ruleTip = RuleTip.Feeder; break;
+                case LessonRestart.Stage.Sleep: _ruleTip = RuleTip.Sleep; break;
+                case LessonRestart.Stage.Sparrow: _pestCue = PestCueSparrow; break;
+                case LessonRestart.Stage.Hawk: _pestCue = PestCueHawk; break;
+                case LessonRestart.Stage.Bee: _pestCue = PestCueBee; break;
+                case LessonRestart.Stage.Ostrich: _pestCue = PestCueOstrich; break;
+                case LessonRestart.Stage.Fire: _pestCue = PestCueFire; break;
+                case LessonRestart.Stage.Leaf: _leafIntro = true; break;
+                case LessonRestart.Stage.HiveGarden: _hiveLevelLive = true; break;
+                case LessonRestart.Stage.HiveHome: _hiveIntroLive = true; break;
+                case LessonRestart.Stage.Gift: _cueGift = stage == LessonRestart.Stage.Gift; break;
+                case LessonRestart.Stage.BadgerLesson: _bgLessonLive = true; break;
+                case LessonRestart.Stage.BadgerGuide: _bgCoachFight = true; break;
+                case LessonRestart.Stage.BadgerPower: _bgPowerGuideOn = true; break;
+                case LessonRestart.Stage.BreakFree: _bgBreakFreeOn = true; break;
+                case LessonRestart.Stage.Album: _albumTutorOn = true; break;
+                case LessonRestart.Stage.Upgrade: _upgradeTutorOn = true; break;
+                case LessonRestart.Stage.Daily: _dailyIntroLive = true; break;
+                case LessonRestart.Stage.Adopt: _adoptLive = true; break;
+                case LessonRestart.Stage.PokerIntro: _pokerIntroLive = true; break;
+                case LessonRestart.Stage.PokerTable: _pokerPageOn = true; break;
+                case LessonRestart.Stage.PokerDeal: _pokerDealHint = true; break;
+                case LessonRestart.Stage.PokerBack: _pokerBackGloveHeld = true; break;
+                case LessonRestart.Stage.AdHand: _adHand = true; break;
+                case LessonRestart.Stage.Vip: _welcomeGlove = true; break;
+                case LessonRestart.Stage.RestartAsk: _restartAsk = RestartAsk.Sure; break;
+            }
+        }
+
+        void ArmRestartStep1(LessonRestart.Stage stage)
+        {
+            if (stage == LessonRestart.Stage.None)
+            {
+                _cueLine = null;
+                _cueSpoken = null;
+                _gloveVis = false;
+                _cueHand = false;
+                return;
+            }
+            _coachReset = default;
+            _coachResetVerb = CoachResetVerb.None;
+            _coachResetWant = false;
+            var first = LessonRestart.Step1(stage);
+            SeatRestartStage(stage);
+            if (stage == LessonRestart.Stage.Garden)
+            {
+                _coachMoves = 0;
+                _coachFrom = -1;
+                _coachTo = -1;
+                _sel = -1;
+            }
+            else if (stage == LessonRestart.Stage.BadgerLesson)
+                _bgLessonStep = 0;
+            else if (stage == LessonRestart.Stage.Album)
+                _albumTutorStep = 0;
+            else if (stage == LessonRestart.Stage.Daily)
+                _dailyOpen = false;
+            else if (stage == LessonRestart.Stage.Adopt)
+                _adoptStep = AdoptStep.Fly;
+            else if (stage == LessonRestart.Stage.Crowns)
+            {
+                ShowRuleTip(RuleTip.Kit);
+                return;
+            }
+            else if (stage == LessonRestart.Stage.Nice)
+            {
+                ShowRuleTip(RuleTip.Feeder);
+                return;
+            }
+            else if (stage == LessonRestart.Stage.Sleep)
+            {
+                ShowRuleTip(RuleTip.Sleep);
+                return;
+            }
+            bool glove = LessonRestart.ArmsGlove(first);
+            _cueLine = CoachTap.Caption(first);
+            _cueSpoken = _cueLine;
+            _coachFade = 1f;
+            _cueHand = glove;
+            _cueForce = glove;
+            _gloveVis = glove;
+            _gloveReady = glove;
+        }
+
+        // Step 1 is only Level 1 while the coach is still owed. Nice and Crowns
+        // are dropped off the screen and armed again, not marked seen.
+        public static bool RestartDropsQueuedCaption(bool level1CoachOwed) => level1CoachOwed;
+
+        // Unfinished level-1 coach still comes back as its own step 1.
+        // Every other live lesson comes back as that lesson's step 1, and the
+        // previous lesson's caption does not stay on the new board.
+        void ApplyRestartRecue()
+        {
+            bool onLevel1 = LevelData.DisplayNumber == 1;
+            var stage = _restartFrom < 0 ? LessonRestart.Stage.None : (LessonRestart.Stage)_restartFrom;
+            // Nice and Crowns are cancelled. Level 1, including a second Restart
+            // after the tip is already gone, comes back as step 1.
+            bool drop = onLevel1 && (stage == LessonRestart.Stage.None
+                || stage == LessonRestart.Stage.Garden
+                || stage == LessonRestart.Stage.Nice
+                || stage == LessonRestart.Stage.Crowns);
+            if (drop)
+            {
+                SettleRestartLesson();
+                return;
+            }
+            ArmRestartStep1(stage);
+        }
+
+#if UNITY_EDITOR
+        // Edit-mode gate. Seats the lesson, leaves a foreign caption, then runs the restart re-cue.
+        internal void EditorRestartLesson(CoachStep step, string stale)
+        {
+            ReleaseTutorPause();
+            SeatRestartStage(LessonRestart.Of(step));
+            _cueLine = stale;
+            _restarting = false;
+            NoteRestartLesson();
+            SuspendCaptionForRestart();
+            ApplyRestartRecue();
+        }
+#endif
+
         void FreshCoachResume()
         {
             _coachFade = 0f;
@@ -778,16 +1329,24 @@ namespace FlockFive
             _leafKeepOn = false;
             _leafSeatOn = false;
             _gloveVis = false;
+            DropGlovePress();
             _restVis = false;
+            _gloveLockOn = false;
+            _gloveSettled = false;
+            _gloveAct = TutorGloveAct.None;
+            _lessonWoodGui = default;
             GloveVeilReset();
             CoachHideGlow();
             CoachHideRipples();
+            ResetLiveCoachStep();
             if (_cueGift || _cueLine == GiftStuckLine)
             {
                 _coachGiftUntil = PlayClock.Now + GiftHintSeconds;
                 _coachResumeFade = true;
                 _cueSpoken = null;
             }
+            else if (_coach || _leafIntro)
+                _cueSpoken = null;
         }
 
         void CoachRelease()
@@ -906,7 +1465,7 @@ namespace FlockFive
             {
                 if (_splash || _won || !PestCueAlive())
                     PestIntroHide();
-                else if (!Ads.IsShowing)
+                else if (!_restarting && !Ads.IsShowing)
                     HoldTutorPause(true);
             }
             else if (!PestStageFree())
@@ -961,6 +1520,7 @@ namespace FlockFive
 
             // Sleep (and any rule tip) can open on level 1, while the coach still owns this branch.
             if (_ruleTip != RuleTip.None) return;
+            int heldCue = _cueBranch;
             CoachClearCue();
             // b115 (Brandon): the "Stuck? Tap the gift branch" cue is gone. The only gift glove left is the one on the
             // ad offer popup (ArmAdHand, first card only, flag persisted), so it never returns after the first use.
@@ -971,6 +1531,15 @@ namespace FlockFive
                 // The second guided hop finishes the lesson. Keep the stage clear while it plays.
                 if (_coachMoves >= 1)
                 {
+                    // A finger already down on the destination stays. Dropping it
+                    // here would cancel the hop the moment _coachMoves ticks to 1.
+                    if (_glovePressLatched)
+                    {
+                        _cueBranch = heldCue;
+                        _gloveVis = true;
+                        return;
+                    }
+                    _gloveVis = false;
                     CoachHideGlow();
                     _gloveReady = false;
                     return;
@@ -980,6 +1549,7 @@ namespace FlockFive
                     _cueHand = true;
                     _cueFreeze = true;
                     _cueBranch = next;
+                    _gloveVis = true;
                 }
                 else CoachHideGlow();
                 return;
@@ -997,6 +1567,7 @@ namespace FlockFive
                 _cueHand = true;
                 _cueForce = true;
                 _cueBranch = _coachFrom;
+                _gloveVis = true;
                 CueLine("Tap a branch to pick up its top birds.");
                 return;
             }
@@ -1019,19 +1590,23 @@ namespace FlockFive
             _cueHand = true;
             _cueForce = true;
             _cueBranch = dest;
-            CueLine(CaptionLayout.CoachPlaceLine);
+            _gloveVis = true;
+            CueLine(LevelData.Index == 0 ? CaptionLayout.FirstClearLine : CaptionLayout.CoachPlaceLine);
         }
 
         bool CoachReject(Vector2 world)
         {
+            // Freeze and the gift lesson still own the tap. The glove is drawn on a
+            // frozen lock, so a glove route must not skip the nudge.
             if (_cueFreeze)
             {
+                _gloveRouted = false;
                 CoachNudge();
                 return true;
             }
-            if (!_cueForce || _cueBranch < 0) return false;
             if (_cueGift)
             {
+                _gloveRouted = false;
                 int other = OtherGiftBranch(_cueBranch);
                 int hit = HitGiftSign(world);
                 bool sign = hit == _cueBranch || (other >= 0 && hit == other);
@@ -1052,6 +1627,12 @@ namespace FlockFive
                 ClearGiftHint(ref _coachGiftUntil, ref _coachResumeFade, ref _deadEndNudged);
                 return nearBranch >= 0;
             }
+            if (_gloveRouted)
+            {
+                _gloveRouted = false;
+                return false;
+            }
+            if (!_cueForce || _cueBranch < 0) return false;
             if (HitBranch(world) == _cueBranch) return false;
             CoachNudge();
             return true;
@@ -1239,6 +1820,35 @@ namespace FlockFive
         // enough to clear the banner, dip up or down.
         public static bool GardenFromRight(float aimX, float screenW) => aimX < screenW * 0.5f;
 
+        // The branch the fingertip must land in. Wide enough for a column, tall
+        // enough for one row, centered on the target bird.
+        public static Rect LessonBranchRect(Vector2 aim, float s)
+        {
+            float w = Mathf.Max(72f, 96f * Mathf.Max(0.5f, s));
+            float h = Mathf.Max(88f, 120f * Mathf.Max(0.5f, s));
+            return new Rect(aim.x - w * 0.5f, aim.y - h * 0.45f, w, h);
+        }
+
+        public static Vector2 KeepTipOnBranch(Vector2 nudged, Rect branch)
+        {
+            if (branch.width < 4f || branch.height < 4f) return nudged;
+            return new Vector2(
+                Mathf.Clamp(nudged.x, branch.xMin + 2f, branch.xMax - 2f),
+                Mathf.Clamp(nudged.y, branch.yMin + 2f, branch.yMax - 2f));
+        }
+
+        public static bool GloveTapCountsAsBranch(Vector2 gui, Rect glove, bool lessonGlove)
+        {
+            return lessonGlove && glove.width > 2f && glove.height > 2f && glove.Contains(gui);
+        }
+
+        // UpdateBody's screen point is bottom-up. GloveBody is GUI y-down.
+        // Same flip as GloveTapHits.
+        public static bool ScreenGloveCountsAsBranch(Vector2 screen, float screenH, Rect gloveBody, bool lessonGlove)
+        {
+            return GloveTapCountsAsBranch(new Vector2(screen.x, screenH - screen.y), gloveBody, lessonGlove);
+        }
+
         public static Vector2 GardenSidewaysAim(Vector2 aim, Rect plate, float s, float screenW, out float deg)
         {
             deg = -90f;
@@ -1287,6 +1897,258 @@ namespace FlockFive
             return best;
         }
 
+        bool TryLiveBranch(out Rect gui, out Vector2 world)
+        {
+            gui = default;
+            world = default;
+            if (!CoachView(out var view) || _garden.Cam == null) return false;
+            var t = view.transform;
+            var ls = t.lossyScale;
+            var wood = BranchHit.WoodRect((Vector2)t.position, view.FromRight, view.IsGift, Mathf.Abs(ls.x), Mathf.Abs(ls.y));
+            // The branch root is a pad the board hit-test accepts (NearestPadSqr is 0 there).
+            world = t.position;
+            var cam = _garden.Cam;
+            var a = cam.WorldToScreenPoint(new Vector3(wood.xMin, wood.yMax, 0f));
+            var b = cam.WorldToScreenPoint(new Vector3(wood.xMax, wood.yMin, 0f));
+            float x0 = Mathf.Min(a.x, b.x), x1 = Mathf.Max(a.x, b.x);
+            float y0 = PhoneArea.H - Mathf.Max(a.y, b.y);
+            float y1 = PhoneArea.H - Mathf.Min(a.y, b.y);
+            gui = Rect.MinMaxRect(x0, y0, x1, y1);
+            return gui.width > 8f && gui.height > 8f;
+        }
+
+        // L1 pose the glove test walks. The fingertip is the branch center, and the
+        // drawn box stays inside that same rect so a body tap and a tip tap agree.
+        public static Rect L1BranchRect(int step, float screenW, float screenH)
+        {
+            int col = ((step % 4) + 4) % 4;
+            float bw = Mathf.Max(120f, screenW * 0.22f);
+            float span = bw * 4f;
+            float x0 = (screenW - span) * 0.5f;
+            if (x0 < 8f) { bw = (screenW - 16f) / 4f; x0 = 8f; }
+            float bh = Mathf.Max(110f, screenH * 0.12f);
+            float y = screenH * 0.46f;
+            return new Rect(x0 + col * bw, y, bw, bh);
+        }
+
+        public static Rect GloveOnBranch(Rect branch)
+        {
+            float dw = Mathf.Min(branch.width * 0.62f, 78f);
+            float dh = Mathf.Min(branch.height * 0.62f, 86f);
+            var tip = branch.center;
+            return new Rect(tip.x - dw * 0.5f, tip.y - dh * 0.35f, dw, dh);
+        }
+
+        // Chest on the beak side, in world units from the seat. The beak tip is
+        // about 0.70; the thick body ends near 0.30 (1024px ruby at 220 ppu,
+        // BirdScale 0.42). Aiming at the beak leaves the finger in the air, and
+        // that gap grows with the board. The chest keeps every size within a
+        // few pixels of the bird.
+        const float PerchHalfW = 0.30f;
+        // At the lowered hand the belly is narrower than this outline, so the
+        // fingertip has to travel further in to overlap the red. Same distance
+        // on every board: about 12px on 820, about 7px on a phone. Phones still
+        // stop short of the red, so they take another fixed push below.
+        public const float ChestOverlap = 0.22f;
+        // Phones only. 820 already overlaps the chest and stays on ChestOverlap.
+        public const float PhoneChestPx = 9f;
+        // Every phone. 412 was 4 and still met the beak, so it takes 2 more.
+        // 402 and 360 were 5, one pixel tight at the thumb corner, so they take 1 more.
+        public const float PhoneGloveDropPx = 6f;
+        // 820 only. One more pixel under the low look. The fingertip stays on the chest.
+        public const float IpadGloveDropPx = 8f;
+        public const float IpadChestPx = 2f;
+        const float PerchAbove = 0.58f;
+        const float PerchBelow = 0.84f;
+
+        // World rect of the tip run. Seat 0 is the trunk. Y is up.
+        public static Rect TipBirdsWorld(Vector2 center, bool fromRight, bool gift, int count, int run)
+        {
+            if (count < 1 || run < 1) return default;
+            if (count > BranchState.Cap) count = BranchState.Cap;
+            if (run > count) run = count;
+            int tip = count - 1;
+            int first = tip - run + 1;
+            float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+            for (int s = first; s <= tip; s++)
+            {
+                var seat = WorldBuilder.SeatLocal(s, gift, fromRight);
+                float cx = center.x + seat.x;
+                float cy = center.y + seat.y + BranchView.RestLift;
+                float left = cx - PerchHalfW, right = cx + PerchHalfW;
+                float bot = cy - PerchBelow, top = cy + PerchAbove;
+                if (left < x0) x0 = left;
+                if (right > x1) x1 = right;
+                if (bot < y0) y0 = bot;
+                if (top > y1) y1 = top;
+            }
+            return Rect.MinMaxRect(x0, y0, x1, y1);
+        }
+
+        // Top-left limb of Dawn Garden, at the resting camera. Play pixels in, world out.
+        public static Vector2 FirstGardenBranch(float playW, float playH)
+        {
+            float window = playW / Mathf.Max(1f, playH);
+            float aspect = DeviceFit.PlayAspect(window);
+            float tall = Mathf.Max(1f, WorldBuilder.PortraitAspect / Mathf.Max(0.05f, window));
+            float limbX = WorldBuilder.CamOrtho * aspect - WorldBuilder.WoodHalf + 0.18f;
+            return new Vector2(-limbX, WorldBuilder.RowY0For(tall));
+        }
+
+        // iPad's play column is 9:16. A phone window is taller, so its canvas is
+        // narrower than that. 820 does not take the phone nudge.
+        public static bool GardenPhoneBoard(float playW, float playH)
+        {
+            return playW / Mathf.Max(1f, playH) < DeviceFit.PhoneAspect - 0.02f;
+        }
+
+        // How far the garden glove sits below the beak. Phones share one drop.
+        // 820 takes the iPad drop.
+        public static float GardenGloveDrop(float playW, float playH)
+        {
+            return GardenPhoneBoard(playW, playH) ? PhoneGloveDropPx : IpadGloveDropPx;
+        }
+
+        // Play-canvas pixels per world unit at the resting camera. Grows with the board.
+        public static float PlayPixelsPerWorld(float playW, float playH)
+        {
+            float window = playW / Mathf.Max(1f, playH);
+            float halfW = WorldBuilder.CamOrtho * DeviceFit.PlayAspect(window);
+            return playW / Mathf.Max(0.001f, halfW * 2f);
+        }
+
+        // Resting play camera to GUI pixels (y down), including the tall-phone letterbox.
+        public static Vector2 WorldToPlay(Vector2 world, float playW, float playH)
+        {
+            float window = playW / Mathf.Max(1f, playH);
+            float want = DeviceFit.PlayAspect(window);
+            float halfH = WorldBuilder.CamOrtho;
+            float halfW = halfH * want;
+            float vh = 1f, vy = 0f, vw = 1f, vx = 0f;
+            if (window < want - 0.03f)
+            {
+                vh = window / want;
+                vy = (1f - vh) * 0.5f;
+            }
+            else if (window > want + 0.03f)
+            {
+                vw = want / window;
+                vx = (1f - vw) * 0.5f;
+            }
+            float nx = world.x / Mathf.Max(0.001f, halfW) * 0.5f + 0.5f;
+            float ny = (world.y - WorldBuilder.CamRestY) / halfH * 0.5f + 0.5f;
+            return new Vector2((vx + nx * vw) * playW, playH - (vy + ny * vh) * playH);
+        }
+
+        public static Rect PlayGui(Rect world, float playW, float playH)
+        {
+            if (world.width < 0.001f || world.height < 0.001f) return default;
+            var a = WorldToPlay(new Vector2(world.xMin, world.yMin), playW, playH);
+            var b = WorldToPlay(new Vector2(world.xMax, world.yMax), playW, playH);
+            return Rect.MinMaxRect(
+                Mathf.Min(a.x, b.x), Mathf.Min(a.y, b.y),
+                Mathf.Max(a.x, b.x), Mathf.Max(a.y, b.y));
+        }
+
+        // Head and beak of the rightmost bird in the run. World y is up.
+        // The beak points away from the trunk. The rect is the crown through
+        // the underside of the beak, so a hand on the chest can sit beneath it.
+        public static Rect TipBirdFaceWorld(Vector2 center, bool fromRight, bool gift, int count, int run)
+        {
+            if (count < 1 || run < 1) return default;
+            if (count > BranchState.Cap) count = BranchState.Cap;
+            if (run > count) run = count;
+            int tip = count - 1;
+            var seat = WorldBuilder.SeatLocal(tip, gift, fromRight);
+            float cx = center.x + seat.x;
+            float cy = center.y + seat.y + BranchView.RestLift;
+            const float crown = 0.58f;
+            const float beakBottom = 0.40f;
+            const float headBack = 0.08f;
+            const float beakTip = 0.72f;
+            float x0 = fromRight ? cx - beakTip : cx - headBack;
+            float x1 = fromRight ? cx + headBack : cx + beakTip;
+            return Rect.MinMaxRect(x0, cy + beakBottom, x1, cy + crown);
+        }
+
+        // The three reds on the top-left branch, in GUI pixels.
+        public static Rect FirstGardenTipBirds(float playW, float playH)
+        {
+            var center = FirstGardenBranch(playW, playH);
+            return PlayGui(TipBirdsWorld(center, false, false, 3, 3), playW, playH);
+        }
+
+        public static Rect FirstGardenTipFace(float playW, float playH)
+        {
+            var center = FirstGardenBranch(playW, playH);
+            return PlayGui(TipBirdFaceWorld(center, false, false, 3, 3), playW, playH);
+        }
+
+        // Fingertip on the chest edge, and the full-poke glove below the head.
+        // The hang scales with the hand, so a bigger board does not bury the face.
+        public static Rect GardenPokeTarget(Rect birds, Rect face, float playW, float playH)
+        {
+            if (birds.width < 8f || birds.height < 4f) return birds;
+            float s = DeviceFit.Ui(playW, playH);
+            MeasureTap(false, s, 1f, out float pastRight, out _, out float aboveRight, out _);
+            MeasureTap(true, s, 1f, out float pastLeft, out _, out float aboveLeft, out _);
+            bool phone = GardenPhoneBoard(playW, playH);
+            float tuck = Mathf.Max(pastRight, pastLeft) + 1f + ChestOverlap * PlayPixelsPerWorld(playW, playH);
+            if (phone) tuck += PhoneChestPx;
+            else tuck += IpadChestPx;
+            float maxTuck = (birds.width - 8f) * 0.5f;
+            if (maxTuck < 1f) return birds;
+            if (tuck > maxTuck) tuck = maxTuck;
+            float rise = Mathf.Max(aboveRight, aboveLeft);
+            float pivotY = birds.center.y;
+            if (face.height > 2f)
+            {
+                // GUI y grows downward. The pivot sits just below the beak,
+                // by the full height of the glove above the fingertip.
+                // Each board drops a few pixels more so the thumb clears the beak.
+                pivotY = face.yMax + rise + 1f;
+                float yLo = birds.yMin + 1f;
+                float yHi = birds.yMax - 1f;
+                float drop = GardenGloveDrop(playW, playH);
+                pivotY += drop;
+                yHi += drop;
+                if (yHi < yLo) pivotY = birds.center.y;
+                else if (pivotY < yLo) pivotY = yLo;
+                else if (pivotY > yHi) pivotY = yHi;
+            }
+            return new Rect(birds.x + tuck, pivotY - 4f, Mathf.Max(8f, birds.width - tuck * 2f), 8f);
+        }
+
+        // How far a ruby beak sits below the rest face bottom, in play pixels.
+        // Bob, lean, and look. The first bob is the mild pose. The low look
+        // that meets the thumb shows up a few seconds later.
+        public const float IdleBeakWindow = 4.6f;
+
+        public static float IdleBeakBelowFace(float playW, float playH, float time)
+        {
+            var mood = BirdMood.Of(BirdColor.Ruby);
+            // Underside of the beak over the thumb, world units from the sprite center.
+            const float beakX = 0.48f;
+            const float beakY = 0.46f;
+            const float faceBottom = 0.40f;
+            float bob = Mathf.Sin(time * mood.BobHz) * mood.BobAmp;
+            float look = Mathf.Sin(time * 5.1f) * mood.Tilt;
+            float rad = (look + mood.Lean) * Mathf.Deg2Rad;
+            float ry = beakX * Mathf.Sin(rad) + beakY * Mathf.Cos(rad) + bob;
+            float below = faceBottom - ry;
+            if (below < 0f) below = 0f;
+            return below * PlayPixelsPerWorld(playW, playH);
+        }
+
+        public static float RubyBobPeriod
+        {
+            get
+            {
+                float hz = BirdMood.Of(BirdColor.Ruby).BobHz;
+                return hz < 0.01f ? 1f : Mathf.PI * 2f / hz;
+            }
+        }
+
         bool GardenGlove(Vector2 aimGui, float dt, float s, System.Func<Vector2, bool> tapHit)
         {
             var aim = aimGui;
@@ -1302,13 +2164,63 @@ namespace FlockFive
             else
                 known = TutorCaptionPlate(out plate);
             // b98: always the sideways approach (right to left, hand pointing left), never from below.
+            var branch = LessonBranchRect(aimGui, s);
             if (known) aim = GardenSidewaysAim(aimGui, plate, s, PhoneArea.W, out _);
+            aim = KeepTipOnBranch(aim, branch);
+            // The sideways nudge can park the hand in the column gap or the next row.
+            // The settle point is the live wood, in the same space the board hit-tests.
+            if (TryLiveBranch(out var live, out var woodWorld))
+            {
+                var cam = _garden.Cam;
+                var sp = cam.WorldToScreenPoint(woodWorld);
+                aim = new Vector2(sp.x, PhoneArea.H - sp.y);
+                aim.x = Mathf.Clamp(aim.x, live.xMin + 1f, live.xMax - 1f);
+                aim.y = Mathf.Clamp(aim.y, live.yMin + 1f, live.yMax - 1f);
+                _lessonWoodGui = live;
+                _cueAimWorld = woodWorld;
+            }
             // Left-half target: in from the right, hand pointing left. A target at the right edge (Level 1
             // step 2, branch 5) has no room on its right for the hand, so it is met from the left, pointing
             // right (the mirrored default side approach), still level with the target. Never from below.
-            if (!GardenFromRight(aim.x, PhoneArea.W))
-                return CoachGloveAt(aim, dt, s, 0f, false, float.NaN, default, tapHit);
-            return CoachGloveAt(aim, dt, s, float.NaN, false, -90f, default, tapHit);
+            var avoid = known ? plate : default(Rect);
+            // First cue only: the three reds. The wood's near edge is the far end of
+            // the stick, out in the gap. Later hops, the leaf lesson, and pest gloves
+            // still aim at that wood rect.
+            bool firstBirds = _pestCue == 0 && !_leafIntro && _coachMoves == 0;
+            if (firstBirds && TryCueBirdTarget(out var liveBirds))
+                return CoachTapAt(liveBirds, avoid, dt, tapHit);
+            if (firstBirds)
+                return CoachTapAt(GardenPokeTarget(FirstGardenTipBirds(PhoneArea.W, PhoneArea.H), FirstGardenTipFace(PhoneArea.W, PhoneArea.H), PhoneArea.W, PhoneArea.H), avoid, dt, tapHit);
+            var finger = _lessonWoodGui.width > 8f ? _lessonWoodGui : branch;
+            return CoachTapAt(finger, avoid, dt, tapHit);
+        }
+
+        // Tip-run birds of the cued limb, inset so the fingertip lands on them.
+        bool TryCueBirdTarget(out Rect target)
+        {
+            target = default;
+            if (!CoachView(out var view) || _board == null || _garden.Cam == null) return false;
+            if ((uint)_cueBranch >= (uint)_board.Branches.Count) return false;
+            var st = _board.Branches[_cueBranch];
+            int run = st.TipRun();
+            if (run < 1 || st.Count < 1) return false;
+            var world = TipBirdsWorld(view.transform.position, view.FromRight, view.IsGift, st.Count, run);
+            var face = TipBirdFaceWorld(view.transform.position, view.FromRight, view.IsGift, st.Count, run);
+            var gui = CameraBirdGui(world, _garden.Cam);
+            var faceGui = CameraBirdGui(face, _garden.Cam);
+            if (gui.width < 4f || gui.height < 4f) return false;
+            target = GardenPokeTarget(gui, faceGui, PhoneArea.W, PhoneArea.H);
+            return target.width > 2f && target.height > 2f;
+        }
+
+        static Rect CameraBirdGui(Rect world, Camera cam)
+        {
+            var a = cam.WorldToScreenPoint(new Vector3(world.xMin, world.yMax, 0f));
+            var b = cam.WorldToScreenPoint(new Vector3(world.xMax, world.yMin, 0f));
+            float x0 = Mathf.Min(a.x, b.x), x1 = Mathf.Max(a.x, b.x);
+            float y0 = PhoneArea.H - Mathf.Max(a.y, b.y);
+            float y1 = PhoneArea.H - Mathf.Min(a.y, b.y);
+            return Rect.MinMaxRect(x0, y0, x1, y1);
         }
 
         void CoachPlace()
@@ -1322,6 +2234,29 @@ namespace FlockFive
             _gloveKeepOff = default;
             _gloveInward = false;
             _glovePoseFrame = Time.frameCount;
+            // The finger is only up while a cue seats it this frame. A direct
+            // CoachTapAt loop never takes this clear, so the tests moved and
+            // the live hand did not. Wiping the phase here left the glove on
+            // the rest pose, about 20px short of the birds, for every frame.
+            // Keep the phase when the cue sat last frame. Zero it only after
+            // a frame that did not seat the finger again.
+            if (_coachTapFrame >= 0 && _coachTapFrame != Time.frameCount)
+            {
+                if (_coachTapOn)
+                {
+                    _coachTapOn = false;
+                    _gloveVis = false;
+                    _gloveHoldPose = false;
+                }
+                else
+                {
+                    _glovePhase = 0f;
+                    _gloveDip = 0f;
+                    _gloveHoldDip = 0f;
+                    _tapSent = false;
+                    _coachTapFrame = -1;
+                }
+            }
             float dt = PlayClock.Delta;
             NoteGloveTap();
             TickGloveAct(dt);
@@ -1359,8 +2294,7 @@ namespace FlockFive
                 var watchDisc = FlowerDisc(watchFlower, 0f);
                 var watchFace = watchDisc.width > 2f ? watchDisc : watchFlower;
                 _gloveKeepOff = watchFace;
-                Vector2 watchAim = GloveTarget(watchFace);
-                CoachGloveAt(watchAim, dt, handS, float.NaN, false, float.NaN, GiftWatchTapRect(handS));
+                CoachTapAt(watchFace, CoachTapLabel(watchFace), dt, null);
                 return;
             }
             if ((_bgLessonLive || BadgerGuideLive() || BadgerResultLive()) && _splash && _home == HomeFace.Badger)
@@ -1413,11 +2347,7 @@ namespace FlockFive
                 // From the left, pointing right (facing stays in the shared helper). Tap rect is
                 // the padded rail hit the button uses, so a press on the icon fades the hand
                 // and opens poker together.
-                var pokerAim = GloveTargetAt(box, PokerGloveU, PokerGloveV);
-                var pigRow = PiggyRect(handS);
-                float rowBottom = pigRow.width > 2f ? pigRow.yMax : float.NegativeInfinity;
-                float pokerLift = float.IsNegativeInfinity(rowBottom) ? float.NaN : PokerGlovePerchLift(pokerAim.y, rowBottom, handS);
-                CoachGloveAt(pokerAim, dt, handS, pokerLift, PokerGloveFromLeft, float.NaN, RailTapRect(RailPoker));
+                CoachTapAt(box, pokerText, dt, null);
                 return;
             }
             if (_dailyIntroLive)
@@ -1436,15 +2366,14 @@ namespace FlockFive
                 }
                 if (enteredClaim)
                     DropRailFadeForClaim();
-                Vector2 dailyAim;
                 LessonLine(onClaim ? DailyClaimLine : DailyIntroLine);
                 _gloveInward = !onClaim;
                 if (onClaim)
                 {
-                    // Same poke clock as the other garden gloves. The seat is beside
-                    // the word, and the hand keeps tapping while this cue is up.
-                    DailyClaimGlove(handS, out dailyAim, out float perchLift, out bool fromLeft);
-                    CoachGloveAt(dailyAim, dt, handS, perchLift, fromLeft, float.NaN, DailyClaimTapRect(handS));
+                    DailyLayout(handS, out _, out var claimFlower, out _, out _);
+                    var claimDisc = FlowerDisc(claimFlower, 0f);
+                    var claimFace = claimDisc.width > 2f ? claimDisc : claimFlower;
+                    CoachTapAt(claimFace, CoachTapLabel(claimFace), dt, null);
                 }
                 else
                 {
@@ -1456,8 +2385,8 @@ namespace FlockFive
                     // spot the glove showed. The glove's tap check is the real tap rect.
                     var box = SplashDailyRect();
                     if (!RailGloveSettled(RailDaily, box)) return;
-                    dailyAim = box.center;
-                    CoachGloveAt(dailyAim, dt, handS, float.NaN, false, float.NaN, SplashDailyTapRect());
+                    // The icon, every frame. Not the caption plate under it.
+                    CoachTapAt(box, default, dt, null);
                 }
                 return;
             }
@@ -1555,6 +2484,9 @@ namespace FlockFive
             PlayerPrefs.SetInt(CoachAdHandKey, 1);
             PlayerPrefs.Save();
             _adHand = true;
+            _tutorialWatchReopen = false;
+            if (_gift == GiftFace.Card)
+                _tutorialOfferSeen = true;
             _coachFade = 0f;
             _gloveReady = false;
             _gloveWiggle = 0f;
@@ -1570,17 +2502,24 @@ namespace FlockFive
             _cueLine = null;
             _cueBranch = -1;
             _gloveVis = false;
+            DropGlovePress();
             CoachHideGlow();
             CoachHideRipples();
         }
 
-        void DismissAdHand()
+        void DismissAdHand() => DropAdHand(true);
+
+        // armGuard is the player dismiss. A restart teardown passes false.
+        void DropAdHand(bool armGuard)
         {
             if (!_adHand) return;
             _adHand = false;
+            _tutorialOfferSeen = false;
+            _tutorialWatchReopen = false;
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
-            NoteLessonDismiss(CoachStep.AdHand);
+            if (armGuard) NoteLessonDismiss(CoachStep.AdHand);
         }
 
         // Hard hide. A fade that was still running does not keep a frozen hand.
@@ -1704,6 +2643,7 @@ namespace FlockFive
             _gloveReady = false;
             _gloveVis = false;
             _gloveHidStep = -1;
+            DropGlovePress();
         }
 
         // Freeze the drawn pose and drop alpha. A second tap does not restart it.
@@ -1720,6 +2660,7 @@ namespace FlockFive
                 _gloveVis = false;
                 _gloveHoldPose = false;
                 _gloveReady = false;
+                DropGlovePress();
                 return;
             }
             _gloveFadeFrom = _gloveAlpha;
@@ -1858,6 +2799,7 @@ namespace FlockFive
                 _gloveAlpha = 0f;
                 _gloveAct = TutorGloveAct.Hidden;
                 _gloveVis = false;
+                DropGlovePress();
                 _gloveHoldPose = false;
                 _gloveReady = false;
                 _gloveHidStep = -1;
@@ -1874,6 +2816,7 @@ namespace FlockFive
                     _gloveVis = false;
                     _gloveHoldPose = false;
                     _gloveReady = false;
+                    DropGlovePress();
                     // Claim tap: the hand stayed on the button for this fade. The spin
                     // starts now, and the lesson ends. Do not arm a return on the rail.
                     if (_dailyGloveThroughTap)
@@ -1900,6 +2843,7 @@ namespace FlockFive
                     _gloveHidStep = -1;
                     GloveVeilReset();
                     _gloveVis = false;
+                    DropGlovePress();
                     GloveReturns++;
                 }
                 return;
@@ -1943,6 +2887,17 @@ namespace FlockFive
             return (aim - _gloveStepAim).sqrMagnitude <= lim * lim;
         }
 
+        // Wind-up stays within a bit over one hand of the fingertip. Farther than
+        // that, a narrow phone parks the hand on the screen edge or the caption.
+        static void KeepPerchNear(ref Vector2 rest, Vector2 aim, float s)
+        {
+            float max = 1.15f * GloveDh(s);
+            var d = rest - aim;
+            float len = d.magnitude;
+            if (len <= max || len < 0.01f) return;
+            rest = aim + d * (max / len);
+        }
+
         // Arc start for this aim. Drawn once, then left alone while the hand is visible.
         void GloveLockPose(Vector2 aimGui, float s, float perchLift, bool fromLeft, float approachDeg)
         {
@@ -1956,6 +2911,10 @@ namespace FlockFive
             ClearGloveOfCaption(_cueAimGui, s, ref rest, ref away, ref _gloveMirror, ref ang, approachDeg);
             _glovePosing = false;
             bool angled = !float.IsNaN(approachDeg);
+            // The avoidance perch can sit on the screen edge, the caption, or the
+            // next control. The fingertip still lands on the aim; the wind-up has
+            // to start beside that same control or the poke never rests there.
+            KeepPerchNear(ref rest, aimGui, s);
             _gloveRest = rest;
             _gloveRestAng = ang;
             _gloveAway = away;
@@ -1975,13 +2934,28 @@ namespace FlockFive
                 if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
                 if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
                 if (_gloveEntryOverrideOn) start = _gloveEntryOverride;
-                start.x = Mathf.Clamp(start.x, x0, x1);
-                start.y = Mathf.Clamp(start.y, y0, y1);
-                float below = _cueAimGui.y + 28f * s;
-                if (start.y < below) start.y = Mathf.Min(y1, below);
-                // b120: an entry override (poker Back: middle right) used to seat the hand a whole screen
-                // away, so it travelled across the phone. Every angled start is now held snug to its target.
-                _gloveTip = AngledStartSnug(start, aimGui, s, safe);
+                else
+                {
+                    start.x = Mathf.Clamp(start.x, x0, x1);
+                    start.y = Mathf.Clamp(start.y, y0, y1);
+                }
+                if (_gloveEntryOverrideOn)
+                {
+                    // Keep the medal's x. The shared pad would shove this hop right, into the tip.
+                    // The below-shove and near-start scale would also walk it off the hitbox.
+                    if (PhoneArea.W > 4f) start.x = Mathf.Clamp(start.x, 0f, PhoneArea.W);
+                    float yLim = PhoneArea.H > 4f ? PhoneArea.H : y1;
+                    start.y = Mathf.Clamp(start.y, 0f, yLim);
+                    _gloveTip = start;
+                }
+                else
+                {
+                    float below = _cueAimGui.y + 28f * s;
+                    if (start.y < below) start.y = Mathf.Min(y1, below);
+                    // b120: angled starts stay snug to the target. A whole-screen entry
+                    // used to cross the phone.
+                    _gloveTip = AngledStartSnug(start, aimGui, s, safe);
+                }
             }
             else
                 _gloveTip = GloveNearStart(rest, aimGui, s, ang, _gloveMirror);
@@ -1992,11 +2966,10 @@ namespace FlockFive
             CommitApproachFace(ref facePerch, aimGui, faceDh, faceDw, PhoneArea.W, PhoneArea.H, _gloveMirror,
                 out float faceAng, out bool faceMirror);
             _gloveTip = facePerch;
-            // Claim only: keep a start the player can see leave, then bow onto the
-            // seat. The poke clock loops that path. Other lessons keep the shared
-            // near-start. _gloveTip stays the start; copying the seat onto it
-            // collapses every frame into the landed pose.
-            if (string.Equals(_cueLine, DailyClaimLine))
+            // Claim and Upgrade: keep a start the player can see leave, then bow
+            // onto the seat. Claim's poke clock loops that path. Other lessons
+            // keep the shared near-start.
+            if (string.Equals(_cueLine, DailyClaimLine) || string.Equals(_cueLine, AlbumUpgradeLine))
                 _gloveTip = ClaimGloveStart(_gloveTip, aimGui, faceDh, CoachSafeGui(8f * s));
             _gloveShown = _gloveTip;
             _gloveFaceOn = true;
@@ -2011,6 +2984,7 @@ namespace FlockFive
             _glovePhase = 0f;
             _gloveDip = 0f;
             _tapSent = false;
+            _gloveSettled = false;
             _gloveReady = true;
             _gloveBranch = _cueBranch;
             _gloveLockOn = true;
@@ -2023,10 +2997,158 @@ namespace FlockFive
             _gloveStepApproach = approachDeg;
             // A new pose owns the hand. The previous lesson's dismiss no longer holds it.
             _gloveFadeDismissed = false;
+            _pokerBackGloveHeld = false;
         }
 
         // Middle of the right edge, fully inside the safe rect (the clamp in GloveLockPose keeps the whole hand on screen).
         public static Vector2 GloveMiddleRightEntry(Rect safe) => new Vector2(safe.xMax, safe.center.y);
+
+        // Poker Back hop, in hand-heights, straight up onto the medal. Shorter than the
+        // old middle-right run. The hand hangs below the fingertip, in the left column.
+        public const float PokerBackGloveHopHands = 0.50f;
+
+        // Layout clearance for the upright hand, not the settle. The pivot used
+        // to sit a full nudge left of center; the medal is still seated for that.
+        public const float PokerBackPhoneTipNudgeX = -18f;
+        public const float PokerBackPhoneTipNudgeY = -19f;
+
+        // Phones: fingertip this far up-left of the medal center. More than the
+        // 8px glove-snug gap, and still ~10px inside a 44px hit (not on the rim).
+        // The upright hand hangs below the tip, so the palm sits under the word.
+        public const float PokerBackInsideNudge = 16f;
+
+        // Settled fingertip. Phones sit up-left of the word, inside the hit.
+        // The 820 pillar keeps the center exactly: that is the snug hit there.
+        public static Vector2 PokerBackSettleAim(Vector2 medalCenter, Rect medal, float windowW, float windowH)
+        {
+            float aspect = windowH > 1f ? windowW / windowH : 1f;
+            bool phone = aspect <= DeviceFit.PhoneAspect + 0.04f;
+            if (!phone)
+                return medalCenter;
+            var aim = medalCenter + new Vector2(-PokerBackInsideNudge, -PokerBackInsideNudge);
+            if (medal.width > 2f && medal.height > 2f)
+            {
+                float inset = Mathf.Min(8f, medal.width * 0.18f);
+                float x0 = medal.xMin + inset, x1 = medal.xMax - inset;
+                float y0 = medal.yMin + inset, y1 = medal.yMax - inset;
+                if (x1 < x0) { x0 = x1 = medal.center.x; }
+                if (y1 < y0) { y0 = y1 = medal.center.y; }
+                aim.x = Mathf.Clamp(aim.x, x0, x1);
+                aim.y = Mathf.Clamp(aim.y, y0, y1);
+            }
+            return aim;
+        }
+
+        // Where the hop begins: directly under the medal. The settle (after the hop) is
+        // the medal itself, so this point is only the approach.
+        public static Vector2 PokerBackGloveStart(Vector2 aim, float s, Rect safe, float screenW, float screenH)
+        {
+            float dh = Mathf.Max(8f, GloveDh(s));
+            float dw = GloveDrawW(dh);
+            float hop = PokerBackGloveHopHands * dh;
+            float pad = dh * 0.42f;
+            GlovePadRange(safe, pad, out _, out _, out float y0, out float y1);
+            // Stay on the medal's x. The safe pad would shove a top-left aim right, into the tip.
+            var start = new Vector2(aim.x, aim.y + hop);
+            if (screenW > 4f)
+                start.x = Mathf.Clamp(start.x, 0f, screenW);
+            start.y = Mathf.Clamp(start.y, Mathf.Min(y0, aim.y), y1);
+            // A downward shove does not pull a hand back in from the left edge,
+            // and it makes this hop longer than the old middle-right run.
+            // Only keep a step that actually reduces overflow.
+            if (screenW > 4f && screenH > 4f && dw > 1f)
+            {
+                for (int i = 0; i < 12; i++)
+                {
+                    float ang = GloveApproachDeg(start, aim);
+                    float over = GloveQuadOverflow(start, ang, false, dw, dh, screenW, screenH);
+                    if (over <= 0.5f) break;
+                    float next = start.y + dh * 0.04f;
+                    if (next > y1) break;
+                    var trial = start;
+                    trial.y = next;
+                    float trialOver = GloveQuadOverflow(trial, GloveApproachDeg(trial, aim), false, dw, dh, screenW, screenH);
+                    if (trialOver >= over - 0.05f) break;
+                    start.y = next;
+                }
+            }
+            start.x = aim.x;
+            start.y = Mathf.Clamp(start.y, Mathf.Min(y0, aim.y), y1);
+            return start;
+        }
+
+        // Union of the settle pose and the short rise under it. The tip plate stays out of this lane.
+        public static Rect PokerBackGloveLane(Vector2 aim, float s)
+        {
+            float dh = Mathf.Max(8f, GloveDh(s));
+            float hop = PokerBackGloveHopHands * dh;
+            var start = new Vector2(aim.x, aim.y + hop);
+            Rect box = GloveAuditBox(aim, 0f, dh, 0f);
+            box = UnionRect(box, GloveAuditBox(aim, 0f, dh, 1f));
+            box = UnionRect(box, GloveAuditBox(start, 0f, dh, 0f));
+            box = UnionRect(box, GloveAuditBox(start, 0f, dh, 1f));
+            return box;
+        }
+
+        // Back tip plate. Starts above the settled hand and sits to the right of the
+        // medal and the glove lane, so the two never share a pixel. A screen-bottom
+        // band sits under the hand (tip_above_glove fails). iPhone and iPad share this
+        // Back-adjacent seat; the plate may still be tall.
+        public static Rect PokerBackTipBand(float w, float h, Rect safe, float s, float bandH, Rect back, Vector2 aim)
+        {
+            if (s < 0.01f) s = 1f;
+            if (bandH < 8f) bandH = 8f;
+            var lane = aim.sqrMagnitude > 1f ? PokerBackGloveLane(aim, s) : back;
+            float gap = 12f * s;
+            float top = 8f;
+            if (safe.height > 2f)
+            {
+                float guiTop = h - safe.yMax;
+                if (guiTop > top) top = guiTop;
+            }
+            float left = Mathf.Max(back.xMax, lane.xMax) + gap;
+            float textW = Mathf.Min(w * 0.72f, Mathf.Max(180f, w - left));
+            if (w - left < textW * 0.85f)
+                left = Mathf.Max(8f, w - textW);
+            float laneRight = Mathf.Max(back.xMax, lane.xMax) + gap;
+            if (left < laneRight) left = laneRight;
+            float width = Mathf.Max(48f, w - left);
+            if (left + width > w) width = Mathf.Max(48f, w - left);
+            float y = top;
+            // When the hand starts lower, keep the whole plate above it.
+            float room = lane.yMin - gap - y;
+            if (room > 48f * s)
+                bandH = Mathf.Min(bandH, room);
+            return new Rect(left, y, width, bandH);
+        }
+
+        static void GlovePadRange(Rect safe, float pad, out float x0, out float x1, out float y0, out float y1)
+        {
+            x0 = safe.xMin + pad;
+            x1 = safe.xMax - pad;
+            y0 = safe.yMin + pad;
+            y1 = safe.yMax - pad;
+            if (x1 < x0) { x0 = safe.center.x; x1 = x0; }
+            if (y1 < y0) { y0 = safe.center.y; y1 = y0; }
+        }
+
+        // True when the locked approach (one angle for the whole hop) misses `banner`
+        // at the rest, along the straight poke, and on the medal, dip up or down.
+        public static bool PokerBackFlightClears(Vector2 start, Vector2 aim, float s, Rect banner)
+        {
+            if (banner.width < 1f || banner.height < 1f) return true;
+            float dh = Mathf.Max(8f, GloveDh(s));
+            float ang = GloveApproachDeg(start, aim);
+            float gap = CaptionLayout.GloveBannerGap * s;
+            var grown = new Rect(banner.x - gap, banner.y - gap, banner.width + gap * 2f, banner.height + gap * 2f);
+            for (int i = 0; i <= 4; i++)
+            {
+                var p = Vector2.Lerp(start, aim, i / 4f);
+                if (GloveAuditBox(p, ang, dh, 0f).Overlaps(grown)) return false;
+                if (GloveAuditBox(p, ang, dh, 1f).Overlaps(grown)) return false;
+            }
+            return true;
+        }
 
         // b120: angled starts obey the same near-start cap as plain gloves (GloveNearStartHands, 0.5x travel).
         public static Vector2 AngledStartSnug(Vector2 start, Vector2 aim, float s, Rect safe)
@@ -2066,11 +3188,26 @@ namespace FlockFive
                 for (int i = 1; i <= 6; i++)
                 {
                     var q = Vector2.Lerp(near, rest, i / 6f);
-                    if (!GloveHitsAdoptBird(q, ang, s, mirror)) return q;
+                    if (!GloveHitsAdoptBird(q, ang, s, mirror)) return SeatGloveInside(q, ang, mirror, GloveDh(s), GloveAuditDw(GloveDh(s)), PhoneArea.W, PhoneArea.H);
                 }
-                return rest;
+                return SeatGloveInside(rest, ang, mirror, GloveDh(s), GloveAuditDw(GloveDh(s)), PhoneArea.W, PhoneArea.H);
             }
-            return near;
+            return SeatGloveInside(near, ang, mirror, GloveDh(s), GloveAuditDw(GloveDh(s)), PhoneArea.W, PhoneArea.H);
+        }
+
+        // Pull a glove pivot toward the screen until its quad clears the edges.
+        // The settle aim is not passed through here, so the fingertip can still land on the button.
+        public static Vector2 SeatGloveInside(Vector2 pivot, float ang, bool mirror, float dh, float dw, float screenW, float screenH)
+        {
+            if (screenW < 8f || screenH < 8f || dh < 2f || dw < 2f) return pivot;
+            var p = pivot;
+            var center = new Vector2(screenW * 0.5f, screenH * 0.5f);
+            for (int i = 0; i < 16; i++)
+            {
+                if (GloveQuadOverflow(p, ang, mirror, dw, dh, screenW, screenH) <= 0.5f) return p;
+                p = Vector2.Lerp(p, center, 0.18f);
+            }
+            return p;
         }
 
         void GloveBeginReappear(Vector2 aimGui, float s, float perchLift, bool fromLeft, float approachDeg)
@@ -2157,6 +3294,82 @@ namespace FlockFive
             }
         }
 
+        void HideCoachTap()
+        {
+            _coachTapOn = false;
+            _coachTapFrame = -1;
+            _glovePhase = 0f;
+            _gloveDip = 0f;
+            _gloveHoldDip = 0f;
+            _tapSent = false;
+            _gloveVis = false;
+            _gloveTapRect = default;
+            _gloveTapRectOn = false;
+            _gloveTapHit = null;
+            _gloveTapFrame = -1;
+            _gloveHoldPose = false;
+        }
+
+        // Horizontal pointing finger. It sits beside the control and pokes
+        // straight in until the fingertip meets the near edge, then draws back.
+        // No perch, no wind-up, no GloveTravelScale. An empty rect hides it.
+        bool CoachTapAt(Rect target, Rect avoid, float dt, System.Func<Vector2, bool> tapHit = null)
+        {
+            if (target.width < 2f || target.height < 2f)
+            {
+                HideCoachTap();
+                return false;
+            }
+            HudShaken(out var restartNow, out _);
+            var homeNow = CornerAnchor.TopBarHome(restartNow, PhoneArea.W, PhoneArea.Safe);
+            var giftNow = _gift == GiftFace.Card ? GiftCloseHit() : default;
+            var pose = CoachTapSide(target, avoid, PhoneArea.W, PhoneArea.H, PhoneArea.Safe, homeNow, restartNow, giftNow);
+            // Phase survives the frame-start clear above. A real HideCoachTap
+            // zeros it, so a new cue still starts at the rest pose.
+            float prev = _glovePhase;
+            if (!_coachTapOn) _tapSent = false;
+            float next = prev + Mathf.Max(0f, dt);
+            float pressAt = TapHover + TapPress;
+            bool fire = _coachFade > 0.25f && !_tapSent && prev < pressAt && next >= pressAt;
+            if (next >= TapCycle)
+            {
+                next -= TapCycle;
+                if (next < 0f) next = 0f;
+                _tapSent = false;
+            }
+            _glovePhase = next;
+            if (fire) _tapSent = true;
+            float dip = TapDip(fire ? pressAt : _glovePhase);
+            var point = Vector2.Lerp(pose.Rest, pose.End, dip);
+            _coachTapOn = true;
+            _coachTapFrame = Time.frameCount;
+            _coachTapSeat = pose.End;
+            _coachTapPoint = point;
+            _cueAimGui = pose.End;
+            _gloveShown = point;
+            _gloveTip = point;
+            _gloveRest = pose.Rest;
+            _gloveLockAim = pose.End;
+            _gloveStepAim = pose.End;
+            _gloveHoldPose = true;
+            _gloveHoldDip = dip;
+            _gloveDip = dip;
+            _gloveAlpha = 1f;
+            _gloveAct = TutorGloveAct.Live;
+            _gloveVis = true;
+            _gloveLockOn = true;
+            _gloveSettled = true;
+            _gloveFaceOn = true;
+            _gloveMirror = pose.Mirror;
+            _gloveFaceMirror = pose.Mirror;
+            _gloveShownAng = pose.Angle;
+            _gloveFaceAng = pose.Angle;
+            _gloveApproach = float.NaN;
+            _gloveStepLine = _cueLine;
+            GloveArmTap(target, tapHit);
+            return fire;
+        }
+
         bool CoachGloveAt(Vector2 aimGui, float dt, float s, float perchLift = float.NaN, bool fromLeft = false, float approachDeg = float.NaN, Rect tapRect = default, System.Func<Vector2, bool> tapHit = null)
         {
             if (CoachResetHolds())
@@ -2210,6 +3423,24 @@ namespace FlockFive
                 GloveBeginReappear(aimGui, s, perchLift, fromLeft, approachDeg);
             }
             _cueAimGui = aimGui;
+            if (same && _gloveLockOn)
+                _gloveLockAim = aimGui;
+            // Landed poker Back tip stays on the medal. The hop already played.
+            // Dip stays down so the medal does not look held in.
+            if (_pokerBackGloveHeld && _gloveAct == TutorGloveAct.Live
+                && string.Equals(_gloveStepLine, PokerBackLine))
+            {
+                _gloveShown = _gloveLockOn ? _gloveLockAim : aimGui;
+                _gloveDip = 0f;
+                if (_gloveFaceOn)
+                {
+                    _gloveShownAng = _gloveFaceAng;
+                    _gloveMirror = _gloveFaceMirror;
+                }
+                GloveArmTap(tapRect, tapHit);
+                _gloveVis = _gloveAlpha > 0.03f;
+                return false;
+            }
             bool hold = _gloveAct == TutorGloveAct.Reappear;
             float pressAt = TapHover + TapPress;
             bool fire = false;
@@ -2254,24 +3485,44 @@ namespace FlockFive
             bool angled = !float.IsNaN(_gloveApproach);
             Vector2 aim = _gloveLockOn ? _gloveLockAim : aimGui;
             // Claim keeps bowing from its start onto the seat for every poke.
-            // The phase wrap above is what loops it. A locked face otherwise
-            // travels on the approach line. The old arc re-aimed at draw time
-            // whenever the perch or the bow left the glass.
+            // Upgrade uses the same bow while it is traveling. A locked face
+            // otherwise travels on the approach line.
             bool claimCue = string.Equals(_gloveStepLine, DailyClaimLine);
+            bool upgradeCue = string.Equals(_gloveStepLine, AlbumUpgradeLine);
             Vector2 arcPos;
             if (claimCue)
             {
-                // Same travel the pose uses, so the settle (travel 1) is not wiggled off the seat.
                 travel = ClaimGloveTravelAt(posePhase);
                 arcPos = ClaimGlovePose(_gloveTip, aim, posePhase, GloveDh(s) * 0.55f);
             }
+            else if (upgradeCue)
+                arcPos = ClaimGloveArc(_gloveTip, aim, travel, GloveDh(s) * 0.55f);
             else if (_gloveFaceOn || angled)
                 arcPos = Vector2.Lerp(_gloveTip, aim, Mathf.Clamp01(travel));
             else
                 TapArc(_gloveTip, aim, _gloveAway, s, travel, out arcPos, out _, _gloveMirror, _gloveApexMinY);
+            // A garden lesson used to loop the whole flight. The hand left the
+            // branch for 40-65 px every cycle, so the first tap missed.
+            bool gardenLesson = !claimCue && !upgradeCue && !_pokerBackGloveHeld;
+            if ((gardenLesson || upgradeCue) && travel >= 0.98f) _gloveSettled = true;
+            if ((gardenLesson || upgradeCue) && _gloveSettled)
+            {
+                var shown = aim;
+                if (gardenLesson && _lessonWoodGui.width > 4f)
+                {
+                    shown.x = Mathf.Clamp(shown.x, _lessonWoodGui.xMin + 1f, _lessonWoodGui.xMax - 1f);
+                    shown.y = Mathf.Clamp(shown.y, _lessonWoodGui.yMin + 1f, _lessonWoodGui.yMax - 1f);
+                }
+                _gloveShown = shown;
+                _gloveDip = 0f;
+            }
+            else
+            {
             float wig = hold ? 0f : Mathf.Sin(AdPause.Unscaled * 46f) * 7f * _gloveWiggle;
             var axis = _gloveAway.sqrMagnitude > 0.0001f ? _gloveAway : Vector2.right;
-            _gloveShown = arcPos - axis.normalized * wig * (1f - travel);
+            var shove = axis.normalized * wig * (1f - travel);
+            shove.x = Mathf.Clamp(shove.x, -8f, 8f);
+            _gloveShown = arcPos - shove;
             if (_gloveFaceOn)
             {
                 _gloveShownAng = _gloveFaceAng;
@@ -2290,6 +3541,16 @@ namespace FlockFive
                     _gloveShown = Vector2.Lerp(_gloveShown, arcPos, pin);
                 }
                 _gloveShownAng = angled ? _gloveApproach : ClampUpright(_gloveMirror);
+            }
+            }
+            // First frame the Back hop reaches the medal. Later frames keep the fingertip
+            // there (the early-out above) so the rest pose is inside the Back hitbox.
+            if (!_pokerBackGloveHeld && string.Equals(_gloveStepLine, PokerBackLine)
+                && _gloveAct == TutorGloveAct.Live && travel >= 0.98f)
+            {
+                _pokerBackGloveHeld = true;
+                _gloveShown = aim;
+                _gloveDip = 0f;
             }
             GloveArmTap(tapRect, tapHit);
             _gloveVis = _gloveAlpha > 0.03f;
@@ -2482,36 +3743,40 @@ namespace FlockFive
         // 0 through the poke, 1 at full reach. The curl and the return both ease.
         static float TapDip(float phase)
         {
-            float pressAt = TapHover + TapPress;
             if (phase < TapHover) return 0f;
+            float pressAt = TapHover + TapPress;
             if (phase < pressAt)
             {
                 float u = (phase - TapHover) / TapPress;
                 return u * u * (3f - 2f * u);
             }
-            float liftEnd = pressAt + TapLift;
+            float holdEnd = pressAt + TapHold;
+            if (phase < holdEnd) return 1f;
+            float liftEnd = holdEnd + TapLift;
             if (phase < liftEnd)
             {
-                float u = (phase - pressAt) / TapLift;
+                float u = (phase - holdEnd) / TapLift;
                 float back = u * u * (3f - 2f * u);
                 return 1f - back;
             }
             return 0f;
         }
 
-        // 0 at the side hold, 1 at the end of the poke. One ease in, the same curve back out.
+        // 0 at the side hold, 1 through the poke and the hold, then back out.
         static float TapTravel(float phase)
         {
             float pressAt = TapHover + TapPress;
-            float liftEnd = pressAt + TapLift;
+            float holdEnd = pressAt + TapHold;
+            float liftEnd = holdEnd + TapLift;
             if (phase < pressAt)
             {
                 float u = phase / pressAt;
                 return u * u * (3f - 2f * u);
             }
+            if (phase < holdEnd) return 1f;
             if (phase < liftEnd)
             {
-                float u = (phase - pressAt) / TapLift;
+                float u = (phase - holdEnd) / TapLift;
                 float back = u * u * (3f - 2f * u);
                 return 1f - back;
             }
@@ -3869,7 +5134,7 @@ namespace FlockFive
         // garden caption (gift "Stuck?", leaves, pests, bees...) keeps its own seat.
         public static readonly string[] GardenBottomLines =
         {
-            CoachTap.Caption(CoachStep.CoachPickup), CaptionLayout.CoachPlaceLine, CaptionLayout.CoachNowhereLine,
+            CoachTap.Caption(CoachStep.CoachPickup), CaptionLayout.CoachPlaceLine, CaptionLayout.FirstClearLine, CaptionLayout.CoachNowhereLine,
             CaptionLayout.BeePestLine, // b103: bees-on-a-branch rides the same bottom seat
         };
         public static bool IsGardenBottomLine(string text)
@@ -3994,7 +5259,7 @@ namespace FlockFive
             if (spot == "home.poker")
             {
                 var stP = CoachLineStyle();
-                var fitP = CaptionLayout.FitBanner(stP, text, CaptionLayout.BannerMeasureWidth(w, stP, text, px), px);
+                var fitP = CaptionLayout.FitBanner(stP, text, CaptionLayout.BannerMeasureWidth(w, stP, text, px), px, CaptionLayout.BannerLineCap(w));
                 BannerText = string.IsNullOrEmpty(fitP.Shown) ? text : fitP.Shown;
                 px = fitP.Font;
                 band = PokerCoinsBand(band, w, screenH, safe, s);
@@ -4013,7 +5278,7 @@ namespace FlockFive
             }
             else
             {
-                var fitted = CaptionLayout.FitBanner(st, text, maxW, px);
+                var fitted = CaptionLayout.FitBanner(st, text, maxW, px, CaptionLayout.BannerLineCap(w));
                 BannerText = string.IsNullOrEmpty(fitted.Shown) ? text : fitted.Shown;
                 px = fitted.Font;
             }
@@ -4050,7 +5315,9 @@ namespace FlockFive
                 if (adHandBox.width >= 2f && adHandBox.yMax > adFloor) adFloor = adHandBox.yMax;
                 if (band.y < adFloor + gap) band.y = adFloor + gap;
             }
-            // b124: the first-hand result caption covers the bet controls' original seat, full width, bottom of the page.
+            // Brandon: the Back tip starts above the hand, to the right of the medal,
+            // so it does not sit in the screen-bottom band under the glove. It may
+            // still cover whatever is behind that upper-right plate.
             bool pokerBack = spot == "poker.back";
             if (pokerBack)
             {
@@ -4109,19 +5376,16 @@ namespace FlockFive
             return true;
         }
 
-        // iPad fix: 'Tap the back button' seats near the back medal (top-left): under the back
-        // medal, logo/halo and PAY TABLE tab, above the dealt row, inside the safe area.
+        // 'Tap the back button to return home.' Upper seat, right of the medal and
+        // the glove lane, top edge above the hand. Not the screen-bottom band.
         Rect PokerBackBand(Rect band, float h, Rect safe, float s)
         {
-            var g = _pokerCapGeo;
-            float gap = 8f * s;
-            float safeTop = h - safe.yMax, safeBottom = h - safe.yMin; // safeArea is bottom-up
-            float y = Mathf.Max(safeTop, g.Back.yMax, g.LogoClear, g.Tab.yMax) + gap;
-            if (g.Row.height > 2f && y + band.height > g.Row.yMin - gap)
-                y = Mathf.Max(Mathf.Max(safeTop, g.Back.yMax + gap), g.Row.yMin - gap - band.height);
-            if (y + band.height > safeBottom) y = safeBottom - band.height;
-            band.y = y;
-            return band;
+            var back = _pokerCapGeo.Back;
+            float winW = Screen.width > 2 ? Screen.width : PhoneArea.W;
+            float winH = Screen.height > 2 ? Screen.height : PhoneArea.H;
+            var aim = back.width > 2f ? PokerBackSettleAim(back.center, back, winW, winH) : new Vector2(48f, 48f);
+            float width = PhoneArea.W > 2f ? PhoneArea.W : band.width;
+            return PokerBackTipBand(width, h, safe, s, band.height, back, aim);
         }
 
         // Full-width coins tip under the glove's whole path (perch, arc, landed hand).
@@ -4182,7 +5446,7 @@ namespace FlockFive
                 }
                 else
                 {
-                    var fit = CaptionLayout.FitBanner(st, text ?? "", maxW, px);
+                    var fit = CaptionLayout.FitBanner(st, text ?? "", maxW, px, CaptionLayout.BannerLineCap(w));
                     px = fit.Font;
                     st.wordWrap = true;
                     st.fontSize = px;
@@ -4217,20 +5481,78 @@ namespace FlockFive
                 badge = AdoptVipBadgeRect(w, h, safe);
                 CoverDown(ref band, badge, CaptionStyles.Drop(spot) * s, SplashWordBottom(h, safe, s), MinLogoClear(h, safe, s));
             }
-            LiftOffMainButtons(ref band, w, h, safe, s, badge, (spot == "coach.line" || spot == "coach.rule" || spot == "bee.garden") ? 0f : HomeBannerTop(h, safe, s));
+            bool gardenSpot = spot == "coach.line" || spot == "coach.rule" || spot == "bee.garden";
+            LiftOffMainButtons(ref band, w, h, safe, s, badge, gardenSpot ? 0f : HomeBannerTop(h, safe, s), !gardenSpot);
+            if (spot == "album.coach")
+                ParkAlbumBand(ref band, w, h, safe, s);
             return band;
+        }
+
+        // The honey sentence sits clear of the inspect card and of the home buttons.
+        // A band that still overlaps one ends a gap above it, or moves under the card
+        // when that strip is free.
+        static void ParkAlbumBand(ref Rect band, float w, float h, Rect safe, float s)
+        {
+            float gap = 8f * (s > 0.01f ? s : 1f);
+            var buttons = new Rect[4];
+            int n = FillMainButtons(w, h, safe, buttons);
+            ClipBandAbove(ref band, buttons, n, gap);
+            float inset = Mathf.Max(34f, safe.yMin);
+            var card = SeatedInspectCard(w, h, inset, s);
+            if (card.width < 2f || card.height < 2f || !band.Overlaps(card)) return;
+            float keepY = band.y;
+            float keepH = band.height;
+            float below = card.yMax + gap;
+            var moved = band;
+            moved.y = below;
+            bool room = below + band.height <= h - inset + 0.5f && !BandHits(moved, buttons, n);
+            if (room)
+            {
+                band.y = below;
+                ClipBandAbove(ref band, buttons, n, gap);
+                if (!band.Overlaps(card) && !BandHits(band, buttons, n)) return;
+                band.y = keepY;
+                band.height = keepH;
+            }
+            float end = card.yMin - gap;
+            if (band.y < end - 4f)
+                band.height = end - band.y;
+            ClipBandAbove(ref band, buttons, n, gap);
+        }
+
+        static void ClipBandAbove(ref Rect band, Rect[] buttons, int n, float gap)
+        {
+            for (int i = 0; i < n; i++)
+            {
+                if (buttons[i].width < 2f || buttons[i].height < 2f || !band.Overlaps(buttons[i])) continue;
+                float end = buttons[i].yMin - gap;
+                if (band.y < end - 4f)
+                    band.height = end - band.y;
+            }
+        }
+
+        static bool BandHits(Rect band, Rect[] buttons, int n)
+        {
+            for (int i = 0; i < n; i++)
+                if (buttons[i].width > 2f && band.Overlaps(buttons[i])) return true;
+            return false;
         }
 
         // Play flower, garden restart, garden hive, settings gear. A banner may cover
         // the adopt VIP badge; it may not cover one of these.
         public static int FillMainButtons(float w, float h, Rect safe, Rect[] dst)
         {
+            return FillMainButtons(w, h, safe, dst, true);
+        }
+
+        public static int FillMainButtons(float w, float h, Rect safe, Rect[] dst, bool gearShown)
+        {
             if (dst == null || dst.Length < 4) return 0;
             dst[0] = SplashPress.LevelRect(w, h, safe);
             CornerAnchor.Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
             dst[1] = restart;
             dst[2] = hive;
-            dst[3] = SettingsGearRect(w, h, safe);
+            dst[3] = gearShown ? SettingsGearRect(w, h, safe) : default;
             return 4;
         }
 
@@ -4243,10 +5565,10 @@ namespace FlockFive
                 && band.yMax >= badge.yMax - 0.5f;
         }
 
-        static void LiftOffMainButtons(ref Rect band, float w, float h, Rect safe, float s, Rect mustCover, float floorY = 0f)
+        static void LiftOffMainButtons(ref Rect band, float w, float h, Rect safe, float s, Rect mustCover, float floorY = 0f, bool gearShown = true)
         {
             var buttons = new Rect[4];
-            int n = FillMainButtons(w, h, safe, buttons);
+            int n = FillMainButtons(w, h, safe, buttons, gearShown);
             float gap = 8f * (s > 0.01f ? s : 1f);
             for (int pass = 0; pass < n; pass++)
             {
@@ -4414,6 +5736,7 @@ namespace FlockFive
                 float room = (inner - CaptionLayout.WidestRow(st, BannerText ?? text, bandPx)) * 0.5f;
                 if (room < ring) ring = Mathf.Max(2, Mathf.FloorToInt(Mathf.Max(0f, room)));
                 var words = new Rect(ix, band.y - CaptionLayout.BannerInkLift(bandPx), inner, band.height);
+                DrawTapWaitGlove(BannerText ?? text, words, band, fade);
                 StampBannerText(words, BannerText ?? text, st, fade, true, ring);
                 GUI.color = prevC;
                 KeepCaptionOnTop(1, band, words, BannerText ?? text, bandPx, fade, ring);
@@ -4459,6 +5782,7 @@ namespace FlockFive
                 // top and bottom, at every text size.
                 var inkText = drawText;
                 inkText.y -= CaptionLayout.BannerInkLift(_coachSizedPx);
+                DrawTapWaitGlove(_coachShown ?? text, inkText, plate, fade);
                 StampBannerText(inkText, _coachShown ?? text, st, fade, true);
                 KeepCaptionOnTop(2, plate, inkText, _coachShown ?? text, _coachSizedPx, fade, -1);
                 return;
@@ -4472,6 +5796,7 @@ namespace FlockFive
             }
             NoteTutorPlate(CoachPanelRect(plateBox, platePad));
             DrawCoachPanel(plateBox, fade, platePad, opaque);
+            DrawTapWaitGlove(_coachShown ?? text, drawText, CoachPanelRect(plateBox, platePad), fade);
             StampBannerText(drawText, _coachShown ?? text, st, fade, true);
             KeepCaptionOnTop(3, CoachPanelRect(plateBox, platePad), drawText, _coachShown ?? text, _coachSizedPx, fade, -1);
         }
@@ -4495,6 +5820,24 @@ namespace FlockFive
         bool _capRepainting;
         public static int CaptionRepaints;
         public static int CaptionGloveHit = -1;
+
+        // Under the words. The step glove is the lesson hand, and this cue stays off it.
+        void DrawTapWaitGlove(string shown, Rect text, Rect plate, float fade)
+        {
+            if (fade < 0.04f || !TapWaitGlove.Shows(shown)) return;
+            var step = _gloveVis ? OnScreenGlove() : default;
+            float w = PhoneArea.W > 2f ? PhoneArea.W : 820f;
+            float h = PhoneArea.H > 2f ? PhoneArea.H : 1180f;
+            var slot = TapWaitGlove.CueSlot(text, plate, step, w, h);
+            var frame = TapWaitGlove.Frame(slot, PlayClock.Now);
+            if (frame.width < 2f) return;
+            var tex = CoachGloveCurl(TapWaitGlove.Dip(PlayClock.Now));
+            if (tex == null) return;
+            var prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, fade);
+            GUI.DrawTexture(frame, tex, ScaleMode.ScaleToFit, true);
+            GUI.color = prev;
+        }
 
         void KeepCaptionOnTop(int kind, Rect plate, Rect text, string shown, int px, float fade, int ring)
         {
@@ -4792,13 +6135,42 @@ namespace FlockFive
             return true;
         }
 
+        // Same pose DrawGloveAt renders. Update calls this before OnGUI, so the
+        // hit rect cannot wait for the draw to store _gloveBody.
+        Rect OnScreenGlove()
+        {
+            var live = LiveGloveRect();
+            if (_gloveBodyFrame >= 0 && Time.frameCount - _gloveBodyFrame <= 1 && _gloveBody.width > 2f)
+            {
+                if (live.width < 2f) return _gloveBody;
+                return Rect.MinMaxRect(
+                    Mathf.Min(live.xMin, _gloveBody.xMin), Mathf.Min(live.yMin, _gloveBody.yMin),
+                    Mathf.Max(live.xMax, _gloveBody.xMax), Mathf.Max(live.yMax, _gloveBody.yMax));
+            }
+            return live;
+        }
+
+        Rect LiveGloveRect()
+        {
+            float dh = GloveDh(DeviceFit.Ui());
+            float dip = _gloveHoldPose ? _gloveHoldDip : _gloveDip;
+            var tex = CoachGloveCurl(dip);
+            if (tex == null || dh < 1f) return _gloveBody;
+            float ang = ResolveDrawAngle(_gloveShownAng, _gloveMirror, _gloveFaceOn, _gloveHoldPose, _gloveApproach);
+            var pivot = GloveBobPivot(_gloveShown, ang, AdPause.Unscaled, _gloveHoldPose);
+            float dw = dh * (tex.width / (float)Mathf.Max(1, tex.height));
+            bool mirror = _gloveMirror;
+            DrawnGlovePose(ref pivot, ref ang, ref mirror, dw, dh, PhoneArea.W, PhoneArea.H, _gloveFaceOn);
+            return ScreenGloveRect(pivot, ang, dh, dip, mirror);
+        }
+
         void DrawCoachGlove(float s)
         {
             bool fading = _gloveAct == TutorGloveAct.FadeOutOnTap;
             if (_gloveAlpha < 0.03f) return;
             if (!fading && !_gloveVis) return;
             float dip = _gloveHoldPose ? _gloveHoldDip : _gloveDip;
-            DrawGloveAt(_gloveShown, _gloveShownAng, GloveDh(s), _gloveAlpha, dip, _gloveMirror);
+            DrawGloveAt(_gloveShown, _gloveShownAng, GloveSize(s), _gloveAlpha, dip, _gloveMirror);
         }
 
         // Unmirrored rect keeps the fingertip pixel on the pivot. mirror is for the
@@ -4811,17 +6183,137 @@ namespace FlockFive
             return new Rect(pivot.x - u * dw, pivot.y - (1f - _gloveTipV) * dh, dw, dh);
         }
 
+        // One bob, in screen pixels. Peak-to-peak is 8. Not scaled by DeviceFit.
+        public const float GloveBobAmp = 4f;
+
+        public static float GloveBobPx(float unscaledTime, bool hold)
+        {
+            if (hold) return 0f;
+            return Mathf.Sin(unscaledTime * 2.35f) * GloveBobAmp;
+        }
+
+        public static Vector2 GloveBobPivot(Vector2 pivot, float ang, float unscaledTime, bool hold)
+        {
+            float bob = GloveBobPx(unscaledTime, hold);
+            float rad = ang * Mathf.Deg2Rad;
+            var d = new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
+            d.x = Mathf.Clamp(d.x, -8f, 8f);
+            return pivot + d;
+        }
+
+        // The quad DrawGloveAt renders, after bob, dip scale, and rotation.
+        // GUI space (y down), before the pillar shift. Update hit-tests this same rect.
+        // The pivot passed in is already bobbed.
+        public static Rect ScreenGloveRect(Vector2 pivot, float ang, float dh, float dip, bool mirror)
+        {
+            var tex = CoachGloveCurl(dip);
+            float dw = tex == null ? dh * (220f / 300f) : dh * (tex.width / (float)Mathf.Max(1, tex.height));
+            float left = pivot.x - _gloveTipU * dw;
+            float top = pivot.y - (1f - _gloveTipV) * dh;
+            float widen = 1f + 0.07f * dip;
+            float squash = 1f - 0.12f * dip;
+            float sx = mirror ? -widen : widen;
+            float rad = ang * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad);
+            float sn = Mathf.Sin(rad);
+            float minX = 0f, minY = 0f, maxX = 0f, maxY = 0f;
+            for (int i = 0; i < 4; i++)
+            {
+                float x = (i & 1) == 0 ? left : left + dw;
+                float y = (i & 2) == 0 ? top : top + dh;
+                float dx = (x - pivot.x) * sx;
+                float dy = (y - pivot.y) * squash;
+                float rx = pivot.x + dx * c - dy * sn;
+                float ry = pivot.y + dx * sn + dy * c;
+                if (i == 0) { minX = maxX = rx; minY = maxY = ry; }
+                else
+                {
+                    if (rx < minX) minX = rx;
+                    if (rx > maxX) maxX = rx;
+                    if (ry < minY) minY = ry;
+                    if (ry > maxY) maxY = ry;
+                }
+            }
+            return Rect.MinMaxRect(minX, minY, maxX, maxY);
+        }
+
+        // Screen point is bottom-up, the rect is GUI y-down. Same conversion Pressed uses.
+        public static bool LessonGloveHit(Vector2 screen, float screenH, Rect drawn)
+        {
+            if (drawn.width < 2f || drawn.height < 2f) return false;
+            return drawn.Contains(PointerToGui(screen, screenH));
+        }
+
+        // Bottom-up screen pixels to GUI y-down. One flip, matching Pressed.
+        public static Vector2 PointerToGui(Vector2 screenBottomUp, float screenH)
+        {
+            return new Vector2(screenBottomUp.x, screenH - screenBottomUp.y);
+        }
+
+        // CSS canvas pixels to the framebuffer the glove is drawn in.
+        // Identity when the buffer matches the CSS size.
+        public static Vector2 CanvasPointer(Vector2 cssBottomUp, float cssW, float cssH, float bufferW, float bufferH)
+        {
+            if (cssW < 1f || cssH < 1f || bufferW < 1f || bufferH < 1f) return cssBottomUp;
+            return new Vector2(cssBottomUp.x * bufferW / cssW, cssBottomUp.y * bufferH / cssH);
+        }
+
+        public enum PressFate { Miss, Home, Restart, Glove, Caption }
+
+        // Handler order the player uses: Home and Restart, then the drawn glove, then the caption.
+        public static PressFate GardenPressFate(Vector2 screenBottomUp, float screenH, Rect home, Rect restart, Rect glove, bool captionUp, bool gloveUp)
+        {
+            bool homeHit, restartHit;
+            if (GardenHudPoint(screenBottomUp, screenH, home, restart, out homeHit, out restartHit))
+                return homeHit ? PressFate.Home : PressFate.Restart;
+            if (gloveUp && LessonGloveHit(screenBottomUp, screenH, glove))
+                return PressFate.Glove;
+            if (captionUp) return PressFate.Caption;
+            return PressFate.Miss;
+        }
+
+        // The release that left the level must not open the gear under the same spot.
+        public static bool GearTakesRelease(bool exitHeld, int exitId, int eventId, bool isRelease, Vector2 releaseGui, Rect gear)
+        {
+            if (SwallowLevelExit(exitHeld, exitId, isRelease ? PointerEdge.Release : PointerEdge.None, eventId))
+                return false;
+            if (gear.width < 2f) return false;
+            return gear.Contains(releaseGui);
+        }
+
+        public static Vector2 UpgradeGloveSettle(Rect button)
+        {
+            if (button.width < 4f || button.height < 4f) return button.center;
+            // Fingertip on the bottom-right corner. The quad hangs below the
+            // tip, so the label on the plate stays readable.
+            float x = Mathf.Clamp(button.xMax - 8f, button.xMin + 4f, button.xMax - 4f);
+            float y = Mathf.Clamp(button.yMax - 8f, button.yMin + 4f, button.yMax - 4f);
+            return new Vector2(x, y);
+        }
+
+        public static float AdvanceRuleHold(float held, float unscaledDelta)
+        {
+            if (unscaledDelta < 0f) unscaledDelta = 0f;
+            return held + unscaledDelta;
+        }
+
+        public static bool RuleHoldDone(float held) => held >= RuleTips.ReadSeconds;
+
+        public static bool GardenHudPoint(Vector2 screen, float screenH, Rect home, Rect restart, out bool homeHit, out bool restartHit)
+        {
+            // screen is bottom-origin play pixels. PlayPointer already removed the pillar.
+            var gui = new Vector2(screen.x, screenH - screen.y);
+            homeHit = home.width > 2f && home.Contains(gui);
+            restartHit = !homeHit && restart.width > 2f && restart.Contains(gui);
+            return homeHit || restartHit;
+        }
+
         void DrawGloveAt(Vector2 pivot, float ang, float dh, float alpha, float dip, bool mirror = false)
         {
             var tex = CoachGloveCurl(dip);
             if (tex == null) return;
             ang = ResolveDrawAngle(ang, mirror, _gloveFaceOn, _gloveHoldPose, _gloveApproach);
-            // Small poke along the finger, not a vertical bob. Zero at full dip so the
-            // tap frame's fingertip is the pivot. Held still while a tap fades the hand.
-            // Unscaled so GamePause does not freeze it.
-            float bob = _gloveHoldPose ? 0f : Mathf.Sin(AdPause.Unscaled * 2.35f) * dh * 0.028f * (1f - dip);
-            float rad = ang * Mathf.Deg2Rad;
-            pivot += new Vector2(Mathf.Sin(rad), -Mathf.Cos(rad)) * bob;
+            pivot = GloveBobPivot(pivot, ang, AdPause.Unscaled, _gloveHoldPose);
             float dw = dh * (tex.width / (float)tex.height);
             // b88: a locked approach does not flip to fit the glass. An unlocked
             // rest pose may still pull an off-glass pivot inside, without a new aim.
@@ -4835,7 +6327,8 @@ namespace FlockFive
             float widen = 1f + 0.07f * dip;
             float squash = 1f - 0.12f * dip;
             float sx = (mirror ? -widen : widen);
-            bool haveBox = RotAabb(rect.x, rect.y, rect.width, rect.height, pivot, ang, 0f, out var drawn);
+            var drawn = ScreenGloveRect(pivot, ang, dh, dip, mirror);
+            bool haveBox = drawn.width > 2f && drawn.height > 2f;
             if (haveBox && alpha > 0.05f) { _gloveBody = drawn; _gloveBodyFrame = Time.frameCount; GloveBodyAlpha = alpha; }
             var prev = GUI.matrix;
             // Pivot rotation first, then the matrix already in use (GuiBase). The old
@@ -5039,7 +6532,7 @@ namespace FlockFive
         void DrawRestGlove(float s)
         {
             if (!_restVis || _coachFade < 0.03f) return;
-            DrawGloveAt(_restShown, _restAng, GloveDh(s), EaseOutCubic(_coachFade), TapDip(_glovePhase), _restMirror);
+            DrawGloveAt(_restShown, _restAng, GloveSize(s), EaseOutCubic(_coachFade), TapDip(_glovePhase), _restMirror);
         }
 
         // Perch the tap hand uses, in GUI space. Matches the lesson focus, not the gift sign.
@@ -5587,10 +7080,32 @@ namespace FlockFive
             return true;
         }
 
+        // Look is owed while the greet adopted the bird and the name is not done.
+        bool ChainLookOwed()
+        {
+            return AdoptResume.LookOwed(AvatarAdopted(),
+                PlayerPrefs.GetInt(AvatarNamedPref, -1),
+                ClipAvatarName(PlayerPrefs.GetString(AvatarNamePref, "")).Length > 0);
+        }
+
+        // Tap Daily is owed only while the greet has been seen and the coach key is 0.
+        // Same rule after an early Play in this session and after a kill.
+        bool DailyChainOwed()
+        {
+            return AdoptResume.DailyOwed(AvatarAdopted(), PlayerPrefs.GetInt(CoachDailyKey, 0) != 0);
+        }
+
+        // The badger flower waits while either of those is still owed.
+        bool HomeChainOwed()
+        {
+            return ChainLookOwed() || DailyChainOwed();
+        }
+
         // Glove and caption wait until the adopted bird is perched on the branch.
         bool SplashDailyTurn()
         {
-            if (!SplashLessonRoom() || !_dailyIntro || LevelData.NextPlay < 1) return false;
+            if (!SplashLessonRoom() || !_dailyIntro) return false;
+            if (LevelData.NextPlay < 1 && !DailyChainOwed()) return false;
             if (AdoptHoldsQueue() || !BirdSettledOnBranch() || WelcomeOwnsTurn()) return false;
             return true;
         }
@@ -5621,6 +7136,7 @@ namespace FlockFive
                 if (was)
                 {
                     _gloveVis = false;
+                    DropGlovePress();
                     if (string.Equals(_cueLine, HiveHomeLine)) _cueLine = null;
                 }
                 return;
@@ -5665,6 +7181,7 @@ namespace FlockFive
             if (_dailyIntro) return;
             _gloveReady = false;
             _gloveVis = false;
+            DropGlovePress();
             _coachFade = 0f;
             TickHiveIntro();
         }
@@ -5696,6 +7213,7 @@ namespace FlockFive
             _cueHand = false;
             _cueLine = null;
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             _coachFade = 0f;
             NoteLessonDismiss(step);
@@ -5834,13 +7352,34 @@ namespace FlockFive
         Rect _bgGateFreeze; // b110: frozen Freeze Spray, its own rect (not a union with Hot Sauce)
         int _coachAteFrame = -1;
         // Unscaled. A lesson dismiss arms this. Board and HUD taps wait it out.
-        static float _lessonGuardUntil;
+        // Per instance. A static survived edit-mode tests, which never run OnEnable.
+        float _lessonGuardUntil;
 
-        void MarkCoachAte() => _coachAteFrame = Time.frameCount;
+        // Resume, a fresh round, and an ad close are not a lesson dismiss.
+        public static void ClearLessonGuard()
+        {
+            if (_app != null) _app._lessonGuardUntil = 0f;
+        }
 
-        bool CoachAteThisFrame() => _coachAteFrame == Time.frameCount;
+#if UNITY_EDITOR
+        internal static int CoachFrameOffsetForTests;
+        static int CoachFrameNow => Time.frameCount + CoachFrameOffsetForTests;
+#endif
+        void MarkCoachAte() => _coachAteFrame =
+#if UNITY_EDITOR
+            CoachFrameNow;
+#else
+            Time.frameCount;
+#endif
 
-        static bool LessonGuardUp() => CoachDismiss.GuardBlocks(AdPause.Unscaled, _lessonGuardUntil);
+        bool CoachAteThisFrame() => _coachAteFrame ==
+#if UNITY_EDITOR
+            CoachFrameNow;
+#else
+            Time.frameCount;
+#endif
+
+        bool LessonGuardUp() => CoachDismiss.GuardBlocks(AdPause.Unscaled, _lessonGuardUntil);
 
         // The tap that just dismissed a lesson, and any tap during the guard.
         bool LessonTapBlocked() => CoachAteThisFrame() || LessonGuardUp();
@@ -5866,6 +7405,7 @@ namespace FlockFive
             _gloveFadeDismissed = true;
             _gloveAlpha = 0f;
             _gloveVis = false;
+            DropGlovePress();
             _gloveHoldPose = false;
         }
 
@@ -5901,7 +7441,36 @@ namespace FlockFive
             var t = e.type;
             if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
             if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
+            if (GardenHudGui(PlayPointer.Gui(e))) return;
             e.Use();
+        }
+
+        bool GardenHudGui(Vector2 gui)
+        {
+            HudShaken(out var restart, out _);
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            bool homeHit, restartHit;
+            var bottom = new Vector2(gui.x, PhoneArea.H - gui.y);
+            return GardenHudPoint(bottom, PhoneArea.H, home, restart, out homeHit, out restartHit);
+        }
+
+        bool GardenHudAct(Vector2 screen)
+        {
+            var canvas = new Vector2(screen.x, PhoneArea.H - screen.y);
+            if (OverlayOwnsPress(canvas, false)) return true;
+            HudShaken(out var restart, out _);
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            bool homeHit, restartHit;
+            if (!GardenHudPoint(screen, PhoneArea.H, home, restart, out homeHit, out restartHit)) return false;
+            // Home and Restart share HitHud's guard. A glove-owned press does not
+            // open either, and Restart stays down for the resume window.
+            if (homeHit)
+            {
+                if (GloveOwnsHudPress()) return true;
+                ShowSplash();
+                return true;
+            }
+            return ActRestart();
         }
 
         // One application of CoachTap. Informational fills the screen and eats the press.
@@ -6108,76 +7677,111 @@ namespace FlockFive
             return true;
         }
 
+        // What the off-target gate decided. Ignore means the event was not a
+        // pointer. Pass means the handler saw it and left it for the control
+        // underneath. Use means eat it. ClearHotControl is only set on a Use
+        // that used to zero hotControl, which is a mouse-up.
+        internal struct OffTargetVerdict
+        {
+            internal enum Act { Ignore, Pass, Use }
+            internal Act Kind;
+            internal bool ClearHotControl;
+
+            internal static OffTargetVerdict Ignore()
+                => new OffTargetVerdict { Kind = Act.Ignore };
+            internal static OffTargetVerdict Pass()
+                => new OffTargetVerdict { Kind = Act.Pass };
+            internal static OffTargetVerdict Consume(EventType type)
+                => new OffTargetVerdict { Kind = Act.Use, ClearHotControl = type == EventType.MouseUp };
+        }
+
         // Called at the top of OnGUI, after the pause early-out, like SwallowResumePointer.
         void SwallowOffTargetTap()
         {
-            var e = Event.current;
-            if (e == null) return;
-            var t = e.type;
-            if (t != EventType.MouseDown && t != EventType.MouseUp && t != EventType.MouseDrag) return;
+            SwallowOffTargetTap(Event.current);
+        }
+
+        // Applies the verdict to a live IMGUI event. A null current still
+        // returns before any caption changes.
+        bool SwallowOffTargetTap(Event e)
+        {
+            if (e == null) return false;
+            var v = JudgeOffTargetTap(e.type, PlayPointer.Gui(e), e.button);
+            if (v.Kind == OffTargetVerdict.Act.Ignore) return false;
+            if (v.ClearHotControl) GUIUtility.hotControl = 0;
+            if (v.Kind == OffTargetVerdict.Act.Use) e.Use();
+            return true;
+        }
+
+        // Same decisions as the OnGUI wrapper, without touching Event.current.
+        // A left press is button 0 only. A negative button does not advance.
+        internal OffTargetVerdict JudgeOffTargetTap(EventType type, Vector2 pos, int button)
+        {
+            if (type != EventType.MouseDown && type != EventType.MouseUp && type != EventType.MouseDrag)
+                return OffTargetVerdict.Ignore();
+            // The bonus glove must not eat Watch, X, Home, or Restart, or a release
+            // that missed the hand.
+            if (CoachControlYields(pos, type == EventType.MouseUp))
+                return OffTargetVerdict.Pass();
             // The name plate's chips, colors, and Done sit under this gate. A lesson
             // that eats every other press must leave the plate alone.
-            if (RenamePlateOwns(_avatarRename, _avatarRenameR, e.mousePosition, PhoneArea.OffX)) return;
+            if (RenamePlateOwns(_avatarRename, _avatarRenameR, pos, 0))
+                return OffTargetVerdict.Pass();
+            // The bet coach's glove gate used to eat Back before the medal's own
+            // handler ran, so a new player could not leave. The same predicate the
+            // tests call lets that tap through. A dealt hand still does not.
+            bool betCoach = PokerBetCoachOpen(_pokerPageOn || _pokerDealHint, BirdPoker.PhaseNow == BirdPoker.Phase.Idle, !PokerMotionBusy());
+            var backMedal = BackMedalRect(DeviceFit.Ui(), TopHud());
+            if (CoachVeilLetsBackThrough(pos, betCoach, PokerHandHoldsBack(BirdPoker.PhaseNow), backMedal))
+                return OffTargetVerdict.Pass();
             // A press already advanced an informational step this frame (IMGUI or the
             // Input System). Eat the rest of it, including the mouse-up, so the next
             // step does not take the same tap and a button underneath does not fire.
             if (CoachAteThisFrame())
-            {
-                if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-                e.Use();
-                return;
-            }
+                return OffTargetVerdict.Consume(type);
             if (!StepTapGate(out var gate))
             {
                 // Hand-armed (hit function) gloves: VIP pitch, adopt look, cue targets.
                 if (_gloveTapHit != null && GloveFocusLive())
                 {
-                    var p0 = e.mousePosition;
-                    bool inside = GloveTapHits(new Vector2(p0.x, PhoneArea.H - p0.y));
-                    if (!GloveFocusAllows(true, true, inside, HomeGearExempt(p0) || GiftCloseExempt(p0)))
-                    {
-                        if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-                        e.Use();
-                    }
+                    bool inside = GloveTapHits(new Vector2(pos.x, PhoneArea.H - pos.y));
+                    if (!GloveFocusAllows(true, true, inside, HomeGearExempt(pos) || GiftCloseExempt(pos) || PlayExempt(pos)))
+                        return OffTargetVerdict.Consume(type);
                 }
-                return;
+                return OffTargetVerdict.Pass();
             }
-            var kind = t == EventType.MouseDown ? GatePointer.Down : t == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
+            var kind = type == EventType.MouseDown ? GatePointer.Down : type == EventType.MouseUp ? GatePointer.Up : GatePointer.Drag;
             // b115 (Brandon): the ad offer's X is never gated. The ad-hand glove arms a tap RECT (Watch), so the gate
             // lands here and the hand-armed exemption above never ran: the X was eaten and the player was stuck.
-            if (GateExemptsGiftClose(gate.Step, GiftCloseExempt(e.mousePosition))) return;
-            if (gate.Step == GateBadgerGuide && BadgerFrozenUi.PressPasses(e.mousePosition, default, _bgGateToggle, _bgGateFreeze)) return;
+            if (GateExemptsGiftClose(gate.Step, GiftCloseExempt(pos)))
+                return OffTargetVerdict.Pass();
+            if (gate.Step == GateBadgerGuide && BadgerFrozenUi.PressPasses(pos, default, _bgGateToggle, _bgGateFreeze))
+                return OffTargetVerdict.Pass();
             if (gate.AnyTap)
             {
-                if (HomeGearExempt(e.mousePosition)) return;
+                if (HomeGearExempt(pos) || PlayExempt(pos))
+                    return OffTargetVerdict.Pass();
                 // b123: lessons 1-3 ignore back, the power row and combs: eaten, no advance.
-                if (gate.Step == GateBadgerLesson && BadgerLessonIgnores(e.mousePosition))
-                {
-                    if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-                    e.Use();
-                    return;
-                }
-                if (TutorialHeal.GateAdvances(kind, true, e.button))
+                if (gate.Step == GateBadgerLesson && BadgerLessonIgnores(pos))
+                    return OffTargetVerdict.Consume(type);
+                if (TutorialHeal.GateAdvances(kind, true, button))
                 {
                     if (!gate.Pass) MarkCoachAte();
                     CompleteGatedStep(gate.Step);
                 }
-                if (gate.Pass) return;
-                if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-                e.Use();
-                return;
+                if (gate.Pass) return OffTargetVerdict.Pass();
+                return OffTargetVerdict.Consume(type);
             }
-            var at = e.mousePosition;
-            bool inSwipe = gate.SwipeArea.width > 2f && gate.SwipeArea.Contains(at);
+            bool inSwipe = gate.SwipeArea.width > 2f && gate.SwipeArea.Contains(pos);
             bool swipeTaken = false;
-            if (t == EventType.MouseUp && gate.SwipeArea.width > 2f && _pageSwipe.Tracking)
+            if (type == EventType.MouseUp && gate.SwipeArea.width > 2f && _pageSwipe.Tracking)
             {
                 float s = DeviceFit.Ui();
-                swipeTaken = PageSwipeDir(at - _pageSwipe.Origin, AlbumSwipeMin(s), out _);
+                swipeTaken = PageSwipeDir(pos - _pageSwipe.Origin, AlbumSwipeMin(s), out _);
             }
-            if (TutorialHeal.GateLets(kind, gate.Target.Contains(at), inSwipe, swipeTaken)) return;
-            if (t == EventType.MouseUp) GUIUtility.hotControl = 0;
-            e.Use();
+            if (TutorialHeal.GateLets(kind, gate.Target.Contains(pos), inSwipe, swipeTaken))
+                return OffTargetVerdict.Pass();
+            return OffTargetVerdict.Consume(type);
         }
 
         // The posing step armed this rect within the last frame (CoachGloveAt → GloveArmTap).
@@ -6331,6 +7935,11 @@ namespace FlockFive
 
         // True while the WatchGift coroutine (the ad stage behind the Watch lesson) is alive.
         bool _watchGiftLive;
+        int _watchStarts;
+#if UNITY_EDITOR
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        internal int EditorWatchRequests;
+#endif
 
         // THE interruption check, shared by every tutorial. A lesson that is backgrounded,
         // closed, or cut off half-way can leave a flag, a pause, an ad stage or a tap gate
@@ -6451,6 +8060,7 @@ namespace FlockFive
             if (!TutorialStepActive()) return;
             GloveVeilReset();
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             _glovePhase = 0f;
             _gloveDip = 0f;
@@ -6471,6 +8081,14 @@ namespace FlockFive
                 return;
             }
             ReleaseTutorPause();
+        }
+
+        // Restart and Home both leave the caption. The pause has to be gone
+        // before SnapRound, or FlyOffAll waits forever and the seed is never copied.
+        void ReleaseCaptionPause()
+        {
+            if (_ruleTip != RuleTip.None) DismissRuleTip();
+            else ReleaseTutorPause();
         }
 
         void ReleaseTutorPause()
@@ -6517,6 +8135,7 @@ namespace FlockFive
             }
             if (Ads.IsShowing) return;
             if (!Pressed(out var screen)) return;
+            if (GardenHudAct(screen)) return;
             if (_pestCue != 0)
             {
                 PestIntroTap(screen);
@@ -6524,7 +8143,8 @@ namespace FlockFive
             }
             if (_hiveLevelLive)
             {
-                HudLayout(out _, out _, out _, out _, out var hive);
+                HudLayout(out _, out _, out _, out var restart, out var hive);
+                hive = CornerAnchor.HiveStrawHit(CornerAnchor.HiveAlignedDraw(hive, restart));
                 var gui = new Vector2(screen.x, PhoneArea.H - screen.y);
                 if (hive.Contains(gui)) OpenLevelHive();
             }
@@ -6797,7 +8417,11 @@ namespace FlockFive
                 if (_pokerIntroLive && HoldLiveLesson()) return;
                 bool was = _pokerIntroLive;
                 _pokerIntroLive = false;
-                if (was) _gloveVis = false;
+                if (was)
+                {
+                    _gloveVis = false;
+                    DropGlovePress();
+                }
                 return;
             }
             if (!_pokerIntroLive)
@@ -6828,6 +8452,7 @@ namespace FlockFive
             if (_dailyIntro || _hiveIntro) return;
             _gloveReady = false;
             _gloveVis = false;
+            DropGlovePress();
             _coachFade = 0f;
             TickPokerIntro();
         }
@@ -6840,6 +8465,7 @@ namespace FlockFive
             _pokerIntroLive = false;
             _pokerIntroSaw = false;
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             _coachFade = 0f;
             NoteLessonDismiss(CoachStep.PokerIntro);
@@ -6877,6 +8503,20 @@ namespace FlockFive
         int PokerIntroFontHi(float s) => Mathf.Max(24, Mathf.RoundToInt(46f * s * CaptionLayout.TextFit(PhoneArea.W, PhoneArea.H)));
         static int LessonFontHi(float s) => Mathf.RoundToInt(32f * s * CaptionLayout.TextFit(PhoneArea.W, PhoneArea.H));
 
+        void ClearPokerIntroOffBird(ref Rect r, float s)
+        {
+            // The coins line used to sit on the home bird and its name tag.
+            var bird = AvatarHomePoint();
+            float icon = HomeAvatarIcon(s);
+            if (icon < 8f) return;
+            float top = bird.y - icon * 0.65f;
+            float bot = bird.y + icon * 1.35f;
+            if (r.yMax <= top + 2f || r.y >= bot - 2f) return;
+            float below = bot + 8f * s;
+            if (below + r.height < PhoneArea.H - 8f) r.y = below;
+            else r.y = Mathf.Max(8f, top - r.height - 8f * s);
+        }
+
         Rect PokerIntroBox(float s)
         {
             var r = AnchoredCaptionBox(PokerIntroLine, s, CaptionAnchor.CoverDiscLettering, out _);
@@ -6896,6 +8536,7 @@ namespace FlockFive
                 if (under > floorY) floorY = under;
             }
             if (r.y < floorY) r.y = floorY;
+            ClearPokerIntroOffBird(ref r, s);
             var button = SplashPokerRect();
             var aim = GloveTargetAt(button, PokerGloveU, PokerGloveV);
             var hand = PokerPointHand(aim, s);
@@ -6919,6 +8560,7 @@ namespace FlockFive
                     r.x = edge;
                     r.width = PhoneArea.W - edge * 2f;
                     r.y = belowY + (room - r.height) * 0.5f;
+                    ClearPokerIntroOffBird(ref r, s);
                     return r;
                 }
             }
@@ -7239,7 +8881,11 @@ namespace FlockFive
                 if (_dailyIntroLive && HoldLiveLesson()) return;
                 bool was = _dailyIntroLive;
                 _dailyIntroLive = false;
-                if (was) _gloveVis = false;
+                if (was)
+                {
+                    _gloveVis = false;
+                    DropGlovePress();
+                }
                 return;
             }
             if (!_dailyIntroLive)
@@ -7249,6 +8895,12 @@ namespace FlockFive
                 _dailyGloveOnClaim = false;
                 _glovePhase = 0f;
                 _tapSent = false;
+                // One count per home visit. A second ShowSplash must not arm it again.
+                if (!_dailyResumedThisVisit)
+                {
+                    _chainDailyRuns++;
+                    _dailyResumedThisVisit = true;
+                }
             }
             _dailyIntroLive = true;
             _dailyIntroSaw = true;
@@ -7271,11 +8923,12 @@ namespace FlockFive
 #if UNITY_EDITOR
             if (_dailyShotQuiet || _pokerPlayrun || EditorShotLive) return;
 #endif
-            if (LevelData.NextPlay < 1) return;
+            if (LevelData.NextPlay < 1 && !DailyChainOwed()) return;
             if (PlayerPrefs.GetInt(CoachDailyKey, 0) != 0) return;
             _dailyIntro = true;
             _gloveReady = false;
             _gloveVis = false;
+            DropGlovePress();
             _coachFade = 0f;
             TickDailyIntro();
         }
@@ -7290,16 +8943,18 @@ namespace FlockFive
             _dailyIntroSaw = false;
             _dailyGloveOnClaim = false;
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             _coachFade = 0f;
             NoteLessonDismiss(step);
         }
 
-        // markSeen false: a heal reset (pause, focus) is not a completion. The pref stays 0 and the
-        // lesson re-arms at the next splash.
+        // markSeen is retained so a heal and a Play leave share one method. Neither
+        // finished Tap Daily. Only DismissDailyIntro writes the pref, so the lesson
+        // is back on the next home visit.
         void NoteDailyIntroLeft(bool markSeen = true)
         {
-            if (markSeen && _dailyIntroSaw) MarkDailyCoach();
+            if (markSeen) { }
             _dailyIntro = false;
             _dailyIntroLive = false;
             _dailyIntroSaw = false;
@@ -7424,7 +9079,7 @@ namespace FlockFive
             if (e == null) return false;
             if (e.type != EventType.MouseDown && e.type != EventType.MouseUp && e.type != EventType.MouseDrag)
                 return false;
-            return RestartGui(e.mousePosition);
+            return RestartGui(PlayPointer.Gui(e));
         }
 
         bool RestartGui(Vector2 gui)
@@ -7529,6 +9184,7 @@ namespace FlockFive
             {
                 _cueHand = false;
                 _gloveVis = false;
+                DropGlovePress();
                 _leafKeepOn = false;
                 CoachHideGlow();
                 return;
@@ -7548,6 +9204,7 @@ namespace FlockFive
                 _tutorSeatOn = false;
                 _leafSeatOn = false;
                 _gloveVis = false;
+                DropGlovePress();
                 _cueBranch = b;
                 _leafKeepOn = false;
                 HideLeafGlove();
@@ -7571,6 +9228,7 @@ namespace FlockFive
                 || _gloveAct == TutorGloveAct.FadeOutOnTap)
                 GloveVeilReset();
             _gloveVis = false;
+            DropGlovePress();
             _cueHolePx = 0f;
         }
 
@@ -7688,6 +9346,7 @@ namespace FlockFive
             _cueLine = null;
             _cueBranch = -1;
             _gloveVis = false;
+            DropGlovePress();
             _gloveReady = false;
             _cueHolePx = 0f;
             CoachHideGlow();
@@ -7985,6 +9644,7 @@ namespace FlockFive
             if (!PestAim(out var gui, out var world))
             {
                 _gloveVis = false;
+                DropGlovePress();
                 CoachHideGlow();
                 return;
             }

@@ -15,11 +15,82 @@ namespace FlockFive.Editor
         const string PlayCmd = "/tmp/flock-five-play";
 
         // One batch entry for the edit-mode suites. Unity -executeMethod FlockFive.Editor.EnsurePlayable.RunEditorTests
+        // -suite home-polish runs only that suite. RunHomePolishOnly is the same entry without the arg.
+        static int _suiteFail;
+        static int _suiteThrew;
+
+        // Every suite log reports here. A FAIL line or a THREW line makes the batch exit 1.
+        static void CountSuiteLog(string condition, string stackTrace, LogType type)
+        {
+            if (string.IsNullOrEmpty(condition)) return;
+            // One line, one count. "] FAIL" is the printed failure. " THREW " is a
+            // thrown gate. A line that has both counts once each. Summary tokens
+            // such as HOME_POLISH_FAIL are not a second failure.
+            bool threw = condition.IndexOf(" THREW ", System.StringComparison.Ordinal) >= 0;
+            bool fail = condition.IndexOf("] FAIL", System.StringComparison.Ordinal) >= 0;
+            if (threw) _suiteThrew++;
+            if (fail) _suiteFail++;
+        }
+
+        static void FinishEditorSuites(bool printDone)
+        {
+            Application.logMessageReceived -= CountSuiteLog;
+            if (printDone) Debug.Log("EDITOR_SUITES_DONE");
+            Debug.Log("EDITOR_SUITES_RESULT fail=" + _suiteFail + " threw=" + _suiteThrew);
+            EditorApplication.Exit(_suiteFail > 0 || _suiteThrew > 0 ? 1 : 0);
+        }
+
         public static void RunEditorTests()
         {
-            // Suites write PlayerPrefs; keep the real prefs untouched (snapshot + restore).
-            using (TestPrefsSandbox.Begin())
-                RunEditorSuites();
+            _suiteFail = 0;
+            _suiteThrew = 0;
+            Application.logMessageReceived += CountSuiteLog;
+            bool full = true;
+            try
+            {
+                // Suites write PlayerPrefs; keep the real prefs untouched (snapshot + restore).
+                using (TestPrefsSandbox.Begin())
+                {
+                    string only = SuiteArg();
+                    full = only != "home-polish";
+                    if (!full)
+                        Suite("home-polish", HomePolishTests.Run);
+                    else
+                        RunEditorSuites();
+                }
+            }
+            finally
+            {
+                FinishEditorSuites(full);
+            }
+        }
+
+        // Fast Mac gate for the glove and home checks. Tests only.
+        public static void RunHomePolishOnly()
+        {
+            _suiteFail = 0;
+            _suiteThrew = 0;
+            Application.logMessageReceived += CountSuiteLog;
+            try
+            {
+                using (TestPrefsSandbox.Begin())
+                {
+                    Suite("home-polish", HomePolishTests.Run);
+                    Suite("inspector-262", Inspector262Tests.Run);
+                }
+            }
+            finally
+            {
+                FinishEditorSuites(false);
+            }
+        }
+
+        static string SuiteArg()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+                if (args[i] == "-suite") return args[i + 1];
+            return null;
         }
 
         static void RunEditorSuites()
@@ -35,6 +106,7 @@ namespace FlockFive.Editor
             Suite("reset-guard", CoachResetGuardTests.Run);
             Suite("glove-snug", GloveSnugTests.Run);
             Suite("rule-tips", RuleTipTests.Run);
+            Suite("reward-choice-input", RewardChoiceInputTests.Run);
             Suite("ad-clock-skew", AdClockSkewTests.Run);
             Suite("poker-bet", PokerBetTests.Run);
             Suite("money-compact", MoneyCompactTests.Run);
@@ -68,6 +140,11 @@ namespace FlockFive.Editor
             Suite("build83c1", Build83TestsC1.Run);
             Suite("build83c2", Build83TestsC2.Run);
             Suite("build83c3", Build83TestsC3.Run);
+            Suite("reward-film-mark", RewardFilmMarkTests.Run);
+            Suite("home-rail-priority", HomeRailPriorityTests.Run);
+            Suite("home-polish", HomePolishTests.Run);
+            Suite("inspector-262", Inspector262Tests.Run);
+            Suite("build124", Build124Tests.Run);
             Suite("build83d", Build83TestsD.Run);
             Suite("build83p2", Build83TestsP2.Run);
             Suite("build84-feeder", Build84TestsFeeder.Run);
@@ -101,6 +178,7 @@ namespace FlockFive.Editor
             Suite("storm-glass", StormGlassTests.Run);
             Suite("sky", SkyCycleTests.Run);
             Suite("bee-cards", BeeCardQueueTests.Run);
+            Suite("build121-bee-cards", Build121BeeCardTests.Run);
             Suite("build110-lightning-fire", Build110LightningFireTests.Run);
             Suite("build126-tap-cue", Build126TapCueTests.Run);
             Suite("build126-clear-garden-1", Build126ClearGardenOneTests.Run);
@@ -114,6 +192,7 @@ namespace FlockFive.Editor
             Suite("build115-ostrich-neck", Build115OstrichNeckTests.Run);
             Suite("build115-ostrich-ground", Build115OstrichGroundTests.Run);
             Suite("build116-ostrich-pace", Build116OstrichPaceTests.Run);
+            Suite("build121-ostrich-presentation", Build121OstrichPresentationTests.Run);
             Suite("build119-collection-banner", Build119CollectionBannerTests.Run);
             Suite("season-scene", SeasonSceneTests.Run);
             Suite("glove-travel", GloveTravelTests.Run);
@@ -122,10 +201,10 @@ namespace FlockFive.Editor
             Suite("build129-badger-gap", Build129BadgerGapTests.Run);
             Suite("build130-badger-stack", Build130BadgerStackTests.Run);
             Suite("build131-reset", Build131ResetTests.Run);
+            Suite("restart-hive-inset", RestartHiveInsetTests.Run);
             Suite("usa-plane-day", UsaPlaneDayTests.Run);
             Suite("build119-fives", Build119FivesBoardTests.Run);
             Suite("build119-playtest", Build119PlaytestTests.Run);
-            Debug.Log("EDITOR_SUITES_DONE");
         }
 
         // Badger editor suites for this branch. Skips the ostrich suites in RunEditorTests.
