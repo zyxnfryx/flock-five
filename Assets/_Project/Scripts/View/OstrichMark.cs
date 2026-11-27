@@ -780,19 +780,10 @@ namespace FlockFive
             else _peek = Mathf.MoveTowards(_peek, peekGoal, _dt / 0.12f);
             if (peekSlot >= 0)
             {
-                PeekClear(headX, FeederRow.X(peekSlot, Feeders), face, half, _peek, out float pdx, out float pdy);
+                float feederX = FeederRow.X(peekSlot, Feeders);
+                PeekClear(headX, headY, feederX, WorldBuilder.FeederY, face, half, _peek, out float pdx, out float pdy);
                 headX += pdx;
                 headY += pdy;
-                if (_peek > 0.95f)
-                {
-                    var art = HeadArtRect(headX, headY, face);
-                    var bulb = FeederBulbRect(new Vector2(FeederRow.X(peekSlot, Feeders), WorldBuilder.FeederY));
-                    if (art.Overlaps(bulb))
-                    {
-                        float down = art.yMax - (bulb.yMin - BulbClear);
-                        if (down > 0f) headY -= down;
-                    }
-                }
             }
             else
             {
@@ -872,7 +863,11 @@ namespace FlockFive
         }
 
         // Air between the settled head art and the feeder glass.
-        public const float BulbClear = 0.06f;
+        public const float BulbClear = 0.12f;
+        // Idle rocks the head by this many degrees. The rest pose clears that whole swing.
+        const float IdleTilt = 7f;
+        // Idle bob lifts the pivot by Bob (0.07) * 0.35. The under-bulb pose keeps that lift in the margin.
+        const float IdleBob = 0.07f * 0.35f;
 
         // Head art around its pivot, in world units at RigScale. Rear is the short side
         // (back of the skull); beak is the long side.
@@ -894,24 +889,63 @@ namespace FlockFive
             return new Rect(feeder.x - h, feeder.y - h, h * 2f, h * 2f);
         }
 
-        public static Rect HeadArtRect(float headX, float headY, float face)
+        // Axis-aligned box of the head sprite after flip and tilt, around the pivot.
+        public static void HeadLocalAabb(float face, float tiltDeg, out float minX, out float maxX, out float minY, out float maxY)
         {
             HeadReach(out float rear, out float beak, out float down, out float up);
-            float x0 = face < 0f ? headX - beak : headX - rear;
-            float x1 = face < 0f ? headX + rear : headX + beak;
-            return Rect.MinMaxRect(x0, headY - down, x1, headY + up);
+            float x0 = face < 0f ? -beak : -rear;
+            float x1 = face < 0f ? rear : beak;
+            float y0 = -down;
+            float y1 = up;
+            float rad = tiltDeg * Mathf.Deg2Rad;
+            float c = Mathf.Cos(rad);
+            float s = Mathf.Sin(rad);
+            minX = float.PositiveInfinity;
+            maxX = float.NegativeInfinity;
+            minY = float.PositiveInfinity;
+            maxY = float.NegativeInfinity;
+            for (int i = 0; i < 4; i++)
+            {
+                float x = (i & 1) == 0 ? x0 : x1;
+                float y = (i & 2) == 0 ? y0 : y1;
+                float rx = x * c - y * s;
+                float ry = x * s + y * c;
+                if (rx < minX) minX = rx;
+                if (rx > maxX) maxX = rx;
+                if (ry < minY) minY = ry;
+                if (ry > maxY) maxY = ry;
+            }
+        }
+
+        // Union of the idle tilt, so a later frame of the rest cycle does not swing back into the glass.
+        public static void IdleHeadEnvelope(float face, out float minX, out float maxX, out float minY, out float maxY)
+        {
+            minX = float.PositiveInfinity;
+            maxX = float.NegativeInfinity;
+            minY = float.PositiveInfinity;
+            maxY = float.NegativeInfinity;
+            for (int i = -1; i <= 1; i++)
+            {
+                HeadLocalAabb(face, IdleTilt * i, out float a, out float b, out float c, out float d);
+                if (a < minX) minX = a;
+                if (b > maxX) maxX = b;
+                if (c < minY) minY = c;
+                if (d > maxY) maxY = d;
+            }
         }
 
         // Settled peek. Slide beside the glass when the beak still fits on screen.
         // Otherwise drop under the bulb. dx/dy are added after the aim, at full weight.
-        public static void PeekClear(float headX, float feederX, float face, float half, float weight, out float dx, out float dy)
+        public static void PeekClear(float headX, float headY, float feederX, float feederY, float face, float half, float weight, out float dx, out float dy)
         {
             dx = 0f;
             dy = 0f;
             if (weight <= 0f) return;
             float dir = face < 0f ? -1f : 1f;
-            HeadReach(out float rear, out _, out _, out float up);
-            float need = FeederRow.BulbHalf + BulbClear + rear - (headX - feederX);
+            IdleHeadEnvelope(face, out float minX, out float maxX, out _, out float maxY);
+            float need = dir > 0f
+                ? (feederX + FeederRow.BulbHalf + BulbClear) - (headX + minX)
+                : (headX + maxX) - (feederX - FeederRow.BulbHalf - BulbClear);
             if (need < 0.2f) need = 0.2f;
             float room = dir > 0f ? half - 0.12f - BeakReach - headX : headX + half - 0.12f - BeakReach;
             if (room < 0f) room = 0f;
@@ -923,9 +957,8 @@ namespace FlockFive
                 dy = PeekY * weight;
             else
             {
-                // Head top just under the bulb. The caller has already added PortY to aimY (feederY - 0.05).
-                dy = (-FeederRow.BulbHalf - BulbClear) - (-0.05f + PortY + up);
-                dy *= weight;
+                float dyMax = (feederY - FeederRow.BulbHalf - BulbClear - IdleBob) - (headY + maxY);
+                dy = Mathf.Min(PeekY, dyMax) * weight;
             }
         }
 
