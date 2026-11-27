@@ -6,9 +6,8 @@ using UnityEngine;
 
 namespace FlockFive.Editor
 {
-    // Build 115. The ostrich head peeks out from BEHIND its feeder: the feeder it rests on is drawn
-    // above the head (ring + glass occlude the neck), the other feeders stay under the head, the
-    // head sits beside the glass, and the peck strike / flee / hide paths restore normal order.
+    // The ostrich head blocks the feeder it stands under, centered on that feeder's wooden
+    // disk and drawn in front of it. Other feeders stay clear. Peck, flee and hide keep their order.
     public static class Build115OstrichNeckTests
     {
         const string Out = "/tmp/flock-five-b115-tests.txt";
@@ -114,15 +113,16 @@ namespace FlockFive.Editor
                     {
                         float x = FeederRow.X(slot, n);
                         mark.Preview(OstrichAct.Idle, 0, x, WorldBuilder.FeederY - 0.05f, false);
-                        bool onlyOne = Fronts(feeders) == 1 && feeders[slot].Art.sortingOrder == FeederView.FrontOrder;
                         int head = mark.Head.sortingOrder;
                         float fx = feeders[slot].transform.position.x;
-                        float dx = mark.Head.transform.position.x - fx;
-                        float want = (x < -0.3f ? -1f : 1f);
-                        Check("n" + n + "-slot" + slot + "-behind-own-feeder",
-                            onlyOne && mark.PeekingSlot == slot && head > FeederView.BaseOrder && head < FeederView.FrontOrder,
-                            "head " + head + " lifted " + mark.PeekingSlot);
-                        Check("n" + n + "-slot" + slot + "-head-beside-glass", dx * want > 0.5f, "dx " + dx);
+                        var center = mark.Head.bounds.center;
+                        Check("n" + n + "-slot" + slot + "-blocks-own-feeder",
+                            Fronts(feeders) == 0 && mark.PeekingSlot == slot && head > FeederView.BaseOrder,
+                            "head " + head + " slot " + mark.PeekingSlot);
+                        Check("n" + n + "-slot" + slot + "-head-on-disk",
+                            Mathf.Abs(center.x - fx) < 0.25f
+                            && Mathf.Abs(center.y - (WorldBuilder.FeederY - OstrichMark.DiskDrop)) < 0.25f,
+                            "center " + center);
                     }
                     // Fleeing: no feeder is raised; the head runs in front like before.
                     mark.Preview(OstrichAct.Flee, 8, FeederRow.X(0, n), WorldBuilder.FeederY, false);
@@ -158,7 +158,7 @@ namespace FlockFive.Editor
                     for (int i = 0; i < 200 && mark.Striking; i++) mark.Tick(0.02f);
                     for (int i = 0; i < 40; i++) mark.Tick(0.02f);
                     Check("strike-end-restores-peek", !mark.Striking && mark.Head.sortingOrder == OstrichMark.HeadOrder
-                        && Fronts(feeders) == 1, "head " + mark.Head.sortingOrder);
+                        && Fronts(feeders) == 0, "head " + mark.Head.sortingOrder);
                 }
                 finally { Object.DestroyImmediate(root); }
             }
@@ -166,9 +166,8 @@ namespace FlockFive.Editor
             // Hit-testing and the tutorial gate never read draw order; the feeder keeps its collider-free art only.
             Check("feeder-cord-order-stable", FeederView.BaseOrder - 1 < FeederView.BaseOrder, "");
 
-            // Garden 27: three feeders, live Gold/Teal/Teal. The bird settles at x=0, which is
-            // the last slot (the middle), and the peek used to land on the right-hand teal.
-            // Compare the rendered head to each rendered feeder, not a square on one pivot.
+            // Garden 27: three drawn feeders, Gold/Teal/Teal. The settle and every slot must
+            // put the head center on that feeder's wooden disk, and off every other feeder.
             float keepAspect = cam.aspect;
             var widths = new[]
             {
@@ -186,13 +185,18 @@ namespace FlockFive.Editor
                     feeders[i] = DrawnFeeder(clearRoot.transform, i, 3, cols[i]);
                 var mark = OstrichMark.Attach(clearRoot.transform, 3);
                 mark.FeederArt = feeders;
-                bool DrawnClear(string tag)
+                bool BlocksDisk(string tag, float aimX)
                 {
+                    int own = OstrichMark.PeekSlot(aimX, 3);
                     var hb = mark.Head.bounds;
-                    if (hb.size.x < 0.4f || hb.size.y < 0.4f) { why = tag + " head " + hb.size; return false; }
+                    if (hb.size.x < 0.4f || hb.size.y < 0.4f || own < 0) { why = tag + " head " + hb.size + " slot " + own; return false; }
+                    var center = (Vector2)hb.center;
+                    var disk = OstrichMark.DiskCenter((Vector2)feeders[own].transform.position);
+                    if ((center - disk).magnitude > 0.22f) { why = tag + " center " + center + " disk " + disk; return false; }
                     var head = Rect.MinMaxRect(hb.min.x, hb.min.y, hb.max.x, hb.max.y);
                     for (int i = 0; i < feeders.Length; i++)
                     {
+                        if (i == own) continue;
                         var ab = feeders[i].Art != null ? feeders[i].Art.bounds : new Bounds();
                         if (ab.size.x < 2f) { why = tag + " feeder" + i + " art " + ab.size; return false; }
                         var art = Rect.MinMaxRect(ab.min.x, ab.min.y, ab.max.x, ab.max.y);
@@ -209,11 +213,12 @@ namespace FlockFive.Editor
                     cam.aspect = aspect;
                     string size = wh.x.ToString("0") + "x" + wh.y.ToString("0");
                     mark.EndEntrance();
-                    if (!DrawnClear(size + " settle")) { all = false; break; }
+                    if (!BlocksDisk(size + " settle", 0f)) { all = false; break; }
                     for (int slot = 0; slot < 3; slot++)
                     {
-                        mark.Preview(OstrichAct.Idle, 2, FeederRow.X(slot, 3), WorldBuilder.FeederY - 0.05f, false);
-                        if (!DrawnClear(size + " slot" + slot)) { all = false; break; }
+                        float x = FeederRow.X(slot, 3);
+                        mark.Preview(OstrichAct.Idle, 2, x, WorldBuilder.FeederY - 0.05f, false);
+                        if (!BlocksDisk(size + " slot" + slot, x)) { all = false; break; }
                     }
                     if (!all) break;
                 }

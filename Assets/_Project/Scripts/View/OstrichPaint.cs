@@ -183,8 +183,14 @@ namespace FlockFive
         public static float HeadScreenSpan => HeadSpanPx / HeadPpu * OstrichMark.RigScale;
         public const float PrevHeadScreenSpan = 123f / (BodyPpu / 1.2f) * 0.72f;
         // Pivots (sprite-normalized, y up). Body: the neck root. Head: the neck top under the jaw.
+        // The head sheet is the painted pixels of the 892x700 art (empty margin trimmed).
+        // The pivot texel is still (200.5, 117 from the bottom of the full sheet).
+        public const float HeadSheetX = 12f;
+        public const float HeadSheetY = 6f;
+        public const float HeadSheetW = 878f;
+        public const float HeadSheetH = 692f;
         public static readonly Vector2 BodyPivot = new Vector2(527.5f / 566f, 1f - 102f / 323f);
-        public static readonly Vector2 HeadPivot = new Vector2(200.5f / 892f, 1f - 583f / 700f);
+        public static readonly Vector2 HeadPivot = new Vector2((200.5f - HeadSheetX) / HeadSheetW, (117f - HeadSheetY) / HeadSheetH);
         static readonly Vector2 BackLegPivot = new Vector2(47.25f / 88f, 1f - 22f / 279f);
         static readonly Vector2 FrontLegPivot = new Vector2(49.5f / 155f, 1f - 30f / 278f);
         // Hips relative to the body pivot, in units (facing right, before lean).
@@ -216,7 +222,10 @@ namespace FlockFive
             var tex = Resources.Load<Texture2D>(path);
             if (tex == null) return null;
             tex.wrapMode = TextureWrapMode.Clamp;
-            s = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), pivot, ppu, 0, SpriteMeshType.FullRect);
+            var rect = new Rect(0, 0, tex.width, tex.height);
+            if (path.Contains("ostrich_head_hd"))
+                rect = new Rect(HeadSheetX, HeadSheetY, HeadSheetW, HeadSheetH);
+            s = Sprite.Create(tex, rect, pivot, ppu, 0, SpriteMeshType.FullRect);
             s.name = tex.name;
             s.hideFlags = HideFlags.HideAndDontSave;
             _sprites[path] = s;

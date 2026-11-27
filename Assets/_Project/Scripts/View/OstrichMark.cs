@@ -16,11 +16,9 @@ namespace FlockFive
         public const int CollarOrder = -1;
         public const int HeadOrder = 10;
         public const int NeckParts = 8;
-        // b115: at rest the head peeks out from BEHIND its feeder, beside the glass. The feeder
-        // it peeks from is drawn one step above the head (FeederView.FrontOrder), so the ring and
-        // glass occlude the neck; other feeders stay under the head. The head is offset toward the
-        // way it faces so the face clears the glass instead of poking out of the bowl.
-        // Past the feeder bulb (BulbHalf 1.216) so the beak root is not inside the glass.
+        // At rest the head blocks the feeder it stands under: centered on that feeder's
+        // wooden disk, in front of the glass, so it is in the way. Other feeders stay clear.
+        // The idle rock, bob and peck are added on top of that anchor.
         public const float PeekX = 1.42f;
         public const float PeekY = 0.28f;
         public const float BeakReach = 1.45f * GrowFactor;
@@ -785,7 +783,7 @@ namespace FlockFive
             if (peekSlot >= 0)
             {
                 float feederX = FeederRow.X(peekSlot, Feeders);
-                PeekClear(anchorX, anchorY, feederX, WorldBuilder.FeederY, Feeders, face, half, _peek, out float pdx, out float pdy);
+                BlockOnDisk(anchorX, anchorY, feederX, WorldBuilder.FeederY, face, _peek, out float pdx, out float pdy);
                 headX += pdx;
                 headY += pdy;
             }
@@ -813,8 +811,7 @@ namespace FlockFive
                 headPos = OstrichStrike.HeadAt(restPos, _strikeTarget, _strikeT);
                 _headLag = headPos;
             }
-            // The feeder rises over the head only once the head has settled beside it, so the
-            // order flip never happens while the face overlaps the glass.
+            // Remember which feeder he blocks. Its art stays behind the head.
             LiftFeeder(slot >= 0 && _peek >= 0.95f ? slot : -1);
             if (_strikeOn)
                 FlockSort.Apply(Head, _liftSlot >= 0
@@ -866,19 +863,16 @@ namespace FlockFive
             return dir * dx * weight * Mathf.Min(1f, Mathf.Abs(face) * 2f);
         }
 
-        // Air between the settled head art and the feeder glass.
-        public const float BulbClear = 0.12f;
-        // Idle rocks the head by this many degrees. The rest pose clears that whole swing.
-        const float IdleTilt = 7f;
-        // Idle bob lifts the pivot by Bob (0.07) * 0.35. The under-bulb pose keeps that lift in the margin.
-        const float IdleBob = 0.07f * 0.35f;
+        // Wooden ring under the bulb, below the feeder pivot (the sprite center).
+        public const float DiskDrop = 1.195f;
+        public static Vector2 DiskCenter(Vector2 feeder) => new Vector2(feeder.x, feeder.y - DiskDrop);
 
         // Head art around its pivot, in world units at RigScale. Rear is the short side
         // (back of the skull); beak is the long side.
         public static void HeadReach(out float rear, out float beak, out float down, out float up)
         {
-            float w = 892f / OstrichPaint.HeadPpu * RigScale;
-            float h = 700f / OstrichPaint.HeadPpu * RigScale;
+            float w = OstrichPaint.HeadSheetW / OstrichPaint.HeadPpu * RigScale;
+            float h = OstrichPaint.HeadSheetH / OstrichPaint.HeadPpu * RigScale;
             float px = OstrichPaint.HeadPivot.x;
             float py = OstrichPaint.HeadPivot.y;
             rear = px * w;
@@ -887,138 +881,31 @@ namespace FlockFive
             up = (1f - py) * h;
         }
 
-        public static Rect FeederBulbRect(Vector2 feeder) => FeederArtRect(feeder);
-
-        // Opaque box of the feeder sprite as SpriteRenderer draws it: pivot at the
-        // image center, 180 PPU, FeederView.Scale. The glass is the wide bowl about
-        // 1.06 below that pivot, not a square centered on it. Falls back to the
-        // measured sheet if the sprite is not loaded yet.
-        public static Rect FeederArtRect(Vector2 feeder)
-        {
-            ArtExtents(out float left, out float right, out float down, out float up);
-            return Rect.MinMaxRect(feeder.x - left, feeder.y - down, feeder.x + right, feeder.y + up);
-        }
-
-        static bool _artReady;
-        static float _artLeft = 1.23f, _artRight = 1.25f, _artDown = 1.50f, _artUp = 1.90f;
-
-        static void ArtExtents(out float left, out float right, out float down, out float up)
-        {
-            if (!_artReady)
-            {
-                var s = SpriteCatalog.Feeder(BirdColor.Teal);
-                if (s != null && s.bounds.size.x > 0.5f)
-                {
-                    float sc = FeederView.Scale;
-                    var b = s.bounds;
-                    _artLeft = -b.min.x * sc;
-                    _artRight = b.max.x * sc;
-                    _artDown = -b.min.y * sc;
-                    _artUp = b.max.y * sc;
-                    _artReady = true;
-                }
-            }
-            left = _artLeft;
-            right = _artRight;
-            down = _artDown;
-            up = _artUp;
-        }
-
-        // True when the idle envelope around the pivot meets any drawn feeder.
-        static bool EnvelopeHitsRow(float pivotX, float pivotY, float face, int feeders, float feederY)
-        {
-            IdleHeadEnvelope(face, out float minX, out float maxX, out float minY, out float maxY);
-            var head = Rect.MinMaxRect(pivotX + minX, pivotY + minY, pivotX + maxX, pivotY + maxY + IdleBob);
-            int n = FeederRow.Clamp(feeders);
-            for (int i = 0; i < n; i++)
-            {
-                var art = FeederArtRect(new Vector2(FeederRow.X(i, n), feederY));
-                art.xMin -= BulbClear;
-                art.xMax += BulbClear;
-                art.yMin -= BulbClear;
-                art.yMax += BulbClear;
-                if (head.Overlaps(art)) return true;
-            }
-            return false;
-        }
-
-        // Axis-aligned box of the head sprite after flip and tilt, around the pivot.
-        public static void HeadLocalAabb(float face, float tiltDeg, out float minX, out float maxX, out float minY, out float maxY)
+        // Bounds-center of the head sprite relative to its pivot. Facing left mirrors x.
+        public static void HeadCenterOffset(float face, out float x, out float y)
         {
             HeadReach(out float rear, out float beak, out float down, out float up);
-            float x0 = face < 0f ? -beak : -rear;
-            float x1 = face < 0f ? rear : beak;
-            float y0 = -down;
-            float y1 = up;
-            float rad = tiltDeg * Mathf.Deg2Rad;
-            float c = Mathf.Cos(rad);
-            float s = Mathf.Sin(rad);
-            minX = float.PositiveInfinity;
-            maxX = float.NegativeInfinity;
-            minY = float.PositiveInfinity;
-            maxY = float.NegativeInfinity;
-            for (int i = 0; i < 4; i++)
-            {
-                float x = (i & 1) == 0 ? x0 : x1;
-                float y = (i & 2) == 0 ? y0 : y1;
-                float rx = x * c - y * s;
-                float ry = x * s + y * c;
-                if (rx < minX) minX = rx;
-                if (rx > maxX) maxX = rx;
-                if (ry < minY) minY = ry;
-                if (ry > maxY) maxY = ry;
-            }
+            float along = (beak - rear) * 0.5f;
+            x = face < 0f ? -along : along;
+            y = (up - down) * 0.5f;
         }
 
-        // Union of the idle tilt, so a later frame of the rest cycle does not swing back into the glass.
-        public static void IdleHeadEnvelope(float face, out float minX, out float maxX, out float minY, out float maxY)
-        {
-            minX = float.PositiveInfinity;
-            maxX = float.NegativeInfinity;
-            minY = float.PositiveInfinity;
-            maxY = float.NegativeInfinity;
-            for (int i = -1; i <= 1; i++)
-            {
-                HeadLocalAabb(face, IdleTilt * i, out float a, out float b, out float c, out float d);
-                if (a < minX) minX = a;
-                if (b > maxX) maxX = b;
-                if (c < minY) minY = c;
-                if (d > maxY) maxY = d;
-            }
-        }
-
-        // Settled peek offset from the unmoved anchor (aim + port), not from the bobbing head.
-        // Slide beside the peeked feeder when that still misses every feeder in the row.
-        // Otherwise drop under the row. Rock and bob are reserved here, then played on top.
-        public static void PeekClear(float anchorX, float anchorY, float feederX, float feederY, int feeders, float face, float half, float weight, out float dx, out float dy)
+        // Offset from the unmoved anchor so the head's center sits on this feeder's disk.
+        // Bob, wind and the peck are added by the caller and are not cancelled here.
+        public static void BlockOnDisk(float anchorX, float anchorY, float feederX, float feederY, float face, float weight, out float dx, out float dy)
         {
             dx = 0f;
             dy = 0f;
             if (weight <= 0f) return;
-            float dir = face < 0f ? -1f : 1f;
-            IdleHeadEnvelope(face, out float minX, out float maxX, out _, out float maxY);
-            ArtExtents(out float artLeft, out float artRight, out float artDown, out _);
-            float need = dir > 0f
-                ? (feederX + artRight + BulbClear) - (anchorX + minX)
-                : (anchorX + maxX) - (feederX - artLeft - BulbClear);
-            if (need < 0.2f) need = 0.2f;
-            float room = dir > 0f ? half - 0.12f - BeakReach - anchorX : anchorX + half - 0.12f - BeakReach;
-            if (room < 0f) room = 0f;
-            float shift = need <= room ? need : room;
+            HeadCenterOffset(face, out float cx, out float cy);
+            float pivotX = feederX - cx;
+            float pivotY = feederY - DiskDrop - cy;
             float fade = weight * Mathf.Min(1f, Mathf.Abs(face) * 2f);
-            dx = dir * shift * fade;
-            bool beside = shift + 0.001f >= need && Mathf.Abs(face) > 0.45f
-                && !EnvelopeHitsRow(anchorX + dir * shift, anchorY + PeekY, face, feeders, feederY);
-            if (beside)
-                dy = PeekY * weight;
-            else
-            {
-                float dyMax = (feederY - artDown - BulbClear - IdleBob) - (anchorY + maxY);
-                dy = Mathf.Min(PeekY, dyMax) * weight;
-            }
+            dx = (pivotX - anchorX) * fade;
+            dy = (pivotY - anchorY) * weight;
         }
 
-        // Head order while peeking. Behind the lifted feeder's order, so ring and glass cover it.
+        // Head order while peeking. In front of the feeder it blocks, over the flock once a strike drops.
         public static int RestHeadOrder(bool striking, float dropBelowPeek)
         {
             return striking && dropBelowPeek > PeekDrop ? OstrichStrike.HeadOrder : HeadOrder;
@@ -1029,7 +916,7 @@ namespace FlockFive
             _liftSlot = slot;
             if (FeederArt == null) return;
             for (int i = 0; i < FeederArt.Length; i++)
-                if (FeederArt[i] != null) FeederArt[i].SetFront(i == slot);
+                if (FeederArt[i] != null) FeederArt[i].SetFront(false);
         }
 
         // Where the neck root sits for a head at headX facing face, kept on screen.
