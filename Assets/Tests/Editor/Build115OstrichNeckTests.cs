@@ -34,6 +34,23 @@ namespace FlockFive.Editor
             return v;
         }
 
+        // Same draw path as WorldBuilder.MakeFeeder: catalog sprite, pivot center, scale 0.66.
+        static FeederView DrawnFeeder(Transform parent, int slot, int n, BirdColor color)
+        {
+            var go = new GameObject("Feeder" + slot);
+            go.transform.SetParent(parent, false);
+            go.transform.position = new Vector3(FeederRow.X(slot, n), WorldBuilder.FeederY, 0f);
+            go.transform.localScale = Vector3.one * FeederView.Scale;
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = SpriteCatalog.Feeder(color);
+            sr.sortingOrder = FeederView.BaseOrder;
+            var v = go.AddComponent<FeederView>();
+            v.Slot = slot;
+            v.Art = sr;
+            v.PlantHere();
+            return v;
+        }
+
         static int Fronts(FeederView[] f)
         {
             int c = 0;
@@ -149,7 +166,9 @@ namespace FlockFive.Editor
             // Hit-testing and the tutorial gate never read draw order; the feeder keeps its collider-free art only.
             Check("feeder-cord-order-stable", FeederView.BaseOrder - 1 < FeederView.BaseOrder, "");
 
-            // Settled peek: head and beak stay off every feeder bulb, at each play width.
+            // Garden 27: three feeders, live Gold/Teal/Teal. The bird settles at x=0, which is
+            // the last slot (the middle), and the peek used to land on the right-hand teal.
+            // Compare the rendered head to each rendered feeder, not a square on one pivot.
             float keepAspect = cam.aspect;
             var widths = new[]
             {
@@ -161,6 +180,26 @@ namespace FlockFive.Editor
             {
                 bool all = true;
                 string why = "";
+                var cols = new[] { BirdColor.Gold, BirdColor.Teal, BirdColor.Teal };
+                var feeders = new FeederView[3];
+                for (int i = 0; i < 3; i++)
+                    feeders[i] = DrawnFeeder(clearRoot.transform, i, 3, cols[i]);
+                var mark = OstrichMark.Attach(clearRoot.transform, 3);
+                mark.FeederArt = feeders;
+                bool DrawnClear(string tag)
+                {
+                    var hb = mark.Head.bounds;
+                    if (hb.size.x < 0.4f || hb.size.y < 0.4f) { why = tag + " head " + hb.size; return false; }
+                    var head = Rect.MinMaxRect(hb.min.x, hb.min.y, hb.max.x, hb.max.y);
+                    for (int i = 0; i < feeders.Length; i++)
+                    {
+                        var ab = feeders[i].Art != null ? feeders[i].Art.bounds : new Bounds();
+                        if (ab.size.x < 2f) { why = tag + " feeder" + i + " art " + ab.size; return false; }
+                        var art = Rect.MinMaxRect(ab.min.x, ab.min.y, ab.max.x, ab.max.y);
+                        if (head.Overlaps(art)) { why = tag + " feeder" + i + " head " + head + " art " + art; return false; }
+                    }
+                    return true;
+                }
                 foreach (var wh in widths)
                 {
                     float win = wh.x / wh.y;
@@ -168,31 +207,13 @@ namespace FlockFive.Editor
                         ? DeviceFit.PhoneAspect
                         : DeviceFit.PlayAspect(win);
                     cam.aspect = aspect;
-                    for (int n = 1; n <= 3; n++)
+                    string size = wh.x.ToString("0") + "x" + wh.y.ToString("0");
+                    mark.EndEntrance();
+                    if (!DrawnClear(size + " settle")) { all = false; break; }
+                    for (int slot = 0; slot < 3; slot++)
                     {
-                        var feeders = MakeFeeders(clearRoot.transform, n);
-                        var mark = OstrichMark.Attach(clearRoot.transform, n);
-                        mark.FeederArt = feeders;
-                        for (int slot = 0; slot < n; slot++)
-                        {
-                            float x = FeederRow.X(slot, n);
-                            mark.Preview(OstrichAct.Idle, 0, x, WorldBuilder.FeederY - 0.05f, false);
-                            var hb = mark.Head.bounds;
-                            var head = Rect.MinMaxRect(hb.min.x, hb.min.y, hb.max.x, hb.max.y);
-                            var bulb = OstrichMark.FeederBulbRect(new Vector2(x, WorldBuilder.FeederY));
-                            bool ok = head.width > 0.4f && head.height > 0.4f && !head.Overlaps(bulb);
-                            if (!ok)
-                            {
-                                all = false;
-                                why = wh.x.ToString("0") + "x" + wh.y.ToString("0")
-                                    + " n" + n + " s" + slot
-                                    + " head " + head + " bulb " + bulb;
-                            }
-                        }
-                        Object.DestroyImmediate(mark.gameObject);
-                        for (int i = 0; i < feeders.Length; i++)
-                            if (feeders[i] != null) Object.DestroyImmediate(feeders[i].gameObject);
-                        if (!all) break;
+                        mark.Preview(OstrichAct.Idle, 2, FeederRow.X(slot, 3), WorldBuilder.FeederY - 0.05f, false);
+                        if (!DrawnClear(size + " slot" + slot)) { all = false; break; }
                     }
                     if (!all) break;
                 }

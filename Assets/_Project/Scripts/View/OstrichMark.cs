@@ -785,7 +785,7 @@ namespace FlockFive
             if (peekSlot >= 0)
             {
                 float feederX = FeederRow.X(peekSlot, Feeders);
-                PeekClear(anchorX, anchorY, feederX, WorldBuilder.FeederY, face, half, _peek, out float pdx, out float pdy);
+                PeekClear(anchorX, anchorY, feederX, WorldBuilder.FeederY, Feeders, face, half, _peek, out float pdx, out float pdy);
                 headX += pdx;
                 headY += pdy;
             }
@@ -887,10 +887,59 @@ namespace FlockFive
             up = (1f - py) * h;
         }
 
-        public static Rect FeederBulbRect(Vector2 feeder)
+        public static Rect FeederBulbRect(Vector2 feeder) => FeederArtRect(feeder);
+
+        // Opaque box of the feeder sprite as SpriteRenderer draws it: pivot at the
+        // image center, 180 PPU, FeederView.Scale. The glass is the wide bowl about
+        // 1.06 below that pivot, not a square centered on it. Falls back to the
+        // measured sheet if the sprite is not loaded yet.
+        public static Rect FeederArtRect(Vector2 feeder)
         {
-            float h = FeederRow.BulbHalf;
-            return new Rect(feeder.x - h, feeder.y - h, h * 2f, h * 2f);
+            ArtExtents(out float left, out float right, out float down, out float up);
+            return Rect.MinMaxRect(feeder.x - left, feeder.y - down, feeder.x + right, feeder.y + up);
+        }
+
+        static bool _artReady;
+        static float _artLeft = 1.23f, _artRight = 1.25f, _artDown = 1.50f, _artUp = 1.90f;
+
+        static void ArtExtents(out float left, out float right, out float down, out float up)
+        {
+            if (!_artReady)
+            {
+                var s = SpriteCatalog.Feeder(BirdColor.Teal);
+                if (s != null && s.bounds.size.x > 0.5f)
+                {
+                    float sc = FeederView.Scale;
+                    var b = s.bounds;
+                    _artLeft = -b.min.x * sc;
+                    _artRight = b.max.x * sc;
+                    _artDown = -b.min.y * sc;
+                    _artUp = b.max.y * sc;
+                    _artReady = true;
+                }
+            }
+            left = _artLeft;
+            right = _artRight;
+            down = _artDown;
+            up = _artUp;
+        }
+
+        // True when the idle envelope around the pivot meets any drawn feeder.
+        static bool EnvelopeHitsRow(float pivotX, float pivotY, float face, int feeders, float feederY)
+        {
+            IdleHeadEnvelope(face, out float minX, out float maxX, out float minY, out float maxY);
+            var head = Rect.MinMaxRect(pivotX + minX, pivotY + minY, pivotX + maxX, pivotY + maxY + IdleBob);
+            int n = FeederRow.Clamp(feeders);
+            for (int i = 0; i < n; i++)
+            {
+                var art = FeederArtRect(new Vector2(FeederRow.X(i, n), feederY));
+                art.xMin -= BulbClear;
+                art.xMax += BulbClear;
+                art.yMin -= BulbClear;
+                art.yMax += BulbClear;
+                if (head.Overlaps(art)) return true;
+            }
+            return false;
         }
 
         // Axis-aligned box of the head sprite after flip and tilt, around the pivot.
@@ -939,31 +988,32 @@ namespace FlockFive
         }
 
         // Settled peek offset from the unmoved anchor (aim + port), not from the bobbing head.
-        // Slide beside the glass when the beak still fits. Otherwise drop under the bulb.
-        // The idle rock and bob are reserved in that offset, then played on top of it.
-        public static void PeekClear(float anchorX, float anchorY, float feederX, float feederY, float face, float half, float weight, out float dx, out float dy)
+        // Slide beside the peeked feeder when that still misses every feeder in the row.
+        // Otherwise drop under the row. Rock and bob are reserved here, then played on top.
+        public static void PeekClear(float anchorX, float anchorY, float feederX, float feederY, int feeders, float face, float half, float weight, out float dx, out float dy)
         {
             dx = 0f;
             dy = 0f;
             if (weight <= 0f) return;
             float dir = face < 0f ? -1f : 1f;
             IdleHeadEnvelope(face, out float minX, out float maxX, out _, out float maxY);
+            ArtExtents(out float artLeft, out float artRight, out float artDown, out _);
             float need = dir > 0f
-                ? (feederX + FeederRow.BulbHalf + BulbClear) - (anchorX + minX)
-                : (anchorX + maxX) - (feederX - FeederRow.BulbHalf - BulbClear);
+                ? (feederX + artRight + BulbClear) - (anchorX + minX)
+                : (anchorX + maxX) - (feederX - artLeft - BulbClear);
             if (need < 0.2f) need = 0.2f;
             float room = dir > 0f ? half - 0.12f - BeakReach - anchorX : anchorX + half - 0.12f - BeakReach;
             if (room < 0f) room = 0f;
             float shift = need <= room ? need : room;
             float fade = weight * Mathf.Min(1f, Mathf.Abs(face) * 2f);
             dx = dir * shift * fade;
-            bool beside = shift + 0.001f >= need && Mathf.Abs(face) > 0.45f;
+            bool beside = shift + 0.001f >= need && Mathf.Abs(face) > 0.45f
+                && !EnvelopeHitsRow(anchorX + dir * shift, anchorY + PeekY, face, feeders, feederY);
             if (beside)
                 dy = PeekY * weight;
             else
             {
-                // Highest idle top (rocked sprite plus the full bob) sits BulbClear under the glass.
-                float dyMax = (feederY - FeederRow.BulbHalf - BulbClear - IdleBob) - (anchorY + maxY);
+                float dyMax = (feederY - artDown - BulbClear - IdleBob) - (anchorY + maxY);
                 dy = Mathf.Min(PeekY, dyMax) * weight;
             }
         }
