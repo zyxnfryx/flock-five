@@ -773,12 +773,32 @@ namespace FlockFive
             PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, side);
 
             // b115: peek out from behind the feeder (not while fleeing or between feeders).
-            int slot = flee || Entering ? -1 : PeekSlot(aimX, Feeders);
+            int peekSlot = flee || Entering ? -1 : PeekSlot(aimX, Feeders);
+            int slot = peekSlot;
             float peekGoal = slot >= 0 ? 1f : 0f;
             if (_snap || _dt <= 0f) _peek = peekGoal;
             else _peek = Mathf.MoveTowards(_peek, peekGoal, _dt / 0.12f);
-            headX += PeekShift(face, headX, half, _peek);
-            headY += PeekY * _peek;
+            if (peekSlot >= 0)
+            {
+                PeekClear(headX, FeederRow.X(peekSlot, Feeders), face, half, _peek, out float pdx, out float pdy);
+                headX += pdx;
+                headY += pdy;
+                if (_peek > 0.95f)
+                {
+                    var art = HeadArtRect(headX, headY, face);
+                    var bulb = FeederBulbRect(new Vector2(FeederRow.X(peekSlot, Feeders), WorldBuilder.FeederY));
+                    if (art.Overlaps(bulb))
+                    {
+                        float down = art.yMax - (bulb.yMin - BulbClear);
+                        if (down > 0f) headY -= down;
+                    }
+                }
+            }
+            else
+            {
+                headX += PeekShift(face, headX, half, _peek);
+                headY += PeekY * _peek;
+            }
             var headPos = new Vector3(headX, headY, 0f);
             var restPos = headPos;
             Head.sprite = OstrichPaint.Head(_act, _frame);
@@ -849,6 +869,64 @@ namespace FlockFive
             float room = dir > 0f ? half - 0.12f - BeakReach - headX : headX + half - 0.12f - BeakReach;
             float dx = Mathf.Clamp(PeekX, 0f, Mathf.Max(0f, room));
             return dir * dx * weight * Mathf.Min(1f, Mathf.Abs(face) * 2f);
+        }
+
+        // Air between the settled head art and the feeder glass.
+        public const float BulbClear = 0.06f;
+
+        // Head art around its pivot, in world units at RigScale. Rear is the short side
+        // (back of the skull); beak is the long side.
+        public static void HeadReach(out float rear, out float beak, out float down, out float up)
+        {
+            float w = 892f / OstrichPaint.HeadPpu * RigScale;
+            float h = 700f / OstrichPaint.HeadPpu * RigScale;
+            float px = OstrichPaint.HeadPivot.x;
+            float py = OstrichPaint.HeadPivot.y;
+            rear = px * w;
+            beak = (1f - px) * w;
+            down = py * h;
+            up = (1f - py) * h;
+        }
+
+        public static Rect FeederBulbRect(Vector2 feeder)
+        {
+            float h = FeederRow.BulbHalf;
+            return new Rect(feeder.x - h, feeder.y - h, h * 2f, h * 2f);
+        }
+
+        public static Rect HeadArtRect(float headX, float headY, float face)
+        {
+            HeadReach(out float rear, out float beak, out float down, out float up);
+            float x0 = face < 0f ? headX - beak : headX - rear;
+            float x1 = face < 0f ? headX + rear : headX + beak;
+            return Rect.MinMaxRect(x0, headY - down, x1, headY + up);
+        }
+
+        // Settled peek. Slide beside the glass when the beak still fits on screen.
+        // Otherwise drop under the bulb. dx/dy are added after the aim, at full weight.
+        public static void PeekClear(float headX, float feederX, float face, float half, float weight, out float dx, out float dy)
+        {
+            dx = 0f;
+            dy = 0f;
+            if (weight <= 0f) return;
+            float dir = face < 0f ? -1f : 1f;
+            HeadReach(out float rear, out _, out _, out float up);
+            float need = FeederRow.BulbHalf + BulbClear + rear - (headX - feederX);
+            if (need < 0.2f) need = 0.2f;
+            float room = dir > 0f ? half - 0.12f - BeakReach - headX : headX + half - 0.12f - BeakReach;
+            if (room < 0f) room = 0f;
+            float shift = need <= room ? need : room;
+            float fade = weight * Mathf.Min(1f, Mathf.Abs(face) * 2f);
+            dx = dir * shift * fade;
+            bool beside = shift + 0.001f >= need && Mathf.Abs(face) > 0.45f;
+            if (beside)
+                dy = PeekY * weight;
+            else
+            {
+                // Head top just under the bulb. The caller has already added PortY to aimY (feederY - 0.05).
+                dy = (-FeederRow.BulbHalf - BulbClear) - (-0.05f + PortY + up);
+                dy *= weight;
+            }
         }
 
         // Head order while peeking. Behind the lifted feeder's order, so ring and glass cover it.

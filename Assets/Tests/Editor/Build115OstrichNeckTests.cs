@@ -148,6 +148,61 @@ namespace FlockFive.Editor
 
             // Hit-testing and the tutorial gate never read draw order; the feeder keeps its collider-free art only.
             Check("feeder-cord-order-stable", FeederView.BaseOrder - 1 < FeederView.BaseOrder, "");
+
+            // Settled peek: head and beak stay off every feeder bulb, at each play width.
+            float keepAspect = cam.aspect;
+            var widths = new[]
+            {
+                new Vector2(820f, 1180f), new Vector2(402f, 874f), new Vector2(412f, 915f),
+                new Vector2(360f, 780f), new Vector2(640f, 1136f)
+            };
+            var clearRoot = new GameObject("b115-beak-clear");
+            try
+            {
+                bool all = true;
+                string why = "";
+                foreach (var wh in widths)
+                {
+                    float win = wh.x / wh.y;
+                    float aspect = win > DeviceFit.PhoneAspect + 0.03f
+                        ? DeviceFit.PhoneAspect
+                        : DeviceFit.PlayAspect(win);
+                    cam.aspect = aspect;
+                    for (int n = 1; n <= 3; n++)
+                    {
+                        var feeders = MakeFeeders(clearRoot.transform, n);
+                        var mark = OstrichMark.Attach(clearRoot.transform, n);
+                        mark.FeederArt = feeders;
+                        for (int slot = 0; slot < n; slot++)
+                        {
+                            float x = FeederRow.X(slot, n);
+                            mark.Preview(OstrichAct.Idle, 0, x, WorldBuilder.FeederY - 0.05f, false);
+                            var hb = mark.Head.bounds;
+                            var head = Rect.MinMaxRect(hb.min.x, hb.min.y, hb.max.x, hb.max.y);
+                            var bulb = OstrichMark.FeederBulbRect(new Vector2(x, WorldBuilder.FeederY));
+                            bool ok = head.width > 0.4f && head.height > 0.4f && !head.Overlaps(bulb);
+                            if (!ok)
+                            {
+                                all = false;
+                                why = wh.x.ToString("0") + "x" + wh.y.ToString("0")
+                                    + " n" + n + " s" + slot
+                                    + " head " + head + " bulb " + bulb;
+                            }
+                        }
+                        Object.DestroyImmediate(mark.gameObject);
+                        for (int i = 0; i < feeders.Length; i++)
+                            if (feeders[i] != null) Object.DestroyImmediate(feeders[i].gameObject);
+                        if (!all) break;
+                    }
+                    if (!all) break;
+                }
+                Check("settled-beak-clears-every-bulb", all, why);
+            }
+            finally
+            {
+                cam.aspect = keepAspect;
+                Object.DestroyImmediate(clearRoot);
+            }
             }
             finally { Object.DestroyImmediate(camGo); }
             Debug.Log(fail == 0 ? "build115 tests DONE " + pass + "/" + (pass + fail) : "build115 tests FAIL " + fail + " failed, " + pass + " passed");
