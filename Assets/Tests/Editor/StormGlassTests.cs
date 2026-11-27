@@ -92,9 +92,9 @@ namespace FlockFive.Editor
             Check("spawns-calm", spawned > 150 && perMin > 30f && perMin < 80f,
                 "spawned " + spawned + " per min " + perMin.ToString("0.0"));
             float sliver = StormGlass.BigDropLimit(W);
-            float full = StormGlass.RadiusMax * StormGlass.ScaleFor(H);
-            bool wideSliver = sliver + 0.5f >= full;
-            bool vary = radLo < 16f && radHi <= full + 0.01f
+            float fullRadius = StormGlass.RadiusMax * StormGlass.ScaleFor(H);
+            bool wideSliver = sliver + 0.5f >= fullRadius;
+            bool vary = radLo < 16f && radHi <= fullRadius + 0.01f
                 && (wideSliver
                     ? radHi > 55f
                     : radHi > sliver - 1.5f && radHi <= sliver + 0.51f);
@@ -122,7 +122,7 @@ namespace FlockFive.Editor
                 }
             }
             Check("sizes-vary-wide-sliver",
-                wideLimit + 0.5f >= full && wideHi > 55f && wideHi <= full + 0.01f,
+                wideLimit + 0.5f >= fullRadius && wideHi > 55f && wideHi <= fullRadius + 0.01f,
                 "r " + wideHi.ToString("0.0") + " limit " + wideLimit.ToString("0.0"));
             Check("some-stick", stickies > 5, "sticky " + stickies);
             Check("life-in-range", lifeBad == 0 && lifeLo >= StormGlass.LifeMin - 0.001f && lifeHi <= StormGlass.StickyLifeMax + 0.001f,
