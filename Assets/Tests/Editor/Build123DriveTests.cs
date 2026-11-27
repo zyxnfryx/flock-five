@@ -178,6 +178,7 @@ namespace FlockFive.Editor
                     var restartIcon = CornerAnchor.RestartIcon(restart);
                     var restartWord = CornerAnchor.RestartWordRect(restart, sc);
                     int homePx = Mathf.Clamp(Mathf.RoundToInt(home.height * 0.30f), 13, 28);
+                    if (homePx > 12) homePx -= 1;
                     int restartPx = Mathf.Max(8, Mathf.RoundToInt(9f * Mathf.Min(sc, 1.15f)));
                     bool bigger = homeIcon.width > homeOld.width + 0.5f
                         && homeIcon.height > homeOld.height + 0.5f
@@ -224,9 +225,10 @@ namespace FlockFive.Editor
             int curtain = paint < 0 ? -1 : app.IndexOf("void FinishLevelCurtain()", paint);
             string hud = paint >= 0 && curtain > paint ? app.Substring(paint, curtain - paint) : "";
             bool noChip = hud.IndexOf("DrawGardenStamp(") < 0 && hud.IndexOf("GardenStampBox(") < 0;
-            bool plate = hud.IndexOf("DrawGardenHome(") >= 0
+            bool plate = hud.IndexOf("DrawCornerButtons(") >= 0
                 && hud.IndexOf("GUI.DrawTexture(home, Texture2D.whiteTexture)") < 0
-                && hud.IndexOf("GUI.Label(restart, \"Restart\"") >= 0
+                && app.IndexOf("DrawGardenHome(") >= 0
+                && app.IndexOf("StampOutlined(restart, \"Restart\"") >= 0
                 && app.IndexOf("DrawRoundedFace(home,") >= 0
                 && app.IndexOf("DrawHomeGlyph(") >= 0
                 && app.IndexOf("StampOutlined(word, \"Home\"") >= 0

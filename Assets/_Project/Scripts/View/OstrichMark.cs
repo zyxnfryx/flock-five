@@ -20,7 +20,8 @@ namespace FlockFive
         // it peeks from is drawn one step above the head (FeederView.FrontOrder), so the ring and
         // glass occlude the neck; other feeders stay under the head. The head is offset toward the
         // way it faces so the face clears the glass instead of poking out of the bowl.
-        public const float PeekX = 0.85f;
+        // Past the feeder bulb (BulbHalf 1.216) so the beak root is not inside the glass.
+        public const float PeekX = 1.42f;
         public const float PeekY = 0.28f;
         public const float BeakReach = 1.45f * GrowFactor;
         public const float PeekSlotTol = 0.3f;

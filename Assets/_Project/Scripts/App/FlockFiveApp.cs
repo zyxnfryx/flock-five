@@ -9221,7 +9221,9 @@ namespace FlockFive
                 if (which == 1 || which == 2 || which == 3) return false;
                 float s = DeviceFit.Ui();
                 GiftCardPlaced(s, out var card, out var cta);
-                if (_adHand && FlowerHit(cta, s).Contains(play))
+                // Tutorial and later offers share this button. A second gift is
+                // not the ad-hand lesson, and Watch still has to ask for the ad.
+                if (FlowerHit(cta, s).Contains(play))
                 {
                     if (release) StartWatchGift();
                     _tapWho = "watch";
@@ -9240,8 +9242,14 @@ namespace FlockFive
                 _tapWho = "gift-wait";
                 return true;
             }
-            // Movie and Thanks cover the play canvas. They have no HUD button.
-            _tapWho = _gift == GiftFace.Movie ? "gift-movie" : "gift-thanks";
+            if (_gift == GiftFace.Thanks)
+            {
+                if (release) EndGiftThanks();
+                _tapWho = "gift-thanks";
+                return true;
+            }
+            // The movie covers the play canvas. It has no HUD button.
+            _tapWho = "gift-movie";
             return true;
         }
 
@@ -9298,7 +9306,6 @@ namespace FlockFive
                 who = "gift-x";
                 return true;
             }
-            if (!_adHand) return false;
             float s = DeviceFit.Ui();
             GiftCardPlaced(s, out _, out var cta);
             if (!FlowerHit(cta, s).Contains(gui)) return false;
@@ -9318,6 +9325,38 @@ namespace FlockFive
 #if UNITY_EDITOR
             EditorPointerInject = default;
 #endif
+        }
+
+        // Home and Restart. Drawn on the live garden and on the frame a caption
+        // pauses it, so the corner does not blink out.
+        void DrawCornerButtons()
+        {
+            HudLayout(out float s, out _, out _, out var restart, out _);
+            var restartIcon = CornerAnchor.RestartIcon(restart);
+            var arrow = SpriteCatalog.Restart;
+            GUI.BeginGroup(restart);
+            var restartLocal = new Rect(restartIcon.x - restart.x, restartIcon.y - restart.y, restartIcon.width, restartIcon.height);
+            if (arrow != null && arrow.texture != null)
+                GUI.DrawTexture(restartLocal, arrow.texture, ScaleMode.ScaleToFit, true);
+            else
+                GUI.Box(restartLocal, "↩");
+            GUI.EndGroup();
+            var restartLab = GuiPool.Label(GuiSlot.SettingsLink);
+            restartLab.fontStyle = FontStyle.Bold;
+            restartLab.alignment = TextAnchor.LowerCenter;
+            restartLab.wordWrap = false;
+            restartLab.clipping = TextClipping.Overflow;
+            restartLab.fontSize = CornerAnchor.RestartWordPx(s);
+            StampOutlined(restart, "Restart", restartLab, new Color(1f, 0.96f, 0.86f, 1f), 1, 1);
+            var hudEv = Event.current;
+            bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
+            bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
+            var hudAt = hudEv != null ? PlayPointer.Gui(hudEv) : restart.center;
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            bool homeHeld = false;
+            if (home.width > 2f)
+                FeedResumeHudButton(1, home, hudAt, hudDown, hudUp, out homeHeld);
+            DrawGardenHome(home, homeHeld);
         }
 
         void PaintAfterPointer()
@@ -9347,6 +9386,10 @@ namespace FlockFive
                     if (SeasonReveal.BannerLive)
                         DrawSeasonBanner(ps, pTop);
                 }
+                // A caption pauses the garden for its first paint. Home and Restart
+                // stay on that frame; the tip must not blank the corner.
+                if (!Ads.IsShowing && !_splash && _board != null)
+                    DrawCornerButtons();
                 FinishLevelCurtain();
                 return;
             }
@@ -9401,31 +9444,7 @@ namespace FlockFive
                 GUIUtility.RotateAroundPivot(CamShake.HudTwist, new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.5f));
                 GUI.matrix = Matrix4x4.Translate(new Vector3(CamShake.HudOffset.x, CamShake.HudOffset.y, 0f)) * GUI.matrix;
             }
-            var restartIcon = CornerAnchor.RestartIcon(restart);
-            var arrow = SpriteCatalog.Restart;
-            GUI.BeginGroup(restart);
-            var restartLocal = new Rect(restartIcon.x - restart.x, restartIcon.y - restart.y, restartIcon.width, restartIcon.height);
-            if (arrow != null && arrow.texture != null)
-                GUI.DrawTexture(restartLocal, arrow.texture, ScaleMode.ScaleToFit, true);
-            else
-                GUI.Box(restartLocal, "↩");
-            GUI.EndGroup();
-            var restartLab = GuiPool.Label(GuiSlot.SettingsLink);
-            restartLab.fontStyle = FontStyle.Bold;
-            restartLab.alignment = TextAnchor.LowerCenter;
-            restartLab.wordWrap = false;
-            restartLab.clipping = TextClipping.Overflow;
-            restartLab.fontSize = CornerAnchor.RestartWordPx(s);
-            GUI.Label(restart, "Restart", restartLab);
-            var hudEv = Event.current;
-            bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
-            bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
-            var hudAt = hudEv != null ? PlayPointer.Gui(hudEv) : restart.center;
-            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
-            bool homeHeld = false;
-            if (home.width > 2f)
-                FeedResumeHudButton(1, home, hudAt, hudDown, hudUp, out homeHeld);
-            DrawGardenHome(home, homeHeld);
+            DrawCornerButtons();
             if (HiveReachable())
                 DrawHiveButton(CornerAnchor.HiveAlignedDraw(hive, restart), s, orbit: true, pop: true);
             else
@@ -13607,6 +13626,7 @@ namespace FlockFive
             homeLab.wordWrap = false;
             homeLab.clipping = TextClipping.Overflow;
             int px = Mathf.Clamp(Mathf.RoundToInt(home.height * 0.30f), 13, 28);
+            if (px > 12) px -= 1;
             homeLab.fontSize = px;
             homeLab.normal.textColor = new Color(0.32f, 0.14f, 0.04f, 1f);
             StampOutlined(word, "Home", homeLab, new Color(0.32f, 0.14f, 0.04f, 1f), 1, 1);
@@ -22959,6 +22979,15 @@ namespace FlockFive
             seat = new Rect(Mathf.Max(0f, restart.xMin - 2f - sz), restart.y, sz, sz);
             if (!seat.Overlaps(restart)) return seat;
             return hit;
+        }
+
+        void EndGiftThanks()
+        {
+            if (_gift != GiftFace.Thanks) return;
+            FinishRewardPay();
+            _gift = GiftFace.None;
+            _busy = false;
+            _swallowTapsUntil = GateNow + 0.2f;
         }
 
         void CloseGift()

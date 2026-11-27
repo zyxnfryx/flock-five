@@ -193,7 +193,10 @@ namespace FlockFive
         // Word on the plate. Same clamp as the 28b6afaf Home label.
         public static int HomeWordPx(float buttonSide)
         {
-            return Mathf.Clamp(Mathf.RoundToInt(buttonSide * 0.30f), 13, 28);
+            // One pixel under the 0.30 plate fraction so "Home" does not touch the rim.
+            int px = Mathf.Clamp(Mathf.RoundToInt(buttonSide * 0.30f), 13, 28);
+            if (px > 12) px -= 1;
+            return px;
         }
 
         // Word on the swirl. Same formula as the 28b6afaf Restart label.
