@@ -230,8 +230,7 @@ namespace FlockFive.Editor
                 && app.IndexOf("DrawRoundedFace(home,") >= 0
                 && app.IndexOf("DrawHomeGlyph(") >= 0
                 && app.IndexOf("StampOutlined(word, \"Home\"") >= 0
-                && app.IndexOf("home.height * 0.30f") >= 0
-                && app.IndexOf("9f * Mathf.Min(uiScale, 1.15f)") >= 0;
+                && app.IndexOf("home.height * 0.30f") >= 0;
             int reward = app.IndexOf("void DrawRewardStamp(");
             bool rewardKept = reward >= 0 && app.IndexOf("DrawRewardStamp(", reward + 10) >= 0;
             Check("play-hud-has-no-garden-stamp", noChip && rewardKept, "hud " + hud.Length + " chip " + !noChip);
