@@ -707,8 +707,12 @@ namespace FlockFive
             if (_blend < 1f && !_snap) sample = Mix(_from, sample, Ease(_blend));
             _cur = sample;
             bool flee = _act == OstrichAct.Flee;
-            float headX = aimX + PortX;
-            float headY = aimY + PortY + sample.Bob * 0.35f;
+            // Anchor is the unmoved aim. Bob, wind and the peck are added on top, so a
+            // clearance offset must not be solved from the already-moved head or it cancels them.
+            float anchorX = aimX + PortX;
+            float anchorY = aimY + PortY;
+            float headX = anchorX;
+            float headY = anchorY + sample.Bob * 0.35f;
             headY += sample.Wind * 0.18f - sample.Strike * 0.12f;
             float sway = 0f;
             if (_act == OstrichAct.Strut) sway = Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.28f * SwayScale;
@@ -781,7 +785,7 @@ namespace FlockFive
             if (peekSlot >= 0)
             {
                 float feederX = FeederRow.X(peekSlot, Feeders);
-                PeekClear(headX, headY, feederX, WorldBuilder.FeederY, face, half, _peek, out float pdx, out float pdy);
+                PeekClear(anchorX, anchorY, feederX, WorldBuilder.FeederY, face, half, _peek, out float pdx, out float pdy);
                 headX += pdx;
                 headY += pdy;
             }
@@ -934,9 +938,10 @@ namespace FlockFive
             }
         }
 
-        // Settled peek. Slide beside the glass when the beak still fits on screen.
-        // Otherwise drop under the bulb. dx/dy are added after the aim, at full weight.
-        public static void PeekClear(float headX, float headY, float feederX, float feederY, float face, float half, float weight, out float dx, out float dy)
+        // Settled peek offset from the unmoved anchor (aim + port), not from the bobbing head.
+        // Slide beside the glass when the beak still fits. Otherwise drop under the bulb.
+        // The idle rock and bob are reserved in that offset, then played on top of it.
+        public static void PeekClear(float anchorX, float anchorY, float feederX, float feederY, float face, float half, float weight, out float dx, out float dy)
         {
             dx = 0f;
             dy = 0f;
@@ -944,10 +949,10 @@ namespace FlockFive
             float dir = face < 0f ? -1f : 1f;
             IdleHeadEnvelope(face, out float minX, out float maxX, out _, out float maxY);
             float need = dir > 0f
-                ? (feederX + FeederRow.BulbHalf + BulbClear) - (headX + minX)
-                : (headX + maxX) - (feederX - FeederRow.BulbHalf - BulbClear);
+                ? (feederX + FeederRow.BulbHalf + BulbClear) - (anchorX + minX)
+                : (anchorX + maxX) - (feederX - FeederRow.BulbHalf - BulbClear);
             if (need < 0.2f) need = 0.2f;
-            float room = dir > 0f ? half - 0.12f - BeakReach - headX : headX + half - 0.12f - BeakReach;
+            float room = dir > 0f ? half - 0.12f - BeakReach - anchorX : anchorX + half - 0.12f - BeakReach;
             if (room < 0f) room = 0f;
             float shift = need <= room ? need : room;
             float fade = weight * Mathf.Min(1f, Mathf.Abs(face) * 2f);
@@ -957,7 +962,8 @@ namespace FlockFive
                 dy = PeekY * weight;
             else
             {
-                float dyMax = (feederY - FeederRow.BulbHalf - BulbClear - IdleBob) - (headY + maxY);
+                // Highest idle top (rocked sprite plus the full bob) sits BulbClear under the glass.
+                float dyMax = (feederY - FeederRow.BulbHalf - BulbClear - IdleBob) - (anchorY + maxY);
                 dy = Mathf.Min(PeekY, dyMax) * weight;
             }
         }
