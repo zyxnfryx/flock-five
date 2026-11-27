@@ -375,7 +375,8 @@ namespace FlockFive
                 }
                 else
                 {
-                    y = Mathf.Max(0f, adTop - 6f * scale - size);
+                    // The sign tip sticks above the wood box. Clear that tip, not only the AABB.
+                    y = Mathf.Max(0f, adTop - 6f * scale - size * 0.28f - size);
                 }
                 bot = screenH - y;
                 right = RightEdge(screenW, safe, scale) - size;

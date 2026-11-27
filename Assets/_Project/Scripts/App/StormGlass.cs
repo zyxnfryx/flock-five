@@ -197,16 +197,30 @@ namespace FlockFive
             ry = radius * flat * grow;
         }
 
-        // Pixels from the play edge to the outer perch. Big drops stay in this sliver.
+        // Pixels from the play edge to the outer perch. Cached for one glass width.
+        static float _marginW = -1f;
+        static float _marginPx;
         public static float BirdColumnMargin(float areaW)
         {
+            if (areaW == _marginW) return _marginPx;
             float half = WorldBuilder.CamOrtho * DeviceFit.PhoneAspect;
             float outer = half - WorldBuilder.WoodHalf + 0.18f
                 + (WorldBuilder.SeatXPx[WorldBuilder.SeatXPx.Length - 1] - 640f) * WorldBuilder.WoodScaleX / 140f;
             float marginWorld = half - outer;
             if (marginWorld < 0.05f) marginWorld = 0.05f;
-            if (areaW < 2f || half < 0.1f) return 8f;
-            return marginWorld / (half * 2f) * areaW;
+            float px = (areaW < 2f || half < 0.1f) ? 8f : marginWorld / (half * 2f) * areaW;
+            _marginW = areaW;
+            _marginPx = px;
+            return px;
+        }
+
+        // Largest big-drop radius that still sits outside the outer perch.
+        // Wide glass keeps the full spawn range; a thin sliver is the only place we shrink.
+        public static float BigDropLimit(float areaW)
+        {
+            float room = BirdColumnMargin(areaW) - 4f;
+            if (room < 8f) room = 8f;
+            return room;
         }
 
         public static float ScaleFor(float areaH)
@@ -627,9 +641,7 @@ namespace FlockFive
                     // The outer perch sits a few percent in from the bezel. A teardrop
                     // in the old 7–20% band fell on that column. Keep the drop in the
                     // sliver outside the perch, and shrink it when the sliver is thin.
-                    float margin = BirdColumnMargin(areaW);
-                    float room = margin - 4f;
-                    if (room < 8f) room = 8f;
+                    float room = BigDropLimit(areaW);
                     if (rad > room) rad = room;
                     float edge = Mathf.Max(2f, room - rad);
                     x = rng.Next01() < 0.5f ? areaX + edge : areaX + areaW - edge;
