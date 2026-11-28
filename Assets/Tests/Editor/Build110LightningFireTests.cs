@@ -367,6 +367,14 @@ namespace FlockFive.Editor
                 "index " + daily.Index);
             var dailyAlone = DevLevelSkip.Plan("http://h/?fflevel=2&forceDaily=1", 50);
             Check("plan-daily-needs-skip", !dailyAlone.ForceDaily, "index " + dailyAlone.Index);
+            var draw = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forcePoker=draw", 50);
+            Check("plan-force-poker-draw", draw.SkipOnboarding && draw.ForcePokerDraw && !draw.OpenPoker, "index " + draw.Index);
+            var drawJunk = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forcePoker=1", 50);
+            Check("plan-poker-draw-word", !drawJunk.ForcePokerDraw, "index " + drawJunk.Index);
+            var up = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forceUpgrade=1", 50);
+            Check("plan-force-upgrade", up.ForceUpgrade && !up.ForceGiftYours, "index " + up.Index);
+            var yours = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forceGift=yours", 50);
+            Check("plan-force-gift-yours", yours.ForceGiftYours && !yours.ForceUpgrade, "index " + yours.Index);
             var nap = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forceNap=1", 50);
             Check("plan-force-nap", nap.Index == 1 && nap.SkipOnboarding && nap.ForceNap && !nap.KeepTips
                 && !nap.ForceFeeder && !nap.OpenPoker && !nap.ForceClear, "index " + nap.Index);

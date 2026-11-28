@@ -92,19 +92,24 @@ namespace FlockFive.Editor
                     for (int seat = 0; seat < seats.Length; seat++)
                     {
                         var framed = FlockFiveApp.TipFrame(fieldW, fieldH, safe, seats[seat]);
-                        bool sizeOk = Mathf.Abs(framed.height - classH) < 0.5f;
-                        bool aboveSafe = framed.yMax <= fieldH - safeBot - 4f;
+                        int plateCap = TipPill.CapForPlate(fieldH, framed.height);
+                        bool sizeOk = framed.height <= classH + 0.5f && framed.height >= 8f
+                            && framed.yMin > fieldH * 0.45f;
+                        bool capOk = plateCap >= TipPill.CapFloor(fieldH)
+                            && plateCap <= classCap;
+                        bool aboveSafe = framed.yMax <= fieldH - safeBot - 3f;
                         bool hit = false;
                         for (int a = 0; a < artN; a++)
                         {
                             if (art[a].width > 2f && framed.Overlaps(art[a])) { hit = true; break; }
                         }
-                        if (sizeOk && aboveSafe && !hit && artN > 8) continue;
+                        if (sizeOk && capOk && aboveSafe && !hit && artN > 12) continue;
                         bad.Append(winW).Append(s == 0 ? "" : "+safe").Append(" ").Append(seats[seat])
                             .Append(" y=").Append(framed.y.ToString("0"))
                             .Append("-").Append(framed.yMax.ToString("0"))
                             .Append(hit ? " overlaps" : "")
                             .Append(aboveSafe ? "" : " low")
+                            .Append(capOk ? "" : " cap")
                             .Append(" art=").Append(artN).Append("; ");
                     }
                     for (int t = 0; t < tips.Count; t++)
@@ -138,6 +143,37 @@ namespace FlockFive.Editor
             }
             DeviceFit.TestWindow = keepFit;
             Check("every-tip", bad.Length == 0, bad.ToString());
+            var giftBad = new StringBuilder();
+            for (int d = 0; d < windows.Length; d++)
+            {
+                int winW = windows[d].x;
+                int winH = windows[d].y;
+                PhoneArea.PlayPixels(winW, winH, out int fieldW, out int fieldH);
+                int safes = winW == 820 ? 2 : 1;
+                for (int s = 0; s < safes; s++)
+                {
+                    float safeBot = s == 0 ? 0f : 34f;
+                    float safeTop = s == 0 ? 0f : 59f;
+                    var safe = new Rect(0f, safeBot, fieldW, Mathf.Max(2f, fieldH - safeBot - safeTop));
+                    var card = new Rect(fieldW * 0.08f, fieldH * 0.16f, fieldW * 0.84f, fieldH * 0.42f);
+                    var watch = new Rect(fieldW * 0.32f, card.yMax - 18f, fieldW * 0.36f, 84f);
+                    var closeX = new Rect(fieldW - 64f, safeTop + 8f, 48f, 48f);
+                    CornerAnchor.Garden(fieldW, fieldH, safe, out _, out _, out _, out var restart, out _);
+                    var home = CornerAnchor.TopBarHome(restart, fieldW, safe, fieldH);
+                    var gap = FlockFiveApp.GiftCoachGap(fieldW, fieldH, safe, 1f, card, watch, closeX);
+                    var coach = FlockFiveApp.TipFrame(fieldW, fieldH, safe, "ad.hand", -1f, gap);
+                    bool clear = !coach.Overlaps(card) && !coach.Overlaps(watch) && !coach.Overlaps(closeX)
+                        && (restart.width < 2f || !coach.Overlaps(restart))
+                        && (home.width < 2f || !coach.Overlaps(home))
+                        && coach.yMin > fieldH * 0.45f
+                        && coach.yMax <= fieldH - safeBot - 3f;
+                    if (!clear)
+                        giftBad.Append(winW).Append(s == 0 ? "" : "+safe")
+                            .Append(" y=").Append(coach.y.ToString("0"))
+                            .Append("-").Append(coach.yMax.ToString("0")).Append("; ");
+                }
+            }
+            Check("gift-coach-clears-panel", giftBad.Length == 0, giftBad.ToString());
             var plate = TipPill.Place(664f, 1180f, 34f, TipPill.Band.Floor);
             var words = new Rect(plate.x + 36f, plate.y + 24f, plate.width - 72f, plate.height - 48f);
             var slot = TapWaitGlove.CueSlot(words, plate, default, 664f, 1180f);

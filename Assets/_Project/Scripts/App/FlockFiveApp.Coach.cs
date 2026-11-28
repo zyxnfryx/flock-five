@@ -5750,8 +5750,7 @@ namespace FlockFive
         // table each have their own seat and must not use the garden ground.
         public static bool GardenTip(string spot)
         {
-            return spot == "coach.line" || spot == "coach.rule"
-                || spot == "ad.hand" || spot == "gift.yours";
+            return spot == "coach.line" || spot == "coach.rule" || spot == "gift.yours";
         }
 
         // The plate a tip paints. Garden spots use the ground band. poker.table
@@ -5767,6 +5766,8 @@ namespace FlockFive
                 clearTop = PokerCoachClear(fieldW, fieldH, safe);
             if (clearTop > 1f)
                 return TipPill.Above(floor, clearTop, fieldH);
+            if (spot == "ad.hand" && anchor.height > 2f)
+                return TipPill.InBand(floor, anchor.y, anchor.yMax, fieldH);
             if (GardenTip(spot) || string.IsNullOrEmpty(spot))
                 return TipPill.PlaceGarden(fieldW, fieldH, bot, safe);
             if (anchor.width > 2f && anchor.height > 2f)
@@ -5792,6 +5793,8 @@ namespace FlockFive
                 _tipOut = 0f;
             }
             int cap = TipPill.Cap(fieldH);
+            if (pill.height + 1f < TipPill.Height(fieldH))
+                cap = TipPill.CapForPlate(fieldH, pill.height);
             float rad = TipPill.Radius(fieldH);
             float limit = Mathf.Min(pill.width, pill.height) * 0.5f - 1f;
             if (rad > limit) rad = Mathf.Max(2f, limit);

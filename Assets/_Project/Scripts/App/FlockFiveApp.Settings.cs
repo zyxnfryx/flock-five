@@ -872,6 +872,29 @@ namespace FlockFive
             DevLevelSkip.PastBadgerArmed = plan.PastBadger;
             DevLevelSkip.KeepTipsArmed = plan.KeepTips;
             DevLevelSkip.ForceDailyArmed = plan.ForceDaily;
+            DevLevelSkip.ForceUpgradeArmed = plan.ForceUpgrade;
+            if (plan.ForceDaily)
+            {
+                PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
+                PlayerPrefs.SetInt(AvatarNamedPref, 1);
+                PlayerPrefs.Save();
+                _splash = true;
+                _home = HomeFace.Splash;
+                _dailyAskOpen = true;
+                _dailyAskAt = AdPause.Unscaled;
+                Debug.Log("FF_DEV_FORCE daily=1 home=1");
+                return;
+            }
+            if (plan.ForcePokerDraw)
+            {
+                DevOpenPokerHold();
+                return;
+            }
+            if (plan.ForceUpgrade)
+            {
+                DevOpenUpgrade();
+                return;
+            }
             if (plan.OpenPoker)
             {
                 DevOpenPokerTable();
@@ -897,14 +920,11 @@ namespace FlockFive
                 _restartAsk = RestartAsk.Sure;
                 Debug.Log("FF_DEV_FORCE restart=1");
             }
-            if (plan.ForceDaily)
+            if (plan.ForceGiftYours)
             {
-                // The streak card, not the adopt lesson in front of it.
-                PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
-                PlayerPrefs.SetInt(AvatarNamedPref, 1);
-                _dailyAskOpen = true;
-                _dailyAskAt = AdPause.Unscaled;
-                Debug.Log("FF_DEV_FORCE daily=1");
+                _gift = GiftFace.Thanks;
+                _giftThanksAt = AdPause.Unscaled;
+                Debug.Log("FF_DEV_FORCE gift=yours");
             }
             if (plan.ForceClear)
             {
@@ -1019,6 +1039,60 @@ namespace FlockFive
         // dealt prefs are stamped and this visit is the lesson hand, so the
         // Back gate holds the result instead of settling it away. The home
         // poker intro was already stamped with the cascade.
+        // DEV-ONLY. One dealt hand, not drawn, so the hold / DRAW tip is the plate.
+        void DevOpenPokerHold()
+        {
+            PlayerPrefs.DeleteKey(CoachPokerPageKey);
+            PlayerPrefs.Save();
+            _pokerLessonHand = true;
+            _pokerPageOn = true;
+            _pokerPageStep = 3;
+            _pokerDealHint = false;
+            _pokerIntro = false;
+            _pokerIntroLive = false;
+            _pokerPayOpen = false;
+            _fivesOpen = false;
+            _pokerStamp = false;
+            _pokerMotion = PokerMotion.None;
+            _pokerWinT = -1f;
+            _splash = true;
+            _home = HomeFace.Poker;
+            NotePokerIntroLeft(false);
+            BirdPoker.Boot();
+            BirdPoker.BeginVisit();
+            BirdPoker.SyncBet();
+            bool dealt = BirdPoker.Deal();
+            LessonLine(PokerHoldLine);
+            Debug.Log("FF_DEV_FORCE poker=draw dealt=" + (dealt ? 1 : 0)
+                + " phase=" + BirdPoker.PhaseNow
+                + " coins=" + Purse.Coins);
+        }
+
+        // DEV-ONLY. Album open on an owned card with the free Upgrade coach.
+        void DevOpenUpgrade()
+        {
+            BadgerCopy.MarkCoach();
+            var visit = Hive.TakeVisitor();
+            PlayerPrefs.SetInt(CoachHiveAlbumKey, 1);
+            PlayerPrefs.DeleteKey(CoachHiveUpgradeKey);
+            PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
+            PlayerPrefs.Save();
+            _albumTutorOn = false;
+            _upgradeTutorDone = false;
+            _upgradeTutorKnown = false;
+            _splash = true;
+            _home = HomeFace.Hive;
+            _hiveInspect = visit.Slot;
+            _hiveInspectT = 1f;
+            _hiveInspectClosing = false;
+            _albumOpenFrames = 4;
+            _albumOpenAt = 0f;
+            _hivePageTurn = 1f;
+            BeginUpgradeTutor();
+            Debug.Log("FF_DEV_FORCE upgrade=1 slot=" + visit.Slot
+                + " unlocked=" + (Hive.UpgradesUnlocked ? 1 : 0));
+        }
+
         void DevOpenPokerTable()
         {
             PlayerPrefs.DeleteKey(CoachPokerBackKey);

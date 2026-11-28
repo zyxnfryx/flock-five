@@ -103,31 +103,66 @@ namespace FlockFive
             return g;
         }
 
-        // The garden plate sits in the open ground under every branch, bird,
-        // gift limb, and the hive, and above the bottom safe inset plus the
-        // class gap. When that band is shorter than the pill, the plate sits
-        // fully above the top row and under the feeders.
+        // Two authored rows plus the text pad. Used to shrink a short ground band.
+        public static float TwoLineBlock(int cap)
+        {
+            if (cap < 1) cap = 1;
+            return TextPad(cap) * 2f + cap * 1.25f * 2f;
+        }
+
+        // Shrinking a tall class never goes under the 26 phone cap. A phone
+        // whose own cap is already 22 or 24 keeps that cap.
+        public static int CapFloor(float fieldH)
+        {
+            int cap = Cap(fieldH);
+            return cap >= 26 ? 26 : cap;
+        }
+
+        public static float MinBandHeight(float fieldH)
+        {
+            float block = TwoLineBlock(CapFloor(fieldH)) + 8f;
+            float klass = Height(fieldH);
+            return block < klass ? block : klass;
+        }
+
+        public static int CapForPlate(float fieldH, float plateH)
+        {
+            int cap = Cap(fieldH);
+            int floor = CapFloor(fieldH);
+            while (cap > floor && TwoLineBlock(cap) > plateH - 6f)
+                cap--;
+            return cap;
+        }
+
+        // Fit a plate into [bandTop, bandBot] (GUI y down). Full class height
+        // when the band allows it; otherwise the band itself, never shorter
+        // than two lines at CapFloor unless the band is shorter than that.
+        public static Rect InBand(Rect floor, float bandTop, float bandBot, float fieldH)
+        {
+            if (bandBot < bandTop + 8f) bandBot = bandTop + 8f;
+            float avail = bandBot - bandTop;
+            float height = floor.height <= avail ? floor.height : avail;
+            if (height < 8f) height = 8f;
+            float y = bandBot - height;
+            if (y < bandTop) y = bandTop;
+            return Snap(new Rect(floor.x, y, floor.width, height));
+        }
+
+        // The garden plate sits in the ground under the lowest branch and gift
+        // limb, above the bottom safe inset. A short band shrinks the plate.
+        // It does not move up onto the feeders.
         public static Rect PlaceGarden(float fieldW, float fieldH, float safeBottom, Rect safe)
         {
             var pill = Place(fieldW, fieldH, safeBottom, Band.Floor);
-            CornerAnchor.GardenArtSpan(fieldW, fieldH, safe, out float artTop, out float artBottom, out float feederBottom);
-            if (artBottom <= artTop + 1f) return DodgeHive(pill, fieldW, fieldH, safe);
-            float air = Mathf.Max(6f, ClearGap(fieldH) * 0.45f);
-            float yMax = fieldH - safeBottom - Gap(fieldH);
-            float y = yMax - pill.height;
-            Rect seated;
-            if (y >= artBottom + air)
-                seated = new Rect(pill.x, y, pill.width, pill.height);
-            else
-            {
-                float yTop = artTop - air - pill.height;
-                float under = feederBottom + air;
-                if (under > 4f && yTop < under) yTop = under;
-                if (yTop + pill.height > artTop - air) yTop = artTop - air - pill.height;
-                if (yTop < 4f) yTop = 4f;
-                seated = new Rect(pill.x, yTop, pill.width, pill.height);
-            }
-            return DodgeHive(seated, fieldW, fieldH, safe);
+            CornerAnchor.GardenArtSpan(fieldW, fieldH, safe, out _, out float artBottom, out _);
+            float air = Mathf.Max(6f, ClearGap(fieldH) * 0.35f);
+            float safeFloor = fieldH - safeBottom - 4f;
+            float gapFloor = fieldH - safeBottom - Gap(fieldH);
+            float bandTop = artBottom + air;
+            float bandBot = safeFloor;
+            if (gapFloor - pill.height >= bandTop)
+                bandBot = gapFloor;
+            return DodgeHive(InBand(pill, bandTop, bandBot, fieldH), fieldW, fieldH, safe);
         }
 
         // A full-width plate in the ground band meets the corner hive. Keep the

@@ -20228,6 +20228,10 @@ namespace FlockFive
 
         bool AlbumPageSettled()
         {
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            if (DevLevelSkip.ForceUpgradeArmed && _home == HomeFace.Hive && _hiveInspect >= 0)
+                return true;
+#endif
             if (_albumOpenFrames < 2 || _albumOpenAt < 0f) return false;
             if (PlayClock.Now - _albumOpenAt < 0.34f) return false;
             if (_hivePageTurn < 0.55f) return false;
@@ -23532,7 +23536,8 @@ namespace FlockFive
                         _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / TipPill.FadeIn);
                     var tipM = GUI.matrix;
                     GUI.matrix = PhoneArea.GuiBase;
-                    DrawTipFamily(AdHandLine, EaseOutCubic(_coachFade), "ad.hand");
+                    var gap = GiftCoachGap(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s, card, cta, xBtn);
+                    DrawTipFamily(AdHandLine, EaseOutCubic(_coachFade), "ad.hand", -1f, gap);
                     GUI.matrix = tipM;
                 }
                 DrawTutorOverlay(s);
@@ -23832,8 +23837,24 @@ namespace FlockFive
             }
         }
 
+        // Free band under the gift card and the Watch disc, above the safe floor.
+        // The coach plate is fitted into this band so it misses the panel, the
+        // cake, the X, and the top HUD.
+        public static Rect GiftCoachGap(float w, float h, Rect safe, float s, Rect card, Rect watch, Rect closeX)
+        {
+            float top = 8f;
+            if (card.height > 2f) top = Mathf.Max(top, card.yMax);
+            if (watch.height > 2f) top = Mathf.Max(top, watch.yMax);
+            if (closeX.width > 2f && closeX.yMin > (card.height > 2f ? card.center.y : h * 0.5f))
+                top = Mathf.Max(top, closeX.yMax);
+            top += 10f * (s > 0.2f ? s : 1f);
+            float bot = h - Mathf.Max(8f, TipPill.SafeBottom(h, safe) + 4f);
+            if (bot < top + 8f) bot = top + 8f;
+            return new Rect(0f, top, w, bot - top);
+        }
+
         // Same stack as GiftCardLayout. The bonus sign stays at that higher
-        // seat; the coach line anchors above it and does not push the card down.
+        // seat; the coach line anchors under the Watch disc.
         void GiftCardPlaced(float s, out Rect card, out Rect flower)
         {
             GiftCardLayout(s, out card, out flower);

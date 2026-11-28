@@ -426,7 +426,7 @@ namespace FlockFive
             return y + BranchView.RestLift + half;
         }
 
-        public const int GardenArtMax = 24;
+        public const int GardenArtMax = 28;
 
         static float SafeTopNormOf(float h, Rect safe)
         {
@@ -471,11 +471,14 @@ namespace FlockFive
             AdRowBand(w, h, out var signL, out var signR, out _, out _, out _, out _);
             if (n < dst.Length) dst[n++] = signL;
             if (n < dst.Length) dst[n++] = signR;
-            if (includeHive)
-            {
-                Garden(w, h, safe, out _, out _, out _, out _, out var hive);
-                if (hive.width > 2f && hive.height > 2f && n < dst.Length) dst[n++] = hive;
-            }
+            Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
+            if (includeHive && hive.width > 2f && hive.height > 2f && n < dst.Length) dst[n++] = hive;
+            if (restart.width > 2f && n < dst.Length) dst[n++] = restart;
+            var home = TopBarHome(restart, w, safe, h);
+            if (home.width > 2f && n < dst.Length) dst[n++] = home;
+            float fy = WorldBuilder.FeederYFor(tall, safeTop, w, h);
+            if (n < dst.Length)
+                dst[n++] = GuiBox(w, h, -FeederRightWorld, fy + WorldBuilder.FeederCrown, FeederRightWorld, fy - 1.6f);
             return n;
         }
 
