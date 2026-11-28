@@ -562,7 +562,7 @@ namespace FlockFive
             _adoptLive = true;
             float dt = Mathf.Clamp(AdPause.UnscaledDelta, 0f, 0.05f);
             _adoptClock += dt;
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             TickAdoptMotion(dt);
         }
 
@@ -828,6 +828,19 @@ namespace FlockFive
         void HitAdoptTutor(float s)
         {
             if (!_adoptLive || _avatarRename) return;
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            // DEV-ONLY. Inspect-only. keepTips opens on the greet, and a tap on
+            // the bird was landing it without advancing the sentence. Any tap
+            // steps the lesson so the streak card can be reached.
+            if (DevLevelSkip.KeepTipsArmed && HitHomeFirst(new Rect(0f, 0f, PhoneArea.W, PhoneArea.H), out _))
+            {
+                if (AdoptGreetUp() || _avatarPose == AvatarPose.Flying || _avatarPose == AvatarPose.Landing)
+                    AdvanceAdoptGreet();
+                else if (_adoptStep == AdoptStep.Look)
+                    NoteAdoptLook();
+                return;
+            }
+#endif
             int pick = _adoptPick;
             if (pick < 0 || pick > 4) return;
             float icon = HomeAvatarIcon(s);

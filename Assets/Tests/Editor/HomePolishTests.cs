@@ -1044,7 +1044,7 @@ namespace FlockFive.Editor
                     if (FlockFiveApp.ScreenGloveCountsAsBranch(mirroredScreen, H, glove, true)) l1 = false;
                 }
             }
-            bool clear = CaptionLayout.FirstClearLine.IndexOf("Five of one color clear.") >= 0;
+            bool clear = CaptionLayout.FirstClearLine.IndexOf("Five of one color clears!") >= 0;
             bool bottom = FlockFiveApp.IsGardenBottomLine(CaptionLayout.FirstClearLine);
             var restart = new Rect(700f, 40f, 64f, 64f);
             var home = CornerAnchor.TopBarHome(restart, 820f, new Rect(0f, 0f, 820f, 1180f));

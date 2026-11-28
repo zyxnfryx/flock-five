@@ -414,6 +414,17 @@ namespace FlockFive
                         // b123: the first free use of each power (x2, x3, Hot Sauce, Freeze Spray) is a forced step.
                         // The intro line stays up (it used to be overwritten by "Your pick").
                         _bgGuidePower = NextBadgerGuidePower();
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+                        // DEV-ONLY. Inspect-only. Compiled out of shipping builds.
+                        // Skip the x2 step so the freeze beat can reach "Tap the comb."
+                        if (DevLevelSkip.PastBadgerArmed && _bgGuidePower == BadgerPower.X2)
+                        {
+                            _bgPowerGuideOn = false;
+                            _bgLine = BadgerCopy.YourPick;
+                            Sfx.CardBump();
+                            break;
+                        }
+#endif
                         _bgPowerGuideOn = true;
                         _bgPowerTile = _bgFight.PowerStepPlayerTile(_bgGuidePower);
                         _bgLine = "";
@@ -802,6 +813,11 @@ namespace FlockFive
             _bgLessonLive = true;
             _bgCoachFight = true;
             _bgLessonStep = 0;
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            // DEV-ONLY. Inspect-only. Compiled out of shipping builds.
+            // The column line is "Higher honey scores."
+            if (DevLevelSkip.PastBadgerArmed) _bgLessonStep = 2;
+#endif
             _bgLessonStepAt = AdPause.Unscaled;
             _bgStage = BadgerStage.Lesson;
             _bgT = 0f;
@@ -990,7 +1006,7 @@ namespace FlockFive
                 var tile = BadgerPowerGuideStage() == 1 ? _bgPowerBtn : _bgGuideAim;
                 var tap = BadgerPowerGuideStage() == 1 ? _bgPowerBtn : _bgGuideHit;
                 if (tile.width < 2f || tile.height < 2f) return;
-                _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
                 CoachGloveAt(GloveTarget(tile), dt, s, float.NaN, false, float.NaN, tap);
                 return;
             }
@@ -998,7 +1014,7 @@ namespace FlockFive
             {
                 // Result: the glove is on Continue (the only control).
                 var cont = BadgerContinueRect(BadgerLayout());
-                _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
                 CoachGloveAt(GloveTarget(cont), dt, s, float.NaN, false, float.NaN, cont);
                 return;
             }
@@ -3167,23 +3183,11 @@ namespace FlockFive
         // Shared dark caption plate (DrawSolidRound kind 0) and the shared banner ink, at the table entry's size and seat.
         void DrawBadgerPickCaption(BadgerRects L, string spot, float alpha = 1f)
         {
-            var plate = BadgerPickPlate(L, spot, _bgLine, out var text, out int font);
             float fade = BadgerCaptionFade.For(BadgerTutorialFight(), _coachFade) * alpha;
             if (fade < 0.02f) return;
-            NoteTutorPlate(plate);
-            DrawSolidRound(plate, Mathf.Min(plate.height * 0.30f, 14f * L.S), 0, fade * CaptionStyles.Ink(spot));
-            var st = CoachLineStyle();
-            int keep = st.fontSize; bool wrap = st.wordWrap; var align = st.alignment;
-            try
-            {
-                st.fontSize = font;
-                st.wordWrap = false;
-                st.alignment = TextAnchor.MiddleCenter;
-                var ink = text;
-                ink.y -= CaptionLayout.BannerInkLift(font);
-                StampBannerText(ink, _bgLine, st, fade, true);
-            }
-            finally { st.fontSize = keep; st.wordWrap = wrap; st.alignment = align; }
+            // Same pill as every other tip. L keeps the call signature the seat tests use.
+            if (L.S < 0f) return;
+            DrawTipFamily(_bgLine, fade, spot, -1f, L.Caption);
         }
 
     }

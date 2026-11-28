@@ -143,6 +143,8 @@ namespace FlockFive
         }
 
         // The keep-out for the whole loop. The drawn frame bobs inside it.
+        // Anchored in the plate's left gutter, or above the plate when that
+        // gutter is the words. It does not hang off the right end of the pill.
         public static Rect CueSlot(Rect text, Rect plate, Rect stepGlove, float screenW, float screenH)
         {
             if (text.width < 8f || text.height < 8f || screenW < 8f || screenH < 8f) return default;
@@ -151,7 +153,10 @@ namespace FlockFive
             float dw = dh * (220f / 300f);
             float bob = 4f;
             float gap = Mathf.Max(6f, 4f * s);
-            var seat = new Rect(text.xMax - dw * 0.2f, text.yMax + gap, dw, dh + bob * 2f);
+            float slotH = dh + bob * 2f;
+            var seat = new Rect(plate.x + gap, text.center.y - slotH * 0.5f, dw, slotH);
+            if (seat.xMax > text.xMin - 2f)
+                seat = new Rect(plate.center.x - dw * 0.5f, plate.yMin - slotH - gap, dw, slotH);
             seat = Fit(seat, text, stepGlove, screenW, screenH, dw, gap);
             if (seat.width < 2f) return default;
             if (seat.Overlaps(text)) return default;

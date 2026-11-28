@@ -801,8 +801,10 @@ namespace FlockFive
             PlayerPrefs.SetInt(CoachHawkKey, 1);
             PlayerPrefs.SetInt(CoachOstrichKey, 1);
             // keepTips=1 leaves the rule plates owed, including a stamp left by an
-            // earlier skip in this browser profile. Leaf and the other coach keys
-            // above stay seen so their plates do not cover FeederLine.
+            // earlier skip in this browser profile. The home coaches (daily,
+            // album, poker intro, stuck gift, bee, adopt) are restored after
+            // the cascade stamp below. forceFeeder separately restores the
+            // leaf, sparrow, hawk, and ostrich lessons.
             if (plan.KeepTips)
             {
                 PlayerPrefs.DeleteKey(RuleTips.KitKey);
@@ -830,7 +832,32 @@ namespace FlockFive
                 PlayerPrefs.SetInt(LightningStrike.StruckKey, 1);
             }
             if (plan.SkipOnboarding) StampDevOnboardingSeen();
-            if (plan.ForceFeeder) PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+            if (plan.KeepTips)
+            {
+                // After the cascade stamp. Daily (and its claim), album, hive,
+                // the poker intro, the stuck gift, the bee lesson, and adopt
+                // stay owed so those coaches can still appear.
+                PlayerPrefs.DeleteKey(CoachDailyKey);
+                PlayerPrefs.DeleteKey(CoachPokerKey);
+                PlayerPrefs.DeleteKey(CoachPokerPageKey);
+                PlayerPrefs.DeleteKey(CoachHiveKey);
+                PlayerPrefs.DeleteKey(CoachHiveGardenKey);
+                PlayerPrefs.DeleteKey(CoachHiveAlbumKey);
+                PlayerPrefs.DeleteKey(CoachHiveUpgradeKey);
+                PlayerPrefs.DeleteKey(CoachGiftKey);
+                PlayerPrefs.DeleteKey(CoachBeeKey);
+                PlayerPrefs.DeleteKey(AvatarAdoptedPref);
+                PlayerPrefs.DeleteKey(AvatarNamedPref);
+            }
+            if (plan.ForceFeeder)
+            {
+                PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                // The real leaf, sparrow, hawk, and ostrich lessons stay owed.
+                PlayerPrefs.DeleteKey(CoachLeafKey);
+                PlayerPrefs.DeleteKey(CoachSparrowKey);
+                PlayerPrefs.DeleteKey(CoachHawkKey);
+                PlayerPrefs.DeleteKey(CoachOstrichKey);
+            }
             if (plan.ForceNap) PlayerPrefs.DeleteKey(RuleTips.SleepKey);
             PlayerPrefs.Save();
             AdConsent.DismissTransient();
@@ -842,6 +869,32 @@ namespace FlockFive
                     + " openPoker=" + (plan.OpenPoker ? 1 : 0)
                     + " forceClear=" + (plan.ForceClear ? 1 : 0)
                     + " forceRewards=" + (plan.ForceRewards ? 1 : 0));
+            DevLevelSkip.PastBadgerArmed = plan.PastBadger;
+            DevLevelSkip.KeepTipsArmed = plan.KeepTips;
+            DevLevelSkip.ForceDailyArmed = plan.ForceDaily;
+            DevLevelSkip.ForceUpgradeArmed = plan.ForceUpgrade;
+            if (plan.ForceDaily)
+            {
+                PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
+                PlayerPrefs.SetInt(AvatarNamedPref, 1);
+                PlayerPrefs.Save();
+                _splash = true;
+                _home = HomeFace.Splash;
+                _dailyAskOpen = true;
+                _dailyAskAt = AdPause.Unscaled;
+                Debug.Log("FF_DEV_FORCE daily=1 home=1");
+                return;
+            }
+            if (plan.ForcePokerDraw)
+            {
+                DevOpenPokerHold();
+                return;
+            }
+            if (plan.ForceUpgrade)
+            {
+                DevOpenUpgrade();
+                return;
+            }
             if (plan.OpenPoker)
             {
                 DevOpenPokerTable();
@@ -862,6 +915,17 @@ namespace FlockFive
             if (napBranch >= 0)
                 StartCoroutine(DevRaiseForcedNap(napBranch));
             if (plan.ForceFeeder) DevForceFeederPlate();
+            if (plan.ForceRestart)
+            {
+                _restartAsk = RestartAsk.Sure;
+                Debug.Log("FF_DEV_FORCE restart=1");
+            }
+            if (plan.ForceGiftYours)
+            {
+                _gift = GiftFace.Thanks;
+                _giftThanksAt = AdPause.Unscaled;
+                Debug.Log("FF_DEV_FORCE gift=yours");
+            }
             if (plan.ForceClear)
             {
                 _devForceRewards = plan.ForceRewards;
@@ -962,13 +1026,73 @@ namespace FlockFive
                 SyncAll();
             }
             ShowRuleTip(RuleTip.Feeder);
-            Debug.Log("FF_DEV_FORCE feeder=1 tip=" + (_ruleTip == RuleTip.Feeder ? 1 : 0));
+            ArmLeafIntro();
+            if (SparrowDue()) BeginPestCue(PestCueSparrow);
+            else if (HawkDue()) BeginPestCue(PestCueHawk);
+            else if (OstrichDue()) BeginPestCue(PestCueOstrich);
+            Debug.Log("FF_DEV_FORCE feeder=1 tip=" + (_ruleTip == RuleTip.Feeder ? 1 : 0)
+                + " leaf=" + (_leafIntro ? 1 : 0)
+                + " pest=" + _pestCue);
         }
 
         // Home shell, one dealt-and-drawn hand, Back still owed. The page and
         // dealt prefs are stamped and this visit is the lesson hand, so the
         // Back gate holds the result instead of settling it away. The home
         // poker intro was already stamped with the cascade.
+        // DEV-ONLY. One dealt hand, not drawn, so the hold / DRAW tip is the plate.
+        void DevOpenPokerHold()
+        {
+            PlayerPrefs.DeleteKey(CoachPokerPageKey);
+            PlayerPrefs.Save();
+            _pokerLessonHand = true;
+            _pokerPageOn = true;
+            _pokerPageStep = 3;
+            _pokerDealHint = false;
+            _pokerIntro = false;
+            _pokerIntroLive = false;
+            _pokerPayOpen = false;
+            _fivesOpen = false;
+            _pokerStamp = false;
+            _pokerMotion = PokerMotion.None;
+            _pokerWinT = -1f;
+            _splash = true;
+            _home = HomeFace.Poker;
+            NotePokerIntroLeft(false);
+            BirdPoker.Boot();
+            BirdPoker.BeginVisit();
+            BirdPoker.SyncBet();
+            bool dealt = BirdPoker.Deal();
+            LessonLine(PokerHoldLine);
+            Debug.Log("FF_DEV_FORCE poker=draw dealt=" + (dealt ? 1 : 0)
+                + " phase=" + BirdPoker.PhaseNow
+                + " coins=" + Purse.Coins);
+        }
+
+        // DEV-ONLY. Album open on an owned card with the free Upgrade coach.
+        void DevOpenUpgrade()
+        {
+            BadgerCopy.MarkCoach();
+            var visit = Hive.TakeVisitor();
+            PlayerPrefs.SetInt(CoachHiveAlbumKey, 1);
+            PlayerPrefs.DeleteKey(CoachHiveUpgradeKey);
+            PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
+            PlayerPrefs.Save();
+            _albumTutorOn = false;
+            _upgradeTutorDone = false;
+            _upgradeTutorKnown = false;
+            _splash = true;
+            _home = HomeFace.Hive;
+            _hiveInspect = visit.Slot;
+            _hiveInspectT = 1f;
+            _hiveInspectClosing = false;
+            _albumOpenFrames = 4;
+            _albumOpenAt = 0f;
+            _hivePageTurn = 1f;
+            BeginUpgradeTutor();
+            Debug.Log("FF_DEV_FORCE upgrade=1 slot=" + visit.Slot
+                + " unlocked=" + (Hive.UpgradesUnlocked ? 1 : 0));
+        }
+
         void DevOpenPokerTable()
         {
             PlayerPrefs.DeleteKey(CoachPokerBackKey);

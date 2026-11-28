@@ -1,0 +1,224 @@
+#if UNITY_EDITOR
+using System.Collections.Generic;
+using System.Text;
+using UnityEngine;
+
+namespace FlockFive.Editor
+{
+    // Every coach tip, on the four portrait classes, is one rounded pill:
+    // class height, radius, bottom band, and text cap. Copy stays within two lines.
+    public static class TipPillTests
+    {
+        public static void Run()
+        {
+            int fail = 0;
+            void Check(string name, bool ok, string detail)
+            {
+                if (ok) Debug.Log("[tip-pill] PASS " + name);
+                else
+                {
+                    fail++;
+                    Debug.LogError("[tip-pill] FAIL " + name + " " + detail);
+                }
+            }
+
+            Check("height-360", TipPill.Height(780f) == 104, TipPill.Height(780f).ToString());
+            Check("height-402", TipPill.Height(874f) == 114, TipPill.Height(874f).ToString());
+            Check("height-412", TipPill.Height(915f) == 120, TipPill.Height(915f).ToString());
+            Check("height-820", TipPill.Height(1180f) == 160, TipPill.Height(1180f).ToString());
+            Check("cap-360", TipPill.Cap(780f) == 22, TipPill.Cap(780f).ToString());
+            Check("cap-402", TipPill.Cap(874f) == 24, TipPill.Cap(874f).ToString());
+            Check("cap-412", TipPill.Cap(915f) == 26, TipPill.Cap(915f).ToString());
+            Check("cap-820", TipPill.Cap(1180f) == 34, TipPill.Cap(1180f).ToString());
+            Check("radius-402", Mathf.Abs(TipPill.Radius(874f) - 18f) < 0.05f, TipPill.Radius(874f).ToString("0.00"));
+            Check("gift-uses-floor-band", TipPill.BandFor("ad.hand") == TipPill.Band.Floor
+                && TipPill.BandFor("coach.line") == TipPill.Band.Floor, "");
+            Check("plate-alpha", Mathf.Abs(TipPill.PlateAlpha - CaptionStyles.BannerAlpha) < 0.001f
+                && TipPill.PlateAlpha < 1f, TipPill.PlateAlpha.ToString("0.00"));
+            Check("inset-phone", TipPill.Inset(360f, 780f) >= 20f - 0.01f
+                && TipPill.Inset(402f, 874f) >= 20f - 0.01f
+                && TipPill.Inset(412f, 915f) >= 20f - 0.01f, TipPill.Inset(360f, 780f).ToString("0.0"));
+            Check("inset-820", TipPill.Inset(664f, 1180f) >= 30f - 0.01f, TipPill.Inset(664f, 1180f).ToString("0.0"));
+
+            var tips = new List<string>();
+            var seen = new HashSet<string>();
+            var steps = CoachTap.All;
+            for (int i = 0; i < steps.Length; i++)
+            {
+                string line = CoachTap.Caption(steps[i]);
+                if (string.IsNullOrEmpty(line) || !seen.Add(line)) continue;
+                tips.Add(line);
+            }
+            if (seen.Add(CaptionLayout.YoursLine)) tips.Add(CaptionLayout.YoursLine);
+            // The streak question is dialog copy inside Yes please / Not now, not a pill.
+            Check("daily-ask-is-dialog", FlockFiveApp.DailyAskCopy.IndexOf("streak") >= 0, FlockFiveApp.DailyAskCopy);
+            Check("tip-count", tips.Count >= 30, tips.Count.ToString());
+
+            var style = FlockFiveApp.CoachCaptionStyle();
+            var windows = new[]
+            {
+                new Vector2Int(360, 780),
+                new Vector2Int(402, 874),
+                new Vector2Int(412, 915),
+                new Vector2Int(820, 1180),
+            };
+            var bad = new StringBuilder();
+            float? keepFit = DeviceFit.TestWindow;
+            for (int d = 0; d < windows.Length; d++)
+            {
+                int winW = windows[d].x;
+                int winH = windows[d].y;
+                PhoneArea.PlayPixels(winW, winH, out int fieldW, out int fieldH);
+                DeviceFit.TestWindow = fieldW / (float)fieldH;
+                int classH = TipPill.Height(fieldH);
+                int classCap = TipPill.Cap(fieldH);
+                float rad = TipPill.Radius(fieldH);
+                float gap = TipPill.Gap(fieldH);
+                // 820 is also checked with the 59/34 safe insets. Phones use a flush safe rect.
+                int safes = winW == 820 ? 2 : 1;
+                for (int s = 0; s < safes; s++)
+                {
+                    float safeBot = s == 0 ? 0f : 34f;
+                    float safeTop = s == 0 ? 0f : 59f;
+                    var safe = new Rect(0f, safeBot, fieldW, Mathf.Max(2f, fieldH - safeBot - safeTop));
+                    var floor = TipPill.Place(fieldW, fieldH, safeBot, TipPill.Band.Floor);
+                    var raised = TipPill.Place(fieldW, fieldH, safeBot, TipPill.Band.Raised);
+                    bool raisedOk = Mathf.Abs((floor.yMax - raised.yMax) - classH) < 1.5f;
+                    if (!raisedOk)
+                        bad.Append(winW).Append(s == 0 ? " floor" : " safe").Append(" raised; ");
+                    var art = new Rect[CornerAnchor.GardenArtMax];
+                    int artN = CornerAnchor.CopyGardenArt(fieldW, fieldH, safe, art);
+                    string[] seats = { "coach.line", "coach.rule", "ad.hand", "gift.yours" };
+                    for (int seat = 0; seat < seats.Length; seat++)
+                    {
+                        var framed = FlockFiveApp.TipFrame(fieldW, fieldH, safe, seats[seat]);
+                        int plateCap = TipPill.CapForPlate(fieldH, framed.height);
+                        bool sizeOk = framed.height <= classH + 0.5f && framed.height >= 8f
+                            && framed.yMin > fieldH * 0.45f;
+                        bool capOk = plateCap >= TipPill.CapFloor(fieldH)
+                            && plateCap <= classCap;
+                        bool aboveSafe = framed.yMax <= fieldH - safeBot - 3f;
+                        bool hit = false;
+                        for (int a = 0; a < artN; a++)
+                        {
+                            if (art[a].width > 2f && framed.Overlaps(art[a])) { hit = true; break; }
+                        }
+                        if (sizeOk && capOk && aboveSafe && !hit && artN > 12) continue;
+                        bad.Append(winW).Append(s == 0 ? "" : "+safe").Append(" ").Append(seats[seat])
+                            .Append(" y=").Append(framed.y.ToString("0"))
+                            .Append("-").Append(framed.yMax.ToString("0"))
+                            .Append(hit ? " overlaps" : "")
+                            .Append(aboveSafe ? "" : " low")
+                            .Append(capOk ? "" : " cap")
+                            .Append(" art=").Append(artN).Append("; ");
+                    }
+                    for (int t = 0; t < tips.Count; t++)
+                    {
+                        string text = tips[t];
+                        var pill = TipPill.Place(fieldW, fieldH, safeBot, TipPill.BandFor("coach.line"));
+                        float inner = TipPill.InnerWidth(pill, classCap);
+                        string shown = TipPill.Shown(style, text, inner, classCap);
+                        int lines = TipPill.CountLines(shown);
+                        bool height = Mathf.Abs(pill.height - classH) < 0.5f;
+                        bool round = rad > 0.5f;
+                        float minSide = TipPill.MinInset(fieldW);
+                        bool inset = pill.xMin >= minSide - 0.6f && pill.xMax <= fieldW - minSide + 0.6f;
+                        float wantBottom = fieldH - safeBot - gap;
+                        bool band = Mathf.Abs(pill.yMax - wantBottom) < 1.5f;
+                        bool cap = classCap == TipPill.Cap(fieldH);
+                        bool two = lines >= 1 && lines <= TipPill.MaxLines;
+                        bool fits = CaptionLayout.ShownFits(style, shown, inner, classCap);
+                        if (height && round && inset && band && cap && two && fits) continue;
+                        bad.Append(winW).Append(s == 0 ? "" : "+safe").Append(" [")
+                            .Append(text.Replace("\n", " / ")).Append("] h=").Append(pill.height.ToString("0"))
+                            .Append(" r=").Append(rad.ToString("0.0"))
+                            .Append(" yMax=").Append(pill.yMax.ToString("0"))
+                            .Append("/").Append(wantBottom.ToString("0"))
+                            .Append(" cap=").Append(classCap)
+                            .Append(" lines=").Append(lines)
+                            .Append(fits ? "" : " overflow")
+                            .Append("; ");
+                    }
+                }
+            }
+            DeviceFit.TestWindow = keepFit;
+            Check("every-tip", bad.Length == 0, bad.ToString());
+            var giftBad = new StringBuilder();
+            for (int d = 0; d < windows.Length; d++)
+            {
+                int winW = windows[d].x;
+                int winH = windows[d].y;
+                PhoneArea.PlayPixels(winW, winH, out int fieldW, out int fieldH);
+                int safes = winW == 820 ? 2 : 1;
+                for (int s = 0; s < safes; s++)
+                {
+                    float safeBot = s == 0 ? 0f : 34f;
+                    float safeTop = s == 0 ? 0f : 59f;
+                    var safe = new Rect(0f, safeBot, fieldW, Mathf.Max(2f, fieldH - safeBot - safeTop));
+                    var card = new Rect(fieldW * 0.08f, fieldH * 0.16f, fieldW * 0.84f, fieldH * 0.42f);
+                    var watch = new Rect(fieldW * 0.32f, card.yMax - 18f, fieldW * 0.36f, 84f);
+                    var closeX = new Rect(fieldW - 64f, safeTop + 8f, 48f, 48f);
+                    CornerAnchor.Garden(fieldW, fieldH, safe, out _, out _, out _, out var restart, out _);
+                    var home = CornerAnchor.TopBarHome(restart, fieldW, safe, fieldH);
+                    var gap = FlockFiveApp.GiftCoachGap(fieldW, fieldH, safe, 1f, card, watch, closeX);
+                    var coach = FlockFiveApp.TipFrame(fieldW, fieldH, safe, "ad.hand", -1f, gap);
+                    bool clear = !coach.Overlaps(card) && !coach.Overlaps(watch) && !coach.Overlaps(closeX)
+                        && (restart.width < 2f || !coach.Overlaps(restart))
+                        && (home.width < 2f || !coach.Overlaps(home))
+                        && coach.yMin > fieldH * 0.45f
+                        && coach.yMax <= fieldH - safeBot - 3f;
+                    if (!clear)
+                        giftBad.Append(winW).Append(s == 0 ? "" : "+safe")
+                            .Append(" y=").Append(coach.y.ToString("0"))
+                            .Append("-").Append(coach.yMax.ToString("0")).Append("; ");
+                }
+            }
+            Check("gift-coach-clears-panel", giftBad.Length == 0, giftBad.ToString());
+            var plate = TipPill.Place(664f, 1180f, 34f, TipPill.Band.Floor);
+            var words = new Rect(plate.x + 36f, plate.y + 24f, plate.width - 72f, plate.height - 48f);
+            var slot = TapWaitGlove.CueSlot(words, plate, default, 664f, 1180f);
+            bool stray = slot.width > 2f && slot.yMin >= words.yMax - 1f && slot.center.x > words.center.x;
+            Check("glove-not-bottom-right", !stray && (slot.width < 2f || !slot.Overlaps(words)), slot.ToString());
+
+            float? keepWindow = DeviceFit.TestWindow;
+            try
+            {
+                DeviceFit.TestWindow = 402f / 874f;
+                float ps = DeviceFit.Ui(402f, 874f);
+                var table = new Rect(0f, 0f, 402f, 874f);
+                var deal = FlockFiveApp.PokerDealRect(402f, 874f, table);
+                float side = Mathf.Clamp(30f * ps, 26f, 36f * ps);
+                var plus = new Rect(deal.x - 12f - side, deal.center.y - side * 0.5f, side, side);
+                var amount = new Rect(plus.x - 10f - 140f, plus.y, 140f, side);
+                var aim = FlockFiveApp.PokerBetGloveAim(plus, deal);
+                float dh = FlockFiveApp.GloveDh(ps);
+                float ang = FlockFiveApp.GloveAuditBelowDeg;
+                var body0 = FlockFiveApp.GloveAuditBox(aim, ang, dh, 0f);
+                var body1 = FlockFiveApp.GloveAuditBox(aim, ang, dh, 1f);
+                bool onControl = plus.Contains(aim) || deal.Contains(aim);
+                bool offAmount = !amount.Contains(aim) && !body0.Overlaps(amount) && !body1.Overlaps(amount);
+                var betPill = FlockFiveApp.TipFrame(402f, 874f, new Rect(0f, 0f, 402f, 874f), "poker.table");
+                int betCap = TipPill.Cap(874f);
+                float betCol = TipPill.InnerWidth(betPill, betCap);
+                var betWords = new Rect(betPill.x + (betPill.width - betCol) * 0.5f, betPill.y, betCol, betPill.height);
+                bool offPill = !body0.Overlaps(betWords) && !body1.Overlaps(betWords) && !betWords.Contains(aim);
+                Check("poker-bet-glove-off-the-amount", onControl && offAmount && offPill,
+                    "aim " + aim + " on " + onControl + " amount " + offAmount + " pill " + offPill);
+            }
+            finally
+            {
+                DeviceFit.TestWindow = keepWindow;
+            }
+            string pokerSrc = System.IO.File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
+            int betTick = pokerSrc.IndexOf("bool TickPokerPageTutor(");
+            int betEnd = betTick >= 0 ? pokerSrc.IndexOf("void NotePokerTutorAims(", betTick) : -1;
+            string betBody = betTick >= 0 && betEnd > betTick ? pokerSrc.Substring(betTick, betEnd - betTick) : "";
+            Check("poker-bet-glove-aims-outside",
+                betBody.Contains("PokerBetGloveAim(")
+                && betBody.Contains("CoachGloveBelow(")
+                && betBody.IndexOf("CoachTapAt(deal") < 0, "");
+            if (fail > 0) throw new System.Exception("tip-pill " + fail);
+        }
+    }
+}
+#endif

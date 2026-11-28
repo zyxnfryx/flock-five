@@ -148,9 +148,9 @@ namespace FlockFive
         public const string HiveGardenEmojiLine =
             "You found a bee! \U0001F41D\nTap the hive.";
 
-        // Inspect back. The value sentence is exact. The two tap lines stay with it.
+        // Inspect coach. Two lines: rarity, then flip or put back.
         public const string AlbumHoneyBlock =
-            "Honeycombs show the card's rarity.\n\nTap to flip!\nTap outside to put back";
+            "Honeycombs show rarity.\nTap to flip! Put it back.";
 
         public const string LeafLine =
             "Leaves hide birds.\nCollect at a feeder.";
@@ -168,7 +168,7 @@ namespace FlockFive
         // b113 (Brandon): exact copy, no emoji (the game font does not draw one). The "!" ends the headline, so
         // HeadlineGap puts the shared visible gap between the two sentences at paint time. Two rows at most.
         public const string FireLine =
-            "Lightning burned the branch!\nWatch out for dangerous weather";
+            "Lightning burned it!\nWatch for bad weather.";
 
         // Side padding: the fire column is never wider than this share of the screen (8% each side), so the text
         // is not flush with the edges. A long row shrinks the font (down to 60%) or wraps, it never widens past this.
@@ -188,8 +188,11 @@ namespace FlockFive
             "Tap a matching or empty branch.";
 
         // First garden, the place step. Five birds make a flock. Four do not.
+        // Two lines. The old second row wrapped to a third and grew the bar.
         public const string FirstClearLine =
-            "Tap a matching branch.\nFive of one color clear.";
+            "Tap a matching branch.\nFive of one color clears!";
+
+        public const string YoursLine = "It's yours.";
 
         public const string CoachNowhereLine =
             "Nowhere to go yet.\nTry another branch.";
@@ -343,6 +346,8 @@ namespace FlockFive
             return dst;
         }
 
+        // Welcome-card body, not a coach tip. DrawWelcome stamps it inside the
+        // card (title, amount, this line, Thanks). It is not a TipPill.
         public const string VipPitchLine = "Tap VIP anytime to drop ads.";
 
         public const string AlbumUpgradeLine = "Your first upgrade is free!\nTap Upgrade.";
@@ -695,7 +700,12 @@ namespace FlockFive
         // uses (the old shrink loop's start). Banners do not auto-shrink. A long
         // line wraps into at most BannerMaxLines balanced rows and the plate grows.
         public const int BannerMaxLines = 2;
-        public static int BannerLineCap(float screenW) => screenW > 0f && screenW < 500f ? 3 : BannerMaxLines;
+        // Phones used to allow a third row, which grew the bar. Every tip is two lines.
+        public static int BannerLineCap(float screenW)
+        {
+            if (screenW < 0f) return BannerMaxLines;
+            return BannerMaxLines;
+        }
 
         // b89 (Brandon): caption text is a fixed share of the screen height. DeviceFit.Ui
         // eases the UI scale down on wide (tablet) screens, which shrank captions there.

@@ -415,6 +415,94 @@ namespace FlockFive
         static Rect restart0(float x, float y, float size, float pad)
             => new Rect(x - pad, y - pad, size + pad * 2f, size + pad * 2f);
 
+        // How far a perched bird's crown sits above its branch pivot.
+        public static float BirdAbovePivot(bool gift)
+        {
+            var ys = gift ? WorldBuilder.SeatYGift : WorldBuilder.SeatYMain;
+            float y = ys[0];
+            for (int i = 1; i < ys.Length; i++)
+                if (ys[i] > y) y = ys[i];
+            float half = (1024f / 280f) * BranchView.BirdScale.y * 0.5f;
+            return y + BranchView.RestLift + half;
+        }
+
+        public const int GardenArtMax = 28;
+
+        static float SafeTopNormOf(float h, Rect safe)
+        {
+            if (safe.height < 2f || h < 2f) return 0f;
+            float n = Mathf.Max(0f, h - safe.yMax) / h;
+            if (n > 0.40f) n = 0f;
+            return n;
+        }
+
+        // Every play row (wood plus perched birds), both gift limbs, both watch-ad
+        // signs, and the hive. GUI y grows downward. The caller owns dst.
+        public static int CopyGardenArt(float w, float h, Rect safe, Rect[] dst)
+            => CopyGardenArt(w, h, safe, dst, true);
+
+        public static int CopyGardenArt(float w, float h, Rect safe, Rect[] dst, bool includeHive)
+        {
+            if (dst == null || dst.Length < 1 || w < 8f || h < 8f) return 0;
+            int n = 0;
+            float safeTop = SafeTopNormOf(h, safe);
+            float tall = TallFor(w, h);
+            float y0 = WorldBuilder.RowY0For(tall, w, h, safeTop);
+            float win = w / Mathf.Max(1f, h);
+            float want = DeviceFit.PlayAspect(win);
+            float limb = WorldBuilder.CamOrtho * want - WorldBuilder.WoodHalf + 0.18f;
+            float crown = BirdAbovePivot(false);
+            for (int row = 0; row < WorldBuilder.Rows; row++)
+            {
+                float wy = y0 - row * WorldBuilder.RowGap;
+                if (n >= dst.Length) return n;
+                dst[n++] = GuiBox(w, h, -limb + BranchHit.MainX0, wy + crown, -limb + BranchHit.MainX1, wy + BranchHit.MainY0);
+                if (n >= dst.Length) return n;
+                dst[n++] = GuiBox(w, h, limb + BranchHit.MainX0, wy + crown, limb + BranchHit.MainX1, wy + BranchHit.MainY0);
+            }
+            float woodHalf = WorldBuilder.WoodHalfOf(WorldBuilder.WoodScaleX);
+            float edge = WorldBuilder.CamOrtho * want - woodHalf + 0.18f;
+            float gy = WorldBuilder.GiftY;
+            float giftCrown = BirdAbovePivot(true);
+            if (n < dst.Length)
+                dst[n++] = GuiBox(w, h, -edge + BranchHit.GiftX0, gy + giftCrown, -edge + BranchHit.GiftX1, gy + BranchHit.GiftY0);
+            if (n < dst.Length)
+                dst[n++] = GuiBox(w, h, edge + BranchHit.GiftX0, gy + giftCrown, edge + BranchHit.GiftX1, gy + BranchHit.GiftY0);
+            AdRowBand(w, h, out var signL, out var signR, out _, out _, out _, out _);
+            if (n < dst.Length) dst[n++] = signL;
+            if (n < dst.Length) dst[n++] = signR;
+            Garden(w, h, safe, out _, out _, out _, out var restart, out var hive);
+            if (includeHive && hive.width > 2f && hive.height > 2f && n < dst.Length) dst[n++] = hive;
+            if (restart.width > 2f && n < dst.Length) dst[n++] = restart;
+            var home = TopBarHome(restart, w, safe, h);
+            if (home.width > 2f && n < dst.Length) dst[n++] = home;
+            float fy = WorldBuilder.FeederYFor(tall, safeTop, w, h);
+            if (n < dst.Length)
+                dst[n++] = GuiBox(w, h, -FeederRightWorld, fy + WorldBuilder.FeederCrown, FeederRightWorld, fy - 1.6f);
+            return n;
+        }
+
+        // top is the highest art edge (smallest GUI y). bottom is the lowest
+        // (largest GUI y). feederBottom is the tray under the bulbs.
+        public static void GardenArtSpan(float w, float h, Rect safe, out float top, out float bottom, out float feederBottom)
+        {
+            top = h;
+            bottom = 0f;
+            feederBottom = 0f;
+            var buf = new Rect[GardenArtMax];
+            int n = CopyGardenArt(w, h, safe, buf, false);
+            for (int i = 0; i < n; i++)
+            {
+                if (buf[i].width < 2f || buf[i].height < 2f) continue;
+                if (buf[i].yMin < top) top = buf[i].yMin;
+                if (buf[i].yMax > bottom) bottom = buf[i].yMax;
+            }
+            if (n < 1) { top = 0f; bottom = h; }
+            float safeTop = SafeTopNormOf(h, safe);
+            float fy = WorldBuilder.FeederYFor(TallFor(w, h), safeTop, w, h) - 1.48f;
+            feederBottom = WorldToGui(w, h, 0f, fy).y;
+        }
+
         // True when a GUI rect meets a bird-row limb (not the gift wood). Positions come
         // from the same world-to-GUI map as the branches, so a safe-area lift is visible.
         public static bool OverlapsBirdRow(Rect gui, float w, float h)

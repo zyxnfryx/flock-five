@@ -283,7 +283,7 @@ namespace FlockFive
                 case CoachStep.HiveGarden: return CaptionLayout.HiveGardenLine;
                 case CoachStep.HiveHome: return "Tap the hive to see your bee collection.";
                 case CoachStep.PokerIntro: return "You earned coins! Tap poker to bet them.";
-                case CoachStep.PokerBet: return "Pick your bet, then tap Deal.";
+                case CoachStep.PokerBet: return "Pick a bet.\nTap Deal.";
                 case CoachStep.PokerHold: return "Tap a card to hold it, then tap Draw.";
                 case CoachStep.PokerDeal: return "Pick your bet, then tap Deal. (later visit)";
                 case CoachStep.PokerBack: return "Tap the back button to return home.";

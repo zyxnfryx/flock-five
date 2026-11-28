@@ -184,7 +184,7 @@ namespace FlockFive
         // Set on the first Deal. The bet sentence never returns after that.
         const string CoachPokerDealtKey = "flockfive.coach.pokerdealt";
         const string CoachPokerBackKey = "flockfive.coach.pokerback";
-        const string PokerBetLine = "Pick your bet, then tap Deal.";
+        const string PokerBetLine = "Pick a bet.\nTap Deal.";
         const string PokerHoldLine = "Tap a card to hold it, then tap Draw.";
         const string PokerBackLine = "Tap the back button to return home.";
         int _pokerPageStep;
@@ -8906,7 +8906,7 @@ namespace FlockFive
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
                 Event.current.Use();
-            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); FinishTapLog(); return; }
+            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); DrawTipFadeOut(); FinishTapLog(); return; }
             var ev = Event.current != null ? Event.current.type : EventType.Ignore;
             var sp = StartupTrace.Begin(ev == EventType.Repaint ? "GUI.Repaint" : ev == EventType.Layout ? "GUI.Layout" : "GUI.Input");
             try { OnGUIBody(); }
@@ -8914,6 +8914,7 @@ namespace FlockFive
             DrawRewardChoiceTop();
             DrawWarmCover();
             PaintPressRainbow();
+            DrawTipFadeOut();
             FinishTapLog();
             if (ev == EventType.Repaint) _guiEndTick = System.Diagnostics.Stopwatch.GetTimestamp();
         }
@@ -11998,12 +11999,6 @@ namespace FlockFive
             float bh = Mathf.Max(PopupBarHeight(s, w) * 1.28f, 56f * s);
             if (sure)
             {
-                const string ask = "Are you sure you want to restart?";
-                var titleR = new Rect(inner.x, inner.y, inner.width, Mathf.Max(40f, inner.height - bh - 12f * s));
-                st.wordWrap = true;
-                int hi = Mathf.Max(20, Mathf.RoundToInt(36f * s));
-                st.fontSize = FitFontWrapped(st, ask, titleR.width, titleR.height * 0.9f, 16, hi);
-                StampOutlined(titleR, ask, st, new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.12f)));
                 var noR = new Rect(inner.x, inner.yMax - bh, bw, bh);
                 var yesR = new Rect(inner.xMax - bw, inner.yMax - bh, bw, bh);
                 bool no = HitPad(noR, out bool noHeld);
@@ -12012,6 +12007,8 @@ namespace FlockFive
                 DrawPopupButton(yesR, yesHeld, PopupTint.Green);
                 DrawPopupWord(noR, "No", st, s);
                 DrawPopupWord(yesR, "Yes", st, s);
+                var ask = new Rect(inner.x, inner.y, inner.width, Mathf.Max(8f, noR.y - 8f * s - inner.y));
+                DrawTipFamily(CoachTap.Caption(CoachStep.RestartSure), 1f, "restart.ask", -1f, ask);
                 if (no) { _restartAsk = RestartAsk.None; Sfx.CardTap(); return; }
                 if (yes)
                 {
@@ -16186,15 +16183,19 @@ namespace FlockFive
                 return true;
             }
             float s = DeviceFit.Ui();
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             LessonLine(PokerBetLine);
             // Live DEAL rect every frame. A cached aim was landing on card 4
             // after the first poke cycle.
             var deal = PokerDealButtonRect();
-            _pokerTutorAim = CoachTapSeat(deal, CoachTapLabel(deal), PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            _pokerTutorTap = deal;
+            var plus = _pokerPlusR;
+            var aim = PokerBetGloveAim(plus, deal);
+            var tap = plus.width >= 8f ? plus : deal;
+            _pokerTutorAim = aim;
+            _pokerTutorTap = tap;
             _pokerTutorAimOk = true;
-            CoachTapAt(deal, CoachTapLabel(deal), dt, null);
+            // From below the outer rim, so the hand stays off "BET $xx" and the pill.
+            CoachGloveBelow(aim, dt, s, tap);
             bool parked = Vector2.Distance(_gloveTip, _gloveRest) > 32f * s;
             if (parked) _pokerPageAge = 0f;
             else _pokerPageAge += dt;
@@ -16390,17 +16391,19 @@ namespace FlockFive
             return y;
         }
 
-        // Standard caption for a poker page step; the anchor and pin come from PokerStepAnchor.
-        void DrawPokerStandardLine(string line, float s)
+        // Standard caption for a poker page step. clearTop is the top of the
+        // bet and deal controls (GUI y, down). The bet and hold lines sit above it.
+        void DrawPokerStandardLine(string line, float s, float clearTop = -1f)
         {
             if (CoachResetHolds()) return;
             var r = PokerCaptionSeat(line, s, out bool topAlign);
             StandardCaptionBox(s, out _, out _, out int lo, out int hi);
             if (GuiPaint())
-                _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / TipPill.FadeIn);
             bool pin = PokerStepPinned(PokerStepAnchor(line));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
-            CapSpot(line == PokerBackLine ? "poker.back" : "poker.table"); PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign);
+            CapSpot(line == PokerBackLine ? "poker.back" : "poker.table");
+            PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign, clearTop);
         }
 
         // Above the cards: from ceilingY down to the top of the card reach (held cards and the
@@ -16430,7 +16433,13 @@ namespace FlockFive
                 && PlayerPrefs.GetInt(CoachPokerDealtKey, 0) == 0)
                 line = PokerBetLine;
             if (line != null)
-                DrawPokerStandardLine(line, s);   // seat from PokerStepAnchor
+            {
+                // Bet and hold sit above the − / + / DEAL / DRAW row. The glove
+                // points at that row from outside the pill.
+                float clear = (line == PokerBetLine || line == PokerHoldLine)
+                    ? PokerCoachClear(PhoneArea.W, PhoneArea.H, PhoneArea.Safe) : -1f;
+                DrawPokerStandardLine(line, s, clear);
+            }
             DrawTutorOverlay(s);
         }
 
@@ -16448,12 +16457,15 @@ namespace FlockFive
                 return true;
             }
             float handS = DeviceFit.Ui();
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             LessonLine(PokerBetLine);
             var dealNow = PokerDealButtonRect();
-            _pokerDealAim = CoachTapSeat(dealNow, CoachTapLabel(dealNow), PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            _pokerDealTap = dealNow;
-            CoachTapAt(dealNow, CoachTapLabel(dealNow), dt, null);
+            var plusNow = _pokerPlusR;
+            var aimNow = PokerBetGloveAim(plusNow, dealNow);
+            var tapNow = plusNow.width >= 8f ? plusNow : dealNow;
+            _pokerDealAim = aimNow;
+            _pokerDealTap = tapNow;
+            CoachGloveBelow(aimNow, dt, handS, tapNow);
             return true;
         }
 
@@ -16469,7 +16481,7 @@ namespace FlockFive
             _pokerDealAim = DealPlatformAim(actR);
             _pokerDealTap = actR;
             _pokerDealAimOk = disc.width > 2f;
-            DrawPokerStandardLine(PokerBetLine, s);
+            DrawPokerStandardLine(PokerBetLine, s, PokerCoachClear(PhoneArea.W, PhoneArea.H, PhoneArea.Safe));
             DrawTutorOverlay(s);
         }
 
@@ -16495,7 +16507,7 @@ namespace FlockFive
         public static bool PokerLessonHolds(bool splash, bool onPoker, bool backDone, bool backGateLive, bool broke, bool lessonActive = true)
             => splash && onPoker && !backDone && !backGateLive && !broke && lessonActive;
 
-        // 'Pick your bet, then tap Deal.' The hand has not started, so Back may leave.
+        // 'Pick a bet. / Tap Deal.' The hand has not started, so Back may leave.
         public static bool PokerBetCoachOpen(bool coachUp, bool idle, bool motionClear)
             => coachUp && idle && motionClear;
 
@@ -16583,7 +16595,7 @@ namespace FlockFive
                 return true;
             }
             float handS = DeviceFit.Ui();
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             LessonLine(PokerBackLine);
             // Short rise from just under the medal. The hop ends on the medal and stays
             // there, so the settled fingertip is inside the Back hit. Only that rect counts.
@@ -16794,8 +16806,7 @@ namespace FlockFive
             float rowW = BirdPoker.HandSize * cardW + (BirdPoker.HandSize - 1) * gap;
             float rowX = spanX + (spanW - rowW) * 0.5f;
             float btnSize = PokerActSize(PhoneArea.W, s);
-            float botPad = Mathf.Max(12f, safe.yMin + 6f);
-            float btnY = PhoneArea.H - botPad - btnSize;
+            float btnY = PokerButtonTop(PhoneArea.W, PhoneArea.H, safe);
             var payTab = chrome.PayTab;
             // Equal air between the wordmark and the bet/deal controls. Drop below the PAY TABLE chip when that still fits.
             float bandTop = below;
@@ -16938,9 +16949,7 @@ namespace FlockFive
                 float panelW = PhoneArea.W * 0.94f;
                 int rows = BirdPoker.PayTableRows.Length;
                 var safe = PhoneArea.Safe;
-                float btnSize = PokerActSize(PhoneArea.W, s);
-                float botPad = Mathf.Max(12f, safe.yMin + 6f);
-                float btnY = PhoneArea.H - botPad - btnSize;
+                float btnY = PokerButtonTop(PhoneArea.W, PhoneArea.H, safe);
                 float panelTop = tab.yMax + 8f * s;
                 float floor = btnY - 12f * s;
                 float avail = Mathf.Max(320f, floor - panelTop);
@@ -18155,9 +18164,7 @@ namespace FlockFive
             float mid = 1f - Mathf.Abs(t * 2f - 1f);
             // Idle row is centered under the logo. The dealt fan stays just above the deal disc.
             float sc = DeviceFit.Ui();
-            float btnSize = PokerActSize(PhoneArea.W, sc);
-            float botPad = Mathf.Max(12f, PhoneArea.Safe.yMin + 6f);
-            float btnY = PhoneArea.H - botPad - btnSize;
+            float btnY = PokerButtonTop(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             float y = btnY - 8f * sc - cardH - mid * 12f + bump - PokerRowLiftPx();
             if (y < 0f) y = 0f;
             return new Rect(x, y, cardW, cardH);
@@ -18653,17 +18660,40 @@ namespace FlockFive
             => _home == HomeFace.Poker && !PokerBackDone() && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn;
 
         // Same DEAL control the poker page hits. Event.current is the press.
+        // Top of DEAL / the bet row. DrawPokerPage and the bet coach both use this.
+        public static float PokerButtonTop(float w, float h, Rect safe)
+        {
+            float s = DeviceFit.Ui(w, h);
+            if (safe.width < 2f || safe.height < 2f)
+                safe = new Rect(0f, 0f, w, h);
+            float btnSize = PokerActSize(w, s);
+            float botPad = Mathf.Max(12f, safe.yMin + 6f);
+            return h - botPad - btnSize;
+        }
+
+        // Pill bottom clears the buttons and the glove that points up at them.
+        public static float PokerCoachClear(float w, float h, Rect safe)
+        {
+            float s = DeviceFit.Ui(w, h);
+            float lift = TipPill.GloveClear(h);
+            float hand = GloveDh(s) * 0.85f;
+            if (hand > lift) lift = hand;
+            return PokerButtonTop(w, h, safe) - lift;
+        }
+
+        public static Rect PokerDealRect(float w, float h, Rect safe)
+        {
+            if (safe.width < 2f || safe.height < 2f)
+                safe = new Rect(0f, 0f, w, h);
+            float btnSize = PokerActSize(w, DeviceFit.Ui(w, h));
+            float btnY = PokerButtonTop(w, h, safe);
+            float actX = w - Mathf.Max(10f, w - safe.xMax + 8f) - btnSize;
+            return new Rect(actX, btnY, btnSize, btnSize);
+        }
+
         public Rect PokerDealButtonRect()
         {
-            float s = DeviceFit.Ui();
-            var safe = PhoneArea.Safe;
-            if (safe.width < 2f || safe.height < 2f)
-                safe = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
-            float btnSize = PokerActSize(PhoneArea.W, s);
-            float botPad = Mathf.Max(12f, safe.yMin + 6f);
-            float btnY = PhoneArea.H - botPad - btnSize;
-            float actX = PhoneArea.W - Mathf.Max(10f, PhoneArea.W - safe.xMax + 8f) - btnSize;
-            return new Rect(actX, btnY, btnSize, btnSize);
+            return PokerDealRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
         }
 
         // The page's DEAL hit. A Down only arms it. The Up deals.
@@ -20084,6 +20114,9 @@ namespace FlockFive
             return -slack;
         }
 
+        // Collection page title (hive mark, "Collection", and the two how-to
+        // lines). Not a coach tip: Build119 locks the three sentences, and the
+        // plate is the header, not a TipPill.
         float DrawAlbumHeader(float s, Rect back)
         {
             int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
@@ -20195,6 +20228,10 @@ namespace FlockFive
 
         bool AlbumPageSettled()
         {
+#if UNITY_WEBGL && DEVELOPMENT_BUILD
+            if (DevLevelSkip.ForceUpgradeArmed && _home == HomeFace.Hive && _hiveInspect >= 0)
+                return true;
+#endif
             if (_albumOpenFrames < 2 || _albumOpenAt < 0f) return false;
             if (PlayClock.Now - _albumOpenAt < 0.34f) return false;
             if (_hivePageTurn < 0.55f) return false;
@@ -20597,7 +20634,7 @@ namespace FlockFive
             }
             if (dt < 0f) dt = 0f;
             CueLine(AlbumTutorLine());
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             float handS = DeviceFit.Ui();
             CoachGloveAt(aim, dt, handS, float.NaN, false, approach, tap);
             return true;
@@ -20636,15 +20673,16 @@ namespace FlockFive
             }
             if (dt < 0f) dt = 0f;
             CueLine(AlbumUpgradeLine);
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-            // From the left, so the palm stays off the word. The tip lands in the
-            // padding beside "Upgrade", and the shared arc loops in from off the button.
-            _gloveKeepOff = _tutorPlateOn && _tutorPlate.width > 2f ? _tutorPlate : default;
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
+            // The pill sits above Upgrade. The hand perches below that button,
+            // so the fingertip meets it from outside the words.
             var aim = UpgradeGloveSettle(_upgradeBtnR);
+            _gloveKeepOff = _tutorPlateOn && _tutorPlate.width > 2f && _tutorPlate.Contains(aim)
+                ? _tutorPlate : default;
             _upgradeTutorAim = aim;
             _upgradeTutorAimOk = true;
             float handS = DeviceFit.Ui();
-            CoachGloveAt(aim, dt, handS, float.NaN, true, float.NaN, _upgradeBtnR);
+            CoachGloveAt(aim, dt, handS, -GloveDh(handS) * 0.85f, true, float.NaN, _upgradeBtnR);
             return true;
         }
 
@@ -20732,7 +20770,12 @@ namespace FlockFive
                 float limit = PhoneArea.H - Mathf.Max(34f, PhoneArea.Safe.yMin) - 8f;
                 seat.y = below + h <= limit ? below : Mathf.Max(8f, card.yMin - gap - h);
             }
-            CapSpot("album.coach"); PaintCoachCaption(line, seat, s, 12, Mathf.RoundToInt(28f * s), default, false, StandardCaptionSlack);
+            // Upgrade sits above the FREE button. Other album lines use the seat
+            // computed above, not the garden ground.
+            float clear = step < 0 && _upgradeBtnR.width > 8f
+                ? _upgradeBtnR.y - TipPill.GloveClear(PhoneArea.H) : -1f;
+            CapSpot("album.coach");
+            PaintCoachCaption(line, seat, s, 12, Mathf.RoundToInt(28f * s), default, false, StandardCaptionSlack, false, clear);
         }
 
         void DrawHivePage()
@@ -21212,6 +21255,8 @@ namespace FlockFive
             DrawGloveAt(pivot, ang, GloveSize(s), fade, dip, mirror);
         }
 
+        // Open-card footer. A different box and a larger type than a coach tip,
+        // so it is not a TipPill. "Tap outside to put back" lives here.
         Rect FlipHintRect(float y, float s)
         {
             const string wider = "Tap outside to put back";
@@ -23483,9 +23528,17 @@ namespace FlockFive
             if (_adHand)
             {
                 // b111: the unlock banner must not stay up while the card says "Ad not ready".
+                // Same snapped TipPill as the garden tips. A leftover scale (pillar pivot,
+                // label rim) was baking a tighter corner on the 820 column.
                 if (!(AdRetry.Active && !AdRetry.Skipped))
                 {
-                    CapSpot("ad.hand"); DrawSplashIntroLine(AdHandLine, AdHandCaptionRect(s), s);
+                    if (GuiPaint())
+                        _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / TipPill.FadeIn);
+                    var tipM = GUI.matrix;
+                    GUI.matrix = PhoneArea.GuiBase;
+                    var gap = GiftCoachGap(PhoneArea.W, PhoneArea.H, PhoneArea.Safe, s, card, cta, xBtn);
+                    DrawTipFamily(AdHandLine, EaseOutCubic(_coachFade), "ad.hand", -1f, gap);
+                    GUI.matrix = tipM;
                 }
                 DrawTutorOverlay(s);
             }
@@ -23784,8 +23837,24 @@ namespace FlockFive
             }
         }
 
+        // Free band under the gift card and the Watch disc, above the safe floor.
+        // The coach plate is fitted into this band so it misses the panel, the
+        // cake, the X, and the top HUD.
+        public static Rect GiftCoachGap(float w, float h, Rect safe, float s, Rect card, Rect watch, Rect closeX)
+        {
+            float top = 8f;
+            if (card.height > 2f) top = Mathf.Max(top, card.yMax);
+            if (watch.height > 2f) top = Mathf.Max(top, watch.yMax);
+            if (closeX.width > 2f && closeX.yMin > (card.height > 2f ? card.center.y : h * 0.5f))
+                top = Mathf.Max(top, closeX.yMax);
+            top += 10f * (s > 0.2f ? s : 1f);
+            float bot = h - Mathf.Max(8f, TipPill.SafeBottom(h, safe) + 4f);
+            if (bot < top + 8f) bot = top + 8f;
+            return new Rect(0f, top, w, bot - top);
+        }
+
         // Same stack as GiftCardLayout. The bonus sign stays at that higher
-        // seat; the coach line anchors above it and does not push the card down.
+        // seat; the coach line anchors under the Watch disc.
         void GiftCardPlaced(float s, out Rect card, out Rect flower)
         {
             GiftCardLayout(s, out card, out flower);
@@ -24100,29 +24169,10 @@ namespace FlockFive
 
             float pop = Mathf.Clamp01(u / 0.22f);
             pop = pop * pop * (3f - 2f * pop);
-            float punch = 1f + 0.16f * Mathf.Sin(Mathf.Clamp01(u / 0.32f) * Mathf.PI);
-            float scale = Mathf.Lerp(0.52f, 1f, pop) * punch;
-            float breathe = 0.5f + 0.5f * Mathf.Sin(u * 3.4f);
-
-            string lab = "It's yours.";
-            var st = GuiPool.Label(GuiSlot.GiftThanks);
-            st.fontStyle = FontStyle.Bold;
-            st.alignment = TextAnchor.MiddleCenter;
-            st.wordWrap = false;
-            float w = PhoneArea.W * 0.92f;
-            float h = 120f * s;
-            var r = new Rect((PhoneArea.W - w) * 0.5f, PhoneArea.H * 0.34f, w, h);
-            st.fontSize = FitFont(st, lab, r.width * 0.92f, r.height * 0.82f, 42, 92);
-            var glow = GlowTex();
-            GUI.color = new Color(1f, 0.78f, 0.22f, (0.32f + 0.22f * breathe) * pop);
-            float aura = 48f * s;
-            GUI.DrawTexture(new Rect(r.x - aura, r.y - aura * 0.4f, r.width + aura * 2f, r.height + aura * 0.8f), glow, ScaleMode.ScaleToFit, true);
-            GUI.color = Color.white;
-            var prev = GUI.matrix;
-            GUIUtility.ScaleAroundPivot(new Vector2(scale, scale), r.center);
-            int stroke = Mathf.Max(4, Mathf.RoundToInt(st.fontSize * 0.12f));
-            StampOutlined(r, lab, st, new Color(1f, 0.90f, 0.28f), 1, stroke);
-            GUI.matrix = prev;
+            // Same pill, type, and band as the coach. s is the caller scale; the
+            // class size comes from the field, not from this popup.
+            if (s < 0f) pop = 0f;
+            DrawTipFamily(CaptionLayout.YoursLine, pop, "gift.yours");
         }
 
         static void DrawGiftConfetti(float u, float s) =>

@@ -24,6 +24,23 @@ namespace FlockFive
         // see "Tap outside to put back". It does not write the album.
         public const string ForceMaxxedKey = "forceMaxxed";
         public const string ForcePauseKey = "forcePause";
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // ?forceRestart=1 opens the restart confirm (Yes / No) after the skip loads.
+        public const string ForceRestartKey = "forceRestart";
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // ?forceDaily=1 opens the streak reminder (Yes please / Not now) after the skip loads.
+        public const string ForceDailyKey = "forceDaily";
+        // DEV-ONLY. Inspect-only. ?forcePoker=draw deals one hand and leaves the hold tip up.
+        public const string ForcePokerKey = "forcePoker";
+        // DEV-ONLY. Inspect-only. ?forceUpgrade=1 opens the album on the free Upgrade coach.
+        public const string ForceUpgradeKey = "forceUpgrade";
+        // DEV-ONLY. Inspect-only. ?forceGift=yours holds the grant line "It's yours."
+        public const string ForceGiftKey = "forceGift";
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // ?pastBadger=1 starts the badger lesson on the column line
+        // ("Higher honey scores.") and does not stop on the x2 step, so
+        // "Tap the comb." can show on the freeze beat.
+        public const string PastBadgerKey = "pastBadger";
         // A garden that never shows the entrance still has to finish the star
         // wipe. An ostrich who stays idle without ever striding (the entrance
         // did not start) is given up after this, so Inspector is not stuck.
@@ -76,7 +93,23 @@ namespace FlockFive
             // (Begin, displayed, rewarded, flush) because WebGL has no LevelPlay
             // fill. That stub is not a shipping no-fill change.
             public bool ForceRewards;
+            // DEV-ONLY. Inspect-only. True only with skipOnboarding=1.
+            public bool ForceRestart;
+            // DEV-ONLY. Inspect-only. True only with skipOnboarding=1.
+            public bool PastBadger;
+            // DEV-ONLY. Inspect-only. True only with skipOnboarding=1.
+            public bool ForceDaily;
+            // DEV-ONLY. Inspect-only. True only with skipOnboarding=1.
+            public bool ForcePokerDraw;
+            public bool ForceUpgrade;
+            public bool ForceGiftYours;
         }
+
+        // Set by the WebGL development boot only. Shipping builds never set them.
+        public static bool PastBadgerArmed;
+        public static bool KeepTipsArmed;
+        public static bool ForceDailyArmed;
+        public static bool ForceUpgradeArmed;
 
         // 1-based garden from ?fflevel=, or 0 when the page did not ask.
         public static int DisplayFromUrl(string url)
@@ -145,6 +178,42 @@ namespace FlockFive
         public static bool ForcePauseFromUrl(string url)
         {
             return QueryInt(url, ForcePauseKey) == 1;
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        public static bool ForceRestartFromUrl(string url)
+        {
+            return QueryInt(url, ForceRestartKey) == 1;
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        public static bool ForceDailyFromUrl(string url)
+        {
+            return QueryInt(url, ForceDailyKey) == 1;
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        public static bool ForcePokerDrawFromUrl(string url)
+        {
+            return QueryIs(url, ForcePokerKey, "draw");
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        public static bool ForceUpgradeFromUrl(string url)
+        {
+            return QueryInt(url, ForceUpgradeKey) == 1;
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        public static bool ForceGiftYoursFromUrl(string url)
+        {
+            return QueryIs(url, ForceGiftKey, "yours");
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        public static bool PastBadgerFromUrl(string url)
+        {
+            return QueryInt(url, PastBadgerKey) == 1;
         }
 
         public static bool ForcePauseBlocks(string url, float heldSeconds)
@@ -267,7 +336,59 @@ namespace FlockFive
                 OpenPoker = skip && OpenPokerFromUrl(url),
                 ForceClear = skip && ForceClearFromUrl(url),
                 ForceRewards = skip && ForceRewardsFromUrl(url),
+                ForceRestart = skip && ForceRestartFromUrl(url),
+                PastBadger = skip && PastBadgerFromUrl(url),
+                ForceDaily = skip && ForceDailyFromUrl(url),
+                ForcePokerDraw = skip && ForcePokerDrawFromUrl(url),
+                ForceUpgrade = skip && ForceUpgradeFromUrl(url),
+                ForceGiftYours = skip && ForceGiftYoursFromUrl(url),
             };
+        }
+
+        static bool QueryIs(string url, string key, string value)
+        {
+            string got = QueryValue(url, key);
+            if (got == null || value == null || got.Length != value.Length) return false;
+            for (int i = 0; i < got.Length; i++)
+                if (got[i] != value[i]) return false;
+            return got.Length > 0;
+        }
+
+        static string QueryValue(string url, string key)
+        {
+            if (url == null || url.Length == 0 || key == null || key.Length == 0) return null;
+            int q = url.IndexOf('?');
+            if (q < 0 || q + 1 >= url.Length) return null;
+            int end = url.IndexOf('#', q + 1);
+            if (end < 0) end = url.Length;
+            int i = q + 1;
+            while (i < end)
+            {
+                int amp = url.IndexOf('&', i);
+                if (amp < 0 || amp > end) amp = end;
+                int eq = -1;
+                for (int k = i; k < amp; k++)
+                {
+                    if (url[k] != '=') continue;
+                    eq = k;
+                    break;
+                }
+                int keyLen = eq - i;
+                if (eq > i && keyLen == key.Length)
+                {
+                    bool match = true;
+                    for (int k = 0; k < keyLen; k++)
+                        if (url[i + k] != key[k]) { match = false; break; }
+                    if (match)
+                    {
+                        int from = eq + 1;
+                        if (from >= amp) return "";
+                        return url.Substring(from, amp - from);
+                    }
+                }
+                i = amp + 1;
+            }
+            return null;
         }
 
         static int QueryInt(string url, string key)

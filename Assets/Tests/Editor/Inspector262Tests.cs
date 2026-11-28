@@ -162,7 +162,7 @@ namespace FlockFive.Editor
                 t.GetField("_garden", flags).SetValue(app, garden);
                 var tip = t.GetField("_ruleTip", flags);
                 tip.SetValue(app, RuleTip.Feeder);
-                t.GetField("_cueLine", flags).SetValue(app, "Nice! That feeder now wants\na new color. Check the top.");
+                t.GetField("_cueLine", flags).SetValue(app, RuleTips.FeederLine);
                 object[] hud = { default(Rect), default(Rect) };
                 t.GetMethod("HudShaken", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, hud);
                 var restart = (Rect)hud[0];
@@ -236,7 +236,7 @@ namespace FlockFive.Editor
                 t.GetField("_garden", flags).SetValue(app, garden);
                 var tip = t.GetField("_ruleTip", flags);
                 tip.SetValue(app, RuleTip.Feeder);
-                t.GetField("_cueLine", flags).SetValue(app, "Nice! That feeder now wants\na new color. Check the top.");
+                t.GetField("_cueLine", flags).SetValue(app, RuleTips.FeederLine);
                 t.GetMethod("ActRestart", flags).Invoke(app, null);
                 var snap = (System.Collections.IEnumerator)t.GetField("EditorSnapRound", flags).GetValue(app);
                 int frames = 0;
@@ -652,7 +652,7 @@ namespace FlockFive.Editor
             var guard = t.GetField("_lessonGuardUntil", flags);
             if (guard != null) guard.SetValue(app, 0f);
             t.GetField("_ruleTip", flags).SetValue(app, RuleTip.Feeder);
-            t.GetField("_cueLine", flags).SetValue(app, "Nice! That feeder now wants\na new color. Check the top.");
+            t.GetField("_cueLine", flags).SetValue(app, RuleTips.FeederLine);
             t.GetField("EditorRuleRestartDirect", flags).SetValue(app, false);
             t.GetField("EditorSnapRound", flags).SetValue(app, null);
             t.GetField("EditorRuleSwallowEntered", flags).SetValue(app, 0);

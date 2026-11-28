@@ -77,7 +77,7 @@ namespace FlockFive
         static int _dailyAskNoPx = 16;
         static Texture2D _dailyMedal;
 
-        const string DailyAskCopy = "Want a reminder so you never miss your streak?";
+        public const string DailyAskCopy = "Want a reminder so you never miss your streak?";
         const string DailyAskYes = "Yes please";
         const string DailyAskNo = "Not now";
 
@@ -2361,11 +2361,12 @@ namespace FlockFive
             DrawAskFrame(card, s, breathe, glow);
             EnsureAskStyles();
             EnsureAskFit(s, body, yesR);
-            _dailyAsk.fontSize = _dailyAskBodyPx;
-            int ink = Mathf.Max(2, Mathf.RoundToInt(_dailyAskBodyPx * 0.10f));
-            StampOutlined(body, DailyAskCopy, _dailyAsk, new Color(1f, 0.96f, 0.78f), 1, ink);
             DrawAskButton(yesR, DailyAskYes, _dailyAskYesPx, true, yesHeld);
             DrawAskButton(noR, DailyAskNo, _dailyAskNoPx, false, noHeld);
+            // The question is dialog copy, inside the card, not a garden tip.
+            _dailyAsk.fontSize = _dailyAskBodyPx > 0 ? _dailyAskBodyPx : Mathf.Max(14, Mathf.RoundToInt(18f * s));
+            int qInk = Mathf.Max(1, Mathf.RoundToInt(_dailyAsk.fontSize * 0.08f));
+            StampOutlined(body, DailyAskCopy, _dailyAsk, new Color(1f, 0.96f, 0.86f), 1, qInk);
             GUI.matrix = prev;
             GUI.color = Color.white;
 

@@ -160,9 +160,7 @@ namespace FlockFive
             _gloveTapRectOn = false;
             CoachHideGlow();
             CueLine(RuleTips.Line(due));
-            // Full plate on the first paint. A fade from 0 left the backing clear
-            // and the type dark for the whole time a device sat on the first frames.
-            _coachFade = 1f;
+            // Same quarter-second fade as every other tip. Plate and type share it.
             HoldTutorPause(true);
         }
 
@@ -174,7 +172,7 @@ namespace FlockFive
                 DismissRuleTip();
                 return;
             }
-            _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.35f);
+            _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / TipPill.FadeIn);
             if (TickRuleHold()) return;
             if (Ads.IsShowing) return;
             if (Pressed(out var screen))

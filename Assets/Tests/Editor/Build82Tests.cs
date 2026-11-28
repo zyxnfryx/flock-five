@@ -36,11 +36,11 @@ namespace FlockFive.Editor
 
         static void CheckHoney(System.Action<string, bool, string> Check)
         {
-            const string sentence = "Honeycombs show the card's rarity.";
+            const string sentence = "Honeycombs show rarity.";
             string block = CaptionLayout.AlbumHoneyBlock;
             bool exact = block.StartsWith(sentence + "\n")
                 && block.IndexOf("Tap to flip!") > 0
-                && block.IndexOf("Tap outside to put back") > 0;
+                && block.IndexOf("Put it back") > 0;
             string banned = ScanBanned();
             Check("honey-copy", exact && banned.Length == 0,
                 exact ? (banned.Length == 0 ? block.Replace("\n", " / ") : banned) : block.Replace("\n", " / "));
