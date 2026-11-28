@@ -102,8 +102,15 @@ namespace FlockFive.Editor
                     var aim = FlockFiveApp.UpgradeGloveSettle(btn);
                     float dh = FlockFiveApp.GloveDh(s);
                     var safe = new Rect(0f, 0f, w, h);
-                    var near = aim + new Vector2(-12f, -6f);
-                    var start = FlockFiveApp.ClaimGloveStart(near, aim, dh, safe);
+                    // Same seat as the upgrade coach: the pill is above the button,
+                    // and the hand perches below the fingertip so it stays off the words.
+                    float clearTop = btn.y - TipPill.GloveClear(h);
+                    var pill = TipPill.Above(TipPill.Place(w, h, 0f, TipPill.Band.Floor), clearTop, h);
+                    int capPx = TipPill.Cap(h);
+                    float colW = TipPill.InnerWidth(pill, capPx);
+                    var words = new Rect(pill.x + (pill.width - colW) * 0.5f, pill.y, colW, pill.height);
+                    var perch = aim + new Vector2(-dh * 0.85f, dh * 0.85f);
+                    var start = FlockFiveApp.ClaimGloveStart(perch, aim, dh, safe);
                     float arch = dh * 0.55f;
                     var p0 = FlockFiveApp.ClaimGloveArc(start, aim, 0f, arch);
                     var mid = FlockFiveApp.ClaimGloveArc(start, aim, 0.45f, arch);
@@ -114,21 +121,15 @@ namespace FlockFive.Editor
                     var body0 = FlockFiveApp.GloveAuditBox(aim, 0f, dh, 0f);
                     var body1 = FlockFiveApp.GloveAuditBox(aim, 0f, dh, 1f);
                     bool onButton = btn.Contains(aim) && body0.Overlaps(btn) && body1.Overlaps(btn);
-                    // Caption sits above the button. "is free!" is the first row,
-                    // "Tap Upgrade." the second. The hop stays under that plate.
-                    float capW = FlockFiveApp.LessonColumnWidth(w, h);
-                    float boxH = Mathf.Max(128f * s, 108f) * 0.72f;
-                    float capY = btn.y - boxH - 14f * s;
-                    var caption = new Rect((w - capW) * 0.5f, capY, capW, boxH);
-                    var freeLine = new Rect(caption.x, caption.y, caption.width, caption.height * 0.5f);
-                    var tapWords = new Rect(caption.x, caption.y + caption.height * 0.5f, caption.width, caption.height * 0.5f);
-                    bool offTap = !body0.Overlaps(tapWords) && !body1.Overlaps(tapWords)
-                        && !body0.Overlaps(freeLine) && !body1.Overlaps(freeLine);
-                    bool clear = !caption.Contains(start) && !freeLine.Contains(start);
+                    bool pillAbove = pill.yMax <= btn.y + 0.5f && pill.height > 8f;
+                    bool offTap = pillAbove
+                        && !body0.Overlaps(words) && !body1.Overlaps(words)
+                        && !words.Contains(aim);
+                    bool clear = !words.Contains(start) && start.y > aim.y;
                     for (int k = 0; k <= 8; k++)
                     {
                         var p = FlockFiveApp.ClaimGloveArc(start, aim, k / 8f, arch);
-                        if (caption.Contains(p) || freeLine.Contains(p)) clear = false;
+                        if (words.Contains(p)) clear = false;
                     }
                     // One short hop, about a hand-height, not a flight in from the caption.
                     bool shortHop = apart <= FlockFiveApp.ClaimGloveMinHands * dh + 1f && clear;
@@ -155,10 +156,15 @@ namespace FlockFive.Editor
             int tick = app.IndexOf("bool TickUpgradeTutor(");
             int tickEnd = tick >= 0 ? app.IndexOf("void DrawAlbumTutor(", tick) : -1;
             string tickBody = tick >= 0 && tickEnd > tick ? app.Substring(tick, tickEnd - tick) : "";
+            // Fingertip is UpgradeGloveSettle on the button. The perch is below
+            // that point, and a plate that does not contain the aim is not a keep-out,
+            // so the hand is not shoved onto the pill. ButtonLabelAim is the old seat.
             Check("upgrade-aim-sits-on-the-button",
-                tickBody.Contains("UpgradeGloveSettle(_upgradeBtnR)")
-                && tickBody.Contains("float.NaN, true, float.NaN, _upgradeBtnR")
-                && tickBody.IndexOf("ButtonLabelAim(_upgradeBtnR, _upgradeLabelR, true)") < 0, "");
+                tickBody.Contains("var aim = UpgradeGloveSettle(_upgradeBtnR);")
+                && tickBody.Contains("_upgradeTutorAim = aim;")
+                && tickBody.Contains("CoachGloveAt(aim, dt, handS, -GloveDh(handS) * 0.85f, true, float.NaN, _upgradeBtnR);")
+                && tickBody.Contains("_tutorPlate.Contains(aim)")
+                && tickBody.IndexOf("ButtonLabelAim") < 0, "");
             string coach = File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.Coach.cs");
             Check("upgrade-start-is-the-shared-far-perch",
                 coach.Contains("string.Equals(_cueLine, DailyClaimLine) || string.Equals(_cueLine, AlbumUpgradeLine)")
