@@ -1015,7 +1015,8 @@ namespace FlockFive.Editor
                 BadgerCopy.ClearCoachForTest();
                 bool need = BadgerCopy.NeedsLesson(1) && !BadgerCopy.NeedsLesson(2);
                 bool lines = BadgerCopy.LessonCount == 3
-                    && BadgerCopy.LessonAt(0).Contains("honeycomb")
+                    && BadgerCopy.LessonAt(0).Contains("Pick one comb")
+                    && BadgerCopy.LessonAt(0).Contains("Higher honey")
                     && BadgerCopy.LessonAt(1).Contains("x3")
                     && BadgerCopy.LessonAt(2).Contains("First full column");
                 bool open1 = BadgerCopy.OpeningLine(1, true) == ""
