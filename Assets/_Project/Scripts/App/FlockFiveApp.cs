@@ -20766,7 +20766,8 @@ namespace FlockFive
                 float limit = PhoneArea.H - Mathf.Max(34f, PhoneArea.Safe.yMin) - 8f;
                 seat.y = below + h <= limit ? below : Mathf.Max(8f, card.yMin - gap - h);
             }
-            // Upgrade sits above the FREE button. Other album lines keep the garden band.
+            // Upgrade sits above the FREE button. Other album lines use the seat
+            // computed above, not the garden ground.
             float clear = step < 0 && _upgradeBtnR.width > 8f
                 ? _upgradeBtnR.y - TipPill.GloveClear(PhoneArea.H) : -1f;
             CapSpot("album.coach");
