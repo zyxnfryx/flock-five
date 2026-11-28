@@ -16187,11 +16187,14 @@ namespace FlockFive
             // Live DEAL rect every frame. A cached aim was landing on card 4
             // after the first poke cycle.
             var deal = PokerDealButtonRect();
-            _pokerTutorAim = CoachTapSeat(deal, CoachTapLabel(deal), PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            _pokerTutorTap = deal;
+            var plus = _pokerPlusR;
+            var aim = PokerBetGloveAim(plus, deal);
+            var tap = plus.width >= 8f ? plus : deal;
+            _pokerTutorAim = aim;
+            _pokerTutorTap = tap;
             _pokerTutorAimOk = true;
-            var offPill = _tutorPlateOn && _tutorPlate.width > 2f ? _tutorPlate : default;
-            CoachTapAt(deal, offPill.width > 2f ? offPill : CoachTapLabel(deal), dt, null);
+            // From below the outer rim, so the hand stays off "BET $xx" and the pill.
+            CoachGloveBelow(aim, dt, s, tap);
             bool parked = Vector2.Distance(_gloveTip, _gloveRest) > 32f * s;
             if (parked) _pokerPageAge = 0f;
             else _pokerPageAge += dt;
@@ -16456,10 +16459,12 @@ namespace FlockFive
             _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             LessonLine(PokerBetLine);
             var dealNow = PokerDealButtonRect();
-            _pokerDealAim = CoachTapSeat(dealNow, CoachTapLabel(dealNow), PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
-            _pokerDealTap = dealNow;
-            var offPill = _tutorPlateOn && _tutorPlate.width > 2f ? _tutorPlate : default;
-            CoachTapAt(dealNow, offPill.width > 2f ? offPill : CoachTapLabel(dealNow), dt, null);
+            var plusNow = _pokerPlusR;
+            var aimNow = PokerBetGloveAim(plusNow, dealNow);
+            var tapNow = plusNow.width >= 8f ? plusNow : dealNow;
+            _pokerDealAim = aimNow;
+            _pokerDealTap = tapNow;
+            CoachGloveBelow(aimNow, dt, handS, tapNow);
             return true;
         }
 

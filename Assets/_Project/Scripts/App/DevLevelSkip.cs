@@ -28,6 +28,9 @@ namespace FlockFive
         // ?forceRestart=1 opens the restart confirm (Yes / No) after the skip loads.
         public const string ForceRestartKey = "forceRestart";
         // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // ?forceDaily=1 opens the streak reminder (Yes please / Not now) after the skip loads.
+        public const string ForceDailyKey = "forceDaily";
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
         // ?pastBadger=1 starts the badger lesson on the column line
         // ("Higher honey scores.") and does not stop on the x2 step, so
         // "Tap the comb." can show on the freeze beat.
@@ -88,10 +91,14 @@ namespace FlockFive
             public bool ForceRestart;
             // DEV-ONLY. Inspect-only. True only with skipOnboarding=1.
             public bool PastBadger;
+            // DEV-ONLY. Inspect-only. True only with skipOnboarding=1.
+            public bool ForceDaily;
         }
 
-        // Set by the WebGL development boot only. Shipping builds never set it.
+        // Set by the WebGL development boot only. Shipping builds never set them.
         public static bool PastBadgerArmed;
+        public static bool KeepTipsArmed;
+        public static bool ForceDailyArmed;
 
         // 1-based garden from ?fflevel=, or 0 when the page did not ask.
         public static int DisplayFromUrl(string url)
@@ -166,6 +173,12 @@ namespace FlockFive
         public static bool ForceRestartFromUrl(string url)
         {
             return QueryInt(url, ForceRestartKey) == 1;
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        public static bool ForceDailyFromUrl(string url)
+        {
+            return QueryInt(url, ForceDailyKey) == 1;
         }
 
         // DEV-ONLY. Inspect-only. Not a shipping-path proof.
@@ -296,6 +309,7 @@ namespace FlockFive
                 ForceRewards = skip && ForceRewardsFromUrl(url),
                 ForceRestart = skip && ForceRestartFromUrl(url),
                 PastBadger = skip && PastBadgerFromUrl(url),
+                ForceDaily = skip && ForceDailyFromUrl(url),
             };
         }
 

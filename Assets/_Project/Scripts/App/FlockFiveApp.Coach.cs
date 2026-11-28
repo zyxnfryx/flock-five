@@ -6318,6 +6318,17 @@ namespace FlockFive
             return gear.Contains(releaseGui);
         }
 
+        // Fingertip on the + disc, or on DEAL when the stepper is not up yet.
+        // The point is the outer rim, so the hand is not on the BET amount.
+        public static Vector2 PokerBetGloveAim(Rect plus, Rect deal)
+        {
+            var button = plus.width >= 8f ? plus : deal;
+            if (button.width < 4f || button.height < 4f) return button.center;
+            float x = button.xMax - Mathf.Max(4f, button.width * 0.2f);
+            if (x < button.xMin + 4f) x = button.center.x;
+            return new Vector2(x, button.center.y);
+        }
+
         public static Vector2 UpgradeGloveSettle(Rect button)
         {
             if (button.width < 4f || button.height < 4f) return button.center;

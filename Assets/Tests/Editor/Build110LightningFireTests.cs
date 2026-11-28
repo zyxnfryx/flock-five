@@ -362,6 +362,11 @@ namespace FlockFive.Editor
             Check("plan-past-badger", past.Index == 7 && past.PastBadger && !past.ForceRestart, "index " + past.Index);
             var pastAlone = DevLevelSkip.Plan("http://h/?fflevel=8&pastBadger=1&forceRestart=1", 50);
             Check("plan-past-needs-skip", !pastAlone.PastBadger && !pastAlone.ForceRestart, "index " + pastAlone.Index);
+            var daily = DevLevelSkip.Plan("http://h/?skipOnboarding=1&keepTips=1&forceDaily=1", 50);
+            Check("plan-force-daily", daily.Index == 1 && daily.KeepTips && daily.ForceDaily && !daily.ForceRestart,
+                "index " + daily.Index);
+            var dailyAlone = DevLevelSkip.Plan("http://h/?fflevel=2&forceDaily=1", 50);
+            Check("plan-daily-needs-skip", !dailyAlone.ForceDaily, "index " + dailyAlone.Index);
             var nap = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forceNap=1", 50);
             Check("plan-force-nap", nap.Index == 1 && nap.SkipOnboarding && nap.ForceNap && !nap.KeepTips
                 && !nap.ForceFeeder && !nap.OpenPoker && !nap.ForceClear, "index " + nap.Index);

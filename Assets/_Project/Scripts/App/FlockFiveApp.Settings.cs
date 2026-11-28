@@ -870,6 +870,8 @@ namespace FlockFive
                     + " forceClear=" + (plan.ForceClear ? 1 : 0)
                     + " forceRewards=" + (plan.ForceRewards ? 1 : 0));
             DevLevelSkip.PastBadgerArmed = plan.PastBadger;
+            DevLevelSkip.KeepTipsArmed = plan.KeepTips;
+            DevLevelSkip.ForceDailyArmed = plan.ForceDaily;
             if (plan.OpenPoker)
             {
                 DevOpenPokerTable();
@@ -894,6 +896,15 @@ namespace FlockFive
             {
                 _restartAsk = RestartAsk.Sure;
                 Debug.Log("FF_DEV_FORCE restart=1");
+            }
+            if (plan.ForceDaily)
+            {
+                // The streak card, not the adopt lesson in front of it.
+                PlayerPrefs.SetInt(AvatarAdoptedPref, 1);
+                PlayerPrefs.SetInt(AvatarNamedPref, 1);
+                _dailyAskOpen = true;
+                _dailyAskAt = AdPause.Unscaled;
+                Debug.Log("FF_DEV_FORCE daily=1");
             }
             if (plan.ForceClear)
             {

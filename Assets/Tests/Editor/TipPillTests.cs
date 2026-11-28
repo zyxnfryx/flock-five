@@ -63,11 +63,13 @@ namespace FlockFive.Editor
                 new Vector2Int(820, 1180),
             };
             var bad = new StringBuilder();
+            float? keepFit = DeviceFit.TestWindow;
             for (int d = 0; d < windows.Length; d++)
             {
                 int winW = windows[d].x;
                 int winH = windows[d].y;
                 PhoneArea.PlayPixels(winW, winH, out int fieldW, out int fieldH);
+                DeviceFit.TestWindow = fieldW / (float)fieldH;
                 int classH = TipPill.Height(fieldH);
                 int classCap = TipPill.Cap(fieldH);
                 float rad = TipPill.Radius(fieldH);
@@ -81,17 +83,30 @@ namespace FlockFive.Editor
                     var safe = new Rect(0f, safeBot, fieldW, Mathf.Max(2f, fieldH - safeBot - safeTop));
                     var floor = TipPill.Place(fieldW, fieldH, safeBot, TipPill.Band.Floor);
                     var raised = TipPill.Place(fieldW, fieldH, safeBot, TipPill.Band.Raised);
-                    var framed = FlockFiveApp.TipFrame(fieldW, fieldH, safe, "coach.line");
-                    float obstacle = TipPill.ObstacleTop(fieldW, fieldH, safe);
-                    float clear = obstacle - TipPill.ClearGap(fieldH);
                     bool raisedOk = Mathf.Abs((floor.yMax - raised.yMax) - classH) < 1.5f;
-                    bool frameSize = Mathf.Abs(framed.height - classH) < 0.5f
-                        && Mathf.Abs(framed.width - floor.width) < 0.5f;
-                    bool frameClears = framed.yMax <= clear + 1.5f && framed.yMax <= floor.yMax + 0.5f;
-                    if (!raisedOk || !frameSize || !frameClears)
-                        bad.Append(winW).Append(s == 0 ? " floor" : " safe")
-                            .Append(" raised/frame yMax=").Append(framed.yMax.ToString("0"))
-                            .Append(" clear=").Append(clear.ToString("0")).Append("; ");
+                    if (!raisedOk)
+                        bad.Append(winW).Append(s == 0 ? " floor" : " safe").Append(" raised; ");
+                    var art = new Rect[CornerAnchor.GardenArtMax];
+                    int artN = CornerAnchor.CopyGardenArt(fieldW, fieldH, safe, art);
+                    string[] seats = { "coach.line", "coach.rule", "ad.hand", "gift.yours" };
+                    for (int seat = 0; seat < seats.Length; seat++)
+                    {
+                        var framed = FlockFiveApp.TipFrame(fieldW, fieldH, safe, seats[seat]);
+                        bool sizeOk = Mathf.Abs(framed.height - classH) < 0.5f;
+                        bool aboveSafe = framed.yMax <= fieldH - safeBot - 4f;
+                        bool hit = false;
+                        for (int a = 0; a < artN; a++)
+                        {
+                            if (art[a].width > 2f && framed.Overlaps(art[a])) { hit = true; break; }
+                        }
+                        if (sizeOk && aboveSafe && !hit && artN > 8) continue;
+                        bad.Append(winW).Append(s == 0 ? "" : "+safe").Append(" ").Append(seats[seat])
+                            .Append(" y=").Append(framed.y.ToString("0"))
+                            .Append("-").Append(framed.yMax.ToString("0"))
+                            .Append(hit ? " overlaps" : "")
+                            .Append(aboveSafe ? "" : " low")
+                            .Append(" art=").Append(artN).Append("; ");
+                    }
                     for (int t = 0; t < tips.Count; t++)
                     {
                         string text = tips[t];
@@ -121,12 +136,51 @@ namespace FlockFive.Editor
                     }
                 }
             }
+            DeviceFit.TestWindow = keepFit;
             Check("every-tip", bad.Length == 0, bad.ToString());
             var plate = TipPill.Place(664f, 1180f, 34f, TipPill.Band.Floor);
             var words = new Rect(plate.x + 36f, plate.y + 24f, plate.width - 72f, plate.height - 48f);
             var slot = TapWaitGlove.CueSlot(words, plate, default, 664f, 1180f);
             bool stray = slot.width > 2f && slot.yMin >= words.yMax - 1f && slot.center.x > words.center.x;
             Check("glove-not-bottom-right", !stray && (slot.width < 2f || !slot.Overlaps(words)), slot.ToString());
+
+            float? keepWindow = DeviceFit.TestWindow;
+            try
+            {
+                DeviceFit.TestWindow = 402f / 874f;
+                float ps = DeviceFit.Ui(402f, 874f);
+                float dealW = FlockFiveApp.PokerActSize(402f, ps);
+                var deal = new Rect(402f - 16f - dealW, 874f - 24f - dealW, dealW, dealW);
+                float side = Mathf.Clamp(30f * ps, 26f, 36f * ps);
+                var plus = new Rect(deal.x - 12f - side, deal.center.y - side * 0.5f, side, side);
+                var amount = new Rect(plus.x - 10f - 140f, plus.y, 140f, side);
+                var aim = FlockFiveApp.PokerBetGloveAim(plus, deal);
+                float dh = FlockFiveApp.GloveDh(ps);
+                float ang = FlockFiveApp.GloveAuditBelowDeg;
+                var body0 = FlockFiveApp.GloveAuditBox(aim, ang, dh, 0f);
+                var body1 = FlockFiveApp.GloveAuditBox(aim, ang, dh, 1f);
+                bool onControl = plus.Contains(aim) || deal.Contains(aim);
+                bool offAmount = !amount.Contains(aim) && !body0.Overlaps(amount) && !body1.Overlaps(amount);
+                var betPill = FlockFiveApp.TipFrame(402f, 874f, new Rect(0f, 0f, 402f, 874f), "poker.table");
+                int betCap = TipPill.Cap(874f);
+                float betCol = TipPill.InnerWidth(betPill, betCap);
+                var betWords = new Rect(betPill.x + (betPill.width - betCol) * 0.5f, betPill.y, betCol, betPill.height);
+                bool offPill = !body0.Overlaps(betWords) && !body1.Overlaps(betWords) && !betWords.Contains(aim);
+                Check("poker-bet-glove-off-the-amount", onControl && offAmount && offPill,
+                    "aim " + aim + " on " + onControl + " amount " + offAmount + " pill " + offPill);
+            }
+            finally
+            {
+                DeviceFit.TestWindow = keepWindow;
+            }
+            string pokerSrc = System.IO.File.ReadAllText("Assets/_Project/Scripts/App/FlockFiveApp.cs");
+            int betTick = pokerSrc.IndexOf("bool TickPokerPageTutor(");
+            int betEnd = betTick >= 0 ? pokerSrc.IndexOf("void NotePokerTutorAims(", betTick) : -1;
+            string betBody = betTick >= 0 && betEnd > betTick ? pokerSrc.Substring(betTick, betEnd - betTick) : "";
+            Check("poker-bet-glove-aims-outside",
+                betBody.Contains("PokerBetGloveAim(")
+                && betBody.Contains("CoachGloveBelow(")
+                && betBody.IndexOf("CoachTapAt(deal") < 0, "");
             if (fail > 0) throw new System.Exception("tip-pill " + fail);
         }
     }

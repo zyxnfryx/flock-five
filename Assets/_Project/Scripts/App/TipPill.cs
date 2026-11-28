@@ -103,26 +103,51 @@ namespace FlockFive
             return g;
         }
 
-        // GUI y (down) of the top of the bottom branch pair and the hive.
-        // The pill's bottom stays above this. A missing layout returns the
-        // field bottom so the floor band is left alone.
-        public static float ObstacleTop(float fieldW, float fieldH, Rect safe)
-        {
-            if (fieldW < 8f || fieldH < 8f) return fieldH;
-            CornerAnchor.AdRowBand(fieldW, fieldH, out _, out _, out _, out _, out float adTop, out _);
-            CornerAnchor.Garden(fieldW, fieldH, safe, out _, out _, out _, out _, out var hive);
-            float top = adTop;
-            if (hive.height > 2f && hive.yMin > 2f && hive.yMin < top) top = hive.yMin;
-            return top;
-        }
-
-        // Floor band, lifted when that band would cover the bottom branches or the hive.
+        // The garden plate sits in the open ground under every branch, bird,
+        // gift limb, and the hive, and above the bottom safe inset plus the
+        // class gap. When that band is shorter than the pill, the plate sits
+        // fully above the top row and under the feeders.
         public static Rect PlaceGarden(float fieldW, float fieldH, float safeBottom, Rect safe)
         {
             var pill = Place(fieldW, fieldH, safeBottom, Band.Floor);
-            float top = ObstacleTop(fieldW, fieldH, safe);
-            if (top < fieldH * 0.35f || top > fieldH + 2f) return pill;
-            return Above(pill, top, fieldH);
+            CornerAnchor.GardenArtSpan(fieldW, fieldH, safe, out float artTop, out float artBottom, out float feederBottom);
+            if (artBottom <= artTop + 1f) return DodgeHive(pill, fieldW, fieldH, safe);
+            float air = Mathf.Max(6f, ClearGap(fieldH) * 0.45f);
+            float yMax = fieldH - safeBottom - Gap(fieldH);
+            float y = yMax - pill.height;
+            Rect seated;
+            if (y >= artBottom + air)
+                seated = new Rect(pill.x, y, pill.width, pill.height);
+            else
+            {
+                float yTop = artTop - air - pill.height;
+                float under = feederBottom + air;
+                if (under > 4f && yTop < under) yTop = under;
+                if (yTop + pill.height > artTop - air) yTop = artTop - air - pill.height;
+                if (yTop < 4f) yTop = 4f;
+                seated = new Rect(pill.x, yTop, pill.width, pill.height);
+            }
+            return DodgeHive(seated, fieldW, fieldH, safe);
+        }
+
+        // A full-width plate in the ground band meets the corner hive. Keep the
+        // same height and pull the overlapping side in so the rects do not meet.
+        static Rect DodgeHive(Rect pill, float fieldW, float fieldH, Rect safe)
+        {
+            CornerAnchor.Garden(fieldW, fieldH, safe, out _, out _, out _, out _, out var hive);
+            if (hive.width < 2f || hive.height < 2f || !pill.Overlaps(hive)) return Snap(pill);
+            float air = 8f;
+            float left = hive.xMin - air - pill.xMin;
+            float right = pill.xMax - (hive.xMax + air);
+            float minW = Mathf.Max(48f, pill.width * 0.55f);
+            if (left >= minW)
+                pill = new Rect(pill.x, pill.y, hive.xMin - air - pill.x, pill.height);
+            else if (right >= minW)
+            {
+                float x = hive.xMax + air;
+                pill = new Rect(x, pill.y, pill.xMax - x, pill.height);
+            }
+            return Snap(pill);
         }
 
         // Same pill, moved so its bottom clears obstacleTop (GUI y, down).
