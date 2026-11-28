@@ -30,6 +30,8 @@ namespace FlockFive.Editor
             Corners(Check);
             Hud(Check);
             Pig(Check);
+            HiveGround(Check);
+            AdNotReady(Check);
 
             Debug.Log("[build123] " + (fail == 0 ? "ALL OK " + pass : "FAILED " + fail + " passed " + pass));
         }
@@ -292,6 +294,82 @@ namespace FlockFive.Editor
                 && pokeBody.IndexOf("Purse.Credit") < 0
                 && appSrc.IndexOf("Coins you win go in the piggy.") >= 0;
             Check("piggy-tap-sets-the-coin-tip", tipped && shows, fault + " shows " + shows);
+        }
+
+        static void HiveGround(System.Action<string, bool, string> Check)
+        {
+            var winOn = typeof(PhoneArea).GetField("EditorWindowOn", BindingFlags.NonPublic | BindingFlags.Static);
+            var winW = typeof(PhoneArea).GetField("EditorWindowW", BindingFlags.NonPublic | BindingFlags.Static);
+            var winH = typeof(PhoneArea).GetField("EditorWindowH", BindingFlags.NonPublic | BindingFlags.Static);
+            var safeTop = typeof(PhoneArea).GetField("EditorSafeTop", BindingFlags.NonPublic | BindingFlags.Static);
+            var safeBot = typeof(PhoneArea).GetField("EditorSafeBottom", BindingFlags.NonPublic | BindingFlags.Static);
+            bool keepOn = (bool)winOn.GetValue(null);
+            int keepW = (int)winW.GetValue(null);
+            int keepH = (int)winH.GetValue(null);
+            float keepTop = (float)safeTop.GetValue(null);
+            float keepBot = (float)safeBot.GetValue(null);
+            var prev = DeviceFit.TestWindow;
+            try
+            {
+                winOn.SetValue(null, true);
+                winW.SetValue(null, 820);
+                winH.SetValue(null, 1180);
+                DeviceFit.TestWindow = 820f / 1180f;
+                var insets = new[] { new Vector2(0f, 0f), new Vector2(59f, 34f) };
+                int[] gardens = { 2, 3, 27 };
+                foreach (var ins in insets)
+                {
+                    safeTop.SetValue(null, ins.x);
+                    safeBot.SetValue(null, ins.y);
+                    float w = PhoneArea.W;
+                    float h = PhoneArea.H;
+                    var safe = PhoneArea.Safe;
+                    CornerAnchor.Garden(w, h, safe, out _, out _, out _, out _, out var hive);
+                    float tall = CornerAnchor.TallFor(w, h);
+                    float low = WorldBuilder.RowY0Base(tall) - (WorldBuilder.Rows - 1) * WorldBuilder.RowGap + BranchHit.MainY0;
+                    float branchBot = CornerAnchor.WorldToGui(w, h, 0f, low).y;
+                    CornerAnchor.AdRowBand(w, h, out var signL, out var signR, out var woodL, out var woodR, out _, out _);
+                    bool below = hive.yMin + 0.5f >= branchBot;
+                    bool clearBranch = !CornerAnchor.OverlapsBirdRow(hive, w, h);
+                    bool clearGift = !hive.Overlaps(signL) && !hive.Overlaps(signR)
+                        && !hive.Overlaps(woodL) && !hive.Overlaps(woodR);
+                    float signBot = Mathf.Max(signL.yMax, signR.yMax);
+                    bool air = hive.yMin >= signBot + 10f;
+                    foreach (int g in gardens)
+                    {
+                        Check("hive-ground-g" + g + "-" + (int)ins.x + "-" + (int)ins.y,
+                            below && clearBranch && clearGift && air && hive.height > 8f,
+                            "hive " + hive.yMin.ToString("0.0") + ".." + hive.yMax.ToString("0.0")
+                            + " branch " + branchBot.ToString("0.0") + " sign " + signBot.ToString("0.0"));
+                    }
+                }
+            }
+            finally
+            {
+                winOn.SetValue(null, keepOn);
+                winW.SetValue(null, keepW);
+                winH.SetValue(null, keepH);
+                safeTop.SetValue(null, keepTop);
+                safeBot.SetValue(null, keepBot);
+                DeviceFit.TestWindow = prev;
+            }
+        }
+
+        static void AdNotReady(System.Action<string, bool, string> Check)
+        {
+            bool second = FlockFiveApp.AdFailDecision(false, false, false, false) == FlockFiveApp.AdFailAction.Close;
+            bool holds = FlockFiveApp.AdNotReadyHoldSeconds >= 1f && FlockFiveApp.AdNotReadyHoldSeconds < 3f;
+            bool copy = AdRetry.Line.IndexOf("Ad not ready") >= 0;
+            string app = File.ReadAllText(Path.Combine(Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs"));
+            int body = app.IndexOf("IEnumerator WatchGiftBody()");
+            int end = body < 0 ? -1 : app.IndexOf("IEnumerator GiftPopBursts", body);
+            string chunk = body >= 0 && end > body ? app.Substring(body, end - body) : "";
+            bool shipping = chunk.Contains("AdRetry.Offer()")
+                && chunk.Contains("WaitForSecondsRealtime(AdNotReadyHoldSeconds)")
+                && chunk.IndexOf("UNITY_IOS") < 0
+                && chunk.IndexOf("UNITY_ANDROID") < 0;
+            Check("second-gift-shows-ad-not-ready", second && holds && copy && shipping,
+                "close " + second + " hold " + FlockFiveApp.AdNotReadyHoldSeconds + " line " + AdRetry.Line);
         }
     }
 }

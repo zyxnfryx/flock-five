@@ -22853,6 +22853,9 @@ namespace FlockFive
 
         public enum AdFailAction { KeepCard, GrantBranch, Close }
 
+        // Second gift, no ad: the card stays up on AdRetry's line, then closes.
+        public const float AdNotReadyHoldSeconds = 1.2f;
+
         // What a request that ended with no grant does. Pure so the tests can pin it.
         public static AdFailAction AdFailDecision(bool keepStreak, bool freeze, bool tutorial, bool skipped)
         {
@@ -23096,13 +23099,20 @@ namespace FlockFive
                 }
                 if (AdFailDecision(keep, freeze, tutorial, AdRetry.Skipped) == AdFailAction.Close)
                 {
-                    AdLog.Add("gift ad unavailable: closing the offer (" + AdRetry.Reason + ")");
-                    _cueLine = "Ad unavailable.";
-                    _gift = GiftFace.None;
-                    AdRetry.Clear();
-                    DismissAdHand();
-                    _swallowTapsUntil = GateNow + 0.45f;
-                    _suppressGiftUntil = GateNow + 1f;
+                    AdLog.Add("gift ad unavailable: showing not-ready, then closing (" + AdRetry.Reason + ")");
+                    AdRetry.Offer();
+                    _gift = GiftFace.Card;
+                    _busy = true;
+                    yield return new WaitForSecondsRealtime(AdNotReadyHoldSeconds);
+                    if (_gift == GiftFace.Card)
+                    {
+                        _gift = GiftFace.None;
+                        AdRetry.Clear();
+                        DismissAdHand();
+                        _swallowTapsUntil = GateNow + 0.45f;
+                        _suppressGiftUntil = GateNow + 1f;
+                    }
+                    _busy = false;
                     yield break;
                 }
                 // Never a silent bounce back to Watch: say the ad was not ready.

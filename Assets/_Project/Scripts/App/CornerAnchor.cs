@@ -352,6 +352,8 @@ namespace FlockFive
             bot = screenH - y;
             float left = safe.xMin + inset;
             float right = RightEdge(screenW, safe, scale) - size;
+            float hiveY = y;
+            float hiveSize = size;
             if (left < 0f) left = 0f;
             if (right < 0f) right = 0f;
             // b105 (Brandon): the corner buttons must never sit on the bottom ad (gift) branch or its
@@ -372,22 +374,71 @@ namespace FlockFive
                 {
                     y = below;
                     size = Mathf.Min(size, avail);
+                    hiveY = y;
+                    hiveSize = size;
                 }
                 else
                 {
-                    // The sign tip sticks above the wood box. Clear that tip, not only the AABB.
-                    y = Mathf.Max(0f, adTop - 6f * scale - size * 0.28f - size);
+                    // Sitting above the sign lands on a bird limb once the bottom inset
+                    // has used up the ground band. Stay under the gift wood instead.
+                    float aboveY = Mathf.Max(0f, adTop - 6f * scale - size * 0.28f - size);
+                    var above = new Rect(right, aboveY, size, size);
+                    if (!OverlapsBirdRow(above, screenW, screenH))
+                    {
+                        y = aboveY;
+                        hiveY = y;
+                        hiveSize = size;
+                    }
+                    else
+                    {
+                        float gap = Mathf.Clamp(6f * scale, 10f, 12f);
+                        float yb = adBot + gap;
+                        float limit = screenH - Mathf.Max(0f, safe.yMin);
+                        float fit = limit - yb;
+                        if (fit < hiveSize)
+                        {
+                            if (fit < 8f) fit = 8f;
+                            hiveSize = fit;
+                        }
+                        hiveY = yb;
+                    }
                 }
                 bot = screenH - y;
-                right = RightEdge(screenW, safe, scale) - size;
-                if (right < 0f) right = 0f;
             }
+            float hiveW = hiveY == y ? size : hiveSize;
+            right = RightEdge(screenW, safe, scale) - hiveW;
+            if (right < 0f) right = 0f;
             restart = new Rect(left, y, size, size);
-            hive = new Rect(right, y, size, size);
+            hive = new Rect(right, hiveY, hiveW, hiveW);
         }
 
         static Rect restart0(float x, float y, float size, float pad)
             => new Rect(x - pad, y - pad, size + pad * 2f, size + pad * 2f);
+
+        // True when a GUI rect meets a bird-row limb (not the gift wood). Positions come
+        // from the same world-to-GUI map as the branches, so a safe-area lift is visible.
+        public static bool OverlapsBirdRow(Rect gui, float w, float h)
+        {
+            float tall = TallFor(w, h);
+            // Base row, not RowY0For: that calls ContentDrop, which calls Garden again.
+            float y0 = WorldBuilder.RowY0Base(tall);
+            float win = w / Mathf.Max(1f, h);
+            float limb = WorldBuilder.CamOrtho * DeviceFit.PlayAspect(win) - WorldBuilder.WoodHalf + 0.18f;
+            for (int row = 0; row < WorldBuilder.Rows; row++)
+            {
+                float wy = y0 - row * WorldBuilder.RowGap;
+                if (gui.Overlaps(LimbGui(w, h, limb, wy)) || gui.Overlaps(LimbGui(w, h, -limb, wy)))
+                    return true;
+            }
+            return false;
+        }
+
+        static Rect LimbGui(float w, float h, float limbX, float wy)
+        {
+            return GuiBox(w, h,
+                limbX + BranchHit.MainX0, wy + BranchHit.MainY1,
+                limbX + BranchHit.MainX1, wy + BranchHit.MainY0);
+        }
 
         static bool Hits(Rect r, Rect a, Rect b, Rect c, Rect d)
             => r.Overlaps(a) || r.Overlaps(b) || r.Overlaps(c) || r.Overlaps(d);
