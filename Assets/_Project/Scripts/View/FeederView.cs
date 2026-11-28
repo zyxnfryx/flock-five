@@ -6,6 +6,24 @@ namespace FlockFive
     public sealed class FeederView : MonoBehaviour
     {
         public const float Scale = 0.66f;
+        // Painted pixels of feeder_*.png (1024 sheet, pivot at the center, 180 PPU).
+        // SpriteRenderer.bounds is the whole sheet, about 3.75 across, which includes
+        // the empty margin outside the glass and the wooden disk.
+        public const float OpaqueX0 = 184f;
+        public const float OpaqueX1 = 846f;
+        public const float OpaqueYTop = 0f;
+        public const float OpaqueYBot = 912f;
+        public const float OpaqueSheet = 1024f;
+        public const float OpaquePpu = 180f;
+
+        public static Rect OpaqueRect(Vector2 pivot)
+        {
+            float left = (OpaqueSheet * 0.5f - OpaqueX0) / OpaquePpu * Scale;
+            float right = (OpaqueX1 - OpaqueSheet * 0.5f) / OpaquePpu * Scale;
+            float up = (OpaqueSheet * 0.5f - OpaqueYTop) / OpaquePpu * Scale;
+            float down = (OpaqueYBot - OpaqueSheet * 0.5f) / OpaquePpu * Scale;
+            return Rect.MinMaxRect(pivot.x - left, pivot.y - down, pivot.x + right, pivot.y + up);
+        }
         // Draw orders. The ostrich head sits between the two: in front of the other feeders,
         // behind the one it peeks out from (b115), so its neck never reads as threaded through
         // the brass base ring. Birds (12) stay above both.

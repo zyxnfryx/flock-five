@@ -199,7 +199,9 @@ namespace FlockFive.Editor
                         if (i == own) continue;
                         var ab = feeders[i].Art != null ? feeders[i].Art.bounds : new Bounds();
                         if (ab.size.x < 2f) { why = tag + " feeder" + i + " art " + ab.size; return false; }
-                        var art = Rect.MinMaxRect(ab.min.x, ab.min.y, ab.max.x, ab.max.y);
+                        // Art.bounds is the full sheet, empty margin included. The glass and disk
+                        // are the opaque pixels only.
+                        var art = FeederView.OpaqueRect(feeders[i].transform.position);
                         if (head.Overlaps(art)) { why = tag + " feeder" + i + " head " + head + " art " + art; return false; }
                     }
                     return true;
