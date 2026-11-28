@@ -63,8 +63,9 @@ namespace FlockFive.Editor
             Check("result-glove-on-continue", CoachTap.Rule(CoachStep.BadgerResult).Pointer == CoachPointer.Glove && CoachTap.Rule(CoachStep.BadgerResult).Advances(TapZone.Target), "");
 
             // Copy: lessons name the continue tap; nothing says the old "bird followed you home" for the badger.
-            bool copy = BadgerCopy.LessonAt(0).Contains("Tap to continue") && BadgerCopy.LessonAt(1).Contains("x2") && BadgerCopy.LessonAt(1).Contains("Locked for 3 moves")
-                && BadgerCopy.LessonAt(2).StartsWith("Higher honey scores the difference") && BadgerCopy.LessonAt(2).Contains("First full column wins");
+            bool copy = BadgerCopy.LessonAt(0).Contains("comb") && BadgerCopy.LessonAt(0).Contains("Higher honey")
+                && BadgerCopy.LessonAt(1).Contains("x2") && BadgerCopy.LessonAt(1).Contains("Locked for 3 moves")
+                && BadgerCopy.LessonAt(2).StartsWith("Higher honey scores") && BadgerCopy.LessonAt(2).Contains("First full column wins");
             Check("lesson-copy-names-continue-and-rules", copy, BadgerCopy.LessonAt(1));
             Check("round4-lines", BadgerCopy.PowersOpen.Contains("Tap x2") && BadgerCopy.X2Armed.Contains("doubles your next tile") && BadgerCopy.GuideLine(3).Contains("halve"), "");
 

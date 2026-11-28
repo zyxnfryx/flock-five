@@ -23478,9 +23478,16 @@ namespace FlockFive
             if (_adHand)
             {
                 // b111: the unlock banner must not stay up while the card says "Ad not ready".
+                // Same snapped TipPill as the garden tips. A leftover scale (pillar pivot,
+                // label rim) was baking a tighter corner on the 820 column.
                 if (!(AdRetry.Active && !AdRetry.Skipped))
                 {
-                    CapSpot("ad.hand"); DrawSplashIntroLine(AdHandLine, AdHandCaptionRect(s), s);
+                    if (GuiPaint())
+                        _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
+                    var tipM = GUI.matrix;
+                    GUI.matrix = PhoneArea.GuiBase;
+                    DrawTipFamily(AdHandLine, EaseOutCubic(_coachFade), "ad.hand");
+                    GUI.matrix = tipM;
                 }
                 DrawTutorOverlay(s);
             }

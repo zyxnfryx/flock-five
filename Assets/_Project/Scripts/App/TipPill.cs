@@ -117,6 +117,19 @@ namespace FlockFive
             if (y < 0f) y = 0f;
             if (y + h > fieldH) y = Mathf.Max(0f, fieldH - h);
             float x = (fieldW - w) * 0.5f;
+            return Snap(new Rect(x, y, w, h));
+        }
+
+        // One integer rect for every tip. Rounding the far edge on its own was
+        // shaving a couple of pixels off some plates and not others.
+        public static Rect Snap(Rect r)
+        {
+            float x = Mathf.Round(r.x);
+            float y = Mathf.Round(r.y);
+            float w = Mathf.Round(r.width);
+            float h = Mathf.Round(r.height);
+            if (w < 4f) w = 4f;
+            if (h < 4f) h = 4f;
             return new Rect(x, y, w, h);
         }
 

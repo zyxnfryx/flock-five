@@ -168,7 +168,7 @@ namespace FlockFive
         // b113 (Brandon): exact copy, no emoji (the game font does not draw one). The "!" ends the headline, so
         // HeadlineGap puts the shared visible gap between the two sentences at paint time. Two rows at most.
         public const string FireLine =
-            "Lightning burned the branch!\nWatch out for dangerous weather";
+            "Lightning burned it!\nWatch for bad weather.";
 
         // Side padding: the fire column is never wider than this share of the screen (8% each side), so the text
         // is not flush with the edges. A long row shrinks the font (down to 60%) or wraps, it never widens past this.

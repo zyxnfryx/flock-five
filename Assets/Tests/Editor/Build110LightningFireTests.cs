@@ -200,13 +200,13 @@ namespace FlockFive.Editor
         {
             string line = CaptionLayout.FireLine;
             Check("copy-is-exact-text",
-                line == "Lightning burned the branch!\nWatch out for dangerous weather"
+                line == "Lightning burned it!\nWatch for bad weather."
                 && line.IndexOf('\uD83D') < 0 && line.IndexOf('\uD83D') < 0,
                 "[" + line.Replace("\n", " / ") + "]");
             int rows = line.Split('\n').Length;
             Check("copy-two-lines-max", rows == 2 && rows <= CaptionLayout.BannerMaxLines, "rows=" + rows);
             string gapped = CaptionLayout.HeadlineGap(line);
-            Check("visible-gap-between-sentences", gapped == "Lightning burned the branch!\n\nWatch out for dangerous weather"
+            Check("visible-gap-between-sentences", gapped == "Lightning burned it!\n\nWatch for bad weather."
                 && CaptionLayout.IsFireLine(gapped) && CaptionLayout.IsFireLine(line), "[" + gapped.Replace("\n", "|") + "]");
             Check("fire-caption-roomier-gap", CaptionLayout.GapKeepFor(gapped) > CaptionLayout.HeadlineGapKeep
                 && Mathf.Abs(CaptionLayout.GapKeepFor("One.\n\nTwo.") - CaptionLayout.HeadlineGapKeep) < 1e-5f, "keep " + CaptionLayout.FireGapKeep);

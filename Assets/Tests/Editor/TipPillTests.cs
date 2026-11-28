@@ -95,12 +95,7 @@ namespace FlockFive.Editor
                         bool cap = classCap == TipPill.Cap(fieldH);
                         bool two = lines >= 1 && lines <= TipPill.MaxLines;
                         bool fits = CaptionLayout.ShownFits(style, shown, inner, classCap);
-                        // The lightning sentence and the badger column lesson are Brandon's
-                        // exact phrases. On a 360-wide phone they are wider than two rows of
-                        // the 22px cap, so the plate stays two lines and does not grow.
-                        bool locked = text == CaptionLayout.FireLine
-                            || (text != null && text.StartsWith("Higher honey scores the difference"));
-                        if (height && round && inset && band && cap && two && (fits || locked)) continue;
+                        if (height && round && inset && band && cap && two && fits) continue;
                         bad.Append(winW).Append(s == 0 ? "" : "+safe").Append(" [")
                             .Append(text.Replace("\n", " / ")).Append("] h=").Append(pill.height.ToString("0"))
                             .Append(" r=").Append(rad.ToString("0.0"))

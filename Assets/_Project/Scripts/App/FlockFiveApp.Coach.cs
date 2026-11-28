@@ -4363,30 +4363,33 @@ namespace FlockFive
         const int SolidSlots = 12;
         static readonly Texture2D[] _solidTex = new Texture2D[SolidSlots];
         static readonly int[] _solidKey = new int[SolidSlots];
+        static readonly int[] _solidW = new int[SolidSlots];
+        static readonly int[] _solidH = new int[SolidSlots];
+        static readonly int[] _solidR = new int[SolidSlots];
         static readonly int[] _solidUse = new int[SolidSlots];
         static int _solidSerial;
 
         // kind 0 is the dark caption. kind 1 is the cream nameplate.
+        // The baked corner is scaled with the texture so StretchToFill puts `rad`
+        // on screen. A packed key used to hand back another plate's texture.
         static void DrawSolidRound(Rect r, float rad, int kind, float fade)
         {
             if (fade < 0.02f || r.width < 4f || r.height < 4f) return;
             float x0 = Mathf.Round(r.x);
             float y0 = Mathf.Round(r.y);
-            float x1 = Mathf.Round(r.xMax);
-            float y1 = Mathf.Round(r.yMax);
-            int w = Mathf.RoundToInt(x1 - x0);
-            int h = Mathf.RoundToInt(y1 - y0);
-            if (w < 4 || h < 4) return;
+            int w = Mathf.Max(4, Mathf.RoundToInt(r.width));
+            int h = Mathf.Max(4, Mathf.RoundToInt(r.height));
             int qw = (w + 2) / 4 * 4;
             int qh = (h + 2) / 4 * 4;
             if (qw < 8) qw = 8;
             if (qh < 8) qh = 8;
             if (qw > 1024) qw = 1024;
             if (qh > 768) qh = 768;
+            float radTex = rad * (qh / (float)h);
             float radLim = Mathf.Min(qw, qh) * 0.5f - 1f;
-            if (rad > radLim) rad = radLim;
-            if (rad < 2f) rad = 2f;
-            int radPx = Mathf.RoundToInt(rad);
+            if (radTex > radLim) radTex = radLim;
+            if (radTex < 2f) radTex = 2f;
+            int radPx = Mathf.RoundToInt(radTex);
             var tex = SolidRoundTex(qw, qh, radPx, kind);
             if (tex == null) return;
             var prev = GUI.color;
@@ -4397,7 +4400,6 @@ namespace FlockFive
 
         static Texture2D SolidRoundTex(int w, int h, int radPx, int kind)
         {
-            int key = w * 1000000 + h * 1000 + radPx * 2 + kind;
             int oldest = 0;
             int oldestUse = int.MaxValue;
             for (int i = 0; i < SolidSlots; i++)
@@ -4407,7 +4409,8 @@ namespace FlockFive
                     oldestUse = _solidUse[i];
                     oldest = i;
                 }
-                if (_solidTex[i] == null || _solidKey[i] != key) continue;
+                if (_solidTex[i] == null || _solidW[i] != w || _solidH[i] != h || _solidR[i] != radPx || _solidKey[i] != kind)
+                    continue;
                 _solidSerial++;
                 _solidUse[i] = _solidSerial;
                 return _solidTex[i];
@@ -4423,7 +4426,10 @@ namespace FlockFive
             };
             BakeSolidRound(tex, radPx, kind);
             _solidTex[oldest] = tex;
-            _solidKey[oldest] = key;
+            _solidW[oldest] = w;
+            _solidH[oldest] = h;
+            _solidR[oldest] = radPx;
+            _solidKey[oldest] = kind;
             _solidSerial++;
             _solidUse[oldest] = _solidSerial;
             return tex;
@@ -5736,7 +5742,7 @@ namespace FlockFive
             if (string.IsNullOrEmpty(text)) return;
             float fieldW = PhoneArea.W > 2f ? PhoneArea.W : 402f;
             float fieldH = PhoneArea.H > 2f ? PhoneArea.H : 874f;
-            var pill = TipFrame(fieldW, fieldH, PhoneArea.Safe, spot);
+            var pill = TipPill.Snap(TipFrame(fieldW, fieldH, PhoneArea.Safe, spot));
             int cap = TipPill.Cap(fieldH);
             float rad = TipPill.Radius(fieldH);
             float limit = Mathf.Min(pill.width, pill.height) * 0.5f - 1f;
