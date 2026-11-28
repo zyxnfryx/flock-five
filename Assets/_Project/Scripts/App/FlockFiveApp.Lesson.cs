@@ -138,7 +138,7 @@ namespace FlockFive
                 "Are you sure you want to restart?",
                 "Keep multiplier (Watch Ad / No thanks).",
                 "TAP A CARD TO KEEP",
-                "Pick your bet, then tap Deal.",
+                "Pick a bet.\nTap Deal.",
                 "Tap a card to hold it, then tap Draw.",
                 "Pick your bet, then tap Deal. (later visit)",
                 "Tap the back button to return home.",

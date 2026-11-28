@@ -24,6 +24,14 @@ namespace FlockFive
         // see "Tap outside to put back". It does not write the album.
         public const string ForceMaxxedKey = "forceMaxxed";
         public const string ForcePauseKey = "forcePause";
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // ?forceRestart=1 opens the restart confirm (Yes / No) after the skip loads.
+        public const string ForceRestartKey = "forceRestart";
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        // ?pastBadger=1 starts the badger lesson on the column line
+        // ("Higher honey scores.") and does not stop on the x2 step, so
+        // "Tap the comb." can show on the freeze beat.
+        public const string PastBadgerKey = "pastBadger";
         // A garden that never shows the entrance still has to finish the star
         // wipe. An ostrich who stays idle without ever striding (the entrance
         // did not start) is given up after this, so Inspector is not stuck.
@@ -76,7 +84,14 @@ namespace FlockFive
             // (Begin, displayed, rewarded, flush) because WebGL has no LevelPlay
             // fill. That stub is not a shipping no-fill change.
             public bool ForceRewards;
+            // DEV-ONLY. Inspect-only. True only with skipOnboarding=1.
+            public bool ForceRestart;
+            // DEV-ONLY. Inspect-only. True only with skipOnboarding=1.
+            public bool PastBadger;
         }
+
+        // Set by the WebGL development boot only. Shipping builds never set it.
+        public static bool PastBadgerArmed;
 
         // 1-based garden from ?fflevel=, or 0 when the page did not ask.
         public static int DisplayFromUrl(string url)
@@ -145,6 +160,18 @@ namespace FlockFive
         public static bool ForcePauseFromUrl(string url)
         {
             return QueryInt(url, ForcePauseKey) == 1;
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        public static bool ForceRestartFromUrl(string url)
+        {
+            return QueryInt(url, ForceRestartKey) == 1;
+        }
+
+        // DEV-ONLY. Inspect-only. Not a shipping-path proof.
+        public static bool PastBadgerFromUrl(string url)
+        {
+            return QueryInt(url, PastBadgerKey) == 1;
         }
 
         public static bool ForcePauseBlocks(string url, float heldSeconds)
@@ -267,6 +294,8 @@ namespace FlockFive
                 OpenPoker = skip && OpenPokerFromUrl(url),
                 ForceClear = skip && ForceClearFromUrl(url),
                 ForceRewards = skip && ForceRewardsFromUrl(url),
+                ForceRestart = skip && ForceRestartFromUrl(url),
+                PastBadger = skip && PastBadgerFromUrl(url),
             };
         }
 

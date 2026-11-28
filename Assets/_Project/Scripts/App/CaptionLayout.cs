@@ -346,6 +346,8 @@ namespace FlockFive
             return dst;
         }
 
+        // Welcome-card body, not a coach tip. DrawWelcome stamps it inside the
+        // card (title, amount, this line, Thanks). It is not a TipPill.
         public const string VipPitchLine = "Tap VIP anytime to drop ads.";
 
         public const string AlbumUpgradeLine = "Your first upgrade is free!\nTap Upgrade.";

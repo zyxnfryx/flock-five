@@ -18,6 +18,13 @@ namespace FlockFive
         public const float RefHeight = 114f;
         public const float RefRadius = 18f; // 402 x 874 class
         public const float RefGap = 50f;    // px above the bottom safe inset at that class
+        // One plate for every tip, including Nice!, the crown line, and nap.
+        // Those three used to paint solid (CaptionStyles ink 1). The rest used
+        // this alpha, so the shared plate matches the majority.
+        public const float PlateAlpha = CaptionStyles.BannerAlpha;
+        // One motion: about a quarter-second fade in, a short fade out.
+        public const float FadeIn = 0.25f;
+        public const float FadeOut = 0.12f;
 
         // Floor: pill bottom sits Gap px above the bottom safe inset.
         // Raised: one pill higher. The single alternate when a tip must clear
@@ -65,16 +72,69 @@ namespace FlockFive
             return p;
         }
 
-        // In from each field edge. A few percent of the field, never a full-bleed
-        // bar. On an iPad the field is the phone column (PhoneArea), not the window.
-        // The corner radius is separate: the type sits in the straight middle of the pill.
+        // Side air. Phones keep at least 20 px. The 820 column (field width past
+        // a phone) keeps at least 30. A few percent of the field can be more.
+        public static float MinInset(float fieldW) => fieldW >= 520f ? 30f : 20f;
+
         public static float Inset(float fieldW, float fieldH)
         {
             float inset = fieldW * 0.03f;
-            if (inset < 10f) inset = 10f;
+            float floor = MinInset(fieldW);
+            if (inset < floor) inset = floor;
             float cap = fieldW * 0.12f;
             if (cap > 8f && inset > cap) inset = cap;
             return inset;
+        }
+
+        // Air between the pill and a control or the garden art it must not cover.
+        public static float ClearGap(float fieldH)
+        {
+            float g = Gap(fieldH) * 0.22f;
+            if (g < 8f) g = 8f;
+            return g;
+        }
+
+        // Extra lift when a glove points at the control under the pill, so the
+        // hand stays on that control and off the words.
+        public static float GloveClear(float fieldH)
+        {
+            float g = 28f * Height(fieldH) / RefHeight;
+            if (g < 18f) g = 18f;
+            return g;
+        }
+
+        // GUI y (down) of the top of the bottom branch pair and the hive.
+        // The pill's bottom stays above this. A missing layout returns the
+        // field bottom so the floor band is left alone.
+        public static float ObstacleTop(float fieldW, float fieldH, Rect safe)
+        {
+            if (fieldW < 8f || fieldH < 8f) return fieldH;
+            CornerAnchor.AdRowBand(fieldW, fieldH, out _, out _, out _, out _, out float adTop, out _);
+            CornerAnchor.Garden(fieldW, fieldH, safe, out _, out _, out _, out _, out var hive);
+            float top = adTop;
+            if (hive.height > 2f && hive.yMin > 2f && hive.yMin < top) top = hive.yMin;
+            return top;
+        }
+
+        // Floor band, lifted when that band would cover the bottom branches or the hive.
+        public static Rect PlaceGarden(float fieldW, float fieldH, float safeBottom, Rect safe)
+        {
+            var pill = Place(fieldW, fieldH, safeBottom, Band.Floor);
+            float top = ObstacleTop(fieldW, fieldH, safe);
+            if (top < fieldH * 0.35f || top > fieldH + 2f) return pill;
+            return Above(pill, top, fieldH);
+        }
+
+        // Same pill, moved so its bottom clears obstacleTop (GUI y, down).
+        // Already clear: the floor rect is returned unchanged.
+        public static Rect Above(Rect floor, float obstacleTop, float fieldH)
+        {
+            if (obstacleTop < 8f) return floor;
+            float limit = obstacleTop - ClearGap(fieldH);
+            if (floor.yMax <= limit + 0.5f) return floor;
+            float y = limit - floor.height;
+            if (y < 4f) y = 4f;
+            return Snap(new Rect(floor.x, y, floor.width, floor.height));
         }
 
         // Gift offer uses the same floor band as every other tip. Raised is the

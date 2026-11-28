@@ -189,7 +189,7 @@ namespace FlockFive.Editor
                 case "home.poker": return "You earned coins!\nTap poker to bet them.";
                 case "home.anchored": return "Tap the back button to return home.";
                 case "badger.lesson": return BadgerCopy.LessonColumnTop + "\n" + BadgerCopy.LessonColumnBot;
-                case "poker.table": return "Pick your bet, then tap Deal.";
+                case "poker.table": return "Pick a bet.\nTap Deal.";
                 case "album.coach": return CaptionLayout.AlbumHoneyBlock;
                 case "offer.clearads": return FlockFiveApp.ClearDoubleLine;
                 case "vip.welcome": return "Welcome, VIP!";

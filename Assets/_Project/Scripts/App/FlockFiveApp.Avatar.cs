@@ -562,7 +562,7 @@ namespace FlockFive
             _adoptLive = true;
             float dt = Mathf.Clamp(AdPause.UnscaledDelta, 0f, 0.05f);
             _adoptClock += dt;
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             TickAdoptMotion(dt);
         }
 

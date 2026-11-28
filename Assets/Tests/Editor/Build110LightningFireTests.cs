@@ -272,12 +272,13 @@ namespace FlockFive.Editor
                 && coach.IndexOf("(_pestCue == PestCueBee || _pestCue == PestCueFire)") >= 0
                 && coach.IndexOf("_ruleTip == RuleTip.None") >= 0,
                 "bee shares the lightning deadline");
-            // L5: full plate on the frame the 8s starts. Lightning still fades in.
+            // L5 and lightning share the pill fade. Plate and type paint together.
             Check("bee-plate-text-and-panel-together",
-                coach.IndexOf("if (_pestCue == PestCueBee)\n                _coachFade = 1f;") >= 0
-                && coach.IndexOf("_coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);") >= 0
+                coach.IndexOf("if (_pestCue == PestCueBee)\n                _coachFade = 1f;") < 0
+                && coach.IndexOf("float ink = TipPill.PlateAlpha;") >= 0
+                && coach.IndexOf("_coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / TipPill.FadeIn);") >= 0
                 && coach.IndexOf("_firePlateUntil = GateNow + BeePlateSeconds") >= 0,
-                "bee fade 1, lightning ramp kept");
+                "shared fade");
             string branch = Read("Assets/_Project/Scripts/View/BranchView.cs");
             Check("burn-timeline-lengthened",
                 Mathf.Abs(BranchView.ScorchSeconds - 1.5f) < 0.0001f && BranchView.ScorchSeconds >= 0.58f * 2f
@@ -353,7 +354,14 @@ namespace FlockFive.Editor
                 && !DevLevelSkip.ForceRewardsFromUrl(null), "junk");
             var feed = DevLevelSkip.Plan("http://h/portrait?w=820&h=1180&skipOnboarding=1&keepTips=1&forceFeeder=1", 50);
             Check("plan-force-feeder", feed.Index == 1 && feed.SkipOnboarding && feed.KeepTips && feed.ForceFeeder
-                && !feed.ForceNap && !feed.OpenPoker && !feed.ForceClear, "index " + feed.Index);
+                && !feed.ForceNap && !feed.OpenPoker && !feed.ForceClear && !feed.ForceRestart && !feed.PastBadger,
+                "index " + feed.Index);
+            var restart = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forceRestart=1", 50);
+            Check("plan-force-restart", restart.Index == 1 && restart.ForceRestart && !restart.PastBadger, "index " + restart.Index);
+            var past = DevLevelSkip.Plan("http://h/?skipOnboarding=1&fflevel=8&pastBadger=1", 50);
+            Check("plan-past-badger", past.Index == 7 && past.PastBadger && !past.ForceRestart, "index " + past.Index);
+            var pastAlone = DevLevelSkip.Plan("http://h/?fflevel=8&pastBadger=1&forceRestart=1", 50);
+            Check("plan-past-needs-skip", !pastAlone.PastBadger && !pastAlone.ForceRestart, "index " + pastAlone.Index);
             var nap = DevLevelSkip.Plan("http://h/?skipOnboarding=1&forceNap=1", 50);
             Check("plan-force-nap", nap.Index == 1 && nap.SkipOnboarding && nap.ForceNap && !nap.KeepTips
                 && !nap.ForceFeeder && !nap.OpenPoker && !nap.ForceClear, "index " + nap.Index);

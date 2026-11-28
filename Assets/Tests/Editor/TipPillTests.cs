@@ -33,6 +33,12 @@ namespace FlockFive.Editor
             Check("radius-402", Mathf.Abs(TipPill.Radius(874f) - 18f) < 0.05f, TipPill.Radius(874f).ToString("0.00"));
             Check("gift-uses-floor-band", TipPill.BandFor("ad.hand") == TipPill.Band.Floor
                 && TipPill.BandFor("coach.line") == TipPill.Band.Floor, "");
+            Check("plate-alpha", Mathf.Abs(TipPill.PlateAlpha - CaptionStyles.BannerAlpha) < 0.001f
+                && TipPill.PlateAlpha < 1f, TipPill.PlateAlpha.ToString("0.00"));
+            Check("inset-phone", TipPill.Inset(360f, 780f) >= 20f - 0.01f
+                && TipPill.Inset(402f, 874f) >= 20f - 0.01f
+                && TipPill.Inset(412f, 915f) >= 20f - 0.01f, TipPill.Inset(360f, 780f).ToString("0.0"));
+            Check("inset-820", TipPill.Inset(664f, 1180f) >= 30f - 0.01f, TipPill.Inset(664f, 1180f).ToString("0.0"));
 
             var tips = new List<string>();
             var seen = new HashSet<string>();
@@ -44,7 +50,8 @@ namespace FlockFive.Editor
                 tips.Add(line);
             }
             if (seen.Add(CaptionLayout.YoursLine)) tips.Add(CaptionLayout.YoursLine);
-            if (seen.Add(FlockFiveApp.DailyAskCopy)) tips.Add(FlockFiveApp.DailyAskCopy);
+            // The streak question is dialog copy inside Yes please / Not now, not a pill.
+            Check("daily-ask-is-dialog", FlockFiveApp.DailyAskCopy.IndexOf("streak") >= 0, FlockFiveApp.DailyAskCopy);
             Check("tip-count", tips.Count >= 30, tips.Count.ToString());
 
             var style = FlockFiveApp.CoachCaptionStyle();
@@ -75,11 +82,16 @@ namespace FlockFive.Editor
                     var floor = TipPill.Place(fieldW, fieldH, safeBot, TipPill.Band.Floor);
                     var raised = TipPill.Place(fieldW, fieldH, safeBot, TipPill.Band.Raised);
                     var framed = FlockFiveApp.TipFrame(fieldW, fieldH, safe, "coach.line");
+                    float obstacle = TipPill.ObstacleTop(fieldW, fieldH, safe);
+                    float clear = obstacle - TipPill.ClearGap(fieldH);
                     bool raisedOk = Mathf.Abs((floor.yMax - raised.yMax) - classH) < 1.5f;
-                    bool frameOk = Mathf.Abs(framed.x - floor.x) < 0.5f && Mathf.Abs(framed.y - floor.y) < 0.5f
-                        && Mathf.Abs(framed.width - floor.width) < 0.5f && Mathf.Abs(framed.height - floor.height) < 0.5f;
-                    if (!raisedOk || !frameOk)
-                        bad.Append(winW).Append(s == 0 ? " floor" : " safe").Append(" raised/frame; ");
+                    bool frameSize = Mathf.Abs(framed.height - classH) < 0.5f
+                        && Mathf.Abs(framed.width - floor.width) < 0.5f;
+                    bool frameClears = framed.yMax <= clear + 1.5f && framed.yMax <= floor.yMax + 0.5f;
+                    if (!raisedOk || !frameSize || !frameClears)
+                        bad.Append(winW).Append(s == 0 ? " floor" : " safe")
+                            .Append(" raised/frame yMax=").Append(framed.yMax.ToString("0"))
+                            .Append(" clear=").Append(clear.ToString("0")).Append("; ");
                     for (int t = 0; t < tips.Count; t++)
                     {
                         string text = tips[t];
@@ -89,7 +101,8 @@ namespace FlockFive.Editor
                         int lines = TipPill.CountLines(shown);
                         bool height = Mathf.Abs(pill.height - classH) < 0.5f;
                         bool round = rad > 0.5f;
-                        bool inset = pill.xMin >= 8f && pill.xMax <= fieldW - 8f;
+                        float minSide = TipPill.MinInset(fieldW);
+                        bool inset = pill.xMin >= minSide - 0.6f && pill.xMax <= fieldW - minSide + 0.6f;
                         float wantBottom = fieldH - safeBot - gap;
                         bool band = Mathf.Abs(pill.yMax - wantBottom) < 1.5f;
                         bool cap = classCap == TipPill.Cap(fieldH);
@@ -109,6 +122,11 @@ namespace FlockFive.Editor
                 }
             }
             Check("every-tip", bad.Length == 0, bad.ToString());
+            var plate = TipPill.Place(664f, 1180f, 34f, TipPill.Band.Floor);
+            var words = new Rect(plate.x + 36f, plate.y + 24f, plate.width - 72f, plate.height - 48f);
+            var slot = TapWaitGlove.CueSlot(words, plate, default, 664f, 1180f);
+            bool stray = slot.width > 2f && slot.yMin >= words.yMax - 1f && slot.center.x > words.center.x;
+            Check("glove-not-bottom-right", !stray && (slot.width < 2f || !slot.Overlaps(words)), slot.ToString());
             if (fail > 0) throw new System.Exception("tip-pill " + fail);
         }
     }

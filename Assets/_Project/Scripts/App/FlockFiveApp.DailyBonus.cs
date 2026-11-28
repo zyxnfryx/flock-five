@@ -2363,10 +2363,12 @@ namespace FlockFive
             EnsureAskFit(s, body, yesR);
             DrawAskButton(yesR, DailyAskYes, _dailyAskYesPx, true, yesHeld);
             DrawAskButton(noR, DailyAskNo, _dailyAskNoPx, false, noHeld);
+            // The question is dialog copy, inside the card, not a garden tip.
+            _dailyAsk.fontSize = _dailyAskBodyPx > 0 ? _dailyAskBodyPx : Mathf.Max(14, Mathf.RoundToInt(18f * s));
+            int qInk = Mathf.Max(1, Mathf.RoundToInt(_dailyAsk.fontSize * 0.08f));
+            StampOutlined(body, DailyAskCopy, _dailyAsk, new Color(1f, 0.96f, 0.86f), 1, qInk);
             GUI.matrix = prev;
             GUI.color = Color.white;
-            // Outside the card's open-tween scale, so the pill stays on the band.
-            DrawTipFamily(DailyAskCopy, 1f, "daily.ask");
 
             if (yes) CloseDailyAsk(true);
             else if (no) TakeDailyAskNotNow(noHit, noHit.center);

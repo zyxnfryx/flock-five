@@ -184,7 +184,7 @@ namespace FlockFive
         // Set on the first Deal. The bet sentence never returns after that.
         const string CoachPokerDealtKey = "flockfive.coach.pokerdealt";
         const string CoachPokerBackKey = "flockfive.coach.pokerback";
-        const string PokerBetLine = "Pick your bet, then tap Deal.";
+        const string PokerBetLine = "Pick a bet.\nTap Deal.";
         const string PokerHoldLine = "Tap a card to hold it, then tap Draw.";
         const string PokerBackLine = "Tap the back button to return home.";
         int _pokerPageStep;
@@ -8906,7 +8906,7 @@ namespace FlockFive
             // Item 8: the warm cover eats taps until the home is shown.
             if (WarmCoverUp && Event.current != null && (Event.current.isMouse || Event.current.type == EventType.TouchDown))
                 Event.current.Use();
-            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); FinishTapLog(); return; }
+            if (!StartupTrace.Open) { OnGUIBody(); DrawRewardChoiceTop(); DrawWarmCover(); PaintPressRainbow(); DrawTipFadeOut(); FinishTapLog(); return; }
             var ev = Event.current != null ? Event.current.type : EventType.Ignore;
             var sp = StartupTrace.Begin(ev == EventType.Repaint ? "GUI.Repaint" : ev == EventType.Layout ? "GUI.Layout" : "GUI.Input");
             try { OnGUIBody(); }
@@ -8914,6 +8914,7 @@ namespace FlockFive
             DrawRewardChoiceTop();
             DrawWarmCover();
             PaintPressRainbow();
+            DrawTipFadeOut();
             FinishTapLog();
             if (ev == EventType.Repaint) _guiEndTick = System.Diagnostics.Stopwatch.GetTimestamp();
         }
@@ -16181,7 +16182,7 @@ namespace FlockFive
                 return true;
             }
             float s = DeviceFit.Ui();
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             LessonLine(PokerBetLine);
             // Live DEAL rect every frame. A cached aim was landing on card 4
             // after the first poke cycle.
@@ -16189,7 +16190,8 @@ namespace FlockFive
             _pokerTutorAim = CoachTapSeat(deal, CoachTapLabel(deal), PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             _pokerTutorTap = deal;
             _pokerTutorAimOk = true;
-            CoachTapAt(deal, CoachTapLabel(deal), dt, null);
+            var offPill = _tutorPlateOn && _tutorPlate.width > 2f ? _tutorPlate : default;
+            CoachTapAt(deal, offPill.width > 2f ? offPill : CoachTapLabel(deal), dt, null);
             bool parked = Vector2.Distance(_gloveTip, _gloveRest) > 32f * s;
             if (parked) _pokerPageAge = 0f;
             else _pokerPageAge += dt;
@@ -16385,17 +16387,19 @@ namespace FlockFive
             return y;
         }
 
-        // Standard caption for a poker page step; the anchor and pin come from PokerStepAnchor.
-        void DrawPokerStandardLine(string line, float s)
+        // Standard caption for a poker page step. clearTop is the top of the
+        // bet and deal controls (GUI y, down). The bet and hold lines sit above it.
+        void DrawPokerStandardLine(string line, float s, float clearTop = -1f)
         {
             if (CoachResetHolds()) return;
             var r = PokerCaptionSeat(line, s, out bool topAlign);
             StandardCaptionBox(s, out _, out _, out int lo, out int hi);
             if (GuiPaint())
-                _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / TipPill.FadeIn);
             bool pin = PokerStepPinned(PokerStepAnchor(line));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
-            CapSpot(line == PokerBackLine ? "poker.back" : "poker.table"); PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign);
+            CapSpot(line == PokerBackLine ? "poker.back" : "poker.table");
+            PaintCoachCaption(line, seat, s, lo, hi, default, false, StandardCaptionSlack, topAlign, clearTop);
         }
 
         // Above the cards: from ceilingY down to the top of the card reach (held cards and the
@@ -16425,7 +16429,13 @@ namespace FlockFive
                 && PlayerPrefs.GetInt(CoachPokerDealtKey, 0) == 0)
                 line = PokerBetLine;
             if (line != null)
-                DrawPokerStandardLine(line, s);   // seat from PokerStepAnchor
+            {
+                // Bet and hold sit above the − / + / DEAL / DRAW row. The glove
+                // points at that row from outside the pill.
+                float clear = (line == PokerBetLine || line == PokerHoldLine)
+                    ? Mathf.Min(betR.y, actR.y) - TipPill.GloveClear(PhoneArea.H) : -1f;
+                DrawPokerStandardLine(line, s, clear);
+            }
             DrawTutorOverlay(s);
         }
 
@@ -16443,12 +16453,13 @@ namespace FlockFive
                 return true;
             }
             float handS = DeviceFit.Ui();
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             LessonLine(PokerBetLine);
             var dealNow = PokerDealButtonRect();
             _pokerDealAim = CoachTapSeat(dealNow, CoachTapLabel(dealNow), PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             _pokerDealTap = dealNow;
-            CoachTapAt(dealNow, CoachTapLabel(dealNow), dt, null);
+            var offPill = _tutorPlateOn && _tutorPlate.width > 2f ? _tutorPlate : default;
+            CoachTapAt(dealNow, offPill.width > 2f ? offPill : CoachTapLabel(dealNow), dt, null);
             return true;
         }
 
@@ -16464,7 +16475,7 @@ namespace FlockFive
             _pokerDealAim = DealPlatformAim(actR);
             _pokerDealTap = actR;
             _pokerDealAimOk = disc.width > 2f;
-            DrawPokerStandardLine(PokerBetLine, s);
+            DrawPokerStandardLine(PokerBetLine, s, Mathf.Min(betR.y, actR.y) - TipPill.GloveClear(PhoneArea.H));
             DrawTutorOverlay(s);
         }
 
@@ -16490,7 +16501,7 @@ namespace FlockFive
         public static bool PokerLessonHolds(bool splash, bool onPoker, bool backDone, bool backGateLive, bool broke, bool lessonActive = true)
             => splash && onPoker && !backDone && !backGateLive && !broke && lessonActive;
 
-        // 'Pick your bet, then tap Deal.' The hand has not started, so Back may leave.
+        // 'Pick a bet. / Tap Deal.' The hand has not started, so Back may leave.
         public static bool PokerBetCoachOpen(bool coachUp, bool idle, bool motionClear)
             => coachUp && idle && motionClear;
 
@@ -16578,7 +16589,7 @@ namespace FlockFive
                 return true;
             }
             float handS = DeviceFit.Ui();
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             LessonLine(PokerBackLine);
             // Short rise from just under the medal. The hop ends on the medal and stays
             // there, so the settled fingertip is inside the Back hit. Only that rect counts.
@@ -20079,6 +20090,9 @@ namespace FlockFive
             return -slack;
         }
 
+        // Collection page title (hive mark, "Collection", and the two how-to
+        // lines). Not a coach tip: Build119 locks the three sentences, and the
+        // plate is the header, not a TipPill.
         float DrawAlbumHeader(float s, Rect back)
         {
             int floor = Mathf.Max(16, Mathf.RoundToInt(17f * s));
@@ -20592,7 +20606,7 @@ namespace FlockFive
             }
             if (dt < 0f) dt = 0f;
             CueLine(AlbumTutorLine());
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
             float handS = DeviceFit.Ui();
             CoachGloveAt(aim, dt, handS, float.NaN, false, approach, tap);
             return true;
@@ -20631,15 +20645,16 @@ namespace FlockFive
             }
             if (dt < 0f) dt = 0f;
             CueLine(AlbumUpgradeLine);
-            _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
-            // From the left, so the palm stays off the word. The tip lands in the
-            // padding beside "Upgrade", and the shared arc loops in from off the button.
-            _gloveKeepOff = _tutorPlateOn && _tutorPlate.width > 2f ? _tutorPlate : default;
+            _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
+            // The pill sits above Upgrade. The hand perches below that button,
+            // so the fingertip meets it from outside the words.
             var aim = UpgradeGloveSettle(_upgradeBtnR);
+            _gloveKeepOff = _tutorPlateOn && _tutorPlate.width > 2f && _tutorPlate.Contains(aim)
+                ? _tutorPlate : default;
             _upgradeTutorAim = aim;
             _upgradeTutorAimOk = true;
             float handS = DeviceFit.Ui();
-            CoachGloveAt(aim, dt, handS, float.NaN, true, float.NaN, _upgradeBtnR);
+            CoachGloveAt(aim, dt, handS, -GloveDh(handS) * 0.85f, true, float.NaN, _upgradeBtnR);
             return true;
         }
 
@@ -20727,7 +20742,11 @@ namespace FlockFive
                 float limit = PhoneArea.H - Mathf.Max(34f, PhoneArea.Safe.yMin) - 8f;
                 seat.y = below + h <= limit ? below : Mathf.Max(8f, card.yMin - gap - h);
             }
-            CapSpot("album.coach"); PaintCoachCaption(line, seat, s, 12, Mathf.RoundToInt(28f * s), default, false, StandardCaptionSlack);
+            // Upgrade sits above the FREE button. Other album lines keep the garden band.
+            float clear = step < 0 && _upgradeBtnR.width > 8f
+                ? _upgradeBtnR.y - TipPill.GloveClear(PhoneArea.H) : -1f;
+            CapSpot("album.coach");
+            PaintCoachCaption(line, seat, s, 12, Mathf.RoundToInt(28f * s), default, false, StandardCaptionSlack, false, clear);
         }
 
         void DrawHivePage()
@@ -21207,6 +21226,8 @@ namespace FlockFive
             DrawGloveAt(pivot, ang, GloveSize(s), fade, dip, mirror);
         }
 
+        // Open-card footer. A different box and a larger type than a coach tip,
+        // so it is not a TipPill. "Tap outside to put back" lives here.
         Rect FlipHintRect(float y, float s)
         {
             const string wider = "Tap outside to put back";
@@ -23483,7 +23504,7 @@ namespace FlockFive
                 if (!(AdRetry.Active && !AdRetry.Skipped))
                 {
                     if (GuiPaint())
-                        _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
+                        _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / TipPill.FadeIn);
                     var tipM = GUI.matrix;
                     GUI.matrix = PhoneArea.GuiBase;
                     DrawTipFamily(AdHandLine, EaseOutCubic(_coachFade), "ad.hand");

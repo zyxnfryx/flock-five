@@ -541,6 +541,13 @@ namespace FlockFive
         int _coachMoves;
         int _coachFrom = -1, _coachTo = -1;
         float _coachFade;
+        int _tipFrame = -1;
+        string _tipLast;
+        float _tipLastFade;
+        string _tipLastSpot;
+        float _tipLastClear;
+        float _tipOut;
+        bool _tipTail;
         float _coachGiftUntil = -1f;
         // Board-reset vs tutorial. See CoachResetGuard.
         CoachResetGuard _coachReset;
@@ -1555,7 +1562,7 @@ namespace FlockFive
                 return;
             }
 
-            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.35f);
+            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / TipPill.FadeIn);
             if (_sel < 0)
             {
                 if (!CoachPick(out _coachFrom, out _coachTo))
@@ -1761,8 +1768,11 @@ namespace FlockFive
             }
             _cueLine = text;
             if (_cueSpoken == text) return;
+            // A live plate swaps the words in place. Zeroing the fade here was a
+            // one-frame cut, visible on the 820 step-1 to step-2 hand-off.
+            bool swap = _coachFade > 0.2f && !string.IsNullOrEmpty(_cueSpoken);
             _cueSpoken = text;
-            _coachFade = 0f;
+            if (!swap) _coachFade = 0f;
             _coachLineHeld = false;
             _tutorSeatOn = false;
         }
@@ -2296,7 +2306,7 @@ namespace FlockFive
                 CoachHideRipples();
                 float handS = DeviceFit.Ui();
                 _cueLine = AdHandLine;
-                _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
                 GiftCardLayout(handS, out _, out var watchFlower);
                 var watchDisc = FlowerDisc(watchFlower, 0f);
                 var watchFace = watchDisc.width > 2f ? watchDisc : watchFlower;
@@ -2344,7 +2354,7 @@ namespace FlockFive
                 // hit rect (the same SplashPokerRect the tap tests).
                 var box = SplashPokerRect();
                 LessonLine(PokerIntroLine);
-                _coachFade = Mathf.Min(1f, _coachFade + dt / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + dt / TipPill.FadeIn);
                 if (!RailGloveSettled(RailPoker, box)) return;
                 // Note the painted banner, not the snug text box. The glove locks to this
                 // plate, and the coins line is the full-width band under the path.
@@ -3613,7 +3623,12 @@ namespace FlockFive
             bool mirror = !fromRight;
             float ang = ClampUpright(mirror);
             float floor = SideGap(s);
-            if (_gloveKeepOff.width > 8f)
+            // Keep-off is only while the fingertip is inside the plate. A target
+            // below the pill (Deal, Upgrade) is already outside the words, so a
+            // sideways shove would park the glove on the copy.
+            bool aimInPlate = _gloveKeepOff.width > 8f
+                && aim.y >= _gloveKeepOff.yMin && aim.y <= _gloveKeepOff.yMax;
+            if (aimInPlate)
             {
                 float outside = away.x > 0f
                     ? _gloveKeepOff.xMax - aim.x
@@ -5687,7 +5702,7 @@ namespace FlockFive
             return HomeBannerTop(screenH, safe, s);
         }
 
-        void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false, float slack = 1f, bool topAlign = false)
+        void PaintCoachCaption(string text, Rect r, float s, int lo, int hi, Vector2 platePad = default, bool opaque = false, float slack = 1f, bool topAlign = false, float clearTop = -1f)
         {
             // Shared caption paint. Every lesson draws through here, so a reset
             // cuts the plate before a stale rect or a leftover alpha can flash.
@@ -5727,22 +5742,39 @@ namespace FlockFive
             // The old seat still runs the banner/snug gate (glove, counters). The
             // pixels are the shared pill: one height, one radius, one band.
             CaptionBannerFits(text, drawR, s, out _, out _);
-            DrawTipFamily(text, fade, tipSpot);
+            DrawTipFamily(text, fade, tipSpot, clearTop);
         }
 
-        // The plate every coach line paints. Field size picks the class. spot
-        // picks Floor or the raised band (TipPill.BandFor).
+        // The plate every coach line paints. The garden band lifts off the
+        // bottom branches and the hive. spot still selects Floor or Raised
+        // for a tip that passes no control top of its own.
         public static Rect TipFrame(float fieldW, float fieldH, Rect safe, string spot)
         {
-            return TipPill.Place(fieldW, fieldH, TipPill.SafeBottom(fieldH, safe), TipPill.BandFor(spot));
+            float bot = TipPill.SafeBottom(fieldH, safe);
+            if (TipPill.BandFor(spot) == TipPill.Band.Raised)
+                return TipPill.Place(fieldW, fieldH, bot, TipPill.Band.Raised);
+            return TipPill.PlaceGarden(fieldW, fieldH, bot, safe);
         }
 
-        void DrawTipFamily(string text, float fade, string spot)
+        void DrawTipFamily(string text, float fade, string spot, float clearTop = -1f)
         {
             if (string.IsNullOrEmpty(text)) return;
             float fieldW = PhoneArea.W > 2f ? PhoneArea.W : 402f;
             float fieldH = PhoneArea.H > 2f ? PhoneArea.H : 874f;
-            var pill = TipPill.Snap(TipFrame(fieldW, fieldH, PhoneArea.Safe, spot));
+            var safe = PhoneArea.Safe;
+            var floor = TipPill.Place(fieldW, fieldH, TipPill.SafeBottom(fieldH, safe), TipPill.Band.Floor);
+            var pill = clearTop > 1f
+                ? TipPill.Above(floor, clearTop, fieldH)
+                : TipPill.Snap(TipFrame(fieldW, fieldH, safe, spot));
+            if (!_tipTail)
+            {
+                _tipFrame = Time.frameCount;
+                _tipLast = text;
+                _tipLastFade = fade;
+                _tipLastSpot = spot;
+                _tipLastClear = clearTop;
+                _tipOut = 0f;
+            }
             int cap = TipPill.Cap(fieldH);
             float rad = TipPill.Radius(fieldH);
             float limit = Mathf.Min(pill.width, pill.height) * 0.5f - 1f;
@@ -5751,7 +5783,7 @@ namespace FlockFive
             _bannerLast = pill;
             _bannerLastFrame = Time.frameCount;
             BannerLast = pill + " fade " + fade + " px " + cap;
-            float ink = CaptionStyles.Ink(spot);
+            float ink = TipPill.PlateAlpha;
             DrawSolidRound(pill, rad, 0, ink * fade);
             var st = CoachLineStyle();
             int keepSize = st.fontSize;
@@ -5785,6 +5817,25 @@ namespace FlockFive
                 st.alignment = keepAlign;
                 st.fontStyle = keepStyle;
             }
+        }
+
+        // The plate that just left fades out instead of vanishing for one frame.
+        // A tip painted this frame owns the seat, so the tail stays down.
+        void DrawTipFadeOut()
+        {
+            if (_tipTail) return;
+            if (Event.current == null || Event.current.type != EventType.Repaint) return;
+            if (_tipFrame == Time.frameCount) return;
+            if (string.IsNullOrEmpty(_tipLast) || _tipLastFade < 0.04f) return;
+            _tipOut += TipPill.FadeOut > 0f ? Time.unscaledDeltaTime / TipPill.FadeOut : 1f;
+            if (_tipOut >= 1f)
+            {
+                _tipLast = null;
+                return;
+            }
+            _tipTail = true;
+            try { DrawTipFamily(_tipLast, _tipLastFade * (1f - _tipOut), _tipLastSpot, _tipLastClear); }
+            finally { _tipTail = false; }
         }
 
         // b89: the glove paints after the caption. Full-width banners at a fixed
@@ -7137,7 +7188,7 @@ namespace FlockFive
             }
             _hiveIntroLive = true;
             _hiveIntroSaw = true;
-            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / TipPill.FadeIn);
         }
 
         void MarkHiveCoach()
@@ -7255,7 +7306,7 @@ namespace FlockFive
             {
                 _cueHand = true;
                 CueLine(HiveIntroLine);
-                _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / TipPill.FadeIn);
                 return;
             }
             if (HoldLiveLesson()) return;
@@ -8227,7 +8278,7 @@ namespace FlockFive
         {
             if (CoachResetHolds()) return;
             if (GuiPaint())
-                _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / 0.30f);
+                _coachFade = Mathf.Min(1f, _coachFade + AdPause.UnscaledDelta / TipPill.FadeIn);
             int hi = fontHi > 0 ? fontHi : Mathf.Max(18, Mathf.RoundToInt(34f * s));
             var seat = pin ? r : SeatTutorialCaption(line, s, r.y, r.width, r.height, r.y, r.x);
             if (_capSpot == null) CapSpot("home.intro");
@@ -8417,7 +8468,7 @@ namespace FlockFive
             }
             _pokerIntroLive = true;
             _pokerIntroSaw = true;
-            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / TipPill.FadeIn);
         }
 
         void MarkPokerCoach()
@@ -8890,7 +8941,7 @@ namespace FlockFive
             }
             _dailyIntroLive = true;
             _dailyIntroSaw = true;
-            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
+            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / TipPill.FadeIn);
         }
 
         void MarkDailyCoach()
@@ -9203,7 +9254,7 @@ namespace FlockFive
             _cueGift = false;
             _cueBranch = b;
             CueLine(LeafIntroLine);
-            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.35f);
+            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / TipPill.FadeIn);
         }
 
         void HideLeafGlove()
@@ -9510,14 +9561,9 @@ namespace FlockFive
             else if (_pestCue == PestCueOstrich) pestLine = OstrichIntroLine;
             else if (_pestCue == PestCueFire) pestLine = FireIntroLine;
             CueLine(pestLine);
-            // Bee: text and the dark wash on this same call. CueLine starts a fade at 0,
-            // and PlayClock barely moves on a hitchy frame, so the type read as bare
-            // dark text for seconds before the wash. BeePlateSeconds is stamped above
-            // in this same BeginPestCue, before the first paint. Lightning keeps the fade.
-            if (_pestCue == PestCueBee)
-                _coachFade = 1f;
-            else
-                _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / 0.30f);
+            // Plate and type share one fade. Bee used to snap to full so a hitch
+            // could not show bare type before the wash. The pill paints both together.
+            _coachFade = Mathf.Min(1f, _coachFade + PlayClock.Delta / TipPill.FadeIn);
         }
 
         void DismissPestIntro()

@@ -801,8 +801,10 @@ namespace FlockFive
             PlayerPrefs.SetInt(CoachHawkKey, 1);
             PlayerPrefs.SetInt(CoachOstrichKey, 1);
             // keepTips=1 leaves the rule plates owed, including a stamp left by an
-            // earlier skip in this browser profile. Leaf and the other coach keys
-            // above stay seen so their plates do not cover FeederLine.
+            // earlier skip in this browser profile. The home coaches (daily,
+            // album, poker intro, stuck gift, bee, adopt) are restored after
+            // the cascade stamp below. forceFeeder separately restores the
+            // leaf, sparrow, hawk, and ostrich lessons.
             if (plan.KeepTips)
             {
                 PlayerPrefs.DeleteKey(RuleTips.KitKey);
@@ -830,7 +832,32 @@ namespace FlockFive
                 PlayerPrefs.SetInt(LightningStrike.StruckKey, 1);
             }
             if (plan.SkipOnboarding) StampDevOnboardingSeen();
-            if (plan.ForceFeeder) PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+            if (plan.KeepTips)
+            {
+                // After the cascade stamp. Daily (and its claim), album, hive,
+                // the poker intro, the stuck gift, the bee lesson, and adopt
+                // stay owed so those coaches can still appear.
+                PlayerPrefs.DeleteKey(CoachDailyKey);
+                PlayerPrefs.DeleteKey(CoachPokerKey);
+                PlayerPrefs.DeleteKey(CoachPokerPageKey);
+                PlayerPrefs.DeleteKey(CoachHiveKey);
+                PlayerPrefs.DeleteKey(CoachHiveGardenKey);
+                PlayerPrefs.DeleteKey(CoachHiveAlbumKey);
+                PlayerPrefs.DeleteKey(CoachHiveUpgradeKey);
+                PlayerPrefs.DeleteKey(CoachGiftKey);
+                PlayerPrefs.DeleteKey(CoachBeeKey);
+                PlayerPrefs.DeleteKey(AvatarAdoptedPref);
+                PlayerPrefs.DeleteKey(AvatarNamedPref);
+            }
+            if (plan.ForceFeeder)
+            {
+                PlayerPrefs.DeleteKey(RuleTips.FeederKey);
+                // The real leaf, sparrow, hawk, and ostrich lessons stay owed.
+                PlayerPrefs.DeleteKey(CoachLeafKey);
+                PlayerPrefs.DeleteKey(CoachSparrowKey);
+                PlayerPrefs.DeleteKey(CoachHawkKey);
+                PlayerPrefs.DeleteKey(CoachOstrichKey);
+            }
             if (plan.ForceNap) PlayerPrefs.DeleteKey(RuleTips.SleepKey);
             PlayerPrefs.Save();
             AdConsent.DismissTransient();
@@ -842,6 +869,7 @@ namespace FlockFive
                     + " openPoker=" + (plan.OpenPoker ? 1 : 0)
                     + " forceClear=" + (plan.ForceClear ? 1 : 0)
                     + " forceRewards=" + (plan.ForceRewards ? 1 : 0));
+            DevLevelSkip.PastBadgerArmed = plan.PastBadger;
             if (plan.OpenPoker)
             {
                 DevOpenPokerTable();
@@ -862,6 +890,11 @@ namespace FlockFive
             if (napBranch >= 0)
                 StartCoroutine(DevRaiseForcedNap(napBranch));
             if (plan.ForceFeeder) DevForceFeederPlate();
+            if (plan.ForceRestart)
+            {
+                _restartAsk = RestartAsk.Sure;
+                Debug.Log("FF_DEV_FORCE restart=1");
+            }
             if (plan.ForceClear)
             {
                 _devForceRewards = plan.ForceRewards;
@@ -962,7 +995,13 @@ namespace FlockFive
                 SyncAll();
             }
             ShowRuleTip(RuleTip.Feeder);
-            Debug.Log("FF_DEV_FORCE feeder=1 tip=" + (_ruleTip == RuleTip.Feeder ? 1 : 0));
+            ArmLeafIntro();
+            if (SparrowDue()) BeginPestCue(PestCueSparrow);
+            else if (HawkDue()) BeginPestCue(PestCueHawk);
+            else if (OstrichDue()) BeginPestCue(PestCueOstrich);
+            Debug.Log("FF_DEV_FORCE feeder=1 tip=" + (_ruleTip == RuleTip.Feeder ? 1 : 0)
+                + " leaf=" + (_leafIntro ? 1 : 0)
+                + " pest=" + _pestCue);
         }
 
         // Home shell, one dealt-and-drawn hand, Back still owed. The page and
