@@ -16,11 +16,10 @@ namespace FlockFive
         public const int CollarOrder = -1;
         public const int HeadOrder = 10;
         public const int NeckParts = 8;
-        // b115: at rest the head peeks out from BEHIND its feeder, beside the glass. The feeder
-        // it peeks from is drawn one step above the head (FeederView.FrontOrder), so the ring and
-        // glass occlude the neck; other feeders stay under the head. The head is offset toward the
-        // way it faces so the face clears the glass instead of poking out of the bowl.
-        public const float PeekX = 0.85f;
+        // At rest the head blocks the feeder it stands under: centered on that feeder's
+        // wooden disk, in front of the glass, so it is in the way. Other feeders stay clear.
+        // The idle rock, bob and peck are added on top of that anchor.
+        public const float PeekX = 1.42f;
         public const float PeekY = 0.28f;
         public const float BeakReach = 1.45f * GrowFactor;
         public const float PeekSlotTol = 0.3f;
@@ -706,8 +705,12 @@ namespace FlockFive
             if (_blend < 1f && !_snap) sample = Mix(_from, sample, Ease(_blend));
             _cur = sample;
             bool flee = _act == OstrichAct.Flee;
-            float headX = aimX + PortX;
-            float headY = aimY + PortY + sample.Bob * 0.35f;
+            // Anchor is the unmoved aim. Bob, wind and the peck are added on top, so a
+            // clearance offset must not be solved from the already-moved head or it cancels them.
+            float anchorX = aimX + PortX;
+            float anchorY = aimY + PortY;
+            float headX = anchorX;
+            float headY = anchorY + sample.Bob * 0.35f;
             headY += sample.Wind * 0.18f - sample.Strike * 0.12f;
             float sway = 0f;
             if (_act == OstrichAct.Strut) sway = Mathf.Sin(sample.Step * Mathf.PI * 2f) * 0.28f * SwayScale;
@@ -772,12 +775,23 @@ namespace FlockFive
             PoseLeg(_legFront, _legFrontSr, OstrichPaint.FrontHip, brace - stride * swing, side);
 
             // b115: peek out from behind the feeder (not while fleeing or between feeders).
-            int slot = flee || Entering ? -1 : PeekSlot(aimX, Feeders);
+            int peekSlot = flee || Entering ? -1 : PeekSlot(aimX, Feeders);
+            int slot = peekSlot;
             float peekGoal = slot >= 0 ? 1f : 0f;
             if (_snap || _dt <= 0f) _peek = peekGoal;
             else _peek = Mathf.MoveTowards(_peek, peekGoal, _dt / 0.12f);
-            headX += PeekShift(face, headX, half, _peek);
-            headY += PeekY * _peek;
+            if (peekSlot >= 0)
+            {
+                float feederX = FeederRow.X(peekSlot, Feeders);
+                BlockOnDisk(anchorX, anchorY, feederX, WorldBuilder.FeederY, face, _peek, out float pdx, out float pdy);
+                headX += pdx;
+                headY += pdy;
+            }
+            else
+            {
+                headX += PeekShift(face, headX, half, _peek);
+                headY += PeekY * _peek;
+            }
             var headPos = new Vector3(headX, headY, 0f);
             var restPos = headPos;
             Head.sprite = OstrichPaint.Head(_act, _frame);
@@ -797,8 +811,7 @@ namespace FlockFive
                 headPos = OstrichStrike.HeadAt(restPos, _strikeTarget, _strikeT);
                 _headLag = headPos;
             }
-            // The feeder rises over the head only once the head has settled beside it, so the
-            // order flip never happens while the face overlaps the glass.
+            // Remember which feeder he blocks. Its art stays behind the head.
             LiftFeeder(slot >= 0 && _peek >= 0.95f ? slot : -1);
             if (_strikeOn)
                 FlockSort.Apply(Head, _liftSlot >= 0
@@ -850,7 +863,49 @@ namespace FlockFive
             return dir * dx * weight * Mathf.Min(1f, Mathf.Abs(face) * 2f);
         }
 
-        // Head order while peeking. Behind the lifted feeder's order, so ring and glass cover it.
+        // Wooden ring under the bulb, below the feeder pivot (the sprite center).
+        public const float DiskDrop = 1.195f;
+        public static Vector2 DiskCenter(Vector2 feeder) => new Vector2(feeder.x, feeder.y - DiskDrop);
+
+        // Head art around its pivot, in world units at RigScale. Rear is the short side
+        // (back of the skull); beak is the long side.
+        public static void HeadReach(out float rear, out float beak, out float down, out float up)
+        {
+            float w = OstrichPaint.HeadSheetW / OstrichPaint.HeadPpu * RigScale;
+            float h = OstrichPaint.HeadSheetH / OstrichPaint.HeadPpu * RigScale;
+            float px = OstrichPaint.HeadPivot.x;
+            float py = OstrichPaint.HeadPivot.y;
+            rear = px * w;
+            beak = (1f - px) * w;
+            down = py * h;
+            up = (1f - py) * h;
+        }
+
+        // Bounds-center of the head sprite relative to its pivot. Facing left mirrors x.
+        public static void HeadCenterOffset(float face, out float x, out float y)
+        {
+            HeadReach(out float rear, out float beak, out float down, out float up);
+            float along = (beak - rear) * 0.5f;
+            x = face < 0f ? -along : along;
+            y = (up - down) * 0.5f;
+        }
+
+        // Offset from the unmoved anchor so the head's center sits on this feeder's disk.
+        // Bob, wind and the peck are added by the caller and are not cancelled here.
+        public static void BlockOnDisk(float anchorX, float anchorY, float feederX, float feederY, float face, float weight, out float dx, out float dy)
+        {
+            dx = 0f;
+            dy = 0f;
+            if (weight <= 0f) return;
+            HeadCenterOffset(face, out float cx, out float cy);
+            float pivotX = feederX - cx;
+            float pivotY = feederY - DiskDrop - cy;
+            float fade = weight * Mathf.Min(1f, Mathf.Abs(face) * 2f);
+            dx = (pivotX - anchorX) * fade;
+            dy = (pivotY - anchorY) * weight;
+        }
+
+        // Head order while peeking. In front of the feeder it blocks, over the flock once a strike drops.
         public static int RestHeadOrder(bool striking, float dropBelowPeek)
         {
             return striking && dropBelowPeek > PeekDrop ? OstrichStrike.HeadOrder : HeadOrder;
@@ -861,7 +916,7 @@ namespace FlockFive
             _liftSlot = slot;
             if (FeederArt == null) return;
             for (int i = 0; i < FeederArt.Length; i++)
-                if (FeederArt[i] != null) FeederArt[i].SetFront(i == slot);
+                if (FeederArt[i] != null) FeederArt[i].SetFront(false);
         }
 
         // Where the neck root sits for a head at headX facing face, kept on screen.

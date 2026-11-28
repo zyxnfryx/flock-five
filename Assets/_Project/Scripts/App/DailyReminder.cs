@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using UnityEngine;
 #if UNITY_IOS && !UNITY_EDITOR
 using Unity.Notifications.iOS;
@@ -22,7 +23,10 @@ namespace FlockFive
     {
         const string PrefAsked = "flockfive.daily.asked";
         const string PrefYes = "flockfive.daily.askYes";
-        const string PrefAsks = "flockfive.daily.askN";
+        const string PrefClaimed = "flockfive.daily.claimedEver";
+        const string PrefAskedAt = "flockfive.daily.askedAt";
+        // At most one in-game ask per week, measured from the last Yes or No.
+        public const long AskCooldownSec = 7L * 24L * 60L * 60L;
         // Build 52: "yes" on the in-game card no longer opens the OS dialog right away. It only
         // records that the dialog is owed. The game asks for it (RequestOsNow) once the
         // reward audio and animation are done, so the Apple/Android sheet cannot cut off the
@@ -38,6 +42,8 @@ namespace FlockFive
         static bool _armRisk;
         static bool _armClaimed;
         static long _armLast;
+        // Edit-mode clock (unix seconds). 0 uses UTC now. Cleared on domain reload.
+        public static long TestClock;
 
 #if UNITY_IOS && !UNITY_EDITOR
         static AuthorizationRequest _iosAuth;
@@ -53,6 +59,7 @@ namespace FlockFive
             _armRisk = false;
             _armClaimed = false;
             _armLast = 0;
+            TestClock = 0;
 #if UNITY_IOS && !UNITY_EDITOR
             if (_iosAuth != null)
             {
@@ -151,23 +158,39 @@ namespace FlockFive
 #endif
         }
 
-        // In-game "want a reminder?" card. Two answers total. Yes is the only
-        // path that constructs an authorization request. Not now spends one ask.
+        // In-game "want a reminder?" card. It is due only after at least one daily
+        // claim, and at most once a week since the last answer. Yes is the only
+        // path that constructs an authorization request. One No starts the week.
         public static bool PromptDue()
         {
             if (OsGranted()) return false;
             if (PlayerPrefs.GetInt(PrefYes, 0) != 0) return false;
             if (PlayerPrefs.GetInt(PrefAsked, 0) != 0) return false;
-            return PlayerPrefs.GetInt(PrefAsks, 0) < 2;
+            if (!ClaimedEver()) return false;
+            long asked = ReadUnix(PrefAskedAt);
+            if (asked <= 0) return true;
+            return NowUnix() - asked >= AskCooldownSec;
+        }
+
+        // A daily bonus was claimed. The card stays hidden until this is true.
+        public static void NoteClaimed()
+        {
+            if (PlayerPrefs.GetInt(PrefClaimed, 0) != 0) return;
+            PlayerPrefs.SetInt(PrefClaimed, 1);
+            PlayerPrefs.Save();
+        }
+
+        public static bool ClaimedEver()
+        {
+            return PlayerPrefs.GetInt(PrefClaimed, 0) != 0;
         }
 
         public static void Accept()
         {
-            if (PlayerPrefs.GetInt(PrefAsks, 0) < 2)
-                PlayerPrefs.SetInt(PrefAsks, PlayerPrefs.GetInt(PrefAsks, 0) + 1);
             PlayerPrefs.SetInt(PrefYes, 1);
             PlayerPrefs.SetInt(PrefAsked, 1);
             PlayerPrefs.SetInt(PrefOsOwed, 1);
+            WriteUnix(PrefAskedAt, NowUnix());
             PlayerPrefs.Save();
         }
 
@@ -199,11 +222,30 @@ namespace FlockFive
             // Foreground: nothing may be pending. The schedule is written on background.
         }
 
+        // One No. The card closes and the next ask waits a full week.
         public static void Decline()
         {
-            int n = PlayerPrefs.GetInt(PrefAsks, 0);
-            if (n < 2) PlayerPrefs.SetInt(PrefAsks, n + 1);
+            WriteUnix(PrefAskedAt, NowUnix());
             PlayerPrefs.Save();
+        }
+
+        static long NowUnix()
+        {
+            if (TestClock > 0) return TestClock;
+            return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        }
+
+        static long ReadUnix(string key)
+        {
+            string raw = PlayerPrefs.GetString(key, "");
+            if (string.IsNullOrEmpty(raw)) return 0;
+            long unix;
+            return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out unix) ? unix : 0;
+        }
+
+        static void WriteUnix(string key, long unix)
+        {
+            PlayerPrefs.SetString(key, unix.ToString(CultureInfo.InvariantCulture));
         }
 
         static bool OsGranted()

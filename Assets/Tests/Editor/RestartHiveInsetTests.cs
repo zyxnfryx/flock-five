@@ -76,11 +76,10 @@ namespace FlockFive.Editor
                         && strawHit.xMax + 0.51f >= hiveGlyph
                         && !strawHit.Contains(new Vector2(hiveGlyph + 6f, strawHit.center.y))
                         && strawHit.Contains(new Vector2(strawHit.xMin + 4f, strawHit.center.y));
-                    bool aligned = Mathf.Abs(rs.xMax - art) <= 0.51f
-                        && Mathf.Abs(hv.xMax - edge) <= 0.51f
+                    bool aligned = Mathf.Abs(hv.xMax - edge) <= 0.51f
                         && Mathf.Abs(art - (hv.xMax + halo)) <= 0.51f
                         && halo > 4f
-                        && Mathf.Abs(inset - (CornerAnchor.InsetRef * sc - halo)) <= 0.51f
+                        && Mathf.Abs(inset - (safe.xMax - hv.xMax)) <= 0.51f
                         && glyphs;
                     bool sameWhenHidden = Mathf.Abs(alone.xMax - rs.xMax) <= 0.51f
                         && Mathf.Abs(alone.x - rs.x) <= 0.51f
@@ -96,18 +95,19 @@ namespace FlockFive.Editor
                         + " inset " + inset.ToString("0.0") + " glass " + glass.ToString("0.0")
                         + " oldPad " + oldPad.ToString("0.0") + " hiddenX " + alone.xMax.ToString("0.0"));
 
-                    float field = CornerAnchor.PlayfieldTopGui(d.W, d.H);
-                    float feeder = CornerAnchor.FeederRightGui(d.W, d.H);
-                    float clear = Mathf.Max(0f, art - feeder);
-                    bool above = rs.yMax <= field + 0.01f && rs.yMax <= top + 0.01f && rs.yMin + 0.01f >= d.H - safe.yMax;
+                    float safeTopNorm = (d.H - safe.yMax) / d.H;
+                    float field = CornerAnchor.PlayfieldTopGui(d.W, d.H, safeTopNorm);
+                    bool above = rs.yMax <= field + 0.5f && rs.yMin + 0.01f >= d.H - safe.yMax;
                     bool square = Mathf.Abs(rs.width - rs.height) <= 0.01f && rs.width > 8f;
-                    bool inGutter = rs.xMin + 0.51f >= feeder && rs.xMax <= safe.xMax + 0.01f;
-                    float floor = Mathf.Min(CornerAnchor.MinTapPx(0f), clear);
-                    bool tappable = rs.width + 0.51f >= floor && rs.width <= clear + 0.51f;
+                    float onePt = Mathf.Max(d.H / 852f, 1f);
+                    float hivePad = safe.xMax - hv.xMax;
+                    bool padded = Mathf.Abs(hivePad - CornerAnchor.HiveEdgePad(sc)) <= onePt
+                        && Mathf.Abs((safe.xMax - rs.xMax) - hivePad) <= onePt
+                        && rs.xMax <= safe.xMax + 0.01f;
                     bool feedersClear = true;
                     string hit = "";
                     float tall = CornerAnchor.TallFor(d.W, d.H);
-                    float fy = WorldBuilder.FeederYFor(tall, (d.H - safe.yMax) / d.H);
+                    float fy = WorldBuilder.FeederYFor(tall, safeTopNorm, d.W, d.H);
                     for (int count = 2; count <= 3 && feedersClear; count++)
                         for (int i = 0; i < count; i++)
                         {
@@ -119,9 +119,9 @@ namespace FlockFive.Editor
                         }
                     bool offHive = !rs.Overlaps(hv);
                     Check("top bar, clear of feeders " + d.Name,
-                        above && square && inGutter && tappable && feedersClear && offHive,
+                        above && square && padded && feedersClear && offHive,
                         "size " + rs.width.ToString("0.0") + " yMax " + rs.yMax.ToString("0")
-                        + " field " + field.ToString("0") + " clear " + clear.ToString("0.0") + " " + hit);
+                        + " field " + field.ToString("0") + " " + hit);
                 }
             }
             finally
@@ -154,7 +154,9 @@ namespace FlockFive.Editor
                     float hiveGlyph = off + CornerAnchor.HiveGlyphRight(hiveDraw);
                     float glyphDelta = restartGlyph - hiveGlyph;
                     var strawHit = CornerAnchor.HiveStrawHit(hiveDraw);
-                    bool ok = Mathf.Abs(rs.xMax - art) <= 0.51f
+                    float hivePad = col - hv.xMax;
+                    float restartPad = col - rs.xMax;
+                    bool ok = Mathf.Abs(restartPad - hivePad) <= 1.5f
                         && pad > 8f
                         && Mathf.Abs(pad - hv.width * CornerAnchor.HiveGlowPadFrac) <= 0.51f
                         && rs.xMax <= col + 0.01f

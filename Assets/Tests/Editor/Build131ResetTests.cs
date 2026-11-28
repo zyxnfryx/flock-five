@@ -37,9 +37,10 @@ namespace FlockFive.Editor
                 DeviceFit.TestWindow = w / h;
                 var safe = new Rect(0f, bot, w, h - bot - top);
                 CornerAnchor.Garden(w, h, safe, out _, out float hudTop, out _, out var rs, out var hv);
-                float field = CornerAnchor.PlayfieldTopGui(w, h);
+                float topNorm = top / h;
+                float field = CornerAnchor.PlayfieldTopGui(w, h, topNorm);
                 CornerAnchor.AdRowBand(w, h, out var sl, out var sr, out var bl, out var br, out _, out _);
-                bool offField = rs.yMax <= field && rs.yMax <= hudTop;
+                bool offField = rs.yMax <= field + 0.5f;
                 bool offAd = !rs.Overlaps(sl) && !rs.Overlaps(sr) && !rs.Overlaps(bl) && !rs.Overlaps(br);
                 bool inSafe = rs.yMin >= h - safe.yMax - 0.01f && rs.xMin >= safe.xMin && rs.xMax <= safe.xMax + 0.01f;
                 bool bigEnough = rs.width >= CornerAnchor.MinTapPx(0f) && rs.height >= CornerAnchor.MinTapPx(0f);
@@ -48,30 +49,24 @@ namespace FlockFive.Editor
                     "restart " + rs.xMin.ToString("0") + "," + rs.yMin.ToString("0") + " " + rs.width.ToString("0") + "px yMax " + rs.yMax.ToString("0")
                     + " fieldTop " + field.ToString("0") + " hudTop " + hudTop.ToString("0"));
 
-                // Restart's right edge is the hive halo (plate is InsetRef * scale inside safe.xMax,
-                // halo is HiveGlowPadFrac past the plate), so the button is not flush with the glass
-                // and does not move when the hive appears.
+                // Restart's right inset matches the hive plate's inset from the safe edge.
                 float sc = DeviceFit.Ui(w, h);
-                float edge = CornerAnchor.RightEdge(w, safe, sc);
-                float art = CornerAnchor.HiveArtRight(hv);
-                float halo = hv.width * CornerAnchor.HiveGlowPadFrac;
-                float inset = safe.xMax - rs.xMax;
-                bool aligned = Mathf.Abs(rs.xMax - art) <= 0.51f
-                    && Mathf.Abs(hv.xMax - edge) <= 0.51f
-                    && Mathf.Abs(inset - (CornerAnchor.InsetRef * sc - halo)) <= 0.51f
-                    && inset >= 24f;
-                Check("restart shares hive halo " + tag, aligned,
-                    "restartX " + rs.xMax.ToString("0.0") + " hivePlate " + hv.xMax.ToString("0.0")
-                    + " halo " + art.ToString("0.0")
-                    + " inset " + inset.ToString("0.0") + " want " + (CornerAnchor.InsetRef * sc - halo).ToString("0.0"));
+                float onePt = Mathf.Max(h / 852f, 1f);
+                float hivePad = safe.xMax - hv.xMax;
+                float restartPad = safe.xMax - rs.xMax;
+                bool aligned = Mathf.Abs(hivePad - CornerAnchor.HiveEdgePad(sc)) <= onePt
+                    && Mathf.Abs(restartPad - hivePad) <= onePt
+                    && hivePad >= 24f;
+                Check("restart shares hive inset " + tag, aligned,
+                    "restartPad " + restartPad.ToString("0.0") + " hivePad " + hivePad.ToString("0.0")
+                    + " want " + CornerAnchor.HiveEdgePad(sc).ToString("0.0"));
 
                 // Hit order (HitHud then HitBranch / HitFeeder), pure geometry at this size.
                 float tall = CornerAnchor.TallFor(w, h);
-                float topNorm = (h - safe.yMax) / h;
                 // A tap on Restart's centre reaches Restart.
                 Check("tap reaches restart " + tag, FlockFiveApp.HudClaim(rs.center, rs, hv, true, hudTop) == FlockFiveApp.HudTap.Restart, rs.center.ToString());
                 // Feeders, 2 and 3: Restart clear of every bulb, and a bulb tap is not Restart.
-                float fy = WorldBuilder.FeederYFor(tall, topNorm);
+                float fy = WorldBuilder.FeederYFor(tall, topNorm, w, h);
                 for (int count = 2; count <= 3; count++)
                 {
                     bool fok = true; string fd = "";
@@ -91,12 +86,13 @@ namespace FlockFive.Editor
                 // the target, within HitBranch's sending reach (3.25; 3.45 for an empty branch).
                 float limbX = WorldBuilder.EdgeX(null, 1f);
                 int low = WorldBuilder.Rows - 1;
-                float rowY = WorldBuilder.RowY0For(tall) - low * WorldBuilder.RowGap;
+                float rowBase = WorldBuilder.RowY0For(tall, w, h, topNorm);
+                float rowY = rowBase - low * WorldBuilder.RowGap;
                 var woods = new System.Collections.Generic.List<Rect>();
                 var names = new System.Collections.Generic.List<string>();
                 for (int r = 0; r < WorldBuilder.Rows; r++)
                 {
-                    float y = WorldBuilder.RowY0For(tall) - r * WorldBuilder.RowGap;
+                    float y = rowBase - r * WorldBuilder.RowGap;
                     woods.Add(BranchHit.WoodRect(new Vector2(-limbX, y), false, false)); names.Add("L" + r);
                     woods.Add(BranchHit.WoodRect(new Vector2(limbX, y), true, false)); names.Add("R" + r);
                 }

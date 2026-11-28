@@ -91,8 +91,39 @@ namespace FlockFive.Editor
             float perMin = spawned / (seeds * 15f) * 60f;
             Check("spawns-calm", spawned > 150 && perMin > 30f && perMin < 80f,
                 "spawned " + spawned + " per min " + perMin.ToString("0.0"));
-            Check("sizes-vary", radLo < 16f && radHi > 55f && radHi <= StormGlass.RadiusMax + 0.01f,
-                "r " + radLo.ToString("0.0") + ".." + radHi.ToString("0.0"));
+            float sliver = StormGlass.BigDropLimit(W);
+            float fullRadius = StormGlass.RadiusMax * StormGlass.ScaleFor(H);
+            bool wideSliver = sliver + 0.5f >= fullRadius;
+            bool vary = radLo < 16f && radHi <= fullRadius + 0.01f
+                && (wideSliver
+                    ? radHi > 55f
+                    : radHi > sliver - 1.5f && radHi <= sliver + 0.51f);
+            Check("sizes-vary", vary,
+                "r " + radLo.ToString("0.0") + ".." + radHi.ToString("0.0")
+                + " sliver " + sliver.ToString("0.0") + (wideSliver ? " wide" : " capped"));
+            float wideW = 2800f;
+            float wideLimit = StormGlass.BigDropLimit(wideW);
+            float wideHi = 0f;
+            var wideBeads = new StormGlass.Bead[StormGlass.BeadCap];
+            var wideSpecks = new StormGlass.Speck[StormGlass.SpeckCap];
+            for (int s = 0; s < 24; s++)
+            {
+                var rng = new StormGlass.Rng { State = (uint)(s * 9973 + 11) };
+                float spawn = 0f;
+                int n = 0;
+                int speckN = 0;
+                for (int step = 0; step < 400; step++)
+                {
+                    n = StormGlass.Tick(wideBeads, n, 1f / 60f, true, 1f, 0f, 0f, wideW, H,
+                        half, 1, ref rng, ref spawn, wideSpecks, ref speckN);
+                    for (int i = 0; i < n; i++)
+                        if (wideBeads[i].Age == 0f && wideBeads[i].Radius > wideHi)
+                            wideHi = wideBeads[i].Radius;
+                }
+            }
+            Check("sizes-vary-wide-sliver",
+                wideLimit + 0.5f >= fullRadius && wideHi > 55f && wideHi <= fullRadius + 0.01f,
+                "r " + wideHi.ToString("0.0") + " limit " + wideLimit.ToString("0.0"));
             Check("some-stick", stickies > 5, "sticky " + stickies);
             Check("life-in-range", lifeBad == 0 && lifeLo >= StormGlass.LifeMin - 0.001f && lifeHi <= StormGlass.StickyLifeMax + 0.001f,
                 "bad " + lifeBad + " " + lifeLo.ToString("0.00") + ".." + lifeHi.ToString("0.00"));

@@ -3273,9 +3273,13 @@ namespace FlockFive.Editor
                     var safe = new Rect(0f, 34f, w[i], h[i] - 34f - 59f);
                     CornerAnchor.Garden(w[i], h[i], safe, out _, out _, out _, out var gardenRestart, out _);
                     var gardenHome = CornerAnchor.TopBarHome(gardenRestart, w[i], safe, h[i]);
-                    var gear = FlockFiveApp.SettingsGearRect(w[i], h[i], safe);
+                    float hivePad = CornerAnchor.HiveEdgePad(DeviceFit.Ui(w[i], h[i]));
+                    float safeTop = h[i] - safe.yMax;
+                    float onePt = Mathf.Max(h[i] / 852f, 1f);
                     bool phone = w[i] < 500;
-                    bool face = gardenHome.width > 2f && gear.width > 2f && !gardenHome.Overlaps(gear);
+                    bool face = gardenHome.width > 2f
+                        && Mathf.Abs((gardenHome.xMin - safe.xMin) - hivePad) <= onePt
+                        && Mathf.Abs((gardenHome.yMin - safeTop) - hivePad) <= onePt;
                     bool garden = gardenRestart.width > 2f;
                     if (!face || (phone && !garden)) sized = false;
                 }
@@ -3853,7 +3857,7 @@ namespace FlockFive.Editor
             bool splashFeeds = pollBody.Contains("FeedResumeHudButton(3");
             string app = CodeOnly(System.IO.File.ReadAllText(System.IO.Path.Combine(
                 Application.dataPath, "_Project/Scripts/App/FlockFiveApp.cs")));
-            int stamp = app.IndexOf("DrawGardenStamp(s);");
+            int stamp = app.IndexOf("FeedResumeHudButton(1, home");
             int hive = stamp >= 0 ? app.IndexOf("if (HiveReachable())", stamp) : -1;
             string level = stamp >= 0 && hive > stamp ? app.Substring(stamp, hive - stamp) : "";
             bool levelFeedsGear = level.Contains("FeedResumeHudButton(3");

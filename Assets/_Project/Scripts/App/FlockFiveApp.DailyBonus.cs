@@ -148,14 +148,12 @@ namespace FlockFive
 #endif
             if (_splash && _home == HomeFace.Splash)
             {
+                // The reminder card opens only after a claim (FinishDailyClaim).
+                // This tick still lets that due card hold the queue so Welcome
+                // cannot slip in front of it, and it does not open the card itself.
                 var step = HomePopupChain.Next(DailyReminder.PromptDue(), _dailyAskOpen,
                     PlayerPrefs.GetInt(WelcomePendingKey, 0) != 0, _welcomeOpen || _welcomeQueued, false);
-                if (step == HomePopupChain.Card.Reminder && !_dailyAskOpen && ReminderOpensNow(IdleAfterReward()) && GatePopup(PopupKind.Ask, false))
-                {
-                    _dailyAskOpen = true;
-                    _dailyAskAt = AdPause.Unscaled;
-                }
-                else if (step == HomePopupChain.Card.Welcome)
+                if (step == HomePopupChain.Card.Welcome)
                     OfferWelcome();
             }
         }

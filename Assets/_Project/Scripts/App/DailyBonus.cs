@@ -540,6 +540,7 @@ namespace FlockFive
             PrefGuard.SetInt(PrefStreak, _streak);
             PrefGuard.SetString(PrefLast24, WriteClaim(_last));
             PrefGuard.SetInt(PrefPay, coins);
+            DailyReminder.NoteClaimed();
             PlayerPrefs.Save();
             Rebuild();
             _payout = coins;

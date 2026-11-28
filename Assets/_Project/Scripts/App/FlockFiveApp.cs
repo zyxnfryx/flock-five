@@ -4813,17 +4813,27 @@ namespace FlockFive
             return releaseId == PlayPointer.MouseId && _gloveEchoId >= 0;
         }
 
+        // The garden Home plate and the settings gear share the top-left corner.
+        // A point in both belongs to the nearer center, so the gear still opens
+        // from its own center and Home still comes home from its own center.
+        static bool GearOwnsPoint(Vector2 gui, Rect gear, Rect home, bool gearShown)
+        {
+            if (!gearShown || gear.width <= 2f || !gear.Contains(gui)) return false;
+            if (home.width > 2f && home.Contains(gui))
+                return (gui - gear.center).sqrMagnitude <= (gui - home.center).sqrMagnitude;
+            return true;
+        }
+
         // 0 is not a button. 1 Home, 2 Restart, 3 gear. Play-canvas pixels.
         int HudControl(Vector2 play)
         {
             HudShaken(out var restart, out _);
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
             var gear = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            // In the garden the gear is not drawn and must not steal a tap.
+            if (GearOwnsPoint(play, gear, home, HomeGear.Shown(HomeGearNow()))) return 3;
             if (home.width > 2f && home.Contains(play)) return 1;
             if (restart.width > 2f && restart.Contains(play)) return 2;
-            // The gear is drawn only on the home face. The same rect in the garden
-            // is empty space, so it must not steal a glove or board tap.
-            if (HomeGear.Shown(HomeGearNow()) && gear.width > 2f && gear.Contains(play)) return 3;
             return 0;
         }
 
@@ -8786,6 +8796,11 @@ namespace FlockFive
             // b131: Restart lives in the top bar (above top), so it is checked before the top-bar swallow.
             // A lesson caption must not swallow Home or Restart. The tap acts.
             var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            var gearHit = SettingsGearRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
+            // TakeGuiPointer already opened the gear. Do not also read this point as Home.
+            // A point nearer the Home plate is Home, even when it sits inside the gear hit.
+            if (GearOwnsPoint(gui, gearHit, home, HomeGear.Shown(HomeGearNow())))
+                return true;
             bool homeHit, restartHit;
             if (GardenHudPoint(screen, PhoneArea.H, home, restart, out homeHit, out restartHit))
             {
@@ -9206,7 +9221,9 @@ namespace FlockFive
                 if (which == 1 || which == 2 || which == 3) return false;
                 float s = DeviceFit.Ui();
                 GiftCardPlaced(s, out var card, out var cta);
-                if (_adHand && FlowerHit(cta, s).Contains(play))
+                // Tutorial and later offers share this button. A second gift is
+                // not the ad-hand lesson, and Watch still has to ask for the ad.
+                if (FlowerHit(cta, s).Contains(play))
                 {
                     if (release) StartWatchGift();
                     _tapWho = "watch";
@@ -9225,8 +9242,14 @@ namespace FlockFive
                 _tapWho = "gift-wait";
                 return true;
             }
-            // Movie and Thanks cover the play canvas. They have no HUD button.
-            _tapWho = _gift == GiftFace.Movie ? "gift-movie" : "gift-thanks";
+            if (_gift == GiftFace.Thanks)
+            {
+                if (release) EndGiftThanks();
+                _tapWho = "gift-thanks";
+                return true;
+            }
+            // The movie covers the play canvas. It has no HUD button.
+            _tapWho = "gift-movie";
             return true;
         }
 
@@ -9283,7 +9306,6 @@ namespace FlockFive
                 who = "gift-x";
                 return true;
             }
-            if (!_adHand) return false;
             float s = DeviceFit.Ui();
             GiftCardPlaced(s, out _, out var cta);
             if (!FlowerHit(cta, s).Contains(gui)) return false;
@@ -9305,6 +9327,38 @@ namespace FlockFive
 #endif
         }
 
+        // Home and Restart. Drawn on the live garden and on the frame a caption
+        // pauses it, so the corner does not blink out.
+        void DrawCornerButtons()
+        {
+            HudLayout(out float s, out _, out _, out var restart, out _);
+            var restartIcon = CornerAnchor.RestartIcon(restart);
+            var arrow = SpriteCatalog.Restart;
+            GUI.BeginGroup(restart);
+            var restartLocal = new Rect(restartIcon.x - restart.x, restartIcon.y - restart.y, restartIcon.width, restartIcon.height);
+            if (arrow != null && arrow.texture != null)
+                GUI.DrawTexture(restartLocal, arrow.texture, ScaleMode.ScaleToFit, true);
+            else
+                GUI.Box(restartLocal, "↩");
+            GUI.EndGroup();
+            var restartLab = GuiPool.Label(GuiSlot.SettingsLink);
+            restartLab.fontStyle = FontStyle.Bold;
+            restartLab.alignment = TextAnchor.LowerCenter;
+            restartLab.wordWrap = false;
+            restartLab.clipping = TextClipping.Overflow;
+            restartLab.fontSize = CornerAnchor.RestartWordPx(s);
+            StampOutlined(restart, "Restart", restartLab, new Color(1f, 0.96f, 0.86f, 1f), 1, 1);
+            var hudEv = Event.current;
+            bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
+            bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
+            var hudAt = hudEv != null ? PlayPointer.Gui(hudEv) : restart.center;
+            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
+            bool homeHeld = false;
+            if (home.width > 2f)
+                FeedResumeHudButton(1, home, hudAt, hudDown, hudUp, out homeHeld);
+            DrawGardenHome(home, homeHeld);
+        }
+
         void PaintAfterPointer()
         {
             // Before the swallows. A finished ostrich (or any clear) must not leave a
@@ -9321,19 +9375,21 @@ namespace FlockFive
                 // glove does not jump ahead on the unscaled clock while the ad is up.
                 if (!Ads.IsShowing && _hiveTutorOn && _hiveInspect >= 0 && _home == HomeFace.Hive)
                     DrawHiveInspect(DeviceFit.Ui());
-                // The sparrow lesson freezes here and used to return before the chip,
-                // so the multiplier badge vanished for the whole lesson. Paint it at
-                // full alpha before the caption. An ad or a full-screen popup still
-                // suppresses it inside GardenStampLive.
-                if (!Ads.IsShowing && !_splash && _board != null)
+                // The sparrow lesson freezes here. The garden multiplier chip is not
+                // part of the play HUD (it lives on the post-stage reward only).
+                if (!Ads.IsShowing && !_splash && _board != null
+                    && (TutorialGuideLive() || _tutorPause != 0 || SeasonReveal.BannerLive))
                 {
                     HudLayout(out float ps, out float pTop, out _, out _, out _);
-                    DrawGardenStamp(ps);
                     if (TutorialGuideLive() || _tutorPause != 0)
                         DrawCoach(ps, pTop);
                     if (SeasonReveal.BannerLive)
                         DrawSeasonBanner(ps, pTop);
                 }
+                // A caption pauses the garden for its first paint. Home and Restart
+                // stay on that frame; the tip must not blank the corner.
+                if (!Ads.IsShowing && !_splash && _board != null)
+                    DrawCornerButtons();
                 FinishLevelCurtain();
                 return;
             }
@@ -9378,8 +9434,7 @@ namespace FlockFive
                 FinishLevelCurtain();
                 return;
             }
-            // Veil first. The chip is drawn after it, at full alpha, so a coach
-            // dim cannot grey the multiplier out.
+            // Veil first. The multiplier chip is not drawn on the play HUD.
             CoachDim();
             HudLayout(out float s, out float top, out _, out var restart, out var hive);
             var hudM = GUI.matrix;
@@ -9389,38 +9444,7 @@ namespace FlockFive
                 GUIUtility.RotateAroundPivot(CamShake.HudTwist, new Vector2(PhoneArea.W * 0.5f, PhoneArea.H * 0.5f));
                 GUI.matrix = Matrix4x4.Translate(new Vector3(CamShake.HudOffset.x, CamShake.HudOffset.y, 0f)) * GUI.matrix;
             }
-            DrawGardenStamp(s);
-            var arrow = SpriteCatalog.Restart;
-            if (arrow != null && arrow.texture != null)
-                GUI.DrawTexture(restart, arrow.texture, ScaleMode.ScaleToFit, true);
-            else
-                GUI.Box(restart, "↩");
-            var restartLab = GuiPool.Label(GuiSlot.SettingsLink);
-            restartLab.fontStyle = FontStyle.Bold;
-            restartLab.alignment = TextAnchor.LowerCenter;
-            restartLab.wordWrap = false;
-            restartLab.clipping = TextClipping.Overflow;
-            restartLab.fontSize = Mathf.Max(8, Mathf.RoundToInt(9f * Mathf.Min(s, 1.15f)));
-            GUI.Label(restart, "Restart", restartLab);
-            var hudEv = Event.current;
-            bool hudDown = hudEv != null && hudEv.type == EventType.MouseDown && hudEv.button == 0;
-            bool hudUp = hudEv != null && hudEv.type == EventType.MouseUp && hudEv.button == 0;
-            var hudAt = hudEv != null ? PlayPointer.Gui(hudEv) : restart.center;
-            var home = CornerAnchor.TopBarHome(restart, PhoneArea.W, PhoneArea.Safe);
-            bool homeHeld = false;
-            if (home.width > 2f)
-                FeedResumeHudButton(1, home, hudAt, hudDown, hudUp, out homeHeld);
-            GUI.color = new Color(0.10f, 0.08f, 0.05f, homeHeld ? 0.92f : 0.78f);
-            GUI.DrawTexture(home, Texture2D.whiteTexture);
-            GUI.color = Color.white;
-            var homeLab = GuiPool.Label(GuiSlot.InspectX);
-            homeLab.fontStyle = FontStyle.Bold;
-            homeLab.alignment = TextAnchor.MiddleCenter;
-            homeLab.wordWrap = false;
-            homeLab.clipping = TextClipping.Overflow;
-            homeLab.fontSize = Mathf.Max(9, Mathf.RoundToInt(11f * Mathf.Min(s, 1.15f)));
-            homeLab.normal.textColor = new Color(1f, 0.94f, 0.72f);
-            GUI.Label(home, "Home", homeLab);
+            DrawCornerButtons();
             if (HiveReachable())
                 DrawHiveButton(CornerAnchor.HiveAlignedDraw(hive, restart), s, orbit: true, pop: true);
             else
@@ -11370,10 +11394,13 @@ namespace FlockFive
                 var tip = GuiPool.Label(GuiSlot.SettingsLink);
                 tip.fontStyle = FontStyle.Bold;
                 tip.alignment = TextAnchor.MiddleCenter;
-                tip.fontSize = Mathf.Max(12, Mathf.RoundToInt(15f * s));
-                float tipW = 236f * s;
-                float tipX = Mathf.Max(16f, pig.x - 12f * s - tipW);
-                var tr = new Rect(tipX, pig.y - 36f * s, tipW, 28f * s);
+                tip.wordWrap = true;
+                tip.fontSize = Mathf.Max(14, Mathf.RoundToInt(16f * s));
+                float tipW = Mathf.Clamp(280f * s, 188f, 340f);
+                float tipH = Mathf.Max(44f * s, tip.fontSize * 2.6f);
+                float tipX = pig.x - 10f * s - tipW;
+                if (tipX < 12f) tipX = 12f;
+                var tr = new Rect(tipX, pig.y - tipH - 8f * s, tipW, tipH);
                 var tipInk = GUI.color;
                 GUI.color = new Color(0.08f, 0.06f, 0.04f, 0.94f);
                 GUI.DrawTexture(tr, Texture2D.whiteTexture);
@@ -11423,9 +11450,13 @@ namespace FlockFive
         float _coinTipUntil = -1f;
         Rect _homeCoinR;
 
+        // Long enough to read "Coins you win go in the piggy."
+        public const float CoinTipSeconds = 3.5f;
+
         void ShowCoinTip()
         {
-            _coinTipUntil = AdPause.Unscaled + 1.6f;
+            float until = AdPause.Unscaled + CoinTipSeconds;
+            if (until > _coinTipUntil) _coinTipUntil = until;
         }
 
         void DrawCoinBalance(float s, float rightX, float centerY)
@@ -11902,63 +11933,11 @@ namespace FlockFive
             GUI.color = Color.white;
         }
 
-        // Garden play only. One gate for the draw, the glove keep-out, and the
-        // caption drop. Lessons never hide the chip. Splash, an ad, and a
-        // full-screen popup do. The finale smash is a world logo, so it does not.
+        // The multiplier chip is a post-stage reward, not a play-HUD badge.
+        // Glove keep-out and caption drop follow this, so they do not dodge an empty seat.
         bool GardenStampLive()
         {
-            return GardenStampVis.Shown(new GardenStampQuery
-            {
-                Splash = _splash,
-                ChipArmed = _gardenStampAt >= 0f && StreakTier.AtStake(Purse.Streak),
-                AdCover = Ads.IsShowing,
-                FullPopup = StampPopupCover(),
-                FinaleSmash = FinaleShow.Playing,
-                Lesson = StampLessons()
-            });
-        }
-
-        // Gift card, restart ask, the clear-reward board, and the bee-card inspect
-        // each paint a wash over the whole glass. The level-hive panel does not.
-        bool StampPopupCover()
-        {
-            if (_clearReward) return true;
-            if (_gift != GiftFace.None) return true;
-            if (_restartAsk != RestartAsk.None) return true;
-            if (_hiveInspect >= 0) return true;
             return false;
-        }
-
-        // Every live lesson, passed through so the shared check can exempt them.
-        GardenLesson StampLessons()
-        {
-            var lesson = GardenLesson.None;
-            if (_pestCue == PestCueSparrow) lesson |= GardenLesson.Sparrow;
-            if (_pestCue == PestCueHawk) lesson |= GardenLesson.Hawk;
-            if (_pestCue == PestCueBee) lesson |= GardenLesson.Bee;
-            if (_pestCue == PestCueFire) lesson |= GardenLesson.Fire;
-            if (_leafIntro) lesson |= GardenLesson.Leaf;
-            if (BadgerGuideLive()) lesson |= GardenLesson.BadgerGuide;
-            if (_bgLessonLive) lesson |= GardenLesson.BadgerLesson;
-            if (_coach && _cueHand) lesson |= GardenLesson.Coach;
-            if (_cueHand && _coachFade >= 0.03f && _cueHolePx >= 8f) lesson |= GardenLesson.CoachDim;
-            if (_hiveLevelLive) lesson |= GardenLesson.HiveGarden;
-            if (_hiveIntroLive) lesson |= GardenLesson.HiveHome;
-            if (_hiveTutorOn) lesson |= GardenLesson.HiveAlbum;
-            if (_pokerIntroLive) lesson |= GardenLesson.PokerHome;
-            if (_pokerPageOn) lesson |= GardenLesson.PokerPage;
-            if (_pokerDealHint) lesson |= GardenLesson.PokerDeal;
-            if (PokerBackGateLive()) lesson |= GardenLesson.PokerBack;
-            if (_dailyIntroLive) lesson |= GardenLesson.Daily;
-            if (_adHand) lesson |= GardenLesson.AdHand;
-            if (_welcomeGlove) lesson |= GardenLesson.Welcome;
-            if (_adoptLive) lesson |= GardenLesson.Adopt;
-            if (_cueGift) lesson |= GardenLesson.GiftCue;
-            if (_albumTutorOn) lesson |= GardenLesson.Album;
-            if (_upgradeTutorOn) lesson |= GardenLesson.Upgrade;
-            if (_tutorPause != 0) lesson |= GardenLesson.TutorPause;
-            if (!string.IsNullOrEmpty(_cueLine)) lesson |= GardenLesson.CoachCaption;
-            return lesson;
         }
 
         // Top-left chip, about 1.7× the previous 81px disc (66..117). TopHud keeps it
@@ -12877,14 +12856,9 @@ namespace FlockFive
         {
             Sfx.Oink();
             _pigJiggle = 1f;
-            _pigBurst = Mathf.Max(_pigBurst, 0.85f);
-            var award = PigPoke.Poke();
-            if (award.Coins > 0)
-            {
-                Sfx.Clink();
-                _pigBurst = 1f;
-                BeginRewardPay(award.Coins);
-            }
+            _pigBurst = Mathf.Max(_pigBurst, 0.55f);
+            PigPoke.Poke();
+            ShowCoinTip();
         }
 
         static bool OnGuiOpen => _app != null && _app._onGuiDepth > 0;
@@ -13633,6 +13607,84 @@ namespace FlockFive
             GUI.color = Color.white;
             if (held) DrawDiscPress(r, sink);
             return FlowerDisc(r, sink);
+        }
+
+        // Garden Home. Gold plate, a house above the word. The word keeps the old
+        // size. It sits centered until the house would cover it, then steps to the
+        // bottom of the plate. Not a flat dark square.
+        void DrawGardenHome(Rect home, bool held)
+        {
+            if (home.width < 2f || home.height < 2f) return;
+            var prev = GUI.color;
+            GUI.color = Color.white;
+            DrawRoundedFace(home, held, PopupTint.Gold, true);
+            CornerAnchor.HomeMark(home, out var icon, out var word);
+            DrawHomeGlyph(icon);
+            var homeLab = GuiPool.Label(GuiSlot.InspectX);
+            homeLab.fontStyle = FontStyle.Bold;
+            homeLab.alignment = TextAnchor.MiddleCenter;
+            homeLab.wordWrap = false;
+            homeLab.clipping = TextClipping.Overflow;
+            int px = Mathf.Clamp(Mathf.RoundToInt(home.height * 0.30f), 13, 28);
+            if (px > 12) px -= 1;
+            homeLab.fontSize = px;
+            homeLab.normal.textColor = new Color(0.32f, 0.14f, 0.04f, 1f);
+            StampOutlined(word, "Home", homeLab, new Color(0.32f, 0.14f, 0.04f, 1f), 1, 1);
+            GUI.color = prev;
+        }
+
+        static Texture2D _homeRoof;
+
+        static Texture2D HomeRoofTex()
+        {
+            if (_homeRoof != null) return _homeRoof;
+            const int n = 64;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave,
+                name = "HomeRoof"
+            };
+            var px = new Color32[n * n];
+            var wood = new Color(0.42f, 0.20f, 0.07f, 1f);
+            var trim = new Color(0.95f, 0.78f, 0.35f, 1f);
+            for (int y = 0; y < n; y++)
+            {
+                float v = y / (float)(n - 1);
+                float half = (1f - v) * 0.5f;
+                for (int x = 0; x < n; x++)
+                {
+                    float u = x / (float)(n - 1);
+                    float edge = Mathf.Min(u - (0.5f - half), (0.5f + half) - u) * n;
+                    if (edge <= 0f) continue;
+                    float a = Mathf.Clamp01(edge);
+                    var c = v < 0.14f ? trim : wood;
+                    c.a = a;
+                    px[y * n + x] = (Color32)c;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            _homeRoof = tex;
+            return tex;
+        }
+
+        static void DrawHomeGlyph(Rect g)
+        {
+            var roof = new Rect(g.x, g.y, g.width, g.height * 0.52f);
+            var body = new Rect(g.center.x - g.width * 0.34f, g.y + g.height * 0.40f, g.width * 0.68f, g.height * 0.56f);
+            GUI.color = new Color(0.98f, 0.93f, 0.80f, 1f);
+            GUI.DrawTexture(body, Texture2D.whiteTexture);
+            GUI.color = Color.white;
+            GUI.DrawTexture(roof, HomeRoofTex(), ScaleMode.StretchToFill, true);
+            var door = new Rect(g.center.x - g.width * 0.11f, body.yMax - g.height * 0.30f, g.width * 0.22f, g.height * 0.30f);
+            GUI.color = new Color(0.34f, 0.15f, 0.05f, 1f);
+            GUI.DrawTexture(door, Texture2D.whiteTexture);
+            var window = new Rect(body.x + body.width * 0.14f, body.y + body.height * 0.18f, g.width * 0.16f, g.width * 0.16f);
+            GUI.color = new Color(0.45f, 0.72f, 0.82f, 1f);
+            GUI.DrawTexture(window, Texture2D.whiteTexture);
+            GUI.color = Color.white;
         }
 
         static Rect DrawRoundedFace(Rect r, bool held, PopupTint tint, bool shadow)
@@ -22801,6 +22853,9 @@ namespace FlockFive
 
         public enum AdFailAction { KeepCard, GrantBranch, Close }
 
+        // Second gift, no ad: the card stays up on AdRetry's line, then closes.
+        public const float AdNotReadyHoldSeconds = 1.2f;
+
         // What a request that ended with no grant does. Pure so the tests can pin it.
         public static AdFailAction AdFailDecision(bool keepStreak, bool freeze, bool tutorial, bool skipped)
         {
@@ -22929,6 +22984,15 @@ namespace FlockFive
             return hit;
         }
 
+        void EndGiftThanks()
+        {
+            if (_gift != GiftFace.Thanks) return;
+            FinishRewardPay();
+            _gift = GiftFace.None;
+            _busy = false;
+            _swallowTapsUntil = GateNow + 0.2f;
+        }
+
         void CloseGift()
         {
             DismissAdHand();
@@ -23035,13 +23099,20 @@ namespace FlockFive
                 }
                 if (AdFailDecision(keep, freeze, tutorial, AdRetry.Skipped) == AdFailAction.Close)
                 {
-                    AdLog.Add("gift ad unavailable: closing the offer (" + AdRetry.Reason + ")");
-                    _cueLine = "Ad unavailable.";
-                    _gift = GiftFace.None;
-                    AdRetry.Clear();
-                    DismissAdHand();
-                    _swallowTapsUntil = GateNow + 0.45f;
-                    _suppressGiftUntil = GateNow + 1f;
+                    AdLog.Add("gift ad unavailable: showing not-ready, then closing (" + AdRetry.Reason + ")");
+                    AdRetry.Offer();
+                    _gift = GiftFace.Card;
+                    _busy = true;
+                    yield return new WaitForSecondsRealtime(AdNotReadyHoldSeconds);
+                    if (_gift == GiftFace.Card)
+                    {
+                        _gift = GiftFace.None;
+                        AdRetry.Clear();
+                        DismissAdHand();
+                        _swallowTapsUntil = GateNow + 0.45f;
+                        _suppressGiftUntil = GateNow + 1f;
+                    }
+                    _busy = false;
                     yield break;
                 }
                 // Never a silent bounce back to Watch: say the ad was not ready.

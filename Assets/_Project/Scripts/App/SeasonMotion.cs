@@ -145,14 +145,16 @@ namespace FlockFive
             return (float)us;
         }
 
+        static readonly GardenScene[] Scenes =
+        {
+            GardenScene.Summer, GardenScene.Desert, GardenScene.Fall,
+            GardenScene.Winter, GardenScene.Spring
+        };
+
         static float Run(bool lively, bool low, int frames)
         {
             int n = 0;
-            var scenes = new[]
-            {
-                GardenScene.Summer, GardenScene.Desert, GardenScene.Fall,
-                GardenScene.Winter, GardenScene.Spring
-            };
+            var scenes = Scenes;
             for (int s = 0; s < scenes.Length; s++)
             {
                 var b = lively ? Lively(scenes[s], low) : Base(scenes[s], low);
