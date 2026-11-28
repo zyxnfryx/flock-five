@@ -546,6 +546,7 @@ namespace FlockFive
         float _tipLastFade;
         string _tipLastSpot;
         float _tipLastClear;
+        Rect _tipLastAnchor;
         float _tipOut;
         bool _tipTail;
         float _coachGiftUntil = -1f;
@@ -5742,30 +5743,44 @@ namespace FlockFive
             // The old seat still runs the banner/snug gate (glove, counters). The
             // pixels are the shared pill: one height, one radius, one band.
             CaptionBannerFits(text, drawR, s, out _, out _);
-            DrawTipFamily(text, fade, tipSpot, clearTop);
+            DrawTipFamily(text, fade, tipSpot, clearTop, drawR);
         }
 
-        // The plate every coach line paints. The garden band lifts off the
-        // bottom branches and the hive. spot still selects Floor or Raised
-        // for a tip that passes no control top of its own.
-        public static Rect TipFrame(float fieldW, float fieldH, Rect safe, string spot)
+        // Garden plates only. Home, daily, album, badger, adopt, and the poker
+        // table each have their own seat and must not use the garden ground.
+        public static bool GardenTip(string spot)
+        {
+            return spot == "coach.line" || spot == "coach.rule"
+                || spot == "ad.hand" || spot == "gift.yours";
+        }
+
+        // The plate a tip paints. Garden spots use the ground band. poker.table
+        // and any clearTop sit above that control (TipPill.Above). Every other
+        // spot uses the seat its own page already computed.
+        public static Rect TipFrame(float fieldW, float fieldH, Rect safe, string spot, float clearTop = -1f, Rect anchor = default)
         {
             float bot = TipPill.SafeBottom(fieldH, safe);
             if (TipPill.BandFor(spot) == TipPill.Band.Raised)
                 return TipPill.Place(fieldW, fieldH, bot, TipPill.Band.Raised);
-            return TipPill.PlaceGarden(fieldW, fieldH, bot, safe);
+            var floor = TipPill.Place(fieldW, fieldH, bot, TipPill.Band.Floor);
+            if (spot == "poker.table" && clearTop <= 1f)
+                clearTop = PokerCoachClear(fieldW, fieldH, safe);
+            if (clearTop > 1f)
+                return TipPill.Above(floor, clearTop, fieldH);
+            if (GardenTip(spot) || string.IsNullOrEmpty(spot))
+                return TipPill.PlaceGarden(fieldW, fieldH, bot, safe);
+            if (anchor.width > 2f && anchor.height > 2f)
+                return TipPill.AtAnchor(floor, anchor, fieldH, bot);
+            return floor;
         }
 
-        void DrawTipFamily(string text, float fade, string spot, float clearTop = -1f)
+        void DrawTipFamily(string text, float fade, string spot, float clearTop = -1f, Rect anchor = default)
         {
             if (string.IsNullOrEmpty(text)) return;
             float fieldW = PhoneArea.W > 2f ? PhoneArea.W : 402f;
             float fieldH = PhoneArea.H > 2f ? PhoneArea.H : 874f;
             var safe = PhoneArea.Safe;
-            var floor = TipPill.Place(fieldW, fieldH, TipPill.SafeBottom(fieldH, safe), TipPill.Band.Floor);
-            var pill = clearTop > 1f
-                ? TipPill.Above(floor, clearTop, fieldH)
-                : TipPill.Snap(TipFrame(fieldW, fieldH, safe, spot));
+            var pill = TipPill.Snap(TipFrame(fieldW, fieldH, safe, spot, clearTop, anchor));
             if (!_tipTail)
             {
                 _tipFrame = Time.frameCount;
@@ -5773,6 +5788,7 @@ namespace FlockFive
                 _tipLastFade = fade;
                 _tipLastSpot = spot;
                 _tipLastClear = clearTop;
+                _tipLastAnchor = anchor;
                 _tipOut = 0f;
             }
             int cap = TipPill.Cap(fieldH);
@@ -5834,7 +5850,7 @@ namespace FlockFive
                 return;
             }
             _tipTail = true;
-            try { DrawTipFamily(_tipLast, _tipLastFade * (1f - _tipOut), _tipLastSpot, _tipLastClear); }
+            try { DrawTipFamily(_tipLast, _tipLastFade * (1f - _tipOut), _tipLastSpot, _tipLastClear, _tipLastAnchor); }
             finally { _tipTail = false; }
         }
 

@@ -3187,7 +3187,7 @@ namespace FlockFive
             if (fade < 0.02f) return;
             // Same pill as every other tip. L keeps the call signature the seat tests use.
             if (L.S < 0f) return;
-            DrawTipFamily(_bgLine, fade, spot);
+            DrawTipFamily(_bgLine, fade, spot, -1f, L.Caption);
         }
 
     }

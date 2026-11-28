@@ -149,8 +149,8 @@ namespace FlockFive.Editor
             {
                 DeviceFit.TestWindow = 402f / 874f;
                 float ps = DeviceFit.Ui(402f, 874f);
-                float dealW = FlockFiveApp.PokerActSize(402f, ps);
-                var deal = new Rect(402f - 16f - dealW, 874f - 24f - dealW, dealW, dealW);
+                var table = new Rect(0f, 0f, 402f, 874f);
+                var deal = FlockFiveApp.PokerDealRect(402f, 874f, table);
                 float side = Mathf.Clamp(30f * ps, 26f, 36f * ps);
                 var plus = new Rect(deal.x - 12f - side, deal.center.y - side * 0.5f, side, side);
                 var amount = new Rect(plus.x - 10f - 140f, plus.y, 140f, side);

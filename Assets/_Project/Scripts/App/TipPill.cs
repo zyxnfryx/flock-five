@@ -150,6 +150,17 @@ namespace FlockFive
             return Snap(pill);
         }
 
+        // Class-sized pill whose top is the caller's own seat. Used by tips that
+        // are not on the garden ground (home, daily, album, badger, adopt).
+        public static Rect AtAnchor(Rect floor, Rect anchor, float fieldH, float safeBottom)
+        {
+            float y = anchor.y;
+            float limit = fieldH - safeBottom - 4f;
+            if (y + floor.height > limit) y = limit - floor.height;
+            if (y < 4f) y = 4f;
+            return Snap(new Rect(floor.x, y, floor.width, floor.height));
+        }
+
         // Same pill, moved so its bottom clears obstacleTop (GUI y, down).
         // Already clear: the floor rect is returned unchanged.
         public static Rect Above(Rect floor, float obstacleTop, float fieldH)

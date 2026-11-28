@@ -12007,7 +12007,8 @@ namespace FlockFive
                 DrawPopupButton(yesR, yesHeld, PopupTint.Green);
                 DrawPopupWord(noR, "No", st, s);
                 DrawPopupWord(yesR, "Yes", st, s);
-                DrawTipFamily(CoachTap.Caption(CoachStep.RestartSure), 1f, "restart.ask");
+                var ask = new Rect(inner.x, inner.y, inner.width, Mathf.Max(8f, noR.y - 8f * s - inner.y));
+                DrawTipFamily(CoachTap.Caption(CoachStep.RestartSure), 1f, "restart.ask", -1f, ask);
                 if (no) { _restartAsk = RestartAsk.None; Sfx.CardTap(); return; }
                 if (yes)
                 {
@@ -16436,7 +16437,7 @@ namespace FlockFive
                 // Bet and hold sit above the − / + / DEAL / DRAW row. The glove
                 // points at that row from outside the pill.
                 float clear = (line == PokerBetLine || line == PokerHoldLine)
-                    ? Mathf.Min(betR.y, actR.y) - TipPill.GloveClear(PhoneArea.H) : -1f;
+                    ? PokerCoachClear(PhoneArea.W, PhoneArea.H, PhoneArea.Safe) : -1f;
                 DrawPokerStandardLine(line, s, clear);
             }
             DrawTutorOverlay(s);
@@ -16480,7 +16481,7 @@ namespace FlockFive
             _pokerDealAim = DealPlatformAim(actR);
             _pokerDealTap = actR;
             _pokerDealAimOk = disc.width > 2f;
-            DrawPokerStandardLine(PokerBetLine, s, Mathf.Min(betR.y, actR.y) - TipPill.GloveClear(PhoneArea.H));
+            DrawPokerStandardLine(PokerBetLine, s, PokerCoachClear(PhoneArea.W, PhoneArea.H, PhoneArea.Safe));
             DrawTutorOverlay(s);
         }
 
@@ -16805,8 +16806,7 @@ namespace FlockFive
             float rowW = BirdPoker.HandSize * cardW + (BirdPoker.HandSize - 1) * gap;
             float rowX = spanX + (spanW - rowW) * 0.5f;
             float btnSize = PokerActSize(PhoneArea.W, s);
-            float botPad = Mathf.Max(12f, safe.yMin + 6f);
-            float btnY = PhoneArea.H - botPad - btnSize;
+            float btnY = PokerButtonTop(PhoneArea.W, PhoneArea.H, safe);
             var payTab = chrome.PayTab;
             // Equal air between the wordmark and the bet/deal controls. Drop below the PAY TABLE chip when that still fits.
             float bandTop = below;
@@ -16949,9 +16949,7 @@ namespace FlockFive
                 float panelW = PhoneArea.W * 0.94f;
                 int rows = BirdPoker.PayTableRows.Length;
                 var safe = PhoneArea.Safe;
-                float btnSize = PokerActSize(PhoneArea.W, s);
-                float botPad = Mathf.Max(12f, safe.yMin + 6f);
-                float btnY = PhoneArea.H - botPad - btnSize;
+                float btnY = PokerButtonTop(PhoneArea.W, PhoneArea.H, safe);
                 float panelTop = tab.yMax + 8f * s;
                 float floor = btnY - 12f * s;
                 float avail = Mathf.Max(320f, floor - panelTop);
@@ -18166,9 +18164,7 @@ namespace FlockFive
             float mid = 1f - Mathf.Abs(t * 2f - 1f);
             // Idle row is centered under the logo. The dealt fan stays just above the deal disc.
             float sc = DeviceFit.Ui();
-            float btnSize = PokerActSize(PhoneArea.W, sc);
-            float botPad = Mathf.Max(12f, PhoneArea.Safe.yMin + 6f);
-            float btnY = PhoneArea.H - botPad - btnSize;
+            float btnY = PokerButtonTop(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
             float y = btnY - 8f * sc - cardH - mid * 12f + bump - PokerRowLiftPx();
             if (y < 0f) y = 0f;
             return new Rect(x, y, cardW, cardH);
@@ -18664,17 +18660,40 @@ namespace FlockFive
             => _home == HomeFace.Poker && !PokerBackDone() && BirdPoker.PhaseNow == BirdPoker.Phase.Drawn;
 
         // Same DEAL control the poker page hits. Event.current is the press.
+        // Top of DEAL / the bet row. DrawPokerPage and the bet coach both use this.
+        public static float PokerButtonTop(float w, float h, Rect safe)
+        {
+            float s = DeviceFit.Ui(w, h);
+            if (safe.width < 2f || safe.height < 2f)
+                safe = new Rect(0f, 0f, w, h);
+            float btnSize = PokerActSize(w, s);
+            float botPad = Mathf.Max(12f, safe.yMin + 6f);
+            return h - botPad - btnSize;
+        }
+
+        // Pill bottom clears the buttons and the glove that points up at them.
+        public static float PokerCoachClear(float w, float h, Rect safe)
+        {
+            float s = DeviceFit.Ui(w, h);
+            float lift = TipPill.GloveClear(h);
+            float hand = GloveDh(s) * 0.85f;
+            if (hand > lift) lift = hand;
+            return PokerButtonTop(w, h, safe) - lift;
+        }
+
+        public static Rect PokerDealRect(float w, float h, Rect safe)
+        {
+            if (safe.width < 2f || safe.height < 2f)
+                safe = new Rect(0f, 0f, w, h);
+            float btnSize = PokerActSize(w, DeviceFit.Ui(w, h));
+            float btnY = PokerButtonTop(w, h, safe);
+            float actX = w - Mathf.Max(10f, w - safe.xMax + 8f) - btnSize;
+            return new Rect(actX, btnY, btnSize, btnSize);
+        }
+
         public Rect PokerDealButtonRect()
         {
-            float s = DeviceFit.Ui();
-            var safe = PhoneArea.Safe;
-            if (safe.width < 2f || safe.height < 2f)
-                safe = new Rect(0f, 0f, PhoneArea.W, PhoneArea.H);
-            float btnSize = PokerActSize(PhoneArea.W, s);
-            float botPad = Mathf.Max(12f, safe.yMin + 6f);
-            float btnY = PhoneArea.H - botPad - btnSize;
-            float actX = PhoneArea.W - Mathf.Max(10f, PhoneArea.W - safe.xMax + 8f) - btnSize;
-            return new Rect(actX, btnY, btnSize, btnSize);
+            return PokerDealRect(PhoneArea.W, PhoneArea.H, PhoneArea.Safe);
         }
 
         // The page's DEAL hit. A Down only arms it. The Up deals.
