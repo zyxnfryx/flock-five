@@ -11998,12 +11998,6 @@ namespace FlockFive
             float bh = Mathf.Max(PopupBarHeight(s, w) * 1.28f, 56f * s);
             if (sure)
             {
-                const string ask = "Are you sure you want to restart?";
-                var titleR = new Rect(inner.x, inner.y, inner.width, Mathf.Max(40f, inner.height - bh - 12f * s));
-                st.wordWrap = true;
-                int hi = Mathf.Max(20, Mathf.RoundToInt(36f * s));
-                st.fontSize = FitFontWrapped(st, ask, titleR.width, titleR.height * 0.9f, 16, hi);
-                StampOutlined(titleR, ask, st, new Color(1f, 0.97f, 0.90f, 1f), 0, Mathf.Max(3, Mathf.RoundToInt(st.fontSize * 0.12f)));
                 var noR = new Rect(inner.x, inner.yMax - bh, bw, bh);
                 var yesR = new Rect(inner.xMax - bw, inner.yMax - bh, bw, bh);
                 bool no = HitPad(noR, out bool noHeld);
@@ -12012,6 +12006,7 @@ namespace FlockFive
                 DrawPopupButton(yesR, yesHeld, PopupTint.Green);
                 DrawPopupWord(noR, "No", st, s);
                 DrawPopupWord(yesR, "Yes", st, s);
+                DrawTipFamily(CoachTap.Caption(CoachStep.RestartSure), 1f, "restart.ask");
                 if (no) { _restartAsk = RestartAsk.None; Sfx.CardTap(); return; }
                 if (yes)
                 {
@@ -24100,29 +24095,10 @@ namespace FlockFive
 
             float pop = Mathf.Clamp01(u / 0.22f);
             pop = pop * pop * (3f - 2f * pop);
-            float punch = 1f + 0.16f * Mathf.Sin(Mathf.Clamp01(u / 0.32f) * Mathf.PI);
-            float scale = Mathf.Lerp(0.52f, 1f, pop) * punch;
-            float breathe = 0.5f + 0.5f * Mathf.Sin(u * 3.4f);
-
-            string lab = "It's yours.";
-            var st = GuiPool.Label(GuiSlot.GiftThanks);
-            st.fontStyle = FontStyle.Bold;
-            st.alignment = TextAnchor.MiddleCenter;
-            st.wordWrap = false;
-            float w = PhoneArea.W * 0.92f;
-            float h = 120f * s;
-            var r = new Rect((PhoneArea.W - w) * 0.5f, PhoneArea.H * 0.34f, w, h);
-            st.fontSize = FitFont(st, lab, r.width * 0.92f, r.height * 0.82f, 42, 92);
-            var glow = GlowTex();
-            GUI.color = new Color(1f, 0.78f, 0.22f, (0.32f + 0.22f * breathe) * pop);
-            float aura = 48f * s;
-            GUI.DrawTexture(new Rect(r.x - aura, r.y - aura * 0.4f, r.width + aura * 2f, r.height + aura * 0.8f), glow, ScaleMode.ScaleToFit, true);
-            GUI.color = Color.white;
-            var prev = GUI.matrix;
-            GUIUtility.ScaleAroundPivot(new Vector2(scale, scale), r.center);
-            int stroke = Mathf.Max(4, Mathf.RoundToInt(st.fontSize * 0.12f));
-            StampOutlined(r, lab, st, new Color(1f, 0.90f, 0.28f), 1, stroke);
-            GUI.matrix = prev;
+            // Same pill, type, and band as the coach. s is the caller scale; the
+            // class size comes from the field, not from this popup.
+            if (s < 0f) pop = 0f;
+            DrawTipFamily(CaptionLayout.YoursLine, pop, "gift.yours");
         }
 
         static void DrawGiftConfetti(float u, float s) =>

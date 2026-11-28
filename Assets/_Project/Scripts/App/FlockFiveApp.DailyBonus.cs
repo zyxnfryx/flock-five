@@ -77,7 +77,7 @@ namespace FlockFive
         static int _dailyAskNoPx = 16;
         static Texture2D _dailyMedal;
 
-        const string DailyAskCopy = "Want a reminder so you never miss your streak?";
+        public const string DailyAskCopy = "Want a reminder so you never miss your streak?";
         const string DailyAskYes = "Yes please";
         const string DailyAskNo = "Not now";
 
@@ -2361,13 +2361,12 @@ namespace FlockFive
             DrawAskFrame(card, s, breathe, glow);
             EnsureAskStyles();
             EnsureAskFit(s, body, yesR);
-            _dailyAsk.fontSize = _dailyAskBodyPx;
-            int ink = Mathf.Max(2, Mathf.RoundToInt(_dailyAskBodyPx * 0.10f));
-            StampOutlined(body, DailyAskCopy, _dailyAsk, new Color(1f, 0.96f, 0.78f), 1, ink);
             DrawAskButton(yesR, DailyAskYes, _dailyAskYesPx, true, yesHeld);
             DrawAskButton(noR, DailyAskNo, _dailyAskNoPx, false, noHeld);
             GUI.matrix = prev;
             GUI.color = Color.white;
+            // Outside the card's open-tween scale, so the pill stays on the band.
+            DrawTipFamily(DailyAskCopy, 1f, "daily.ask");
 
             if (yes) CloseDailyAsk(true);
             else if (no) TakeDailyAskNotNow(noHit, noHit.center);

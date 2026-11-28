@@ -3167,23 +3167,11 @@ namespace FlockFive
         // Shared dark caption plate (DrawSolidRound kind 0) and the shared banner ink, at the table entry's size and seat.
         void DrawBadgerPickCaption(BadgerRects L, string spot, float alpha = 1f)
         {
-            var plate = BadgerPickPlate(L, spot, _bgLine, out var text, out int font);
             float fade = BadgerCaptionFade.For(BadgerTutorialFight(), _coachFade) * alpha;
             if (fade < 0.02f) return;
-            NoteTutorPlate(plate);
-            DrawSolidRound(plate, Mathf.Min(plate.height * 0.30f, 14f * L.S), 0, fade * CaptionStyles.Ink(spot));
-            var st = CoachLineStyle();
-            int keep = st.fontSize; bool wrap = st.wordWrap; var align = st.alignment;
-            try
-            {
-                st.fontSize = font;
-                st.wordWrap = false;
-                st.alignment = TextAnchor.MiddleCenter;
-                var ink = text;
-                ink.y -= CaptionLayout.BannerInkLift(font);
-                StampBannerText(ink, _bgLine, st, fade, true);
-            }
-            finally { st.fontSize = keep; st.wordWrap = wrap; st.alignment = align; }
+            // Same pill as every other tip. L keeps the call signature the seat tests use.
+            if (L.S < 0f) return;
+            DrawTipFamily(_bgLine, fade, spot);
         }
 
     }

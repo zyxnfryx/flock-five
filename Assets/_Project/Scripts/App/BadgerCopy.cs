@@ -14,7 +14,7 @@ namespace FlockFive
         // A width wrap that puts "Honey" on line 1 is wrong.
         // b123: lessons 1-3 are look-at steps. Each ends "Tap to continue." so the one press-to-continue is named.
         public const string LessonColumnTop = "Higher honey scores the difference.";
-        public const string LessonColumnBot = "First full column wins. Tap to continue.";
+        public const string LessonColumnBot = "First full column wins.";
         public static readonly string[] Lesson =
         {
             "Pick one honeycomb. Higher honey wins.\nTap to continue.",
@@ -184,7 +184,7 @@ namespace FlockFive
         // b110 NEW COPY (awaits Brandon): the same line for Freeze Spray (the Hot Sauce line names Hot Sauce).
         public const string FreezeSprayFrozen = "Frozen badger.\nFreeze Spray is on hold.";
         // Coach fight: the round after the Freeze demo is a gated step (CoachStep.BadgerBreakFree): two lines, glove on a comb.
-        public const string FreezeBreakFreeWait = "Still frozen. Tap the glowing comb.\n" + HotSauceFrozenFlat;
+        public const string FreezeBreakFreeWait = "Tap the comb.\n" + HotSauceFrozenFlat;
         public const string BlockedBoth = "Blocked! The badger scores nothing.";
 
         // b119 (Brandon): a won round no longer always says "Honey badger don't care." These rotate with no

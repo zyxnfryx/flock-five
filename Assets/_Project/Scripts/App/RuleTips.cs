@@ -16,12 +16,12 @@ namespace FlockFive
         public const string FeederKey = "flockfive.coach.rule.feeder";
         public const string SleepKey = "flockfive.coach.rule.sleep";
 
-        // Each row is one phrase. The banner keeps these breaks and shrinks;
-        // it must not reflow them into "bows with" / "bows!" (iPad 820).
-        public const string KitLine = "Crowns go with crowns,\nbows with bows!\nA set is five matching birds.";
-        public const string FeederLine = "Nice! That feeder now wants\na new color. Check the top.";
+        // Two rows. "Bows with bows!" stays whole on the second row so a wrap
+        // cannot split it into "bows with" / "bows!".
+        public const string KitLine = "Crowns with crowns.\nBows with bows! Five a set.";
+        public const string FeederLine = "Nice! That feeder wants\na new color. Check the top.";
         public const float ReadSeconds = 4f;
-        public const string SleepLine = "These birds are napping.\nThey wake when a feeder\nwants their color.";
+        public const string SleepLine = "These birds are napping.\nThey wake for their color.";
 
         // Longest a frozen tip may hold the garden before it clears itself.
         public const float HoldMax = 30f;
@@ -45,6 +45,10 @@ namespace FlockFive
 
         // First unseen rule that is on the board now. Feeder and sleep are what just
         // happened, so they win over the kit tip, which is always on the board.
+        // Crowns are packed onto the birds (garden 1: Teal wears Crown). They are
+        // not granted when Nice! dismisses. The crown caption is the next unseen
+        // tip once Nice is gone, on every field size. A tall bottom bar can hide
+        // the Teal crowns while Nice is up; the pill does not.
         // Sleep is on the board the instant the stack commits. The caption waits
         // until NapBegun, and until then it holds the slot so the kit tip cannot
         // pause the hop in its place.

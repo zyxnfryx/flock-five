@@ -40,9 +40,9 @@ namespace FlockFive.Editor
             Check(!RuleTips.FeederReady(true, true, false, false), "feeder seen stays down");
             Check(!RuleTips.FeederReady(false, false, false, false), "feeder without a turn");
             var kitRows = RuleTips.KitLine.Split('\n');
-            Check(kitRows.Length == 3 && kitRows[1] == "bows with bows!", "bows stay one row");
+            Check(kitRows.Length == 2 && kitRows[1].IndexOf("Bows with bows!") >= 0, "bows stay one row");
             var sleepRows = RuleTips.SleepLine.Split('\n');
-            Check(sleepRows.Length == 3 && sleepRows[2] == "wants their color.", "sleep rows");
+            Check(sleepRows.Length == 2 && sleepRows[0].IndexOf("napping") >= 0, "sleep rows");
             // 402, 412, and the iPad play column (820x1180 pillars to 9:16).
             var faces = new[]
             {

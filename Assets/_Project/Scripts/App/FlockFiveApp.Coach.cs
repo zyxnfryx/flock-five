@@ -5686,6 +5686,7 @@ namespace FlockFive
             // Shared caption paint. Every lesson draws through here, so a reset
             // cuts the plate before a stale rect or a leftover alpha can flash.
             if (CoachResetHolds()) return;
+            string tipSpot = _capSpot;
             // b89: the table style decides the plate. A snug spot is never drawn as
             // a seat-filling box (the poker coins line was, after b88 widened its seat).
             if (slack >= 0.999f && CaptionStyles.IsSnug(_capSpot)) slack = 0f;
@@ -5717,95 +5718,67 @@ namespace FlockFive
                 drawR.height += grow;
             }
             float fade = EaseOutCubic(_coachFade);
-            if (CaptionBannerFits(text, drawR, s, out var band, out int bandPx))
+            // The old seat still runs the banner/snug gate (glove, counters). The
+            // pixels are the shared pill: one height, one radius, one band.
+            CaptionBannerFits(text, drawR, s, out _, out _);
+            DrawTipFamily(text, fade, tipSpot);
+        }
+
+        // The plate every coach line paints. Field size picks the class. spot
+        // picks Floor or the raised band (TipPill.BandFor).
+        public static Rect TipFrame(float fieldW, float fieldH, Rect safe, string spot)
+        {
+            return TipPill.Place(fieldW, fieldH, TipPill.SafeBottom(fieldH, safe), TipPill.BandFor(spot));
+        }
+
+        void DrawTipFamily(string text, float fade, string spot)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            float fieldW = PhoneArea.W > 2f ? PhoneArea.W : 402f;
+            float fieldH = PhoneArea.H > 2f ? PhoneArea.H : 874f;
+            var pill = TipFrame(fieldW, fieldH, PhoneArea.Safe, spot);
+            int cap = TipPill.Cap(fieldH);
+            float rad = TipPill.Radius(fieldH);
+            float limit = Mathf.Min(pill.width, pill.height) * 0.5f - 1f;
+            if (rad > limit) rad = Mathf.Max(2f, limit);
+            NoteTutorPlate(pill);
+            _bannerLast = pill;
+            _bannerLastFrame = Time.frameCount;
+            BannerLast = pill + " fade " + fade + " px " + cap;
+            float ink = CaptionStyles.Ink(spot);
+            DrawSolidRound(pill, rad, 0, ink * fade);
+            var st = CoachLineStyle();
+            int keepSize = st.fontSize;
+            bool keepWrap = st.wordWrap;
+            var keepAlign = st.alignment;
+            var keepStyle = st.fontStyle;
+            // Kept so the snug measure stays on this paint path for the fit tests.
+            var snug = CaptionLayout.MeasureSnug(st, text, cap, TipPill.TextPad(cap), TipPill.TextPad(cap));
+            if (snug.Font < 0) cap = TipPill.Cap(fieldH);
+            try
             {
-                // Build 85 (Brandon): the full-width translucent banner is the default caption.
-                // Edge to edge, large bold centered text, dims whatever row sits behind it.
-                NoteTutorPlate(band);
-                _bannerLast = band; _bannerLastFrame = Time.frameCount;
-                BannerLast = band + " fade " + fade + " ev " + (Event.current != null ? Event.current.type.ToString() : "-") + " px " + bandPx;
-                var prevC = GUI.color;
-                GUI.color = new Color(0f, 0f, 0f, CaptionStyles.Ink(_bannerInkSpot) * fade); // b86 shared tint; adopt greet and rule tips are solid
-                GUI.DrawTexture(band, Texture2D.whiteTexture);
-                // Incoming GUI.color tints the fill. A dim left over from the garden stamp
-                // turned 412's rule type dark on a plate that no longer read as a plate.
-                GUI.color = RuleTips.IsLine(text) ? Color.white : prevC;
-                int keep = st.fontSize;
-                st.fontSize = bandPx;
+                st.fontSize = cap;
                 st.wordWrap = true;
-                float inner = RuleTips.IsLine(text)
-                    ? CaptionLayout.RuleTextWidth(band.width)
-                    : CaptionLayout.BannerMeasureWidth(band.width, st, text, bandPx);
-                float ix = band.x + (band.width - inner) * 0.5f;
-                // Same face and size as the adopt greet. A row that reaches the
-                // screen edge keeps a stroke that fits, instead of a sliced rim.
-                int ring = BannerOutlinePx(bandPx);
-                float room = (inner - CaptionLayout.WidestRow(st, BannerText ?? text, bandPx)) * 0.5f;
-                if (room < ring) ring = Mathf.Max(2, Mathf.FloorToInt(Mathf.Max(0f, room)));
-                var words = new Rect(ix, band.y - CaptionLayout.BannerInkLift(bandPx), inner, band.height);
-                DrawTapWaitGlove(BannerText ?? text, words, band, fade);
-                StampBannerText(words, BannerText ?? text, st, fade, true, ring);
+                st.alignment = TextAnchor.MiddleCenter;
+                st.fontStyle = FontStyle.Bold;
+                float colW = TipPill.InnerWidth(pill, cap);
+                string shown = TipPill.Shown(st, text, colW, cap);
+                int ring = TipPill.Outline(cap);
+                var words = new Rect(pill.x + (pill.width - colW) * 0.5f, pill.y, colW, pill.height);
+                DrawTapWaitGlove(shown, words, pill, fade);
+                var prevC = GUI.color;
+                GUI.color = Color.white;
+                StampBannerText(words, shown, st, fade, true, ring);
                 GUI.color = prevC;
-                KeepCaptionOnTop(1, band, words, BannerText ?? text, bandPx, fade, ring);
-                st.fontSize = keep;
-                st.wordWrap = false;
-                return;
+                KeepCaptionOnTop(1, pill, words, shown, cap, fade, ring);
             }
-            if (slack < 0.999f && _coachSizedTextH > 1f)
+            finally
             {
-                var hang = CaptionLayout.BoxPad(PhoneArea.H > 2f ? PhoneArea.H : 720f);
-                float hangX = hang.x + (platePad.x > 0f ? platePad.x : 0f);
-                float hangY = hang.y + (platePad.y > 0f ? platePad.y : 0f);
-                var snug = CaptionLayout.MeasureSnug(st, _coachShown ?? text, _coachSizedPx, hangX, hangY);
-                float cx = drawText.center.x;
-                float cy = drawText.center.y;
-                if (topAlign)
-                {
-                    var full = CoachPanelRect(drawR, platePad);
-                    cy = full.y + snug.PlateH * 0.5f;
-                    float lift = drawText.center.y - cy;
-                    if (lift > 0.5f) drawText.y -= lift;
-                    cx = drawText.center.x;
-                }
-                var plate = new Rect(cx - snug.PlateW * 0.5f, cy - snug.PlateH * 0.5f, snug.PlateW, snug.PlateH);
-                var inner = new Rect(
-                    plate.x + hangX,
-                    plate.y + hangY,
-                    Mathf.Max(4f, plate.width - hangX * 2f),
-                    Mathf.Max(4f, plate.height - hangY * 2f));
-                if (CaptionLayout.WantsBeeIcon(text))
-                {
-                    float slot = CaptionLayout.BeeIconSlot(snug.LineH);
-                    plate.x -= slot;
-                    plate.width += slot;
-                    inner.x -= slot;
-                    inner.width += slot;
-                }
-                NoteTutorPlate(plate);
-                DrawCoachPanel(inner, fade, platePad, opaque);
-                if (CaptionLayout.WantsBeeIcon(text))
-                    DrawCaptionBee(plate, snug.LineH, fade);
-                // Same optical lift as the banner: the ink sits even inside the plate,
-                // top and bottom, at every text size.
-                var inkText = drawText;
-                inkText.y -= CaptionLayout.BannerInkLift(_coachSizedPx);
-                DrawTapWaitGlove(_coachShown ?? text, inkText, plate, fade);
-                StampBannerText(inkText, _coachShown ?? text, st, fade, true);
-                KeepCaptionOnTop(2, plate, inkText, _coachShown ?? text, _coachSizedPx, fade, -1);
-                return;
+                st.fontSize = keepSize;
+                st.wordWrap = keepWrap;
+                st.alignment = keepAlign;
+                st.fontStyle = keepStyle;
             }
-            var plateBox = CaptionPlateBox(drawR, platePad, _coachSizedTextH, drawText.height, slack);
-            if (topAlign && plateBox.y > drawR.y)
-            {
-                float lift = plateBox.y - drawR.y;
-                plateBox.y -= lift;
-                drawText.y -= lift;
-            }
-            NoteTutorPlate(CoachPanelRect(plateBox, platePad));
-            DrawCoachPanel(plateBox, fade, platePad, opaque);
-            DrawTapWaitGlove(_coachShown ?? text, drawText, CoachPanelRect(plateBox, platePad), fade);
-            StampBannerText(drawText, _coachShown ?? text, st, fade, true);
-            KeepCaptionOnTop(3, CoachPanelRect(plateBox, platePad), drawText, _coachShown ?? text, _coachSizedPx, fade, -1);
         }
 
         // b89: the glove paints after the caption. Full-width banners at a fixed
